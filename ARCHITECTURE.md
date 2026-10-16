@@ -152,3 +152,23 @@ Chacun avance en parallèle avec les contrats ci-dessus et des mocks. On intègr
 - **Qualité de `parsed`** (expérimental) → fallback sur `accessibility`, en dédupliquant l'historique de chat répété.
 - **Vie privée** → liste blanche d'apps, rien de brut ne quitte le PC, l'employé peut voir et supprimer ses items.
 - **Coût LLM** → Haiku en premier filtre, Sonnet seulement sur ce qui passe le filtre.
+
+## Implémentation du MVP (ce qui est construit)
+
+Le code suit les contrats ci-dessus (`KnowledgeItem`, `AgentEvent`, tables) avec quelques choix pragmatiques, pour que tout tourne sur un seul laptop comme sur Supabase :
+
+| Prévu | Construit | Pourquoi |
+|---|---|---|
+| Edge Functions `/ingest` `/query` `/events` | Routes API Next.js (`apps/web/app/api/*`), mêmes contrats | Un seul déploiement (Vercel ou laptop), testable localement sans Deno. |
+| Supabase Realtime | Flux SSE `/api/stream` qui relit `agent_events` | Marche aussi avec le stockage fichier et sur plusieurs instances ; la publication Realtime est quand même activée par la migration RLS. |
+| Postgres Supabase uniquement | Deux stockages derrière la même interface : fichier JSON (démo zéro config) ou Postgres (`DATABASE_URL`, Supabase ou autre) | La démo ne dépend pas du réseau ; le cerveau partagé utilise Supabase. |
+| RLS par zone | Règle appliquée par l'API sur toutes les routes (`lib/access.ts`) **et** politiques RLS SQL (`supabase/migrations/*_rls.sql`) pour l'accès direct | L'API se connecte avec le rôle propriétaire ; les politiques protègent tout accès direct (clé anon, Supabase Auth via `profiles.auth_user_id`). |
+| Supabase Auth | Jeton personnel par employé (haché SHA-256) pour les agents + cookie de session signé pour le dashboard ; « voir en tant que » pour les admins | Le même jeton sert au prompt d'installation, au MCP, aux hooks et à brain-sync. |
+| Pipe Screenpipe `brain-sync` | Client unique `brain.mjs` (`apps/client`) : `sync`, `mcp`, `hook`, `install-*`, planifié par launchd / cron / schtasks | Un seul fichier téléchargé depuis le dashboard, sans `npm install` sur le poste. Screenpipe est lu via son API REST locale ; les logs Claude Code locaux sont la source la plus fiable. |
+| Haiku puis Sonnet | Tri `claude-haiku-5-5` + extraction `claude-sonnet-5-5` (sorties structurées, repli serveur en cas de refus) si une clé API est présente ; sinon `claude -p` (abonnement Claude Code de l'employé) ; sinon heuristique locale | La distillation marche même sans clé API. |
+| FTS puis pgvector | FTS Postgres (`simple`, texte normalisé sans accents, pondération titre/corps) ; score par tokens en mode fichier | Suffisant pour la démo. pgvector reste l'étape suivante. |
+| react-force-graph | SVG maison : deux hémisphères découpés en zones (Voronoï), neurones = entités, synapses = entités partagées | Effet « néon » maîtrisé et lisible en démo. |
+
+Détection d'automatisations : les hooks envoient une **empreinte** du prompt normalisé (dates et nombres neutralisés) et un résumé masqué de 160 caractères. Une suggestion naît quand la même personne lance le même prompt sur au moins 3 jours, avec au moins 80 % des journées à ±40 min de l'heure médiane (fuseau `BRAIN_TIMEZONE`, Europe/Paris par défaut). Les workflows détectés par Screenpipe peuvent aussi être remontés (`POST /api/automations`).
+
+Étapes suivantes : connecteurs Notion / Calendar / Todoist, pgvector, interview d'onboarding vocale, consentement et durée de conservation (RGPD), exécution réelle des automatisations validées.
