@@ -1,0 +1,85 @@
+name: Captures du front
+
+# Construit le front, lance la démo (stockage fichier, mode démo, simulateur d'agents) et commite des
+# captures d'écran dans docs/captures/ pour valider la direction artistique sans poste local.
+on:
+  push:
+    branches: [front/epure]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: captures-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  captures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BRAIN_DEMO: "1"
+      BRAIN_SESSION_SECRET: captures-ci-secret-9f3b2c1d7e8a4b6c0d1e2f3a4b5c6d7e
+      BRAIN_PUBLIC_URL: http://localhost:3000
+      BRAIN_TIMEZONE: Europe/Paris
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dépendances
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck -w @brain/web
+
+      - name: Build
+        run: npm run build
+
+      - name: Données de démo (Fournil)
+        run: npm run seed -w @brain/web -- --force
+
+      - name: Playwright
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+
+      - name: Serveur, simulateur et captures
+        run: |
+          nohup npm run start -w @brain/web > server.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://localhost:3000/login > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:3000/login > /dev/null || { echo "serveur injoignable"; tail -n 50 server.log; exit 1; }
+          nohup npm run simulate -w @brain/web -- --speed 3 > simulate.log 2>&1 &
+          node apps/web/scripts/captures.mjs http://localhost:3000 docs/captures
+
+      - name: Logs en cas d'échec
+        if: failure()
+        run: |
+          echo "::group::server.log"; tail -n 200 server.log || true; echo "::endgroup::"
+          echo "::group::simulate.log"; tail -n 100 simulate.log || true; echo "::endgroup::"
+
+      - name: Captures en artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures
+          path: docs/captures
+          if-no-files-found: ignore
+
+      - name: Commit des captures et du lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A docs/captures package-lock.json
+          if git diff --cached --quiet; then echo "rien à committer"; exit 0; fi
+          git commit -q -F - <<'MSG'
+          chore(captures): captures d'écran du front et lockfile (CI)
+
+          Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_012cKbX3kEDKUmkkfcuhyrEf
+          MSG
+          git push origin HEAD:${{ github.ref_name }}
