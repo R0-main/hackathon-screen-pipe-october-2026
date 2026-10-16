@@ -2,9 +2,8 @@ name: Captures du front
 
 # Construit le front, lance la démo (stockage fichier, mode démo, simulateur d'agents) et commite des
 # captures d'écran dans docs/captures/ pour valider la direction artistique sans poste local.
+# Lancement manuel : Actions → « Captures du front » → Run workflow (sur la branche à capturer).
 on:
-  push:
-    branches: [front/epure]
   workflow_dispatch:
 
 permissions:
