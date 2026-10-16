@@ -12,3 +12,4 @@ apps/web/.brain/
 # Built client bundle served by the dashboard
 apps/web/public/brain.mjs
 .DS_Store
+.next-build/
