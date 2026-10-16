@@ -29,7 +29,7 @@ const PHOSPHOR = 0xc7ff3e
 
 const RADIUS = 1.25
 const AXES = { x: 1.3, y: 1, z: 0.95 }
-const CENTER_R = 0.075
+const CENTER_R = 0.06
 const ZOOM = { min: 2.8, max: 7.5, start: 4.4, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
@@ -129,7 +129,8 @@ export function Brain3D(props: Brain3DProps) {
   }
 
   return (
-    <div ref={containerRef} className="relative aspect-[4/3] max-h-[640px] w-full overflow-hidden rounded-[6px] bg-surface sm:aspect-[16/10]">
+    <div>
+    <div ref={containerRef} className="relative aspect-square max-h-[640px] w-full overflow-hidden rounded-[6px] bg-surface sm:aspect-[16/10]">
       <canvas ref={canvasRef} className="block h-full w-full cursor-grab touch-none active:cursor-grabbing" aria-hidden />
 
       {/* Libellés : de vrais boutons, positionnés chaque image sur la projection de leur zone. */}
@@ -148,13 +149,14 @@ export function Brain3D(props: Brain3DProps) {
               }}
               className="brain-label pointer-events-auto absolute left-0 top-0 rounded-[4px] text-left"
               aria-pressed={isSel}
+              data-live={live ? "1" : undefined}
               onClick={() => onSelect?.(z.id)}
             >
-              <span className="flex items-start gap-2">
-                <Dot color={zoneColor(z.color, z.position)} className="mt-[5px]" />
+              <span className="flex items-start gap-1.5 rounded-[4px] bg-surface/90 px-1.5 py-0.5">
+                <Dot color={zoneColor(z.color, z.position)} className="mt-[4px] sm:mt-[5px]" />
                 <span>
-                  <span className={`block whitespace-nowrap text-[13px] font-medium leading-tight ${isSel ? "underline underline-offset-4" : ""}`}>{z.name}</span>
-                  <span className="block whitespace-nowrap text-[12px] tabular-nums leading-tight text-trace">
+                  <span className={`block whitespace-nowrap text-[12px] font-medium leading-tight sm:text-[13px] ${isSel ? "underline underline-offset-4" : ""}`}>{z.name}</span>
+                  <span className="hidden whitespace-nowrap text-[12px] tabular-nums leading-tight text-trace sm:block">
                     {z.locked ? (
                       <span className="inline-flex items-center gap-1">
                         <LockIcon size={11} /> accès restreint
@@ -166,7 +168,7 @@ export function Brain3D(props: Brain3DProps) {
                 </span>
               </span>
               {live && (
-                <span key={act!.startedAt} className="bubble-in mt-1.5 flex max-w-[260px] items-start gap-1.5 rounded-[4px] border border-ink bg-surface px-2 py-1 text-[11.5px] leading-snug">
+                <span key={act!.startedAt} className="bubble-in mt-1 hidden max-w-[260px] items-start gap-1.5 rounded-[4px] border border-ink bg-surface px-2 py-1 text-[11.5px] leading-snug sm:flex">
                   <span className="mt-[3px] size-2 shrink-0 rounded-full border border-ink bg-phosphor" aria-hidden />
                   <span className="whitespace-normal">{act!.label}</span>
                 </span>
@@ -184,7 +186,8 @@ export function Brain3D(props: Brain3DProps) {
           <MinusIcon />
         </button>
       </div>
-      <p className="pointer-events-none absolute bottom-3 left-3 text-[12px] text-trace">Glisser pour tourner. Ctrl + molette ou les boutons pour zoomer.</p>
+    </div>
+    <p className="mt-2 text-[12px] text-trace">Glisser pour tourner. Pincer, Ctrl + molette ou les boutons pour zoomer.</p>
     </div>
   )
 }
@@ -218,7 +221,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   scene.add(group)
 
   const geoSphere = new T.SphereGeometry(1, 20, 14)
-  const geoRing = new T.RingGeometry(0.84, 1, 48)
+  const geoRing = new T.RingGeometry(0.93, 1, 48)
   const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
   const geometries: THREE.BufferGeometry[] = [geoSphere, geoRing]
   const materials: THREE.Material[] = [outlineMat]
@@ -273,18 +276,14 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
   })
 
-  // Synapses : arcs au-dessus de la coque entre deux zones qui partagent des entités.
+  // Synapses : cordes entre deux zones qui partagent des entités, plus marquées quand elles sont actives.
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const A = gfx.get(s.a)
     const B = gfx.get(s.b)
     if (!A || !B) continue
-    const mid = A.center.position.clone().add(B.center.position).multiplyScalar(0.5)
-    const e: [number, number, number] = [mid.x / AXES.x, mid.y / AXES.y, mid.z / AXES.z]
-    const len = Math.hypot(e[0], e[1], e[2]) || 1
-    const bulge = onShell([e[0] / len, e[1] / len, e[2] / len], 1.12)
-    const pts = new T.QuadraticBezierCurve3(A.center.position.clone(), bulge, B.center.position.clone()).getPoints(28)
-    const baseOpacity = 0.25 + Math.min(0.35, Math.log2(1 + s.weight) * 0.08)
+    const pts = [A.center.position.clone(), B.center.position.clone()]
+    const baseOpacity = 0.18 + Math.min(0.27, Math.log2(1 + s.weight) * 0.06)
     const mat = new T.LineBasicMaterial({ color: TRACE, transparent: true, opacity: baseOpacity })
     const geo = new T.BufferGeometry().setFromPoints(pts)
     group.add(new T.Line(geo, mat))
@@ -303,6 +302,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     size.h = h
     renderer.setSize(w, h, false)
     camera.aspect = w / h
+    camera.zoom = Math.min(1, camera.aspect / 1.3)
     camera.updateProjectionMatrix()
   }
   const ro = new ResizeObserver(resize)
@@ -403,7 +403,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         g.center.material.color.setHex(on ? PHOSPHOR : g.locked ? WHITE : g.color)
         g.nodeMat.color.setHex(on ? PHOSPHOR : g.locked ? NEUTRAL : INK)
         g.linkMat.color.setHex(on ? INK : LINE)
-        for (const node of g.nodes) node.scale.setScalar((node.userData.r as number) * (on ? 1.7 : 1))
+        for (const node of g.nodes) node.scale.setScalar((node.userData.r as number) * (on ? 1.5 : 1))
       }
       const isSel = sel === g.id
       if (isSel !== g.selected) {
@@ -443,7 +443,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         live.splice(i, 1)
         continue
       }
-      r.mesh.scale.setScalar(0.06 + 0.5 * k)
+      r.mesh.scale.setScalar(0.05 + 0.42 * k)
       r.mesh.material.opacity = 0.9 * (1 - k)
       r.mesh.lookAt(camera.position)
     }
@@ -458,9 +458,11 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const x = (tmp.x * 0.5 + 0.5) * size.w
       const y = (-tmp.y * 0.5 + 0.5) * size.h
       const behind = tmp.z > centerDepth
-      el.style.transform = `translate(${(x + 10).toFixed(1)}px, ${(y - 14).toFixed(1)}px)`
+      const flip = x > size.w * 0.62
+      el.style.transform = flip ? `translate(${(x - 10).toFixed(1)}px, ${(y - 14).toFixed(1)}px) translateX(-100%)` : `translate(${(x + 10).toFixed(1)}px, ${(y - 14).toFixed(1)}px)`
+      el.classList.toggle("is-flip", flip)
       el.style.opacity = behind ? "0.45" : "1"
-      el.style.zIndex = behind ? "1" : "2"
+      el.style.zIndex = behind ? "1" : el.dataset.live ? "3" : "2"
       el.style.visibility = "visible"
     }
   }

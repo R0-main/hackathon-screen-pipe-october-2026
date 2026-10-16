@@ -319,7 +319,18 @@ button.chip:hover:not(.chip-on) {
   }
 }
 
-/* Libellés du cerveau 3D : positionnés image par image, invisibles tant qu'ils n'ont pas de position. */
+/* Libellés du cerveau 3D : positionnés image par image, invisibles tant qu'ils n'ont pas de position.
+   Près du bord droit, ils basculent à gauche de leur zone (.is-flip). */
 .brain-label {
   visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.brain-label.is-flip {
+  align-items: flex-end;
+  text-align: right;
+}
+.brain-label.is-flip > span {
+  flex-direction: row-reverse;
 }
