@@ -12,7 +12,7 @@
 | 2.2 parseur sémantique | fait : `brain.mjs status` dit si `parsed` renvoie des données ; consigne dans le prompt d'installation (`--enable-semantic-context` / app context « memory ») |
 | 2.3 authentification | fait : en-têtes `X-Screenpipe-Client: api` + `X-Screenpipe-Agent`, jeton via `npx -y screenpipe@latest auth token`, 401/403 explicites |
 | 2.4 `browser_url` | fait : liste blanche et outil déduits de l'URL de l'onglet |
-| 2.5 pagination / checkpoint | déjà fait côté MVP ; `limit` plafonné à 20 (contrat de l'API) |
+| 2.5 pagination / checkpoint | déjà fait côté MVP (fenêtres de temps, checkpoint sûr) ; pages de 100, le serveur n'impose pas de plafond |
 | 2.6 détail des workflows | fait : `GET /workflows/:id` → occurrences, jours, heure habituelle, minutes par semaine (`timingRuns`) |
 | 2.7 `filter_pii=true` | fait |
 | 2.8 réunions | fait : `GET /meetings` + transcriptions → conversations « meeting », checkpoint par réunion, `--screenpipe-meetings non` pour refuser |

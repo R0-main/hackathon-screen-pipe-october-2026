@@ -14,7 +14,7 @@ test("pipe Screenpipe brain-sync : frontmatter borné, commande sync --scheduled
     assert.match(md, /trigger:\n  events:\n    - meeting_ended/)
     assert.match(md, /privacy_filter: true/)
     assert.match(md, /- Api\(GET \/meetings\)/)
-    assert.match(md, /brain\.mjs sync --scheduled --home/)
+    assert.match(md, /"\/home\/x\/\.company-brain\/brain\.mjs" sync --scheduled --home "\/home\/x\/\.company-brain"/)
     assert.ok(!/POST/.test(md), "aucune écriture autorisée")
 
     const logs: string[] = []

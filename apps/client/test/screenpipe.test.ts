@@ -286,14 +286,14 @@ test("mapWorkflows : workflows perso ou hors liste blanche écartés, texte masq
   assert.equal(mapWorkflows(raw, [], { whitelist: ["claude", "mail", "excel"] }).length, 2)
 })
 
-test("readScreenpipe : en-têtes d'attribution, jeton, filter_pii et limit plafonné à 20", async () => {
+test("readScreenpipe : en-têtes d'attribution, jeton, filter_pii et pages de 100 par défaut", async () => {
   const srv = await mockServer((req) => {
     const u = new URL(req.url, "http://x")
     if (u.pathname === "/search") return { body: { data: [frame(1, 0, "Terminal", "claude", "ligne")], pagination: { total: 1 } } }
     return undefined
   })
   try {
-    const r = await readScreenpipe({ url: srv.url, token: "sp_secret", state: {}, since: new Date(base - 60_000), pageSize: 100, meetings: false })
+    const r = await readScreenpipe({ url: srv.url, token: "sp_secret", state: {}, since: new Date(base - 60_000), meetings: false })
     assert.equal(r.available, true)
     const q = srv.requests.find((x) => x.url.startsWith("/search"))!
     assert.equal(q.headers.authorization, "Bearer sp_secret")
@@ -301,7 +301,7 @@ test("readScreenpipe : en-têtes d'attribution, jeton, filter_pii et limit plafo
     assert.equal(q.headers["x-screenpipe-agent"], "company-brain")
     const p = new URL(q.url, "http://x").searchParams
     assert.equal(p.get("filter_pii"), "true")
-    assert.equal(p.get("limit"), "20")
+    assert.equal(p.get("limit"), "100")
     assert.ok(!srv.requests.some((x) => x.url.startsWith("/meetings")))
   } finally {
     await srv.close()

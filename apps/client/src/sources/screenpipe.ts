@@ -1,7 +1,8 @@
 // Source « Screenpipe » : API REST locale (http://localhost:3030 par défaut).
 // Référence : skill « screenpipe-api » embarqué dans screenpipe-mcp (dépôt screenpipe, commit 9dc0fd0) et anas.md.
 // - en-têtes : Authorization: Bearer <jeton local>, X-Screenpipe-Client: api, X-Screenpipe-Agent: company-brain ;
-// - GET /search : limit ≤ 20, filter_pii=true (masquage natif sur le poste), content_type « parsed » (messages structurés
+// - GET /search : pages de 100 (pas de plafond serveur ; le « limit ≤ 20 » du skill vise le contexte d'un agent, pas une
+//   synchro), filter_pii=true (masquage natif sur le poste), content_type « parsed » (messages structurés
 //   items[] + actors[]) puis « accessibility » puis « ocr » ; browser_url sert à reconnaître un onglet ChatGPT / Claude ;
 // - GET /meetings + /meetings/:id/transcript : chaque réunion terminée devient une conversation « meeting » ;
 // - GET /workflows + /workflows/:id : workflows répétitifs avec leurs occurrences réelles (timingRuns).
@@ -56,8 +57,8 @@ export type ScreenpipeOptions = {
 
 /** Plus petite fenêtre de lecture : en dessous, on lit ce qu'on peut. */
 export const MIN_SPAN_MS = 60_000
-/** `limit` doit rester entre 1 et 20 (contrat de l'API) : on pagine avec `offset`. */
-export const MAX_PAGE_SIZE = 20
+/** Lignes par page de /search (le serveur n'impose pas de plafond ; on pagine avec `offset`). */
+export const DEFAULT_PAGE_SIZE = 100
 /** Réunions distillées par passage au maximum ; la suite part au passage suivant (checkpoint par réunion). */
 export const MAX_MEETINGS_PER_PASS = 10
 /** Workflows dont on va chercher le détail (occurrences) par passage. */
@@ -514,7 +515,7 @@ function httpProblem(status: number): string {
 function readOptions(opts: ScreenpipeOptions): ReadOptions {
   return {
     token: opts.token,
-    pageSize: Math.max(1, Math.min(MAX_PAGE_SIZE, opts.pageSize ?? MAX_PAGE_SIZE)),
+    pageSize: Math.max(1, opts.pageSize ?? DEFAULT_PAGE_SIZE),
     maxPages: opts.maxPages ?? 20,
     timeoutMs: opts.timeoutMs ?? 10000,
     spanMs: opts.spanMs,
@@ -531,6 +532,8 @@ export async function fetchScreenpipeItems(opts: ScreenpipeOptions): Promise<Scr
   const tried: string[] = []
   const failures: number[] = []
   let emptyCovered: number | undefined
+  // Période vide (synchro relancée dans la même seconde) : rien à lire, et surtout pas une erreur.
+  if (sinceMs >= untilMs) return { items: [], truncated: false, tried, coveredUntil: opts.since.toISOString() }
   for (const type of opts.contentTypes?.length ? opts.contentTypes : DEFAULT_SCREENPIPE_CONTENT_TYPES) {
     tried.push(type)
     const r = await readContentType(base, type, o, sinceMs, untilMs)

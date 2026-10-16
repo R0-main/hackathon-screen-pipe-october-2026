@@ -403,7 +403,7 @@ Lance exactement cette commande dans un shell, puis rapporte sa sortie en une ou
 avertissements). Ne lis aucune donnée toi-même, n'envoie rien ailleurs, ne modifie aucun fichier. Si la commande échoue,
 rapporte l'erreur telle quelle.
 
-\`${shQuote(execPath)} ${shQuote(script)} sync --scheduled --home ${shQuote(home)}\`
+\`"${execPath}" "${script}" sync --scheduled --home "${home}"\`
 `
 }
 
