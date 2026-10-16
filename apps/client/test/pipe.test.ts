@@ -8,6 +8,7 @@ import { tempDir } from "./helpers"
 test("pipe Screenpipe brain-sync : frontmatter borné, commande sync --scheduled, installation et retrait", () => {
   const dir = tempDir("brain-pipe-")
   process.env.COMPANY_BRAIN_SCREENPIPE_DIR = dir
+  process.env.COMPANY_BRAIN_SCRIPT = "/home/x/.company-brain/brain.mjs"
   try {
     const md = pipeMarkdown("/usr/bin/node", "/home/x/.company-brain/brain.mjs", "/home/x/.company-brain")
     assert.match(md, /^---\nschedule: every 15m\nenabled: true\n/)
@@ -31,5 +32,6 @@ test("pipe Screenpipe brain-sync : frontmatter borné, commande sync --scheduled
     assert.ok(!pipeInstalled())
   } finally {
     delete process.env.COMPANY_BRAIN_SCREENPIPE_DIR
+    delete process.env.COMPANY_BRAIN_SCRIPT
   }
 })

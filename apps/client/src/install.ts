@@ -364,6 +364,9 @@ export function uninstallSchedule(log: (s: string) => void = console.log) {
 // --- Pipe Screenpipe ------------------------------------------------------------------------------------------------
 
 export const PIPE_NAME = "brain-sync"
+/** Reconnaît notre pipe par son titre et sa commande, quel que soit le chemin du script (brain.mjs ou source). */
+export const PIPE_TITLE = "Cerveau d'entreprise, synchro"
+
 /** Commande CLI Screenpipe (celle du skill officiel ; `bun x` marche aussi). */
 export const SCREENPIPE_CLI = "npx -y screenpipe@latest"
 
@@ -384,7 +387,7 @@ export function pipeMarkdown(execPath = process.execPath, script = selfScript(),
   return `---
 schedule: every 15m
 enabled: true
-title: Cerveau d'entreprise, synchro
+title: ${PIPE_TITLE}
 description: Distille les sessions IA et les réunions de ce poste vers le cerveau partagé (rien de brut ne quitte le poste)
 trigger:
   events:
@@ -409,7 +412,9 @@ rapporte l'erreur telle quelle.
 
 export function pipeInstalled(file = pipePath()): boolean {
   try {
-    return existsSync(file) && OUR_SYNC_RE.test(readFileSync(file, "utf8"))
+    if (!existsSync(file)) return false
+    const text = readFileSync(file, "utf8")
+    return text.includes(`title: ${PIPE_TITLE}`) && /\bsync --scheduled\b/.test(text)
   } catch {
     return false
   }
