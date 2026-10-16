@@ -2,7 +2,8 @@
 
 import type { ZoneView } from "@/lib/brain"
 import type { FeedEvent } from "./Dashboard"
-import { AGENT_LABEL, EVENT_VERB, initials, relativeTime } from "./format"
+import { AGENT_LABEL, EVENT_VERB, initials } from "./format"
+import { RelTime } from "./RelTime"
 import { ZoneTag, zoneColor } from "./ui"
 
 export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; names: Record<string, string>; zones: ZoneView[]; now: number }) {
@@ -21,6 +22,7 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
         )}
         {events.map((e) => {
           const name = names[e.user_id] ?? "Quelqu'un"
+          const zoneIds = [...new Set(e.zones)]
           return (
             <li key={e.id} className={`rounded-[6px] px-2.5 py-2 hover:bg-bone ${e.fresh ? "feed-enter" : ""}`}>
               <div className="flex items-start gap-2.5">
@@ -36,13 +38,11 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-trace">
                     <span>{AGENT_LABEL[e.agent]}</span>
-                    {e.zones.map((z, i) => {
+                    {zoneIds.map((z, i) => {
                       const zv = zone(z)
                       return <ZoneTag key={z} name={zv?.name ?? z} color={zoneColor(zv?.color, i)} className="text-ink" />
                     })}
-                    <time className="ml-auto tabular-nums" dateTime={e.at}>
-                      {relativeTime(e.at, now)}
-                    </time>
+                    <RelTime iso={e.at} now={now} className="ml-auto tabular-nums" />
                   </div>
                 </div>
               </div>

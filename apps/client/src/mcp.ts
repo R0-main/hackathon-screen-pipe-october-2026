@@ -151,7 +151,7 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         title: z.string().min(3).max(200).describe("Titre court et précis (≤ 120 caractères)."),
         body: z.string().min(1).max(4000).describe("1 à 5 phrases compréhensibles par un collègue, avec le pourquoi."),
         kind: z.enum(KNOWLEDGE_KINDS).describe("fact | decision | task | procedure | question"),
-        zone: z.string().max(64).optional().describe("Optionnel : identifiant de zone ; sinon classée automatiquement."),
+        zone: z.string().max(64).optional().describe("Optionnel : identifiant de zone ; sinon classée automatiquement (la réponse indique la zone retenue)."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
@@ -162,12 +162,12 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         const hints = zoneHints(cache)
         const known = new Set(hints.map((z) => z.id))
         const asked = zone ? resolveZone(zone) : undefined
-        const chosen =
-          (asked && known.has(asked) ? asked : undefined) ??
-          classifyZones(`${title} ${body}`, hints, 1)[0] ??
-          cache?.whoami?.writable[0] ??
-          hints[0]?.id ??
-          "general"
+        const classified = classifyZones(`${title} ${body}`, hints, 1)[0]
+        const chosen = (asked && known.has(asked) ? asked : undefined) ?? classified ?? cache?.whoami?.writable[0] ?? hints[0]?.id ?? "general"
+        const how =
+          asked && chosen === asked
+            ? "zone demandée"
+            : `zone choisie automatiquement d'après le contenu${asked ? ` (« ${zone} » n'existe pas)` : ""} ; précisez \`zone\` pour en choisir une autre`
         const cleanTitle = truncate(redactText(title).trim(), 140)
         const cleanBody = truncate(redactText(body).trim(), 4000)
         const item: KnowledgeItemInput = {
@@ -181,7 +181,20 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         }
         const r = await a.ingest([item], "mcp")
         const where = r.zones[0] ?? chosen
-        return `Connaissance enregistrée dans la zone ${name(where)} : « ${cleanTitle} » (${kind}). Elle est maintenant trouvable par search_brain pour les personnes ayant accès à cette zone.`
+        const label = `${name(where)} (\`${where}\`)`
+        if (!r.inserted && r.skipped) {
+          return `Déjà dans le cerveau : une connaissance au même titre existe déjà dans la zone ${label} (« ${cleanTitle} »). Rien de nouveau n'a été enregistré.`
+        }
+        const readable = cache?.zones?.find((z) => z.id === where)?.readable ?? cache?.whoami?.readable.includes(where)
+        const readableIds = cache?.zones?.length ? cache.zones.filter((z) => z.readable).map((z) => z.id) : (cache?.whoami?.readable ?? [])
+        const mine = readableIds.map(name).join(", ")
+        const visibility =
+          readable === false
+            ? "Attention : cette zone ne fait pas partie de vos zones en lecture. Seules les personnes qui y ont accès la verront ; " +
+              "comme c'est vous qui l'avez enregistrée, vous la retrouvez dans vos propres recherches et dans « Mon contexte » (où vous pouvez la supprimer). " +
+              `Pour la ranger ailleurs, rappelez remember avec \`zone\`${mine ? ` (vos zones : ${mine})` : ""}.`
+            : "Elle est maintenant trouvable par search_brain pour les personnes ayant accès à cette zone."
+        return `Connaissance enregistrée dans la zone ${label} — ${how}${where !== chosen ? ` ; le cerveau l'a rangée ici plutôt que dans « ${name(chosen)} »` : ""}.\n« ${cleanTitle} » (${kind}). ${visibility}`
       }),
   )
 

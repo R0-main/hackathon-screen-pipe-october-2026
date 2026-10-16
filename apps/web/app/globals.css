@@ -81,6 +81,8 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+/* Classes maison dans la couche components : un utilitaire Tailwind (justify-between, text-trace…) les surcharge. */
+@layer components {
 /* --- Surfaces --- */
 .panel {
   background: var(--panel);
@@ -333,4 +335,5 @@ button.chip:hover:not(.chip-on) {
 }
 .brain-label.is-flip > span {
   flex-direction: row-reverse;
+}
 }

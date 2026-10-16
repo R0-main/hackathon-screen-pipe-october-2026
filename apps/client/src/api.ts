@@ -151,7 +151,8 @@ export class BrainApi {
     return this.request<{ recorded: number; zones: string[] }>("POST", "/api/events", body, timeoutMs)
   }
   ingest(items: KnowledgeItemInput[], agent: AgentName = "brain-sync") {
-    return this.request<{ inserted: number; ids: string[]; zones: string[] }>("POST", "/api/ingest", { items, agent }, 60000)
+    // `skipped` : items déjà reçus (même auteur, zone et titre sur 30 jours), ignorés par le cerveau.
+    return this.request<{ inserted: number; skipped?: number; ids: string[]; zones: string[] }>("POST", "/api/ingest", { items, agent }, 60000)
   }
   automations(workflows: Workflow[]) {
     return this.request<{ saved: number }>("POST", "/api/automations", { workflows })

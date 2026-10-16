@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import type { ZoneView } from "@/lib/brain"
-import { CENTER, HEMISPHERES, VIEW_H, VIEW_W, gyriPaths, hemispherePolygon, layoutZones, neuronPositions, polygonPath, smoothPath, type Pt } from "./brain-geometry"
+import { CENTER, HEMISPHERES, VIEW_H, VIEW_W, gyriPaths, hemispherePolygon, layoutZones, neuronPositions, polygonPath, round2, smoothPath, type Pt } from "./brain-geometry"
 import { zoneColor } from "./ui"
 
 export type ZoneActivity = { until: number; startedAt: number; who?: string; label?: string }
@@ -85,15 +85,15 @@ export function BrainViz(props: {
           const b = cellBy.get(s.b)
           if (!a || !b) return null
           const active = intensity(s.a) > 0 || intensity(s.b) > 0
-          const ctrl: Pt = [((a.center[0] + b.center[0]) / 2) * 0.6 + CENTER[0] * 0.4, ((a.center[1] + b.center[1]) / 2) * 0.6 + CENTER[1] * 0.4]
+          const ctrl: Pt = [round2(((a.center[0] + b.center[0]) / 2) * 0.6 + CENTER[0] * 0.4), round2(((a.center[1] + b.center[1]) / 2) * 0.6 + CENTER[1] * 0.4)]
           return (
             <path
-              key={`${s.a}-${s.b}`}
+              key={`${s.a}|${s.b}`}
               d={`M${a.center[0]},${a.center[1]} Q${ctrl[0]},${ctrl[1]} ${b.center[0]},${b.center[1]}`}
               fill="none"
               stroke={active ? INK : TRACE}
               strokeOpacity={active ? 0.9 : 0.35}
-              strokeWidth={Math.min(2.5, 0.7 + Math.log2(1 + s.weight) * 0.4)}
+              strokeWidth={round2(Math.min(2.5, 0.7 + Math.log2(1 + s.weight) * 0.4))}
               className={active ? "synapse-flow" : undefined}
             >
               {s.via.length > 0 && <title>{`Liées par : ${s.via.join(", ")}`}</title>}

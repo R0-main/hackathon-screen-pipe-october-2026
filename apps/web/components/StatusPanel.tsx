@@ -3,10 +3,23 @@
 import { useState } from "react"
 import type { CompanyStatus } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
-import { api, relativeTime } from "./format"
+import { api, errorMessage } from "./format"
+import { RelTime } from "./RelTime"
 import { ErrorText, ZoneTag, zoneColor } from "./ui"
 
-export function StatusPanel({ status, zones, canRefresh, onRefreshed }: { status: CompanyStatus | null; zones: ZoneView[]; canRefresh: boolean; onRefreshed: () => void }) {
+export function StatusPanel({
+  status,
+  zones,
+  canRefresh,
+  onRefreshed,
+  now,
+}: {
+  status: CompanyStatus | null
+  zones: ZoneView[]
+  canRefresh: boolean
+  onRefreshed: () => void
+  now?: number
+}) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const zone = (id: string) => zones.find((z) => z.id === id)
@@ -18,7 +31,7 @@ export function StatusPanel({ status, zones, canRefresh, onRefreshed }: { status
       await api("/api/status", { method: "POST" })
       onRefreshed()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      setErr(errorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -32,7 +45,7 @@ export function StatusPanel({ status, zones, canRefresh, onRefreshed }: { status
           <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">{status?.headline ?? "Pas encore de résumé. Lancez une première génération pour que le cerveau fasse le point."}</p>
           {status && (
             <p className="mt-1 text-[12px] text-trace">
-              Généré {relativeTime(status.generated_at)} {status.generator === "claude" ? "par Claude" : "par l'heuristique locale, sans Claude"}
+              Généré <RelTime iso={status.generated_at} now={now} /> {status.generator === "claude" ? "par Claude" : "par l'heuristique locale, sans Claude"}
             </p>
           )}
         </div>
@@ -44,11 +57,11 @@ export function StatusPanel({ status, zones, canRefresh, onRefreshed }: { status
       </div>
       {err && <ErrorText className="mt-2">{err}</ErrorText>}
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {(status?.zones ?? []).map((zs) => {
+        {(status?.zones ?? []).map((zs, i) => {
           const z = zone(zs.zone)
           if (!z) return null
           return (
-            <article key={zs.zone} className="inset p-4">
+            <article key={`${zs.zone}-${i}`} className="inset p-4">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-[14px] font-medium">
                   <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />

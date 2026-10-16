@@ -14,27 +14,56 @@ import { TasksPanel } from "./TasksPanel"
 import { KnowledgeList } from "./KnowledgeList"
 import { ZoneDrawer } from "./ZoneDrawer"
 import { AskBrain } from "./AskBrain"
-import { EVENT_VERB, api, firstName } from "./format"
+import { EVENT_VERB, api, firstName, uniqueZones } from "./format"
 
 export type FeedEvent = AgentEvent & { restricted?: boolean; fresh?: boolean }
 
 const ACTIVE_MS: Record<AgentEvent["type"], number> = { query: 6500, write: 9000, started: 3500, stopped: 2000 }
+const FEED_MAX = 80
 
-export function Dashboard({ initial }: { initial: DashboardState }) {
+const maxId = (events: { id: number }[]) => events.reduce((m, e) => Math.max(m, e.id), 0)
+
+/** Fusionne des événements dans le fil, sans doublon, du plus récent au plus ancien. */
+function mergeFeed(prev: FeedEvent[], incoming: FeedEvent[]): FeedEvent[] {
+  const known = new Set(prev.map((e) => e.id))
+  const added = incoming.filter((e) => !known.has(e.id))
+  if (added.length === 0) return prev
+  return [...prev, ...added].sort((a, b) => b.id - a.id).slice(0, FEED_MAX)
+}
+
+/** Repli sans horodatage serveur : une valeur déterministe (identique au rendu serveur et à l'hydratation). */
+function maxEventTime(events: { at: string }[]): number {
+  return events.reduce((m, e) => Math.max(m, Date.parse(e.at) || 0), 0)
+}
+
+/**
+ * `now` : horodatage du rendu serveur. Le premier rendu client réutilise exactement la même valeur, sinon les dates
+ * relatives (« il y a 44 minutes » / « il y a 45 minutes ») diffèrent et l'hydratation échoue.
+ */
+export function Dashboard({ initial, now: serverNow }: { initial: DashboardState; now?: number }) {
   const [state, setState] = useState(initial)
-  const [feed, setFeed] = useState<FeedEvent[]>(initial.events)
+  const [feed, setFeed] = useState<FeedEvent[]>(() => initial.events.map(uniqueZones))
   const [activity, setActivity] = useState<Record<string, ZoneActivity>>({})
   const [ripples, setRipples] = useState<Ripple[]>([])
-  const [now, setNow] = useState(() => Date.now())
+  const [now, setNow] = useState(() => serverNow ?? (maxEventTime(initial.events) || Date.now()))
   const [live, setLive] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const namesRef = useRef(initial.names)
   namesRef.current = state.names
+  // Identifiants déjà affichés : un événement n'allume le cerveau qu'une fois (reconnexion, rendu serveur…).
+  const seen = useRef<Set<number>>(new Set(initial.events.map((e) => e.id)))
+  const lastId = useRef(maxId(initial.events))
+  const rippleSeq = useRef(0)
 
   const refresh = useCallback(async () => {
     try {
-      setState(await api<DashboardState>("/api/state"))
+      const next = await api<DashboardState>("/api/state")
+      setState(next)
+      // Rattrape ce que le flux aurait manqué (coupure plus longue que l'historique du serveur).
+      const missed = next.events.filter((e) => !seen.current.has(e.id)).map(uniqueZones)
+      for (const e of missed) seen.current.add(e.id)
+      if (missed.length) setFeed((prev) => mergeFeed(prev, missed))
     } catch {
       /* session expirée : la prochaine navigation renverra vers /login */
     }
@@ -47,27 +76,33 @@ export function Dashboard({ initial }: { initial: DashboardState }) {
 
   const ignite = useCallback((e: FeedEvent) => {
     const t = Date.now()
-    if (e.zones.length === 0) return
+    const zones = [...new Set(e.zones)]
+    if (zones.length === 0) return
     const who = namesRef.current[e.user_id] ? firstName(namesRef.current[e.user_id]) : "Quelqu'un"
     const label = e.restricted ? `${who} travaille dans cette zone` : `${who} ${EVENT_VERB[e.type]}${e.type === "query" && e.summary ? ` « ${e.summary} »` : ""}`
     setActivity((prev) => {
       const next = { ...prev }
-      for (const z of e.zones) next[z] = { until: t + ACTIVE_MS[e.type], startedAt: t, who, label }
+      for (const z of zones) next[z] = { until: t + ACTIVE_MS[e.type], startedAt: t, who, label }
       return next
     })
-    const keys = e.zones.map((z) => ({ key: `${e.id}-${z}-${t}`, zone: z }))
+    const keys = zones.map((z) => ({ key: `r${++rippleSeq.current}-${e.id}-${z}`, zone: z }))
     setRipples((prev) => [...prev.slice(-24), ...keys])
     setTimeout(() => setRipples((prev) => prev.filter((r) => !keys.some((k) => k.key === r.key))), 2600)
   }, [])
 
   // Flux temps réel (SSE) : chaque événement d'agent allume sa zone.
+  // `after` = dernier événement déjà affiché : rien n'est perdu entre le rendu serveur et la connexion
+  // (les reconnexions automatiques reprennent ensuite via Last-Event-ID).
   useEffect(() => {
-    const es = new EventSource("/api/stream")
+    const es = new EventSource(`/api/stream?after=${lastId.current}`)
     es.onopen = () => setLive(true)
     es.onerror = () => setLive(false)
     es.addEventListener("agent", (msg) => {
-      const e = JSON.parse((msg as MessageEvent).data) as FeedEvent
-      setFeed((prev) => (prev.some((p) => p.id === e.id) ? prev : [{ ...e, fresh: true }, ...prev].slice(0, 80)))
+      const e = uniqueZones(JSON.parse((msg as MessageEvent).data) as FeedEvent)
+      lastId.current = Math.max(lastId.current, e.id)
+      if (seen.current.has(e.id)) return
+      seen.current.add(e.id)
+      setFeed((prev) => mergeFeed(prev, [{ ...e, fresh: true }]))
       ignite(e)
       if (e.type === "write") scheduleRefresh()
     })
@@ -75,6 +110,7 @@ export function Dashboard({ initial }: { initial: DashboardState }) {
   }, [ignite, scheduleRefresh])
 
   useEffect(() => {
+    setNow(Date.now())
     const tick = setInterval(() => setNow(Date.now()), 400)
     const poll = setInterval(refresh, 45_000)
     return () => {
@@ -133,7 +169,7 @@ export function Dashboard({ initial }: { initial: DashboardState }) {
         </section>
 
         <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <StatusPanel status={state.status} zones={state.zones} canRefresh={isAdmin} onRefreshed={refresh} />
+          <StatusPanel status={state.status} zones={state.zones} canRefresh={isAdmin} onRefreshed={refresh} now={now} />
           <div className="grid min-w-0 grid-cols-1 content-start gap-4">
             <AutomationsPanel automations={state.automations} names={state.names} zones={state.zones} isAdmin={isAdmin} onChange={refresh} />
             <TasksPanel tasks={state.tasks} names={state.names} zones={state.zones} onChange={refresh} />

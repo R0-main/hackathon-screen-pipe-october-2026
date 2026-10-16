@@ -106,16 +106,44 @@ export async function draftOnboarding(answers: OnboardingAnswers, existing: Zone
   return { ...heuristicDraft(answers, pages, existing), generator: "heuristic", pages: pagesMeta }
 }
 
+/** Palette des zones, dans l'ordre de zoneColor() (qui boucle dessus). */
+function zonePalette(): string[] {
+  const out: string[] = []
+  for (let i = 0; i < 64; i++) {
+    const c = zoneColor(i).toLowerCase()
+    if (out.includes(c)) break
+    out.push(c)
+  }
+  return out
+}
+
+/**
+ * Zones à enregistrer pour un brouillon validé. Une zone déjà présente garde sa couleur et sa position ; une nouvelle
+ * zone prend une position après toutes les existantes et la première couleur de la palette encore libre (sinon,
+ * deux néons identiques et deux zones à la même position, ordonnées différemment selon le stockage).
+ * Les zones en double dans le brouillon (même identifiant) ne comptent qu'une fois.
+ */
 export function zonesFromDraft(draft: Pick<OnboardingDraft, "zones">, existing: Zone[]): Zone[] {
-  return draft.zones.map((z, i) => {
+  const palette = zonePalette()
+  const usedColors = new Set(existing.map((z) => z.color.toLowerCase()))
+  let nextPosition = existing.reduce((m, z) => Math.max(m, z.position), -1) + 1
+  const seen = new Set<string>()
+  const out: Zone[] = []
+  for (const z of draft.zones) {
+    if (seen.has(z.id)) continue
+    seen.add(z.id)
     const prev = existing.find((e) => e.id === z.id)
-    return {
+    const position = prev ? prev.position : nextPosition++
+    const color = prev ? prev.color : (palette.find((c) => !usedColors.has(c)) ?? zoneColor(position))
+    usedColors.add(color.toLowerCase())
+    out.push({
       id: z.id,
       name: z.name,
       description: z.description,
       keywords: [...new Set([...(prev?.keywords ?? []), ...z.keywords.map((k) => k.toLowerCase())])].slice(0, 60),
-      color: prev?.color ?? zoneColor(i),
-      position: i,
-    }
-  })
+      color,
+      position,
+    })
+  }
+  return out
 }

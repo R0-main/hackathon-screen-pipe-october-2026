@@ -3,19 +3,23 @@
 import { useState } from "react"
 import type { Task } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
-import { api, firstName } from "./format"
-import { ZoneTag, zoneColor } from "./ui"
+import { api, errorMessage, firstName } from "./format"
+import { ErrorText, ZoneTag, zoneColor } from "./ui"
 
 export function TasksPanel({ tasks, names, zones, onChange }: { tasks: Task[]; names: Record<string, string>; zones: ZoneView[]; onChange: () => void }) {
   const [pending, setPending] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
   const open = tasks.filter((t) => t.status === "open")
   const done = tasks.filter((t) => t.status === "done")
 
   async function toggle(t: Task) {
     setPending(t.id)
+    setErr(null)
     try {
       await api(`/api/tasks/${t.id}`, { method: "PATCH", json: { status: t.status === "open" ? "done" : "open" } })
       onChange()
+    } catch (e) {
+      setErr(`Impossible de mettre à jour « ${t.title} » : ${errorMessage(e)}`)
     } finally {
       setPending(null)
     }
@@ -30,6 +34,7 @@ export function TasksPanel({ tasks, names, zones, onChange }: { tasks: Task[]; n
         </span>
       </div>
       <p className="mt-1 text-[12px] text-trace">Extraites des sessions IA. Connecteurs Todoist, Notion et Linear à venir.</p>
+      {err && <ErrorText className="mt-2">{err}</ErrorText>}
       <ul className="mt-3 space-y-0.5">
         {tasks.length === 0 && <li className="text-[13px] text-trace">Aucune tâche dans vos zones.</li>}
         {[...open, ...done].slice(0, 12).map((t) => {

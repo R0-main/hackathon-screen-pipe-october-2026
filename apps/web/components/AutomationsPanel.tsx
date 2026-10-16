@@ -3,8 +3,8 @@
 import { useState } from "react"
 import type { AutomationSuggestion } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
-import { api } from "./format"
-import { CheckIcon, ClockIcon, ZoneTag, zoneColor } from "./ui"
+import { api, errorMessage } from "./format"
+import { CheckIcon, ClockIcon, ErrorText, ZoneTag, zoneColor } from "./ui"
 
 export function AutomationsPanel({
   automations,
@@ -20,13 +20,17 @@ export function AutomationsPanel({
   onChange: () => void
 }) {
   const [busy, setBusy] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
   const visible = automations.filter((a) => a.status !== "dismissed")
 
   async function setStatus(id: string, status: AutomationSuggestion["status"]) {
     setBusy(id)
+    setErr(null)
     try {
       await api(`/api/automations/${id}`, { method: "PATCH", json: { status } })
       onChange()
+    } catch (e) {
+      setErr(`${status === "accepted" ? "Validation" : "Mise à jour"} impossible : ${errorMessage(e)}`)
     } finally {
       setBusy(null)
     }
@@ -34,9 +38,12 @@ export function AutomationsPanel({
 
   async function detect() {
     setBusy("detect")
+    setErr(null)
     try {
       await api("/api/automations/detect", { method: "POST" })
       onChange()
+    } catch (e) {
+      setErr(`Analyse impossible : ${errorMessage(e)}`)
     } finally {
       setBusy(null)
     }
@@ -52,6 +59,7 @@ export function AutomationsPanel({
           </button>
         )}
       </div>
+      {err && <ErrorText className="mt-2">{err}</ErrorText>}
       {visible.length === 0 && (
         <p className="mt-3 text-[13px] text-trace">
           Rien de répétitif détecté pour l&apos;instant. Le cerveau repère les prompts lancés par la même personne, au même créneau, plusieurs jours de suite.

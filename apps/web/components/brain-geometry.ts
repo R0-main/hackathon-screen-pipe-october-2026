@@ -3,6 +3,13 @@
 
 export type Pt = [number, number]
 
+/**
+ * Arrondi au centième. Math.cos/sin peuvent différer au dernier bit entre Node (rendu serveur) et le navigateur :
+ * on arrondit à la source, la suite des calculs (arithmétique IEEE) donne alors le même résultat des deux côtés.
+ */
+export const round2 = (v: number) => Math.round(v * 100) / 100
+const roundPt = (p: Pt): Pt => [round2(p[0]), round2(p[1])]
+
 export const VIEW_W = 1000
 export const VIEW_H = 620
 export const CENTER: Pt = [500, 310]
@@ -43,7 +50,7 @@ function hemiPoint(h: Hemisphere, t: number, bumps: number, scale = 1): Pt {
   rx *= 1 - 0.13 * Math.max(0, -sin)
   const phase = h.side === "left" ? 0.4 : 2.1
   const r = 1 + bumps * (0.03 * Math.sin(9 * t + phase) + 0.018 * Math.sin(15 * t + phase * 2) + 0.009 * Math.sin(27 * t))
-  return [h.cx + rx * r * scale * cos, h.cy + h.ry * r * scale * sin]
+  return roundPt([h.cx + rx * r * scale * cos, h.cy + h.ry * r * scale * sin])
 }
 
 export function hemispherePolygon(h: Hemisphere, n = 140, bumps = 1, scale = 1): Pt[] {
@@ -89,7 +96,7 @@ export function gyriPaths(h: Hemisphere, count = 22, seed = 7): string[] {
   const out: string[] = []
   // Contours concentriques qui épousent la forme.
   for (const s of [0.82, 0.62]) {
-    const ring = hemispherePolygon(h, 90, 1.6, s).map(([x, y], i): Pt => [x + Math.sin(i * 1.7) * 4, y + Math.cos(i * 2.3) * 4])
+    const ring = hemispherePolygon(h, 90, 1.6, s).map(([x, y], i): Pt => roundPt([x + Math.sin(i * 1.7) * 4, y + Math.cos(i * 2.3) * 4]))
     out.push(smoothPath(ring, true))
   }
   let guard = 0
@@ -104,7 +111,7 @@ export function gyriPaths(h: Hemisphere, count = 22, seed = 7): string[] {
     for (let k = 0; k <= steps; k++) {
       const d = (k / steps) * len
       const off = Math.sin(k * 1.9 + rand() * 0.6) * amp
-      pts.push([start[0] + Math.cos(angle) * d - Math.sin(angle) * off, start[1] + Math.sin(angle) * d + Math.cos(angle) * off])
+      pts.push(roundPt([start[0] + Math.cos(angle) * d - Math.sin(angle) * off, start[1] + Math.sin(angle) * d + Math.cos(angle) * off]))
     }
     out.push(smoothPath(pts, false))
   }
@@ -214,7 +221,8 @@ export function layoutZones(zoneIds: string[]): ZoneCell[] {
         poly = clipHalfPlane(poly, a, b, c)
       })
       poly = clipConvex(poly, hull)
-      cells.push({ id, side: h.side, polygon: poly, center: centroid(poly), site: si, area: polygonArea(poly) })
+      poly = poly.map(roundPt)
+      cells.push({ id, side: h.side, polygon: poly, center: roundPt(centroid(poly)), site: si, area: polygonArea(poly) })
     })
   }
   return cells
@@ -238,5 +246,5 @@ export function neuronPositions(cell: ZoneCell, count: number): Pt[] {
     if (pts.some((q) => (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 < 26 ** 2)) continue
     pts.push(p)
   }
-  return pts
+  return pts.map(roundPt)
 }

@@ -3,7 +3,8 @@
 import { useState } from "react"
 import type { KnowledgeItem } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
-import { KIND_LABEL, firstName, relativeTime } from "./format"
+import { KIND_LABEL, firstName } from "./format"
+import { RelTime } from "./RelTime"
 import { Dot, ZoneTag, zoneColor } from "./ui"
 
 type ZoneLike = { name: string; color: string; position?: number }
@@ -22,17 +23,17 @@ export function KnowledgeCard({ item, author, zone, now }: { item: KnowledgeItem
           )}
           <span className="ml-auto text-trace">
             {author ? `${firstName(author)}, ` : ""}
-            <span className="tabular-nums">{relativeTime(item.created_at, now)}</span>
+            <RelTime iso={item.created_at} now={now} className="tabular-nums" />
           </span>
         </div>
-        <h4 className="mt-2 text-[13.5px] font-medium leading-snug">{item.title}</h4>
+        <h4 className="mt-2 break-words text-[13.5px] font-medium leading-snug">{item.title}</h4>
       </button>
       {open && (
         <div className="mt-2 space-y-2">
           <p className="whitespace-pre-line text-[13px] leading-relaxed">{item.body}</p>
           <div className="flex flex-wrap gap-1.5 text-[12px]">
-            {item.entities.map((e) => (
-              <span key={`${e.type}:${e.name}`} className="chip">
+            {item.entities.map((e, i) => (
+              <span key={`${e.type}:${e.name}:${i}`} className="chip">
                 {e.name}
               </span>
             ))}

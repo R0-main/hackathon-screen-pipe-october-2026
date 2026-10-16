@@ -1,29 +1,40 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
 import type { DashboardState } from "@/lib/brain"
-import { api, initials } from "./format"
+import { api, errorMessage, initials } from "./format"
 
 export function TopBar({ state, live, activeAgents }: { state: DashboardState; live: boolean; activeAgents: number }) {
-  const router = useRouter()
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   const isAdmin = state.real.role === "admin"
 
   async function viewAs(userId: string) {
     setBusy(true)
+    setErr(null)
     try {
       await api("/api/session/view-as", { method: "POST", json: { userId: userId || null } })
       window.location.reload()
-    } finally {
+    } catch (e) {
+      setErr(`Changement de vue impossible : ${errorMessage(e)}`)
       setBusy(false)
     }
   }
 
   async function logout() {
-    await api("/api/session", { method: "DELETE" })
-    router.push("/login")
+    setBusy(true)
+    setErr(null)
+    try {
+      await api("/api/session", { method: "DELETE" })
+    } catch (e) {
+      setErr(`Déconnexion impossible : ${errorMessage(e)}`)
+      setBusy(false)
+      return
+    }
+    // Navigation complète (pas router.push) : le cache du routeur client, qui contient encore le cerveau de la
+    // personne connectée, est jeté, et l'entrée « / » est remplacée dans l'historique.
+    window.location.replace("/login")
   }
 
   return (
@@ -47,12 +58,12 @@ export function TopBar({ state, live, activeAgents }: { state: DashboardState; l
           )}
         </div>
 
-        <nav className="ml-auto flex flex-wrap items-center gap-2" aria-label="Navigation">
+        <nav className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2" aria-label="Navigation">
           {isAdmin && (
             <>
               <select
                 aria-label="Voir en tant que"
-                className="input input-sm"
+                className="input input-sm max-w-full"
                 value={state.impersonating ? state.me.id : ""}
                 disabled={busy}
                 onChange={(e) => viewAs(e.target.value)}
@@ -79,11 +90,16 @@ export function TopBar({ state, live, activeAgents }: { state: DashboardState; l
             <span className="grid size-5 place-items-center rounded-full border border-line-strong text-[10px] font-medium">{initials(state.me.name)}</span>
             {state.me.name.split(" ")[0]}
           </Link>
-          <button type="button" className="btn" onClick={logout}>
+          <button type="button" className="btn" onClick={logout} disabled={busy}>
             Déconnexion
           </button>
         </nav>
       </div>
+      {err && (
+        <div role="alert" className="border-t border-line bg-surface px-4 py-1.5 text-center text-[13px] text-danger">
+          {err}
+        </div>
+      )}
       {state.impersonating && (
         <div className="border-t border-line bg-surface px-4 py-1.5 text-center text-[13px]">
           Vous voyez le cerveau avec les droits de <b className="font-medium">{state.me.name}</b>. Zones visibles : {state.me.access.readable.join(", ") || "aucune"}.

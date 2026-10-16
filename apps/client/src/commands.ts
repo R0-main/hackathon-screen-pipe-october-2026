@@ -35,6 +35,13 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
   if (str("screenpipe-url")) next.screenpipe_url = str("screenpipe-url")!.replace(/\/+$/, "")
   if (str("screenpipe-token")) next.screenpipe_token = str("screenpipe-token")
   if (str("anthropic-key")) next.anthropic_api_key = str("anthropic-key")
+  const share = str("share-prompt-summaries")
+  if (share !== undefined) {
+    const v = share.toLowerCase()
+    if (["oui", "on", "true", "1", "yes"].includes(v)) next.share_prompt_summaries = true
+    else if (["non", "off", "false", "0", "no"].includes(v)) next.share_prompt_summaries = false
+    else throw new UserError(`--share-prompt-summaries : « oui » ou « non » (reçu « ${share} »).`)
+  }
   if (!next.url || !next.token) {
     throw new UserError("Première configuration : --url et --token sont obligatoires (ex. init --url https://cerveau.exemple --token cb_…).")
   }
@@ -101,6 +108,9 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   const h = await screenpipeHealth(cfg.screenpipe_url, cfg.screenpipe_token)
   log(`  Screenpipe    : ${cfg.screenpipe_url} — ${h.ok ? "OK" : "KO"} (${h.detail})${cfg.screenpipe_token ? `, jeton ${maskSecret(cfg.screenpipe_token)}` : ""}`)
   log(`  Hooks Claude  : ${hooksInstalled() ? "installés" : "non installés"} (${paths.claudeSettings()})`)
+  log(
+    `  Résumés de prompts : ${cfg.share_prompt_summaries === false ? "désactivés (empreinte seule)" : "envoyés seulement pour les prompts classés dans une zone et non personnels"}`,
+  )
   let sched = false
   try {
     sched = scheduleInstalled()

@@ -84,7 +84,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               {ctx.frequent_prompts.map((p, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="shrink-0 tabular-nums text-trace">{p.count} fois</span>
-                  <span>« {p.summary} »</span>
+                  <span className="min-w-0 break-words">« {p.summary} »</span>
                 </li>
               ))}
               {ctx.frequent_prompts.length === 0 && <li className="text-trace">Rien pour l&apos;instant.</li>}
@@ -92,7 +92,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           </section>
         </div>
 
-        <PersonItems items={ctx.items} zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color, position: z.position }))} canDelete={isSelf || viewer.real.role === "admin"} />
+        <PersonItems items={ctx.items} zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color, position: z.position }))} canDelete={isSelf || viewer.real.role === "admin"} now={Date.now()} />
       </main>
     </div>
   )

@@ -3,8 +3,9 @@
 import { spawnSync } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
-import { brainHome, paths, selfScript } from "./config"
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
+import { brainHome, loadPartialConfig, loadState, paths, saveConfig, saveState, selfScript } from "./config"
+import { findOnPath } from "./distill"
 
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const
 export const HOOK_TIMEOUT_S = 5
@@ -153,8 +154,30 @@ export function uninstallHooks(log: (s: string) => void = console.log, file = pa
 export const LAUNCHD_LABEL = "com.company-brain.sync"
 export const WINDOWS_TASK = "CompanyBrainSync"
 
-export function cronLine(execPath = process.execPath, script = selfScript(), home = brainHome()): string {
-  return `*/15 * * * * "${execPath}" "${script}" sync >> "${join(home, "sync.log")}" 2>&1`
+/**
+ * Environnement de la synchro planifiée, relevé au moment de l'installation : cron et launchd partent d'un PATH minimal
+ * (sans `claude`, donc sans distillation LLM) et ignorent les dossiers personnalisés.
+ */
+export function scheduleEnv(env: NodeJS.ProcessEnv = process.env, execPath = process.execPath, home = brainHome()): Record<string, string> {
+  const dirs = [dirname(execPath)]
+  const claude = findOnPath("claude", env.PATH ?? "")
+  if (claude) dirs.push(dirname(claude))
+  dirs.push(...(env.PATH ?? "").split(delimiter))
+  if (process.platform !== "win32") dirs.push("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin")
+  const out: Record<string, string> = { PATH: [...new Set(dirs.filter((d) => d && isAbsolute(d)))].join(delimiter), COMPANY_BRAIN_HOME: home }
+  for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] as const) if (env[k]) out[k] = resolve(env[k]!)
+  return out
+}
+
+function shQuote(v: string): string {
+  return `'${v.replace(/'/g, `'\\''`)}'`
+}
+
+export function cronLine(execPath = process.execPath, script = selfScript(), home = brainHome(), env: Record<string, string> = {}): string {
+  const vars = Object.entries(env).map(([k, v]) => `${k}=${shQuote(v)} `).join("")
+  // Dans un crontab, « % » veut dire saut de ligne : on l'échappe.
+  const cmd = `${vars}"${execPath}" "${script}" sync --scheduled >> "${join(home, "sync.log")}" 2>&1`.replace(/%/g, "\\%")
+  return `*/15 * * * * ${cmd}`
 }
 
 /** Remplace notre ligne (s'il y en a une) et garde tout le reste du crontab. */
@@ -177,8 +200,17 @@ function xml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
-export function launchdPlist(execPath = process.execPath, script = selfScript(), home = brainHome()): string {
+export function launchdPlist(execPath = process.execPath, script = selfScript(), home = brainHome(), env: Record<string, string> = {}): string {
   const log = join(home, "sync.log")
+  const vars: Record<string, string> = {
+    ...env,
+    COMPANY_BRAIN_HOME: home,
+    PATH: env.PATH ?? `${dirname(execPath)}:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+  }
+  const envXml = Object.entries(vars)
+    .map(([k, v]) => `    <key>${xml(k)}</key>\n    <string>${xml(v)}</string>`)
+    .join("\n")
+  // RunAtLoad false : rien ne part au chargement ; la première synchro planifiée a lieu 15 min plus tard.
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -190,21 +222,19 @@ export function launchdPlist(execPath = process.execPath, script = selfScript(),
     <string>${xml(execPath)}</string>
     <string>${xml(script)}</string>
     <string>sync</string>
+    <string>--scheduled</string>
   </array>
   <key>StartInterval</key>
   <integer>900</integer>
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
   <key>StandardOutPath</key>
   <string>${xml(log)}</string>
   <key>StandardErrorPath</key>
   <string>${xml(log)}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>COMPANY_BRAIN_HOME</key>
-    <string>${xml(home)}</string>
-    <key>PATH</key>
-    <string>${xml(`${dirname(execPath)}:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`)}</string>
+${envXml}
   </dict>
 </dict>
 </plist>
@@ -215,8 +245,30 @@ export function launchdPlistPath(): string {
   return join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
 }
 
-export function windowsTaskArgs(execPath = process.execPath, script = selfScript()): string[] {
-  return ["/Create", "/SC", "MINUTE", "/MO", "15", "/TN", WINDOWS_TASK, "/TR", `"${execPath}" "${script}" sync`, "/F"]
+/** Windows : la commande reste courte (/TR ≤ 261 caractères) ; PATH et dossiers viennent de config.json (`sync --scheduled`). */
+export function windowsTaskArgs(execPath = process.execPath, script = selfScript(), home?: string): string[] {
+  const tr = `"${execPath}" "${script}" sync --scheduled${home ? ` --home "${home}"` : ""}`
+  return ["/Create", "/SC", "MINUTE", "/MO", "15", "/TN", WINDOWS_TASK, "/TR", tr, "/F"]
+}
+
+/**
+ * Avant de planifier : la synchro automatique part de maintenant (rien d'antérieur qui n'ait été relu ne partira tout
+ * seul) et l'environnement courant est noté dans config.json pour `sync --scheduled`.
+ */
+export function prepareSchedule(env: Record<string, string>, log: (s: string) => void = console.log) {
+  const state = loadState()
+  state.baseline_at = new Date().toISOString()
+  saveState(state)
+  const cfg = loadPartialConfig()
+  if (cfg.url && cfg.token) saveConfig({ ...cfg, schedule_env: env })
+  log("La synchro planifiée part de maintenant : elle n'envoie que l'activité à venir, jamais l'historique non relu.")
+  const claude = findOnPath("claude", env.PATH ?? "")
+  if (cfg.anthropic_api_key) log("Distillation planifiée : Claude (API Anthropic), clé enregistrée dans la config.")
+  else if (cfg.use_claude_cli !== false && claude) log(`Distillation planifiée : Claude Code en local (\`claude -p\`, ${claude}).`)
+  else log(`Distillation planifiée : heuristique locale (${cfg.use_claude_cli === false ? "CLI Claude désactivée" : "CLI `claude` introuvable dans le PATH transmis"}).`)
+  if (!cfg.anthropic_api_key && process.env.ANTHROPIC_API_KEY) {
+    log("ANTHROPIC_API_KEY n'est pas transmise à la synchro planifiée (elle n'est jamais écrite dans le planificateur) : `init --anthropic-key <clé>` pour l'utiliser.")
+  }
 }
 
 function run(cmd: string, args: string[], input?: string) {
@@ -234,9 +286,11 @@ export function scheduleInstalled(): boolean {
 export function installSchedule(log: (s: string) => void = console.log): boolean {
   const execPath = process.execPath
   const script = selfScript()
+  const env = scheduleEnv(process.env, execPath)
+  prepareSchedule(env, log)
   if (process.platform === "darwin") {
     const file = launchdPlistPath()
-    const plist = launchdPlist(execPath, script)
+    const plist = launchdPlist(execPath, script, brainHome(), env)
     mkdirSync(dirname(file), { recursive: true })
     const changed = !existsSync(file) || readFileSync(file, "utf8") !== plist
     if (changed) {
@@ -256,7 +310,7 @@ export function installSchedule(log: (s: string) => void = console.log): boolean
     return false
   }
   if (process.platform === "win32") {
-    const args = windowsTaskArgs(execPath, script)
+    const args = windowsTaskArgs(execPath, script, process.env.COMPANY_BRAIN_HOME ? brainHome() : undefined)
     const r = run("schtasks", args)
     if (r.ok) {
       log(`Synchro planifiée toutes les 15 min (tâche Windows « ${WINDOWS_TASK} »).`)
@@ -265,7 +319,7 @@ export function installSchedule(log: (s: string) => void = console.log): boolean
     log(`Échec de schtasks (${r.stderr.trim()}). À lancer à la main dans un terminal :\n  schtasks ${args.map((a) => (a.includes(" ") ? `"${a.replace(/"/g, '\\"')}"` : a)).join(" ")}`)
     return false
   }
-  const line = cronLine(execPath, script)
+  const line = cronLine(execPath, script, brainHome(), env)
   const current = run("crontab", ["-l"])
   const existing = current.ok ? current.stdout : ""
   if (!current.ok && /not found|ENOENT/i.test(current.stderr)) {

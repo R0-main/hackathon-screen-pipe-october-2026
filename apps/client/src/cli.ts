@@ -1,10 +1,11 @@
 // brain.mjs — client du cerveau d'entreprise sur le poste de l'employé.
 
-import { SOURCE_NAMES, UserError, selfScript, type SourceName } from "./config"
+import { resolve } from "node:path"
+import { SOURCE_NAMES, UserError, applyScheduleEnv, loadPartialConfig, selfScript, type SourceName } from "./config"
 import type { DistillerKind } from "./distill"
 
 const VERSION = "0.1.0"
-const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version"])
+const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled"])
 
 export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string | boolean>; positional: string[] } {
   const flags: Record<string, string | boolean> = {}
@@ -33,24 +34,31 @@ Usage : ${me} <commande> [options]
 
 Commandes :
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
+       [--share-prompt-summaries oui|non]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
                      Chaque option peut être donnée seule pour compléter une config existante.
+                     --share-prompt-summaries non : le hook n'envoie plus aucun résumé de prompt (empreinte seule).
   hello              Test de bout en bout : vos zones s'allument sur le dashboard.
-  sync [--dry-run] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
+  sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
                      Lit les sessions IA locales, filtre (secrets, perso), distille et envoie au cerveau.
+                     --dry-run montre ce qui partirait sans rien envoyer (--full : chaque connaissance en entier).
+  sync --confirm     Envoie exactement ce que la dernière simulation a montré (valable 24 h).
                      Options avancées : --distiller heuristic|claude-cli|claude-api, --reset (ignore les checkpoints).
   status             État du client : connexion, dernière synchro, Screenpipe, hooks, planification.
   mcp                Serveur MCP stdio « company-brain » (à brancher avec : claude mcp add company-brain --scope user -- node ${selfScript()} mcp).
   hook               Gestionnaire des hooks Claude Code (lit le JSON du hook sur l'entrée standard).
   install-hooks      Ajoute les hooks SessionStart, UserPromptSubmit et Stop à ~/.claude/settings.json.
-  install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows).
+  install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows), à partir de maintenant :
+                     l'historique non relu n'est jamais envoyé automatiquement. À lancer après sync --confirm.
   uninstall [--purge] Retire hooks, planification et MCP ; --purge supprime aussi ~/.company-brain.
 
-Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
+Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
 }
 
 async function main(argv: string[]): Promise<number> {
   const { cmd, flags } = parseArgs(argv)
+  // --home : dossier du client (utilisé par la tâche planifiée Windows, qui n'hérite pas des variables du terminal).
+  if (typeof flags.home === "string" && flags.home.trim()) process.env.COMPANY_BRAIN_HOME = resolve(flags.home.trim())
   // Le hook passe en premier : aucune sortie parasite, toujours code 0.
   if (cmd === "hook") {
     const { runHook } = await import("./hook")
@@ -85,6 +93,9 @@ async function main(argv: string[]): Promise<number> {
       if (limit !== undefined && !(limit > 0)) throw new UserError("--limit doit être un entier positif.")
       const distiller = typeof flags.distiller === "string" ? flags.distiller : undefined
       if (distiller && !["heuristic", "claude-cli", "claude-api"].includes(distiller)) throw new UserError("--distiller : heuristic, claude-cli ou claude-api.")
+      if (flags.confirm && flags["dry-run"]) throw new UserError("--confirm et --dry-run s'excluent : simulez d'abord, puis confirmez.")
+      // Synchro planifiée : PATH et dossiers relevés à l'installation (cron, launchd et Windows partent d'un environnement minimal).
+      if (flags.scheduled) applyScheduleEnv(loadPartialConfig())
       await runSync({
         dryRun: Boolean(flags["dry-run"]),
         since: typeof flags.since === "string" ? flags.since : undefined,
@@ -93,6 +104,8 @@ async function main(argv: string[]): Promise<number> {
         verbose: Boolean(flags.verbose),
         distiller: distiller as DistillerKind | undefined,
         reset: Boolean(flags.reset),
+        full: Boolean(flags.full),
+        confirm: Boolean(flags.confirm),
       })
       return 0
     }
