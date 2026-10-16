@@ -76,6 +76,18 @@ export interface BrainStore {
   /** Secret de signature des sessions, généré aléatoirement une seule fois puis conservé (fichier 600 ou table brain_settings). */
   getSessionSecret(): Promise<string>
 
+  /**
+   * Verrou « une seule fois », partagé entre toutes les instances (plusieurs fonctions Vercel en parallèle) :
+   * vrai pour le premier appelant uniquement. `releaseClaim` le rend (si la tâche protégée a échoué).
+   */
+  /** Vrai si le cerveau ne contient encore aucun compte (sans rien créer, contrairement aux autres lectures). */
+  isEmpty(): Promise<boolean>
+  claimOnce(key: string): Promise<boolean>
+  releaseClaim(key: string): Promise<void>
+  /** Marque la tâche protégée comme terminée ; `isClaimDone` permet aux autres instances de l'attendre. */
+  finishClaim(key: string): Promise<void>
+  isClaimDone(key: string): Promise<boolean>
+
   /** Vide tout (utilisé par le seed). */
   reset(org: { name: string; description: string }): Promise<void>
 }

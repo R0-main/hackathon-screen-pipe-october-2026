@@ -413,6 +413,37 @@ export class FileStore implements BrainStore {
     })
   }
 
+  async isEmpty() {
+    return (await this.listProfiles()).length === 0
+  }
+
+  async claimOnce(key: string) {
+    // Création exclusive (O_EXCL) : un seul processus gagne, même avec plusieurs serveurs sur le même dossier.
+    try {
+      fs.closeSync(fs.openSync(path.join(this.dir, `claim-${key.replace(/[^a-z0-9_-]/gi, "_")}`), "wx"))
+      return true
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") return false
+      throw err
+    }
+  }
+
+  async releaseClaim(key: string) {
+    fs.rmSync(path.join(this.dir, `claim-${key.replace(/[^a-z0-9_-]/gi, "_")}`), { force: true })
+  }
+
+  async finishClaim(key: string) {
+    fs.writeFileSync(path.join(this.dir, `claim-${key.replace(/[^a-z0-9_-]/gi, "_")}`), "done")
+  }
+
+  async isClaimDone(key: string) {
+    try {
+      return fs.readFileSync(path.join(this.dir, `claim-${key.replace(/[^a-z0-9_-]/gi, "_")}`), "utf8") === "done"
+    } catch {
+      return false
+    }
+  }
+
   async getSessionSecret() {
     if (this.secret) return this.secret
     const file = path.join(this.dir, "session-secret")

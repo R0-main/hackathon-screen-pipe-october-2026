@@ -154,9 +154,21 @@ export async function ensureDemoBrain(): Promise<void> {
   if (!g.__demoBootstrap) {
     g.__demoBootstrap = (async () => {
       const store = getStore()
-      if ((await store.listProfiles()).length > 0) return
-      const res = await seedDemoBrain(store)
-      console.log(`[démo] cerveau vide amorcé avec Fournil : ${res.counts.items} connaissances, ${res.counts.events} événements.`)
+      if (!(await store.isEmpty())) return
+      // Plusieurs instances peuvent recevoir les premières visites en même temps : une seule amorce la démo.
+      // Les autres attendent le marqueur « terminé » sans toucher aux données (lire les comptes créerait une org vide).
+      if (!(await store.claimOnce("demo-bootstrap"))) {
+        for (let i = 0; i < 60 && !(await store.isClaimDone("demo-bootstrap")); i++) await new Promise((r) => setTimeout(r, 500))
+        return
+      }
+      try {
+        const res = await seedDemoBrain(store)
+        await store.finishClaim("demo-bootstrap")
+        console.log(`[démo] cerveau vide amorcé avec Fournil : ${res.counts.items} connaissances, ${res.counts.events} événements.`)
+      } catch (err) {
+        await store.releaseClaim("demo-bootstrap").catch(() => {})
+        throw err
+      }
     })().catch((err) => {
       g.__demoBootstrap = undefined
       throw err

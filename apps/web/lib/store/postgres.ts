@@ -436,6 +436,30 @@ export class PostgresStore implements BrainStore {
     }
   }
 
+  async isEmpty() {
+    const [r] = await this.sql`select not exists (select 1 from profiles) as empty`
+    return Boolean(r.empty)
+  }
+
+  async claimOnce(key: string) {
+    const rows = await this.sql`insert into brain_settings (key, value) values (${`claim:${key}`}, ${new Date().toISOString()})
+      on conflict (key) do nothing returning key`
+    return rows.length === 1
+  }
+
+  async releaseClaim(key: string) {
+    await this.sql`delete from brain_settings where key = ${`claim:${key}`}`
+  }
+
+  async finishClaim(key: string) {
+    await this.sql`update brain_settings set value = 'done' where key = ${`claim:${key}`}`
+  }
+
+  async isClaimDone(key: string) {
+    const [r] = await this.sql`select value from brain_settings where key = ${`claim:${key}`}`
+    return r?.value === "done"
+  }
+
   async reset(org: { name: string; description: string }) {
     await this.sql`truncate orgs cascade`
     const created = await this.createOrg(org)
