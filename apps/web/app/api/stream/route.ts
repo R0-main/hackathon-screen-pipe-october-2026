@@ -5,7 +5,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const POLL_MS = 800
-const MAX_MS = 290_000 // l'EventSource du navigateur se reconnecte tout seul (Last-Event-ID)
+// L'EventSource du navigateur se reconnecte tout seul (Last-Event-ID) : sur Vercel, on reste sous la durée max d'une fonction.
+const MAX_MS = Number(process.env.BRAIN_STREAM_MAX_MS) || (process.env.VERCEL ? 55_000 : 290_000)
+export const maxDuration = 60
 const ACCESS_REFRESH_MS = 5_000 // droits relus régulièrement : une zone retirée cesse d'être visible sans attendre la reconnexion
 
 /** Identifiant d'événement fourni par le client (Last-Event-ID à la reconnexion, sinon ?after=). */
