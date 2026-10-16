@@ -5,6 +5,7 @@ import { getStore } from "@/lib/store"
 import { requirePageViewer } from "@/lib/session"
 import { BrainIcon } from "@/components/TopBar"
 import { PersonItems } from "@/components/PersonItems"
+import { ZoneTag, zoneColor } from "@/components/ui"
 
 export const dynamic = "force-dynamic"
 
@@ -21,77 +22,77 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const maxWeight = Math.max(1, ...ctx.zones.map((z) => z.weight))
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-[var(--border)] bg-[rgba(4,6,12,0.75)] backdrop-blur-md">
+    <div className="min-h-dvh">
+      <header className="border-b border-line bg-bone">
         <div className="mx-auto flex max-w-[1200px] items-center gap-3 px-4 py-3 sm:px-6">
           <BrainIcon />
-          <div className="font-semibold">{isSelf ? "Mon contexte" : `Passation · ${ctx.person.name}`}</div>
+          <div className="text-[15px] font-medium">{isSelf ? "Mon contexte" : `Passation de ${ctx.person.name}`}</div>
           <Link href="/" className="btn ml-auto">
-            ← Cerveau
+            Retour au cerveau
           </Link>
         </div>
       </header>
       <main className="mx-auto max-w-[1200px] space-y-4 px-4 py-6 sm:px-6">
         <section className="panel p-5">
-          <h1 className="text-2xl font-semibold">{ctx.person.name}</h1>
-          <p className="text-sm text-[var(--muted)]">
-            {ctx.person.title ?? ""} {ctx.person.role === "admin" ? "· admin" : ""}
+          <h1 className="text-[22px] font-medium leading-tight">{ctx.person.name}</h1>
+          <p className="text-[13px] text-trace">
+            {ctx.person.title ?? ""}
+            {ctx.person.role === "admin" ? (ctx.person.title ? ", admin" : "admin") : ""}
           </p>
-          <p className="mt-3 max-w-3xl text-sm text-[var(--muted)]">
+          <p className="mt-3 max-w-3xl text-[13px] text-trace">
             {isSelf
               ? "Ce que le cerveau a retenu de vos sessions. Vous pouvez supprimer toute connaissance issue de votre poste."
-              : `Le contexte que ce poste utilise le plus : à transmettre à la personne qui remplace ${ctx.person.name.split(" ")[0]}. Seules les connaissances distillées sont visibles, jamais les conversations brutes.`}
+              : `Le contexte que ce poste utilise le plus, à transmettre à la personne qui remplace ${ctx.person.name.split(" ")[0]}. Seules les connaissances distillées sont visibles, jamais les conversations brutes.`}
           </p>
         </section>
 
         <div className="grid gap-4 lg:grid-cols-3">
           <section className="panel p-5">
-            <div className="panel-title">Zones du poste</div>
-            <ul className="mt-3 space-y-2">
-              {ctx.zones.map((z) => (
-                <li key={z.zone}>
-                  <div className="flex justify-between text-sm">
-                    <span style={{ color: zone(z.zone)?.color }}>{zone(z.zone)?.name ?? z.zone}</span>
-                    <span className="mono text-[var(--faint)]">{z.weight}</span>
-                  </div>
-                  <div className="mt-1 h-1.5 rounded-full bg-white/5">
-                    <div className="h-full rounded-full" style={{ width: `${(z.weight / maxWeight) * 100}%`, background: zone(z.zone)?.color }} />
-                  </div>
-                </li>
-              ))}
-              {ctx.zones.length === 0 && <li className="text-sm text-[var(--muted)]">Pas encore d&apos;activité.</li>}
+            <h2 className="panel-title">Zones du poste</h2>
+            <ul className="mt-3 space-y-2.5">
+              {ctx.zones.map((z) => {
+                const zv = zone(z.zone)
+                return (
+                  <li key={z.zone}>
+                    <div className="flex justify-between text-[13px]">
+                      <ZoneTag name={zv?.name ?? z.zone} color={zoneColor(zv?.color, zv?.position ?? 0)} />
+                      <span className="tabular-nums text-trace">{z.weight}</span>
+                    </div>
+                    <div className="mt-1 h-1.5 rounded-full bg-line" aria-hidden>
+                      <div className="h-full rounded-full bg-ink" style={{ width: `${(z.weight / maxWeight) * 100}%` }} />
+                    </div>
+                  </li>
+                )
+              })}
+              {ctx.zones.length === 0 && <li className="text-[13px] text-trace">Pas encore d&apos;activité.</li>}
             </ul>
           </section>
           <section className="panel p-5">
-            <div className="panel-title">Sujets et outils récurrents</div>
+            <h2 className="panel-title">Sujets et outils récurrents</h2>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {ctx.entities.map((e) => (
                 <span key={`${e.type}:${e.name}`} className="chip">
-                  {e.name} <span className="mono text-[var(--faint)]">{e.count}</span>
+                  {e.name} <span className="tabular-nums text-trace">{e.count}</span>
                 </span>
               ))}
-              {ctx.entities.length === 0 && <span className="text-sm text-[var(--muted)]">—</span>}
+              {ctx.entities.length === 0 && <span className="text-[13px] text-trace">Rien pour l&apos;instant.</span>}
             </div>
           </section>
           <section className="panel p-5">
-            <div className="panel-title">Prompts les plus fréquents</div>
-            <ul className="mt-3 space-y-2 text-sm">
+            <h2 className="panel-title">Prompts les plus fréquents</h2>
+            <ul className="mt-3 space-y-2 text-[13px]">
               {ctx.frequent_prompts.map((p, i) => (
                 <li key={i} className="flex gap-2">
-                  <span className="mono shrink-0 text-[var(--faint)]">×{p.count}</span>
+                  <span className="shrink-0 tabular-nums text-trace">{p.count} fois</span>
                   <span>« {p.summary} »</span>
                 </li>
               ))}
-              {ctx.frequent_prompts.length === 0 && <li className="text-[var(--muted)]">—</li>}
+              {ctx.frequent_prompts.length === 0 && <li className="text-trace">Rien pour l&apos;instant.</li>}
             </ul>
           </section>
         </div>
 
-        <PersonItems
-          items={ctx.items}
-          zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color }))}
-          canDelete={isSelf || viewer.real.role === "admin"}
-        />
+        <PersonItems items={ctx.items} zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color, position: z.position }))} canDelete={isSelf || viewer.real.role === "admin"} />
       </main>
     </div>
   )

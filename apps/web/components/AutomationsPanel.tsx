@@ -4,6 +4,7 @@ import { useState } from "react"
 import type { AutomationSuggestion } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { api } from "./format"
+import { CheckIcon, ClockIcon, ZoneTag, zoneColor } from "./ui"
 
 export function AutomationsPanel({
   automations,
@@ -42,17 +43,17 @@ export function AutomationsPanel({
   }
 
   return (
-    <section className="panel p-4 sm:p-5">
+    <section className="panel p-4 sm:p-5" aria-busy={busy === "detect"}>
       <div className="flex items-center justify-between gap-2">
-        <div className="panel-title">Automatisations proposées</div>
+        <h2 className="panel-title">Automatisations proposées</h2>
         {isAdmin && (
-          <button className="btn !py-1 !text-xs" onClick={detect} disabled={busy === "detect"}>
-            {busy === "detect" ? "Analyse…" : "Analyser l'activité"}
+          <button type="button" className="btn btn-sm" onClick={detect} disabled={busy === "detect"}>
+            {busy === "detect" ? "Analyse en cours" : "Analyser l'activité"}
           </button>
         )}
       </div>
       {visible.length === 0 && (
-        <p className="mt-3 text-sm text-[var(--muted)]">
+        <p className="mt-3 text-[13px] text-trace">
           Rien de répétitif détecté pour l&apos;instant. Le cerveau repère les prompts lancés par la même personne, au même créneau, plusieurs jours de suite.
         </p>
       )}
@@ -60,39 +61,43 @@ export function AutomationsPanel({
         {visible.map((a) => {
           const z = zones.find((x) => x.id === a.zone)
           return (
-            <article key={a.id} className="rounded-2xl border border-[rgba(52,211,153,0.3)] bg-[rgba(52,211,153,0.06)] p-4">
+            <article key={a.id} className="inset p-4">
               <div className="flex items-start justify-between gap-3">
-                <h3 className="text-[14px] font-semibold leading-snug">{a.title}</h3>
-                <span className="mono shrink-0 rounded-lg bg-emerald-400/15 px-2 py-1 text-xs font-semibold text-emerald-300">
-                  −{a.minutes_saved_per_week} min/sem.
-                </span>
+                <h3 className="text-[14px] font-medium leading-snug">{a.title}</h3>
+                <span className="shrink-0 text-[12px] tabular-nums text-trace">{a.minutes_saved_per_week} min par semaine</span>
               </div>
-              <p className="mt-2 text-[13px] leading-relaxed text-[var(--muted)]">{a.description}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+              <p className="mt-2 text-[13px] leading-relaxed text-trace">{a.description}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[12px]">
                 {a.user_id && names[a.user_id] && <span className="chip">{names[a.user_id]}</span>}
                 {z && (
-                  <span className="chip" style={{ color: z.color, borderColor: `${z.color}55` }}>
-                    {z.name}
+                  <span className="chip">
+                    <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
                   </span>
                 )}
-                {a.schedule && <span className="chip">⏰ {a.schedule}</span>}
+                {a.schedule && (
+                  <span className="chip">
+                    <ClockIcon size={12} /> {a.schedule}
+                  </span>
+                )}
                 <span className="chip">{a.source === "screenpipe" ? "détecté par Screenpipe" : `${a.evidence.days} jours d'historique`}</span>
                 {a.evidence.times && a.evidence.times.length > 0 && (
-                  <span className="chip mono !whitespace-normal" title="Heure de la première exécution de chaque journée">
-                    {a.evidence.times.slice(-6).join(" · ")}
+                  <span className="chip tabular-nums" title="Heure de la première exécution de chaque journée">
+                    {a.evidence.times.slice(-6).join(", ")}
                   </span>
                 )}
               </div>
               {isAdmin && (
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex items-center gap-2">
                   {a.status === "accepted" ? (
-                    <span className="text-xs font-medium text-emerald-300">✓ Automatisation validée</span>
+                    <span className="inline-flex items-center gap-1.5 text-[12px] font-medium">
+                      <CheckIcon size={14} /> Automatisation validée
+                    </span>
                   ) : (
                     <>
-                      <button className="btn btn-primary !py-1 !text-xs" disabled={busy === a.id} onClick={() => setStatus(a.id, "accepted")}>
+                      <button type="button" className="btn btn-primary btn-sm" disabled={busy === a.id} onClick={() => setStatus(a.id, "accepted")}>
                         Mettre en place
                       </button>
-                      <button className="btn !py-1 !text-xs" disabled={busy === a.id} onClick={() => setStatus(a.id, "dismissed")}>
+                      <button type="button" className="btn btn-sm" disabled={busy === a.id} onClick={() => setStatus(a.id, "dismissed")}>
                         Ignorer
                       </button>
                     </>

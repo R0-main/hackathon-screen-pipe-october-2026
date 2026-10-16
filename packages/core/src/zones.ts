@@ -7,7 +7,7 @@ export const DEFAULT_ZONES: Zone[] = [
     id: "dev",
     name: "Dev",
     description: "Code, architecture, infra, déploiements, bugs.",
-    color: "#22d3ee",
+    color: "#2a78d6",
     keywords: [
       "code", "bug", "deploy", "deploiement", "api", "repo", "git", "github", "gitlab", "pull", "merge", "test", "tests", "build",
       "backend", "frontend", "base", "donnees", "database", "sql", "postgres", "supabase", "migration", "serveur", "server",
@@ -21,7 +21,7 @@ export const DEFAULT_ZONES: Zone[] = [
     id: "produit",
     name: "Produit",
     description: "Roadmap, specs, design, retours utilisateurs.",
-    color: "#a78bfa",
+    color: "#eb6834",
     keywords: [
       "produit", "product", "roadmap", "feature", "fonctionnalite", "spec", "specs", "user", "utilisateur", "utilisateurs",
       "ux", "ui", "design", "maquette", "figma", "persona", "feedback", "retour", "retours", "onboarding", "parcours",
@@ -33,7 +33,7 @@ export const DEFAULT_ZONES: Zone[] = [
     id: "sales",
     name: "Sales",
     description: "Prospects, clients, pipeline, devis, partenariats.",
-    color: "#f472b6",
+    color: "#1baf7a",
     keywords: [
       "client", "clients", "prospect", "prospects", "prospection", "devis", "crm", "hubspot", "pipeline", "deal", "deals",
       "vente", "ventes", "sales", "rdv", "demo", "proposition", "commerciale", "pricing", "prix", "tarif", "tarifs", "contrat",
@@ -45,7 +45,7 @@ export const DEFAULT_ZONES: Zone[] = [
     id: "compta",
     name: "Compta",
     description: "Facturation, trésorerie, clôtures, TVA, paie.",
-    color: "#facc15",
+    color: "#eda100",
     keywords: [
       "compta", "comptabilite", "comptable", "facture", "factures", "facturation", "tva", "cloture", "bilan", "tresorerie",
       "banque", "bancaire", "releve", "releves", "rapprochement", "qonto", "pennylane", "urssaf", "paie", "salaire", "salaires",
@@ -57,7 +57,7 @@ export const DEFAULT_ZONES: Zone[] = [
     id: "support",
     name: "Support",
     description: "Tickets, incidents clients, FAQ, procédures de support.",
-    color: "#34d399",
+    color: "#e87ba4",
     keywords: [
       "support", "ticket", "tickets", "incident", "incidents", "faq", "zendesk", "intercom", "sav", "reclamation", "plainte",
       "remboursement", "panne", "bloque", "aide", "question", "escalade", "sla", "hotline",
@@ -68,7 +68,7 @@ export const DEFAULT_ZONES: Zone[] = [
     id: "direction",
     name: "Direction",
     description: "Stratégie, objectifs, levée de fonds, recrutement, organisation.",
-    color: "#fb923c",
+    color: "#008300",
     keywords: [
       "strategie", "objectif", "objectifs", "okr", "okrs", "levee", "fonds", "investisseur", "investisseurs", "board", "bp",
       "recrutement", "recruter", "embauche", "rh", "organisation", "vision", "kpi", "kpis", "trimestre", "q1", "q2", "q3", "q4",
@@ -78,7 +78,8 @@ export const DEFAULT_ZONES: Zone[] = [
   },
 ]
 
-const ZONE_COLORS = ["#22d3ee", "#a78bfa", "#f472b6", "#facc15", "#34d399", "#fb923c", "#60a5fa", "#f87171", "#c084fc", "#2dd4bf"]
+// Palette catégorielle à ordre fixe, validée (daltonisme, contraste) sur fond clair. Même liste que ZONE_PALETTE côté web.
+const ZONE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948", "#0e9aa7", "#9c4dcc"]
 
 export function zoneColor(index: number): string {
   return ZONE_COLORS[index % ZONE_COLORS.length]
