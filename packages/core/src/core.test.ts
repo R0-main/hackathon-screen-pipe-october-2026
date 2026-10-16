@@ -75,7 +75,7 @@ test("distillation heuristique : décision, tâche, procédure", () => {
   const conv: Conversation = {
     id: "s1", tool: "claude-code", app: "Terminal", cwd: "/home/hugo/fournil", started_at: "2026-10-16T08:00:00Z", ended_at: "2026-10-16T08:30:00Z",
     messages: [
-      { role: "user", text: "Comment on gère les abonnements annuels avec Stripe ?" },
+      { role: "user", text: "Comment on gère les abonnements annuels avec Stripe ? Et on garde combien de temps les anciens prix ?" },
       {
         role: "assistant",
         text: "On part sur Stripe Billing pour gérer la proration.\nÉtapes :\n1. Créer les prix annuels\n2. Migrer les clients\n3. Activer le portail client\nTODO: prévenir la compta du changement",
@@ -85,6 +85,7 @@ test("distillation heuristique : décision, tâche, procédure", () => {
   const items = distillHeuristic(conv, DEFAULT_ZONES)
   const kinds = items.map((i) => i.kind)
   assert.ok(kinds.includes("decision"), JSON.stringify(items, null, 1))
+  assert.ok(items.filter((i) => i.kind === "decision").every((i) => !i.title.includes("?")), "une question n'est pas une décision")
   assert.ok(kinds.includes("task"))
   assert.ok(kinds.includes("procedure"))
   assert.ok(items.every((i) => i.entities.some((e) => e.name === "Stripe")))

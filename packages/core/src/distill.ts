@@ -90,10 +90,10 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
   const answerGist = sentences(lastAnswer).slice(0, 3).join(" ")
   if (answerGist) push("fact", ask, `Demande : ${truncate(userMsgs[0].text.trim(), 300)}\n\nCe qui en est ressorti : ${answerGist}`, 0.45)
 
-  // 2. Décisions explicites.
+  // 2. Décisions explicites (une question n'est pas une décision : « on garde combien de temps ? »).
   for (const m of conv.messages) {
     for (const s of sentences(m.text)) {
-      if (DECISION_RE.test(s)) push("decision", firstSentence(s, 140), s, 0.6)
+      if (!s.trimEnd().endsWith("?") && DECISION_RE.test(s)) push("decision", firstSentence(s, 140), s, 0.6)
     }
   }
 
