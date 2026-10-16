@@ -82,11 +82,8 @@ export function detectAutomations(
     const zoneCounts = new Map<string, number>()
     for (const e of list) for (const z of e.zones) zoneCounts.set(z, (zoneCounts.get(z) ?? 0) + 1)
     const zone = [...zoneCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
-    const weekdays = new Set(days.map((d) => d.weekday))
-    const weekly = weekdays.size === 1 && days.length >= 3
-    const runsPerWeek = weekly ? 1 : Math.min(5, Math.round((days.length / Math.max(1, spanDays(days.map((d) => d.e.at)))) * 7) || 5)
     const at = hhmm(med - 5)
-    const schedule = weekly ? `Chaque ${WEEKDAYS_FR[days[0].weekday]} à ${at}` : `Du lundi au vendredi à ${at}`
+    const plan = planSchedule(days, at)
 
     out.push({
       key: `heuristic:${key}`,
@@ -94,12 +91,12 @@ export function detectAutomations(
       zone,
       title: `Automatiser « ${truncate(sample, 70)} »`,
       description:
-        `${person} lance ce prompt ${weekly ? `chaque ${WEEKDAYS_FR[days[0].weekday]}` : "presque chaque jour"} vers ${hhmm(med)} ` +
-        `(${list.length} fois sur ${days.length} jours). Proposition : l'exécuter automatiquement ${schedule.toLowerCase()} ` +
+        `${person} lance ce prompt ${plan.rhythm} vers ${hhmm(med)} ` +
+        `(${list.length} fois sur ${days.length} jours). Proposition : l'exécuter automatiquement ${plan.schedule.toLowerCase()} ` +
         `et lui livrer le résultat à son arrivée, pour libérer son début de journée.`,
-      schedule,
+      schedule: plan.schedule,
       evidence: { occurrences: list.length, days: days.length, sample: truncate(sample, 200), times: days.map((d) => hhmm(d.minutes)) },
-      minutes_saved_per_week: runsPerWeek * minutesPerRun,
+      minutes_saved_per_week: plan.runsPerWeek * minutesPerRun,
       source: "heuristic",
     })
   }
@@ -107,6 +104,42 @@ export function detectAutomations(
 }
 
 const WEEKDAYS_FR = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
+
+function joinFr(xs: string[]): string {
+  return xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} et ${xs[xs.length - 1]}`
+}
+
+/**
+ * Rythme et créneau proposés, tirés du nombre réel d'exécutions par semaine : on ne propose « du lundi au vendredi »
+ * qu'à partir de 4 jours par semaine environ ; en dessous, les jours de la semaine les plus fréquents.
+ */
+export function planSchedule(
+  days: { weekday: number; e: { at: string } }[],
+  at: string,
+): { schedule: string; rhythm: string; runsPerWeek: number } {
+  const perWeek = (days.length / spanDays(days.map((d) => d.e.at))) * 7
+  const counts = new Map<number, number>()
+  for (const d of days) counts.set(d.weekday, (counts.get(d.weekday) ?? 0) + 1)
+  if (counts.size === 1) {
+    const day = WEEKDAYS_FR[days[0].weekday]
+    return { schedule: `Chaque ${day} à ${at}`, rhythm: `chaque ${day}`, runsPerWeek: 1 }
+  }
+  if (perWeek >= 3.5) return { schedule: `Du lundi au vendredi à ${at}`, rhythm: "presque chaque jour", runsPerWeek: Math.min(5, Math.round(perWeek)) }
+  // Les semaines entamées gonflent l'estimation : jamais plus de créneaux que de jours de la semaine réellement utilisés.
+  const runsPerWeek = Math.max(1, Math.min(counts.size, Math.round(perWeek)))
+  // Jours les plus fréquents (à égalité, dans l'ordre de la semaine, lundi d'abord), puis remis dans l'ordre de la semaine.
+  const order = (wd: number) => (wd + 6) % 7
+  const chosen = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || order(a[0]) - order(b[0]))
+    .slice(0, runsPerWeek)
+    .map(([wd]) => wd)
+    .sort((a, b) => order(a) - order(b))
+  return {
+    schedule: `Chaque ${joinFr(chosen.map((wd) => WEEKDAYS_FR[wd]))} à ${at}`,
+    rhythm: runsPerWeek === 1 ? "environ une fois par semaine" : `environ ${runsPerWeek} fois par semaine`,
+    runsPerWeek,
+  }
+}
 
 function spanDays(isos: string[]): number {
   const ts = isos.map((s) => new Date(s).getTime())

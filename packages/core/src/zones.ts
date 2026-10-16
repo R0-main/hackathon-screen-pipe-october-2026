@@ -9,7 +9,7 @@ export const DEFAULT_ZONES: Zone[] = [
     description: "Code, architecture, infra, déploiements, bugs.",
     color: "#22d3ee",
     keywords: [
-      "code", "bug", "deploy", "deploiement", "api", "repo", "git", "pr", "pull", "merge", "test", "tests", "ci", "build",
+      "code", "bug", "deploy", "deploiement", "api", "repo", "git", "github", "gitlab", "pull", "merge", "test", "tests", "build",
       "backend", "frontend", "base", "donnees", "database", "sql", "postgres", "supabase", "migration", "serveur", "server",
       "deployer", "production", "docker", "typescript", "react", "next", "node", "python", "endpoint", "refacto", "refactor", "prod", "staging",
       "infra", "kubernetes", "aws", "vercel", "auth", "webhook", "stack", "lib", "librairie", "fonction", "function", "erreur",
@@ -85,18 +85,26 @@ export function zoneColor(index: number): string {
 }
 
 export function slugify(s: string): string {
-  return normalize(s)
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32) || "zone"
+  return (
+    normalize(s)
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32)
+      .replace(/-+$/, "") || "zone"
+  )
+}
+
+export type ClassifyOptions = {
+  /** Départage des égalités : ces zones d'abord, dans cet ordre (sinon l'ordre de la liste des zones). */
+  prefer?: (string | undefined)[]
 }
 
 /**
  * Classe un texte dans les zones par mots-clés (sans accents, préfixes tolérés).
  * Retourne les zones triées par score décroissant, au plus `max`.
  */
-export function classifyZones(text: string, zones: Pick<Zone, "id" | "name" | "keywords">[], max = 2): string[] {
-  const scored = scoreZones(text, zones)
+export function classifyZones(text: string, zones: Pick<Zone, "id" | "name" | "keywords">[], max = 2, opts: ClassifyOptions = {}): string[] {
+  const scored = scoreZones(text, zones, opts)
   if (scored.length === 0) return []
   const best = scored[0].score
   return scored
@@ -105,7 +113,7 @@ export function classifyZones(text: string, zones: Pick<Zone, "id" | "name" | "k
     .map((s) => s.zone)
 }
 
-export function scoreZones(text: string, zones: Pick<Zone, "id" | "name" | "keywords">[]): { zone: string; score: number }[] {
+export function scoreZones(text: string, zones: Pick<Zone, "id" | "name" | "keywords">[], opts: ClassifyOptions = {}): { zone: string; score: number }[] {
   const tokens = tokenize(text)
   if (tokens.length === 0) return []
   const out: { zone: string; score: number }[] = []
@@ -125,5 +133,7 @@ export function scoreZones(text: string, zones: Pick<Zone, "id" | "name" | "keyw
     }
     if (score > 0) out.push({ zone: z.id, score })
   }
-  return out.sort((a, b) => b.score - a.score)
+  const prefer = (opts.prefer ?? []).filter((z): z is string => Boolean(z))
+  const rank = (id: string) => (prefer.includes(id) ? prefer.indexOf(id) : prefer.length)
+  return out.sort((a, b) => b.score - a.score || rank(a.zone) - rank(b.zone))
 }

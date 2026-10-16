@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   const profile = await getStore().getProfile(body.data.userId)
   if (!profile) return error(404, "Membre introuvable.")
   const jar = await cookies()
-  jar.set(SESSION_COOKIE, createSessionValue(profile.id), sessionCookieOptions)
+  jar.set(SESSION_COOKIE, await createSessionValue(profile.id), sessionCookieOptions)
   jar.delete(VIEW_AS_COOKIE)
   return json({ ok: true, profile })
 }

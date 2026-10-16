@@ -22,6 +22,9 @@ export function normalize(s: string): string {
 /** Tokens significatifs (sans accents, sans mots vides), pour la recherche et la classification. */
 export function tokenize(s: string): string[] {
   return normalize(s)
+    // particules « ce mois-ci », « ci-joint », « ci-dessous » : pas le sigle CI
+    .replace(/([a-z0-9])-ci\b/g, "$1 ")
+    .replace(/\bci-(?=[a-z])/g, " ")
     .split(/[^a-z0-9]+/)
     .filter((t) => t.length > 1 && !STOPWORDS.has(t))
 }

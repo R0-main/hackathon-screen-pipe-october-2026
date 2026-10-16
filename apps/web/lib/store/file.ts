@@ -2,7 +2,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { randomUUID } from "node:crypto"
+import { randomBytes, randomUUID } from "node:crypto"
 import {
   DEFAULT_ZONES,
   normalize,
@@ -37,6 +37,18 @@ type Data = {
 }
 
 const MAX_EVENTS = 20000
+const LOCK_STALE_MS = 15_000
+const LOCK_WAIT_MS = 10_000
+
+/** Pause synchrone : le verrou entoure du code synchrone (lecture, modification, écriture). */
+function sleepSync(ms: number) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Identité d'une version du fichier : chaque écriture fait un rename, donc un nouvel inode. */
+function versionKey(st: fs.Stats): string {
+  return `${st.ino}:${st.size}:${st.mtimeMs}`
+}
 
 function emptyData(org?: { name: string; description: string }): Data {
   return {
@@ -60,35 +72,93 @@ function strip({ token_hash: _t, ...p }: StoredProfile): Profile {
 
 export class FileStore implements BrainStore {
   readonly kind = "file" as const
+  private dir: string
   private file: string
+  private lockFile: string
   private data: Data | null = null
-  private mtime = 0
+  private version = ""
+  private locked = false
+  private secret: string | null = null
 
   constructor(dir: string) {
     fs.mkdirSync(dir, { recursive: true })
+    this.dir = dir
     this.file = path.join(dir, "brain.json")
+    this.lockFile = `${this.file}.lock`
   }
 
-  /** Relit le fichier s'il a été modifié par un autre processus (seed, simulateur). */
-  private load(): Data {
-    let stat: fs.Stats | null = null
+  private stat(): fs.Stats | null {
     try {
-      stat = fs.statSync(this.file)
+      return fs.statSync(this.file)
     } catch {
-      stat = null
+      return null
     }
-    if (!stat) {
-      if (!this.data) {
-        this.data = emptyData()
-        this.save()
+  }
+
+  private readFile() {
+    const fd = fs.openSync(this.file, "r")
+    try {
+      const st = fs.fstatSync(fd)
+      this.data = JSON.parse(fs.readFileSync(fd, "utf8")) as Data
+      this.version = versionKey(st)
+    } finally {
+      fs.closeSync(fd)
+    }
+  }
+
+  /** Dernière version du fichier (relu s'il a été remplacé par un autre processus : seed, simulateur, smoke). */
+  private load(): Data {
+    const st = this.stat()
+    if (st) {
+      if (!this.data || versionKey(st) !== this.version) this.readFile()
+    } else if (!this.data) {
+      this.withLock(() => {
+        if (this.stat()) this.readFile()
+        else {
+          this.data = emptyData()
+          this.save()
+        }
+      })
+    }
+    return this.data!
+  }
+
+  /**
+   * Verrou inter-processus (fichier créé en O_EXCL) : le serveur, le simulateur et les scripts écrivent le même JSON
+   * sans perdre les écritures des autres ni réutiliser des identifiants d'événements.
+   */
+  private withLock<T>(fn: () => T): T {
+    if (this.locked) return fn()
+    const started = Date.now()
+    let fd: number | undefined
+    while (fd === undefined) {
+      try {
+        fd = fs.openSync(this.lockFile, "wx")
+        break
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
       }
-      return this.data
+      try {
+        // Verrou abandonné (processus tué en pleine écriture) : on le retire.
+        if (Date.now() - fs.statSync(this.lockFile).mtimeMs > LOCK_STALE_MS) {
+          fs.rmSync(this.lockFile, { force: true })
+          continue
+        }
+      } catch {
+        continue
+      }
+      if (Date.now() - started > LOCK_WAIT_MS) throw new Error(`Cerveau verrouillé par un autre processus (${this.lockFile}).`)
+      sleepSync(4 + Math.random() * 12)
     }
-    if (!this.data || stat.mtimeMs !== this.mtime) {
-      this.data = JSON.parse(fs.readFileSync(this.file, "utf8")) as Data
-      this.mtime = stat.mtimeMs
+    this.locked = true
+    try {
+      fs.writeSync(fd, String(process.pid))
+      return fn()
+    } finally {
+      this.locked = false
+      fs.closeSync(fd)
+      fs.rmSync(this.lockFile, { force: true })
     }
-    return this.data
   }
 
   private save() {
@@ -97,14 +167,24 @@ export class FileStore implements BrainStore {
     const tmp = `${this.file}.${process.pid}.tmp`
     fs.writeFileSync(tmp, JSON.stringify(this.data))
     fs.renameSync(tmp, this.file)
-    this.mtime = fs.statSync(this.file).mtimeMs
+    // Sous verrou : le fichier est forcément celui qu'on vient d'écrire.
+    this.version = versionKey(fs.statSync(this.file))
   }
 
+  /** Lecture de la dernière version, modification et écriture, le tout sous verrou. */
   private mutate<T>(fn: (d: Data) => T): T {
-    const d = this.load()
-    const out = fn(d)
-    this.save()
-    return out
+    return this.withLock(() => {
+      try {
+        const out = fn(this.load())
+        this.save()
+        return out
+      } catch (err) {
+        // Mémoire possiblement modifiée à moitié : on relira le fichier.
+        this.data = null
+        this.version = ""
+        throw err
+      }
+    })
   }
 
   async getOrg() {
@@ -121,6 +201,9 @@ export class FileStore implements BrainStore {
   async getProfile(id: string) {
     const p = this.load().profiles.find((x) => x.id === id)
     return p ? strip(p) : null
+  }
+  async getTokenHash(userId: string) {
+    return this.load().profiles.find((x) => x.id === userId)?.token_hash ?? null
   }
   async listProfiles() {
     return this.load().profiles.map(strip)
@@ -172,7 +255,7 @@ export class FileStore implements BrainStore {
     )
   }
 
-  async searchItems(query: string, zones: string[], limit: number): Promise<ScoredItem[]> {
+  async searchItems(query: string, zones: string[], limit: number, opts: { authorId?: string } = {}): Promise<ScoredItem[]> {
     const q = [...new Set(tokenize(query))]
     if (q.length === 0) return []
     const allowed = new Set(zones)
@@ -180,7 +263,7 @@ export class FileStore implements BrainStore {
     const matches = (tokens: string[], t: string) => tokens.some((x) => x === t || (t.length >= 4 && x.startsWith(t)))
     const scored: ScoredItem[] = []
     for (const item of this.load().items) {
-      if (!allowed.has(item.zone)) continue
+      if (!allowed.has(item.zone) && !(opts.authorId && item.author_id === opts.authorId)) continue
       const title = tokenize(item.title)
       const body = tokenize(item.body)
       const ents = item.entities.flatMap((e) => tokenize(e.name))
@@ -330,8 +413,50 @@ export class FileStore implements BrainStore {
     })
   }
 
+  async getSessionSecret() {
+    if (this.secret) return this.secret
+    const file = path.join(this.dir, "session-secret")
+    const read = () => {
+      try {
+        const v = fs.readFileSync(file, "utf8").trim()
+        return v.length >= 32 ? v : null
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return null
+        throw err
+      }
+    }
+    let secret = read()
+    if (!secret) {
+      // Créé une seule fois, atomiquement (lien dur : jamais de fichier à moitié écrit), lisible du seul propriétaire.
+      const candidate = randomBytes(32).toString("hex")
+      const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`
+      fs.writeFileSync(tmp, candidate, { mode: 0o600 })
+      try {
+        fs.linkSync(tmp, file)
+        secret = candidate
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (code === "EEXIST") secret = read()
+        if (!secret) {
+          // Fichier invalide (vide, tronqué) ou liens durs non pris en charge : on le remplace.
+          fs.renameSync(tmp, file)
+          secret = candidate
+        }
+      } finally {
+        fs.rmSync(tmp, { force: true })
+      }
+    }
+    try {
+      if ((fs.statSync(file).mode & 0o077) !== 0) fs.chmodSync(file, 0o600)
+    } catch {}
+    this.secret = secret
+    return secret
+  }
+
   async reset(org: { name: string; description: string }) {
-    this.data = emptyData(org)
-    this.save()
+    this.withLock(() => {
+      this.data = emptyData(org)
+      this.save()
+    })
   }
 }

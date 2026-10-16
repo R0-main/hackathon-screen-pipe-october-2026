@@ -12,7 +12,7 @@ const root = path.resolve(here, "../../../supabase")
 async function main() {
   const url = process.env.DATABASE_URL
   if (!url) throw new Error("DATABASE_URL manquant.")
-  const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url)
+  const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url) || url.includes("host=/")
   const sql = postgres(url, { prepare: false, max: 1, ssl: local || process.env.DATABASE_SSL === "disable" ? false : "require", onnotice: () => {} })
   try {
     await sql`create table if not exists brain_migrations (name text primary key, applied_at timestamptz not null default now())`

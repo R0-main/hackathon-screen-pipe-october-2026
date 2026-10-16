@@ -1,24 +1,30 @@
-import { getStore } from "@/lib/store"
-import { viewerFromRequest } from "@/lib/auth"
-import { visibleEvent } from "@/lib/brain"
+import { viewerFromRequest, type Viewer } from "@/lib/auth"
+import { createEventPoller, streamStartId, visibleEvent } from "@/lib/brain"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const POLL_MS = 800
 const MAX_MS = 290_000 // l'EventSource du navigateur se reconnecte tout seul (Last-Event-ID)
+const ACCESS_REFRESH_MS = 5_000 // droits relus régulièrement : une zone retirée cesse d'être visible sans attendre la reconnexion
+
+/** Identifiant d'événement fourni par le client (Last-Event-ID à la reconnexion, sinon ?after=). */
+function parseId(raw: string | null): number | null {
+  return raw !== null && /^\d{1,15}$/.test(raw.trim()) ? Number(raw.trim()) : null
+}
 
 /**
  * Flux temps réel des événements d'agents (Server-Sent Events).
  * Lecture périodique de agent_events : fonctionne aussi bien en fichier qu'en Postgres, sur une ou plusieurs instances.
+ * `?after=<id>` : le dashboard passe le plus grand identifiant de son état initial, pour ne rien manquer entre le rendu
+ * serveur et la connexion.
  */
 export async function GET(req: Request) {
-  const viewer = await viewerFromRequest(req)
-  if (!viewer) return new Response("Non authentifié", { status: 401 })
-  const store = getStore()
+  const initial = await viewerFromRequest(req)
+  if (!initial) return new Response("Non authentifié", { status: 401 })
+  let viewer: Viewer = initial
   const url = new URL(req.url)
-  let lastId = Number(req.headers.get("last-event-id") ?? url.searchParams.get("after") ?? NaN)
-  if (!Number.isFinite(lastId)) lastId = (await store.listEvents({ limit: 1 }))[0]?.id ?? 0
+  const poller = createEventPoller(await streamStartId(parseId(req.headers.get("last-event-id")) ?? parseId(url.searchParams.get("after"))))
 
   const encoder = new TextEncoder()
   let timer: ReturnType<typeof setInterval> | undefined
@@ -27,6 +33,7 @@ export async function GET(req: Request) {
     start(controller) {
       const started = Date.now()
       let lastPing = Date.now()
+      let lastAccess = Date.now()
       let busy = false
       const send = (chunk: string) => {
         if (!closed) controller.enqueue(encoder.encode(chunk))
@@ -39,21 +46,28 @@ export async function GET(req: Request) {
           controller.close()
         } catch {}
       }
-      send("retry: 1500\n\n")
+      // Un « id: » seul fixe le Last-Event-ID du navigateur : une reconnexion reprend ici, même sans événement reçu.
+      send(`retry: 1500\nid: ${poller.cursor}\n\n`)
       timer = setInterval(async () => {
         if (busy || closed) return
         busy = true
         try {
-          const events = await store.listEvents({ afterId: lastId, limit: 200 })
-          for (const e of events) {
-            lastId = e.id
-            send(`id: ${e.id}\nevent: agent\ndata: ${JSON.stringify(visibleEvent(viewer, e))}\n\n`)
+          const now = Date.now()
+          if (now - lastAccess > ACCESS_REFRESH_MS) {
+            lastAccess = now
+            const fresh = await viewerFromRequest(req)
+            if (!fresh) return close()
+            viewer = fresh
           }
-          if (Date.now() - lastPing > 15_000) {
-            lastPing = Date.now()
+          for (const e of await poller.poll()) send(`id: ${e.id}\nevent: agent\ndata: ${JSON.stringify(visibleEvent(viewer, e))}\n\n`)
+          if (now - lastPing > 15_000) {
+            lastPing = now
             send(": ping\n\n")
           }
-          if (Date.now() - started > MAX_MS) close()
+          if (now - started > MAX_MS) {
+            send(`id: ${poller.cursor}\n\n`)
+            close()
+          }
         } catch (err) {
           console.error("[stream]", err)
         } finally {

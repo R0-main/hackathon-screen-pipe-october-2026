@@ -1,6 +1,7 @@
 // Stockage Postgres (Supabase ou autre). Schéma : supabase/migrations/.
 // Une instance = une organisation (la première de la table `orgs`).
 
+import { randomBytes } from "node:crypto"
 import postgres from "postgres"
 import {
   DEFAULT_ZONES,
@@ -100,15 +101,22 @@ function toAutomation(r: Row): AutomationSuggestion {
   }
 }
 
-function tsQuery(query: string): string | null {
+const UUID_RE = /^[0-9a-f-]{36}$/i
+/** L'organisation est relue régulièrement : un reseed (ou un onboarding servi par une autre instance) est vu sans redémarrage. */
+const ORG_TTL_MS = 5_000
+
+/** Termes de recherche : préfixe seulement à partir de 4 caractères (comme le stockage fichier : « pr » ne doit pas trouver « produit »). */
+function tsTerms(query: string): string[] {
   const tokens = [...new Set(tokenize(query))].filter((t) => /^[a-z0-9]+$/.test(t)).slice(0, 12)
-  return tokens.length ? tokens.map((t) => `${t}:*`).join(" | ") : null
+  return tokens.map((t) => (t.length >= 4 ? `${t}:*` : t))
 }
 
 export class PostgresStore implements BrainStore {
   readonly kind = "postgres" as const
   private sql: Sql
-  private orgPromise: Promise<Org> | null = null
+  private orgCache: { org: Org; at: number } | null = null
+  private orgPending: Promise<Org> | null = null
+  private secret: string | null = null
 
   constructor(url: string) {
     const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url) || url.includes("host=/")
@@ -118,17 +126,18 @@ export class PostgresStore implements BrainStore {
   }
 
   private async org(): Promise<Org> {
-    if (!this.orgPromise) {
-      this.orgPromise = (async () => {
+    if (this.orgCache && Date.now() - this.orgCache.at < ORG_TTL_MS) return this.orgCache.org
+    if (!this.orgPending) {
+      this.orgPending = (async () => {
         const rows = await this.sql`select * from orgs order by created_at limit 1`
-        if (rows[0]) return toOrg(rows[0])
-        return this.createOrg({ name: "Mon entreprise", description: "" })
-      })().catch((e) => {
-        this.orgPromise = null
-        throw e
+        const org = rows[0] ? toOrg(rows[0]) : await this.createOrg({ name: "Mon entreprise", description: "" })
+        this.orgCache = { org, at: Date.now() }
+        return org
+      })().finally(() => {
+        this.orgPending = null
       })
     }
-    return this.orgPromise
+    return this.orgPending
   }
 
   private async createOrg(o: { name: string; description: string }): Promise<Org> {
@@ -153,7 +162,7 @@ export class PostgresStore implements BrainStore {
     const org = await this.org()
     const next = { ...org, ...patch }
     const [r] = await this.sql`update orgs set name = ${next.name}, description = ${next.description} where id = ${org.id} returning *`
-    this.orgPromise = Promise.resolve(toOrg(r))
+    this.orgCache = { org: toOrg(r), at: Date.now() }
     return toOrg(r)
   }
 
@@ -162,9 +171,14 @@ export class PostgresStore implements BrainStore {
     return r ? toProfile(r) : null
   }
   async getProfile(id: string) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) return null
+    if (!UUID_RE.test(id)) return null
     const [r] = await this.sql`select * from profiles where id = ${id} and org_id = ${await this.orgId()}`
     return r ? toProfile(r) : null
+  }
+  async getTokenHash(userId: string) {
+    if (!UUID_RE.test(userId)) return null
+    const [r] = await this.sql`select token_hash from profiles where id = ${userId} and org_id = ${await this.orgId()}`
+    return r ? (r.token_hash as string) : null
   }
   async listProfiles() {
     const rows = await this.sql`select * from profiles where org_id = ${await this.orgId()} order by created_at`
@@ -237,13 +251,25 @@ export class PostgresStore implements BrainStore {
     }) as Promise<KnowledgeItem[]>
   }
 
-  async searchItems(query: string, zones: string[], limit: number): Promise<ScoredItem[]> {
-    const q = tsQuery(query)
-    if (!q || zones.length === 0) return []
-    const rows = await this.sql`
-      select k.*, ts_rank_cd(k.search, q) as score
-      from knowledge_items k, to_tsquery('simple', ${q}) q
-      where k.org_id = ${await this.orgId()} and k.zone in ${this.sql(zones)} and k.search @@ q
+  async searchItems(query: string, zones: string[], limit: number, opts: { authorId?: string } = {}): Promise<ScoredItem[]> {
+    const terms = tsTerms(query)
+    const sql = this.sql
+    const author = opts.authorId && UUID_RE.test(opts.authorId) ? opts.authorId : null
+    if (terms.length === 0 || (zones.length === 0 && !author)) return []
+    // Zones lisibles, plus les items de l'auteur lui-même (droit de regard), quelle que soit leur zone.
+    const scope =
+      zones.length && author
+        ? sql`(k.zone in ${sql(zones)} or k.author_id = ${author})`
+        : zones.length
+          ? sql`k.zone in ${sql(zones)}`
+          : sql`k.author_id = ${author}`
+    // Score pondéré par la part des termes trouvés, comme le stockage fichier.
+    const rows = await sql`
+      select k.*, ts_rank_cd(k.search, q) * (
+          (select count(*) from unnest(${sql.array(terms)}::text[]) t where k.search @@ to_tsquery('simple', t))::float / ${terms.length}
+        ) as score
+      from knowledge_items k, to_tsquery('simple', ${terms.join(" | ")}) q
+      where k.org_id = ${await this.orgId()} and ${scope} and k.search @@ q
       order by score desc, k.created_at desc
       limit ${limit}`
     return rows.map((r) => ({ ...toItem(r), score: Math.round(Number(r.score) * 1000) / 100 }))
@@ -263,12 +289,12 @@ export class PostgresStore implements BrainStore {
     return rows.map(toItem)
   }
   async getItem(id: string) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) return null
+    if (!UUID_RE.test(id)) return null
     const [r] = await this.sql`select * from knowledge_items where id = ${id} and org_id = ${await this.orgId()}`
     return r ? toItem(r) : null
   }
   async deleteItem(id: string) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) return false
+    if (!UUID_RE.test(id)) return false
     const rows = await this.sql`delete from knowledge_items where id = ${id} and org_id = ${await this.orgId()} returning id`
     return rows.length > 0
   }
@@ -394,10 +420,26 @@ export class PostgresStore implements BrainStore {
       on conflict (org_id) do update set content = excluded.content, generated_at = now()`
   }
 
+  async getSessionSecret() {
+    if (this.secret) return this.secret
+    try {
+      // Plusieurs instances peuvent démarrer en même temps : la première insertion gagne, toutes relisent la même valeur.
+      await this.sql`insert into brain_settings (key, value) values ('session_secret', ${randomBytes(32).toString("hex")})
+        on conflict (key) do nothing`
+      const [r] = await this.sql`select value from brain_settings where key = 'session_secret'`
+      this.secret = r.value as string
+      return this.secret
+    } catch (err) {
+      if ((err as { code?: string }).code === "42P01")
+        throw new Error("Table brain_settings absente : appliquez les migrations (npm run db:migrate) ou définissez BRAIN_SESSION_SECRET.")
+      throw err
+    }
+  }
+
   async reset(org: { name: string; description: string }) {
     await this.sql`truncate orgs cascade`
-    this.orgPromise = this.createOrg(org)
-    await this.orgPromise
+    const created = await this.createOrg(org)
+    this.orgCache = { org: created, at: Date.now() }
   }
 
   async end() {

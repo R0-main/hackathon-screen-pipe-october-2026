@@ -36,17 +36,21 @@ export interface BrainStore {
 
   getProfileByTokenHash(hash: string): Promise<Profile | null>
   getProfile(id: string): Promise<Profile | null>
+  /** Empreinte du jeton courant d'un membre : les sessions du dashboard y sont liées (régénérer le jeton les invalide). */
+  getTokenHash(userId: string): Promise<string | null>
   listProfiles(): Promise<Profile[]>
   createProfile(p: NewProfile): Promise<Profile>
   updateProfile(id: string, patch: ProfilePatch): Promise<Profile | null>
 
   listZones(): Promise<Zone[]>
   upsertZone(z: Zone): Promise<Zone>
+  /** `can_write` est conservé mais réservé : l'écriture n'est pas restreinte (tout le monde nourrit le cerveau). */
   listZoneAccess(userId?: string): Promise<ZoneAccess[]>
   setZoneAccess(userId: string, access: { zone_id: string; can_write: boolean }[]): Promise<void>
 
   insertItems(items: NewItem[]): Promise<KnowledgeItem[]>
-  searchItems(query: string, zones: string[], limit: number): Promise<ScoredItem[]>
+  /** `authorId` : inclut aussi les items de cet auteur, quelle que soit leur zone (droit de regard). */
+  searchItems(query: string, zones: string[], limit: number, opts?: { authorId?: string }): Promise<ScoredItem[]>
   listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
   deleteItem(id: string): Promise<boolean>
@@ -68,6 +72,9 @@ export interface BrainStore {
 
   getStatus(): Promise<CompanyStatus | null>
   setStatus(s: CompanyStatus): Promise<void>
+
+  /** Secret de signature des sessions, généré aléatoirement une seule fois puis conservé (fichier 600 ou table brain_settings). */
+  getSessionSecret(): Promise<string>
 
   /** Vide tout (utilisé par le seed). */
   reset(org: { name: string; description: string }): Promise<void>

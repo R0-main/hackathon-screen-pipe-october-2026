@@ -15,7 +15,7 @@ import {
   buildTriagePrompt,
   renderZones,
 } from "./prompts"
-import { classifyZones } from "./zones"
+import { classifyZones, slugify } from "./zones"
 import { truncate } from "./text"
 
 /** Haiku pour trier le volume, Sonnet pour extraire et résumer (cf. ARCHITECTURE.md). */
@@ -80,7 +80,8 @@ export function toKnowledgeInput(
   fallbackZone: string,
 ): KnowledgeItemInput {
   const zoneIds = new Set(zones.map((z) => z.id))
-  const zone = zoneIds.has(parsed.zone) ? parsed.zone : (classifyZones(`${parsed.title} ${parsed.body}`, zones, 1)[0] ?? fallbackZone)
+  // Zone inconnue : mots-clés, et à égalité la zone de repli (celle de la conversation) plutôt que la première de la liste.
+  const zone = zoneIds.has(parsed.zone) ? parsed.zone : (classifyZones(`${parsed.title} ${parsed.body}`, zones, 1, { prefer: [fallbackZone] })[0] ?? fallbackZone)
   return {
     zone,
     kind: parsed.kind,
@@ -210,6 +211,33 @@ export type OnboardingDraft = {
   items: KnowledgeItemInput[]
 }
 
+/**
+ * Identifiants de zone propres (slug sans accents, « service_client » → « service-client », sans doublon) et
+ * correspondance depuis ce que Claude a pu écrire dans les items (id d'origine, nom de zone, variantes de casse).
+ */
+export function normalizeOnboardingZones<Z extends { id: string; name: string }>(
+  raw: Z[],
+): { zones: (Z & { id: string })[]; zoneId: (ref: string) => string | undefined } {
+  const used = new Set<string>()
+  const map = new Map<string, string>()
+  const zones = raw.map((z) => {
+    const base = slugify(z.id || z.name)
+    let id = base
+    for (let n = 2; used.has(id); n++) id = `${base.slice(0, 29).replace(/-+$/, "")}-${n}`
+    used.add(id)
+    return { ...z, id }
+  })
+  // Les identifiants d'abord, les noms ensuite : un nom ne masque jamais l'identifiant d'une autre zone.
+  const keys = (z: Z) => [[z.id, z.id.trim().toLowerCase(), slugify(z.id || z.name)], [z.name.trim().toLowerCase(), slugify(z.name)]]
+  for (const pass of [0, 1]) {
+    raw.forEach((z, i) => {
+      for (const k of keys(z)[pass]) if (k && !map.has(k)) map.set(k, zones[i].id)
+    })
+  }
+  const zoneId = (ref: string) => map.get(ref) ?? map.get(ref.trim().toLowerCase()) ?? map.get(slugify(ref))
+  return { zones, zoneId }
+}
+
 export async function synthesizeOnboarding(
   client: Anthropic,
   input: { answers: { question: string; answer: string }[]; pages: { url: string; title: string; text: string }[]; existingZones: ZoneHint[] },
@@ -225,14 +253,15 @@ export async function synthesizeOnboarding(
       "high",
     )
     if (!parsed) return null
-    const zones = parsed.zones.map((z) => ({ ...z, id: z.id.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 32) || "zone" }))
+    const { zones, zoneId } = normalizeOnboardingZones(parsed.zones)
     const hints = zones.map((z) => ({ ...z }))
     const source = { app: "dashboard", tool: "onboarding" as const, at: new Date().toISOString() }
     return {
       company_name: parsed.company_name,
       description: parsed.description,
       zones,
-      items: parsed.items.map((i) => toKnowledgeInput(i, hints, source, zones[0]?.id ?? "direction")),
+      // Les items citent les identifiants d'origine (« service_client ») : on les fait suivre le renommage.
+      items: parsed.items.map((i) => toKnowledgeInput({ ...i, zone: zoneId(i.zone) ?? i.zone }, hints, source, zones[0]?.id ?? "direction")),
     }
   } catch (err) {
     logError("onboarding", err)

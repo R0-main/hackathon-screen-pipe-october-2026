@@ -20,23 +20,32 @@ export function newToken(): string {
   return `cb_${randomBytes(24).toString("base64url")}`
 }
 
-function sessionSecret(): string {
-  return (
-    process.env.BRAIN_SESSION_SECRET ||
-    createHash("sha256")
-      .update(`company-brain:${process.env.DATABASE_URL ?? ""}:${process.env.BRAIN_DATA_DIR ?? ".brain"}:${process.cwd()}`)
-      .digest("hex")
-  )
+// Secret HMAC des sessions : BRAIN_SESSION_SECRET s'il est défini, sinon un secret aléatoire de 32 octets généré
+// une seule fois et conservé par le stockage (<dataDir>/session-secret en mode 600, ou table brain_settings).
+// Jamais dérivé de valeurs devinables (URL de base, dossier, cwd…).
+let warnedShortSecret = false
+async function sessionSecret(): Promise<string> {
+  const env = process.env.BRAIN_SESSION_SECRET?.trim()
+  if (env) {
+    if (env.length < 32 && !warnedShortSecret) {
+      warnedShortSecret = true
+      console.warn("[auth] BRAIN_SESSION_SECRET est court (< 32 caractères) : utilisez une valeur aléatoire plus longue.")
+    }
+    return env
+  }
+  return getStore().getSessionSecret()
 }
 
-function sign(payload: string): string {
-  return createHmac("sha256", sessionSecret()).update(payload).digest("base64url")
+/** Charge signée : membre, expiration et début de l'empreinte de son jeton (régénérer le jeton invalide les sessions). */
+async function sign(userId: string, exp: string, tokenHash: string): Promise<string> {
+  return createHmac("sha256", await sessionSecret()).update(`v2.${userId}.${exp}.${tokenHash.slice(0, 16)}`).digest("base64url")
 }
 
-export function createSessionValue(userId: string): string {
-  const exp = Date.now() + SESSION_DAYS * 86400_000
-  const payload = `${userId}.${exp}`
-  return `${payload}.${sign(payload)}`
+export async function createSessionValue(userId: string): Promise<string> {
+  const tokenHash = await getStore().getTokenHash(userId)
+  if (!tokenHash) throw new Error("Membre introuvable.")
+  const exp = String(Date.now() + SESSION_DAYS * 86400_000)
+  return `${userId}.${exp}.${await sign(userId, exp, tokenHash)}`
 }
 
 export const sessionCookieOptions = {
@@ -47,16 +56,17 @@ export const sessionCookieOptions = {
   maxAge: SESSION_DAYS * 86400,
 }
 
-function verifySession(value: string | undefined): string | null {
+async function verifySession(value: string | undefined): Promise<string | null> {
   if (!value) return null
   const parts = value.split(".")
   if (parts.length !== 3) return null
   const [userId, exp, sig] = parts
-  const expected = sign(`${userId}.${exp}`)
+  if (!/^\d{10,16}$/.test(exp) || Number(exp) < Date.now()) return null
+  const tokenHash = await getStore().getTokenHash(userId)
+  if (!tokenHash) return null
   const a = Buffer.from(sig)
-  const b = Buffer.from(expected)
+  const b = Buffer.from(await sign(userId, exp, tokenHash))
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null
-  if (Number(exp) < Date.now()) return null
   return userId
 }
 
@@ -81,7 +91,7 @@ export async function profileFromToken(token: string): Promise<Profile | null> {
 
 /** Pour les pages (server components) : à partir des valeurs de cookies. */
 export async function viewerFromCookies(session: string | undefined, viewAs: string | undefined): Promise<Viewer | null> {
-  const userId = verifySession(session)
+  const userId = await verifySession(session)
   if (!userId) return null
   return buildViewer(await getStore().getProfile(userId), viewAs)
 }
