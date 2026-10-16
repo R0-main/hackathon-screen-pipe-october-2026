@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import { distillHeuristic } from "@brain/core"
 import type { State } from "../src/config"
-import { groupScreenpipeItems, mapWorkflows, mapWorkflowsDetailed, normalizeScreenpipeItem, readScreenpipe } from "../src/sources/screenpipe"
+import { enrichWorkflow, fetchScreenpipeWorkflows, groupScreenpipeItems, mapWorkflows, mapWorkflowsDetailed, normalizeScreenpipeItem, readScreenpipe, roleOfActor } from "../src/sources/screenpipe"
 import { TEST_ZONES, mockServer } from "./helpers"
 
 const base = Date.parse("2026-10-16T09:00:00Z")
@@ -34,13 +34,69 @@ test("groupScreenpipeItems : liste blanche, regroupement app+fenêtre avec trou 
   assert.ok(!convs.some((c) => /WhatsApp|YouTube/.test(c.app + (c.title ?? ""))))
 })
 
-test("groupScreenpipeItems : messages structurés (parsed) utilisés tels quels", () => {
+test("groupScreenpipeItems : messages structurés (ancien format messages[]) utilisés tels quels", () => {
   const items = [
     { type: "parsed", content: { timestamp: at(0), app_name: "Claude", window_name: "Claude", frame_id: 9, messages: [{ role: "user", text: "Q" }, { role: "assistant", text: "R" }] } },
     { type: "parsed", content: { timestamp: at(1), app_name: "Claude", window_name: "Claude", frame_id: 10, messages: [{ role: "user", text: "Q" }, { role: "assistant", text: "R" }, { role: "user", text: "Q2" }] } },
-  ].map(normalizeScreenpipeItem).filter((x) => x !== null)
+  ].map((r) => normalizeScreenpipeItem(r)).filter((x) => x !== null)
   const [c] = groupScreenpipeItems(items)
   assert.deepEqual(c.messages.map((m) => m.text), ["Q", "R", "Q2"])
+})
+
+test("normalizeScreenpipeItem : format « parsed » réel (items + actors) → messages avec les bons rôles, titre, URL", () => {
+  const raw = {
+    type: "Parsed",
+    content: {
+      frame_id: 42, timestamp: at(0), app_name: "Google Chrome", window_name: "ChatGPT", browser_url: "https://chatgpt.com/c/abc",
+      text: "rendu compact…", parser_id: "conversation/chatgpt-web",
+      items: [
+        { local_id: "c1", parent_local_id: null, kind: "conversation", title: "Clôture mensuelle", body: null, actor: null, occurred_at: null },
+        { local_id: "m1", parent_local_id: "c1", kind: "message", title: null, body: "Comment on fait le rapprochement Qonto ?", actor: "You", occurred_at: at(1) },
+        { local_id: "m2", parent_local_id: "c1", kind: "message", title: null, body: "Voici la procédure…", actor: "ChatGPT", occurred_at: at(2) },
+        { local_id: "d1", parent_local_id: null, kind: "document", title: "Pièce jointe", body: "ignoré", actor: null, occurred_at: null },
+      ],
+      actors: [{ item_id: 9, local_id: "m1", actor_id: 3, name: "Jean-Marc Dubois", observed_name: "You", assignment_source: "heuristic" }],
+    },
+  }
+  const it = normalizeScreenpipeItem(raw, { selfNames: ["Jean-Marc Dubois"] })!
+  assert.equal(it.window, "Clôture mensuelle")
+  assert.equal(it.browserUrl, "https://chatgpt.com/c/abc")
+  assert.equal(it.text, "")
+  assert.deepEqual(
+    it.messages!.map((m) => [m.role, m.text, m.at]),
+    [
+      ["user", "Comment on fait le rapprochement Qonto ?", at(1)],
+      ["assistant", "Voici la procédure…", at(2)],
+    ],
+  )
+  const [c] = groupScreenpipeItems([it])
+  assert.equal(c.tool, "chatgpt")
+  assert.equal(c.messages.length, 2)
+  assert.equal(c.title, "Clôture mensuelle")
+})
+
+test("roleOfActor : étiquette du parseur, nom résolu par Screenpipe, nom de l'employé", () => {
+  assert.equal(roleOfActor("ChatGPT"), "assistant")
+  assert.equal(roleOfActor("gpt-5"), "assistant")
+  assert.equal(roleOfActor("You"), "user")
+  assert.equal(roleOfActor("Vous"), "user")
+  assert.equal(roleOfActor("Jean-Marc", "Jean-Marc Dubois", ["Jean-Marc Dubois"]), "user")
+  assert.equal(roleOfActor("", "Claude"), "assistant")
+  // Dans un outil IA, tout ce qui n'est pas l'assistant vient de l'employé.
+  assert.equal(roleOfActor("Sarah"), "user")
+})
+
+test("browser_url : un onglet ChatGPT au titre quelconque est lu, un onglet YouTube intitulé « Claude » non", () => {
+  const items = [
+    { type: "OCR", content: { frame_id: 1, timestamp: at(0), app_name: "Google Chrome", window_name: "Nouvel onglet", browser_url: "https://chatgpt.com/c/1", text: "Question sur la TVA\nRéponse" } },
+    { type: "OCR", content: { frame_id: 2, timestamp: at(1), app_name: "Google Chrome", window_name: "Claude", browser_url: "https://www.youtube.com/watch?v=1", text: "vidéo" } },
+  ]
+    .map((r) => normalizeScreenpipeItem(r))
+    .filter((x) => x !== null)
+  const convs = groupScreenpipeItems(items)
+  assert.equal(convs.length, 1)
+  assert.equal(convs[0].tool, "chatgpt")
+  assert.equal(convs[0].screenpipe_ref, "1")
 })
 
 test("readScreenpipe : repli de type de contenu, pagination, checkpoint", async () => {
@@ -65,7 +121,7 @@ test("readScreenpipe : repli de type de contenu, pagination, checkpoint", async 
     assert.equal(r.stats.content_type, "ocr")
     assert.equal(r.conversations.length, 1)
     assert.equal(r.conversations[0].messages[1].text, "ligne A\nligne B\nligne C")
-    const types = srv.requests.map((q) => new URL(q.url, "http://x").searchParams.get("content_type"))
+    const types = srv.requests.filter((q) => q.url.startsWith("/search")).map((q) => new URL(q.url, "http://x").searchParams.get("content_type"))
     assert.deepEqual(types, ["parsed", "accessibility", "ocr", "ocr"])
     for (const c of r.commits) c.apply(state)
     assert.ok(state.screenpipe?.last_timestamp && state.screenpipe.last_timestamp > at(2))
@@ -228,4 +284,122 @@ test("mapWorkflows : workflows perso ou hors liste blanche écartés, texte masq
   assert.equal(workflows[0].zone, "compta")
   // La liste blanche configurée s'applique aussi aux apps des workflows.
   assert.equal(mapWorkflows(raw, [], { whitelist: ["claude", "mail", "excel"] }).length, 2)
+})
+
+test("readScreenpipe : en-têtes d'attribution, jeton, filter_pii et limit plafonné à 20", async () => {
+  const srv = await mockServer((req) => {
+    const u = new URL(req.url, "http://x")
+    if (u.pathname === "/search") return { body: { data: [frame(1, 0, "Terminal", "claude", "ligne")], pagination: { total: 1 } } }
+    return undefined
+  })
+  try {
+    const r = await readScreenpipe({ url: srv.url, token: "sp_secret", state: {}, since: new Date(base - 60_000), pageSize: 100, meetings: false })
+    assert.equal(r.available, true)
+    const q = srv.requests.find((x) => x.url.startsWith("/search"))!
+    assert.equal(q.headers.authorization, "Bearer sp_secret")
+    assert.equal(q.headers["x-screenpipe-client"], "api")
+    assert.equal(q.headers["x-screenpipe-agent"], "company-brain")
+    const p = new URL(q.url, "http://x").searchParams
+    assert.equal(p.get("filter_pii"), "true")
+    assert.equal(p.get("limit"), "20")
+    assert.ok(!srv.requests.some((x) => x.url.startsWith("/meetings")))
+  } finally {
+    await srv.close()
+  }
+})
+
+test("readScreenpipe : réunions terminées → conversations « meeting », checkpoint sur la fin, réunion en cours ignorée", async () => {
+  const meetings = [
+    { id: 7, meeting_start: at(-60), meeting_end: at(-30), meeting_app: "Zoom", title: "Point compta", attendees: "Claire Martin, Jean-Marc Dubois", note: "Décision : reporter la clôture au 25.", detection_source: "audio" },
+    { id: 8, meeting_start: at(-10), meeting_end: null, meeting_app: "Google Meet", title: "En cours", attendees: null, note: null, detection_source: "calendar" },
+  ]
+  const segments = [
+    { id: 1, meetingId: 7, speakerName: "Claire Martin", transcript: "On reporte la clôture au 25.", capturedAt: at(-50) },
+    { id: 2, meetingId: 7, speakerName: "Jean-Marc Dubois", transcript: "OK, je préviens le cabinet Durand.", capturedAt: at(-49) },
+  ]
+  const srv = await mockServer((req) => {
+    const u = new URL(req.url, "http://x")
+    if (u.pathname === "/search") return { body: { data: [], pagination: { total: 0 } } }
+    if (u.pathname === "/meetings") return { body: meetings }
+    if (u.pathname === "/meetings/7/transcript") return { body: segments }
+    return undefined
+  })
+  try {
+    const state: State = {}
+    const r = await readScreenpipe({ url: srv.url, state, since: new Date(base - 2 * 3600_000), until: new Date(base) })
+    assert.equal(r.stats.meetings, 1)
+    const conv = r.conversations.find((c) => c.tool === "meeting")!
+    assert.equal(conv.id, "screenpipe-meeting:7")
+    assert.equal(conv.title, "Point compta")
+    assert.equal(conv.app, "Zoom")
+    assert.match(conv.messages[0].text, /participants : Claire Martin, Jean-Marc Dubois/)
+    assert.match(conv.messages[0].text, /Claire Martin : On reporte la clôture au 25\./)
+    assert.match(conv.messages[0].text, /Jean-Marc Dubois : OK, je préviens le cabinet Durand\./)
+    assert.match(conv.messages[1].text, /reporter la clôture au 25/)
+    assert.ok(!r.conversations.some((c) => c.id === "screenpipe-meeting:8"))
+    for (const c of r.commits) c.apply(state)
+    assert.equal(state.screenpipe?.meetings_last_end, at(-30))
+    // Deuxième passage : rien de nouveau, aucune transcription relue.
+    const before = srv.requests.length
+    const r2 = await readScreenpipe({ url: srv.url, state, since: new Date(base - 2 * 3600_000), until: new Date(base) })
+    assert.equal(r2.stats.meetings, 0)
+    assert.ok(!r2.conversations.some((c) => c.tool === "meeting"))
+    assert.ok(!srv.requests.slice(before).some((q) => q.url.includes("/transcript")))
+  } finally {
+    await srv.close()
+  }
+})
+
+test("readScreenpipe : Screenpipe sans /meetings (404) → source réunions simplement absente, sans avertissement", async () => {
+  const srv = await mockServer((req) => {
+    const u = new URL(req.url, "http://x")
+    if (u.pathname === "/search") return { body: { data: [frame(1, 0, "Terminal", "claude", "ligne")], pagination: { total: 1 } } }
+    return undefined
+  })
+  try {
+    const r = await readScreenpipe({ url: srv.url, state: {}, since: new Date(base - 60_000) })
+    assert.equal(r.available, true)
+    assert.equal(r.stats.meetings, undefined)
+    assert.deepEqual(r.warnings, [])
+  } finally {
+    await srv.close()
+  }
+})
+
+test("workflows Screenpipe : le détail (timingRuns) donne occurrences, jours, heure habituelle et minutes par semaine", async () => {
+  const day = (d: number, h: number, m: number) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString()
+  const runs = [1, 2, 3, 6, 7].map((d) => ({
+    start: { timestamp: day(d, 7, 5), app: "Pennylane", quote: "Rapprochement du jour" },
+    end: { timestamp: day(d, 7, 25), app: "Pennylane", quote: "Export terminé" },
+    summary: "Rapprochement quotidien",
+  }))
+  const list = { data: [{ id: "wf-1", title: "Rapprochement compta Qonto / Pennylane", description: "", trigger: "chaque matin", outcome: "écarts listés", evidenceStatus: "supported-steps", catalogStatus: "saved", stageCount: 4 }], pagination: { total: 1, offset: 0, limit: 20 } }
+  const srv = await mockServer((req) => {
+    const u = new URL(req.url, "http://x")
+    if (u.pathname === "/workflows") return { body: list }
+    if (u.pathname === "/workflows/wf-1") return { body: { id: "wf-1", title: "Rapprochement compta Qonto / Pennylane", timingRuns: runs } }
+    return undefined
+  })
+  try {
+    const { workflows } = await fetchScreenpipeWorkflows(srv.url, undefined, TEST_ZONES)
+    assert.equal(workflows.length, 1)
+    const w = workflows[0]
+    assert.equal(w.occurrences, 5)
+    assert.equal(w.days, 5)
+    assert.equal(w.zone, "compta")
+    assert.match(w.description, /Déclencheur : chaque matin\. Résultat : écarts listés/)
+    const h = new Date(day(1, 7, 5))
+    assert.equal(w.schedule, `${String(h.getHours()).padStart(2, "0")}h${String(h.getMinutes()).padStart(2, "0")}`)
+    // 20 min par occurrence × 5 occurrences sur moins d'une semaine.
+    assert.equal(w.minutes_saved_per_week, 100)
+    assert.ok(srv.requests.some((q) => q.url.startsWith("/workflows/wf-1?include_automation=false")))
+  } finally {
+    await srv.close()
+  }
+})
+
+test("enrichWorkflow : sans timingRuns, le workflow est rendu tel quel", () => {
+  const w = { id: "x", title: "T", description: "", occurrences: 0, days: 0, minutes_saved_per_week: 0 }
+  assert.deepEqual(enrichWorkflow(w, { stages: [] }), w)
+  assert.deepEqual(enrichWorkflow(w, null), w)
 })

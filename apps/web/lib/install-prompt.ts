@@ -1,5 +1,6 @@
 // Le « prompt magique » : l'employé le colle dans Claude Code, qui installe et branche tout.
-// Ordre voulu : init → hello → MCP / hooks → simulation relue et accord explicite → envoi → seulement alors la planification.
+// Ordre voulu : init → hello → Screenpipe (jeton, parseur sémantique) → MCP / hooks → simulation relue et accord explicite → envoi
+// → seulement alors la planification, puis le pipe Screenpipe (optionnel).
 // La première phrase est reconnue par brain-sync (INSTALL_PROMPT_RE, apps/client/src/secrets.ts) : cette session contient
 // le jeton en clair et n'est jamais envoyée au cerveau. Ne pas la reformuler sans mettre à jour le client.
 
@@ -24,11 +25,14 @@ Paramètres :
 
 3. Test de connexion : \`${brain} hello\` → mon néon doit s'allumer sur ${baseUrl}.
 
-4. Screenpipe (capture locale de l'écran) :
+4. Screenpipe (capture locale de l'écran, réunions comprises) :
    - vérifie s'il tourne : \`curl -s http://localhost:3030/health\` ;
-   - sinon, installe-le en suivant la doc officielle (https://docs.screenpi.pe — application desktop ou CLI), lance-le et vérifie à nouveau \`/health\` ;
-   - s'il demande un jeton d'API local, ajoute-le avec \`${brain} init --screenpipe-token <jeton>\`.
-   Rien de brut ne quitte le poste : brain-sync lit Screenpipe et mes sessions Claude Code en local, filtre (liste blanche d'apps, secrets et données perso masqués) et n'envoie que des connaissances distillées.
+   - sinon, installe-le en suivant la doc officielle (https://docs.screenpi.pe — application desktop, ou CLI : \`npx -y screenpipe@latest service install\`), lance-le et vérifie à nouveau \`/health\` ;
+   - jeton d'API local (obligatoire pour lire les données) : affiche-le avec \`npx -y screenpipe@latest auth token\` (ou Settings → Privacy → API security dans l'app) et enregistre-le avec \`${brain} init --screenpipe-token <jeton>\` ;
+   - lance \`${brain} status\` : la ligne Screenpipe doit dire « jeton OK ». Si elle dit « aucune donnée parsed », active le contexte sémantique
+     (app : Settings → Recording → app context « memory » ; CLI : relance l'enregistrement avec \`--enable-semantic-context\`), utilise ChatGPT ou Claude quelques minutes, puis revérifie.
+   Rien de brut ne quitte le poste : brain-sync lit Screenpipe (sessions IA, réunions transcrites, masquage natif des données personnelles) et mes sessions Claude Code en local,
+   filtre (liste blanche d'apps, secrets et données perso masqués) et n'envoie que des connaissances distillées. Si je ne veux pas que mes réunions soient distillées : \`${brain} init --screenpipe-meetings non\`.
 
 5. MCP company-brain (pour que mes agents interrogent le cerveau) :
    \`claude mcp add company-brain --scope user -- ${brain} mcp\`
@@ -50,6 +54,11 @@ Paramètres :
    (launchd sur macOS, crontab sur Linux, tâche planifiée sur Windows). Elle part de maintenant : seule l'activité à venir sera envoyée,
    jamais l'historique que je n'ai pas relu. Si ça échoue, propose-moi la commande à ajouter à la main.
 
-10. Termine par un récapitulatif : ce qui est installé, où sont les fichiers, comment revoir à tout moment ce qui partirait
+10. Si l'application Screenpipe est installée (pas seulement le CLI) : \`${brain} install-pipe\` écrit le pipe « brain-sync » dans
+   \`~/.screenpipe/pipes/brain-sync/pipe.md\` ; active-le avec \`npx -y screenpipe@latest pipe enable brain-sync\` et teste-le avec
+   \`npx -y screenpipe@latest pipe run brain-sync\`. La synchro apparaît alors dans les tâches planifiées de Screenpipe et se relance à la fin
+   de chaque réunion ; la planification de l'étape 9 reste en secours.
+
+11. Termine par un récapitulatif : ce qui est installé, où sont les fichiers, comment revoir à tout moment ce qui partirait
    (\`${brain} sync --dry-run --full\`) et comment tout désinstaller (\`${brain} uninstall\`).`
 }
