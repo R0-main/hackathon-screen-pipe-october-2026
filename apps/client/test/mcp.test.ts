@@ -87,3 +87,23 @@ test("MCP remember : POST /api/ingest avec agent mcp, source agent, secret masqu
   assert.equal(body.items[0].confidence, 0.8)
   assert.ok(!body.items[0].body.includes("sk-ant"))
 })
+
+test("MCP remember : la réponse nomme la zone retenue, signale une zone hors lecture, et un doublon", async () => {
+  // Classée automatiquement en Compta, que l'utilisateur (Hugo) ne peut pas lire.
+  const auto = text(await client.callTool({ name: "remember", arguments: { title: "Clôture TVA du mois", body: "La facture de TVA se clôture le 5.", kind: "procedure" } }))
+  assert.match(auto, /Connaissance enregistrée dans la zone Compta \(`compta`\) — zone choisie automatiquement d'après le contenu/)
+  assert.match(auto, /ne fait pas partie de vos zones en lecture/)
+  assert.match(auto, /vos propres recherches et dans « Mon contexte »/)
+  assert.match(auto, /vos zones : Dev/)
+  const req = brain.requests.filter((x) => x.url === "/api/ingest").at(-1)!
+  assert.equal((req.body as { items: { zone: string }[] }).items[0].zone, "compta")
+
+  // Zone demandée explicitement (par son nom).
+  const asked = text(await client.callTool({ name: "remember", arguments: { title: "Runbook de rollback", body: "On utilise Promote sur Vercel.", kind: "procedure", zone: "Dev" } }))
+  assert.match(asked, /zone Dev \(`dev`\) — zone demandée/)
+  assert.match(asked, /trouvable par search_brain/)
+
+  // Déjà connue : le cerveau l'ignore et la réponse le dit.
+  const dup = text(await client.callTool({ name: "remember", arguments: { title: "Runbook de rollback", body: "On utilise Promote sur Vercel.", kind: "procedure", zone: "dev" } }))
+  assert.match(dup, /Déjà dans le cerveau .* zone Dev \(`dev`\)/)
+})

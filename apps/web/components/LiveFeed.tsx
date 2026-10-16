@@ -2,7 +2,8 @@
 
 import type { ZoneView } from "@/lib/brain"
 import type { FeedEvent } from "./Dashboard"
-import { AGENT_LABEL, EVENT_VERB, initials, relativeTime } from "./format"
+import { AGENT_LABEL, EVENT_VERB, initials } from "./format"
+import { RelTime } from "./RelTime"
 
 export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; names: Record<string, string>; zones: ZoneView[]; now: number }) {
   const color = (z: string) => zones.find((x) => x.id === z)?.color ?? "#94a3b8"
@@ -17,7 +18,8 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
         {events.length === 0 && <li className="p-6 text-center text-sm text-[var(--muted)]">Aucune activité pour l&apos;instant.</li>}
         {events.map((e) => {
           const name = names[e.user_id] ?? "Quelqu'un"
-          const main = e.zones[0]
+          const zoneIds = [...new Set(e.zones)]
+          const main = zoneIds[0]
           return (
             <li key={e.id} className={`rounded-xl px-3 py-2 ${e.fresh ? "feed-enter" : ""} hover:bg-[var(--panel-strong)]`}>
               <div className="flex items-start gap-2.5">
@@ -37,12 +39,12 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--faint)]">
                     <span className="chip !py-0">{AGENT_LABEL[e.agent]}</span>
-                    {e.zones.map((z) => (
+                    {zoneIds.map((z) => (
                       <span key={z} className="chip !py-0" style={{ borderColor: `${color(z)}55`, color: color(z) }}>
                         {zoneName(z)}
                       </span>
                     ))}
-                    <span className="ml-auto mono">{relativeTime(e.at, now)}</span>
+                    <RelTime iso={e.at} now={now} className="ml-auto mono" />
                   </div>
                 </div>
               </div>

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { KnowledgeItemInput } from "@brain/core"
 import { BrainIcon } from "./TopBar"
-import { KIND_COLOR, KIND_LABEL, api } from "./format"
+import { KIND_COLOR, KIND_LABEL, api, errorMessage } from "./format"
 
 type Question = { id: string; question: string }
 type Draft = {
@@ -15,6 +15,13 @@ type Draft = {
   items: KnowledgeItemInput[]
   generator: "claude" | "heuristic"
   pages: { url: string; title: string; truncated: boolean; error?: string }[]
+}
+
+/** Une zone par identifiant (la synthèse peut en renvoyer deux identiques) : clés React et zones appliquées uniques. */
+function withUniqueZones(d: Draft): Draft {
+  const seen = new Set<string>()
+  const zones = d.zones.filter((z) => (seen.has(z.id) ? false : (seen.add(z.id), true)))
+  return zones.length === d.zones.length ? d : { ...d, zones }
 }
 
 /** Interview de 5-10 min : le dirigeant présente l'entreprise, le cerveau en tire ses zones et ses premières connaissances. */
@@ -44,11 +51,11 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
     setBusy("draft")
     setErr(null)
     try {
-      const d = await api<Draft>("/api/onboarding", { method: "POST", json: { answers } })
+      const d = withUniqueZones(await api<Draft>("/api/onboarding", { method: "POST", json: { answers } }))
       setDraft(d)
       setKeep(d.items.map(() => true))
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      setErr(`Synthèse impossible : ${errorMessage(e)}`)
     } finally {
       setBusy(null)
     }
@@ -66,7 +73,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
       router.push("/")
       router.refresh()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      setErr(`Application impossible : ${errorMessage(e)}`)
       setBusy(null)
     }
   }
@@ -146,8 +153,8 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
             {draft.pages.length > 0 && (
               <div className="text-xs text-[var(--muted)]">
                 Liens lus :{" "}
-                {draft.pages.map((p) => (
-                  <span key={p.url} className="chip mr-1">
+                {draft.pages.map((p, i) => (
+                  <span key={`${p.url}-${i}`} className="chip mr-1 !whitespace-normal break-all">
                     {p.error ? `✗ ${p.url} (${p.error})` : `✓ ${p.title || p.url}${p.truncated ? " (tronqué à 20 000 caractères)" : ""}`}
                   </span>
                 ))}
@@ -155,12 +162,16 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
             )}
             <div>
               <div className="panel-title">Zones</div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {/* grid-cols-1 = minmax(0, 1fr) : sans gabarit, la colonne implicite prend la largeur de la ligne
+                  de mots-clés (nowrap) et la page déborde sur mobile. */}
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {draft.zones.map((z) => (
-                  <div key={z.id} className="rounded-xl border border-[var(--border)] p-3">
-                    <div className="font-medium">{z.name}</div>
-                    <div className="text-xs text-[var(--muted)]">{z.description}</div>
-                    <div className="mt-1 truncate text-[11px] text-[var(--faint)]">{z.keywords.join(", ")}</div>
+                  <div key={z.id} className="min-w-0 rounded-xl border border-[var(--border)] p-3">
+                    <div className="break-words font-medium">{z.name}</div>
+                    <div className="break-words text-xs text-[var(--muted)]">{z.description}</div>
+                    <div className="mt-1 truncate text-[11px] text-[var(--faint)]" title={z.keywords.join(", ")}>
+                      {z.keywords.join(", ")}
+                    </div>
                   </div>
                 ))}
               </div>

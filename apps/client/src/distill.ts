@@ -222,9 +222,8 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
   }
 }
 
-/** Dernier filet de sécurité avant envoi : re-masquage et validation du contrat. */
-export function finalizeItems(items: KnowledgeItemInput[]): KnowledgeItemInput[] {
-  const seen = new Set<string>()
+/** Dernier filet de sécurité avant envoi : re-masquage et validation du contrat. `seen` : dédoublonnage partagé entre appels. */
+export function finalizeItems(items: KnowledgeItemInput[], seen = new Set<string>()): KnowledgeItemInput[] {
   const out: KnowledgeItemInput[] = []
   for (const i of items) {
     const parsed = KnowledgeItemInputSchema.safeParse({ ...i, title: redactText(i.title), body: redactText(i.body) })

@@ -74,13 +74,27 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 
 Le dashboard doit être joignable par les postes (URL publique ou réseau local) : définissez `BRAIN_PUBLIC_URL`.
 
-## Déployer le cerveau partagé (Supabase + Vercel)
+## Déployer le cerveau partagé (Vercel + Neon, offres gratuites)
 
-1. Créez un projet Supabase et récupérez la chaîne de connexion « Transaction pooler » (port 6543).
-2. `DATABASE_URL=… npm run db:migrate` (ou collez `supabase/migrations/*.sql` dans l'éditeur SQL), puis `DATABASE_URL=… npm run seed` pour la démo.
-3. Déployez `apps/web` sur Vercel (root directory `apps/web`, build `npm run build`) avec `DATABASE_URL`, `BRAIN_SESSION_SECRET`, `BRAIN_PUBLIC_URL`, et optionnellement `ANTHROPIC_API_KEY` et `BRAIN_DEMO=1` (uniquement avec des données fictives).
+Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgres gratuit, en veille après 5 min d'inactivité, réveil en moins d'une seconde). N'importe quel Postgres convient (Supabase compris) : le schéma est dans `supabase/migrations/`.
+
+1. **Base** : créez un projet Neon (région Francfort), puis `DATABASE_URL=… npm run db:migrate` — ou exécutez `supabase/local/auth_stub.sql` puis `supabase/migrations/*.sql` dans l'éditeur SQL de Neon.
+2. **Vercel** : importez le repo avec ces réglages :
+   - Root Directory : `apps/web` (avec « Include source files outside of the Root Directory »)
+   - Install Command : `cd ../.. && npm ci` (le monorepo s'installe depuis la racine)
+   - Build Command : `npm run build` (construit aussi `brain.mjs`, servi sur `/brain.mjs`)
+   - Région des fonctions : la même que la base (`fra1` pour Neon Francfort)
+   - Désactivez « Vercel Authentication » : les postes appellent l'API avec leur jeton personnel.
+3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Fournil au premier passage sur `/login`. Le secret de session est généré tout seul et conservé dans la base.
 
 Variables : voir [apps/web/.env.example](apps/web/.env.example).
+
+### Claude sans clé API (abonnement Claude Code)
+
+- **brain-sync** distille sur chaque poste avec `claude -p` : il utilise l'abonnement Claude Code de l'employé.
+- Pour la synchro planifiée en arrière-plan, un jeton longue durée généré par `claude setup-token` permettra au client d'appeler Claude sans session ouverte (option `init --claude-token`, en cours d'ajout ; le jeton reste sur le poste).
+- Le serveur n'a besoin d'aucune clé : sans `ANTHROPIC_API_KEY`, le résumé « où en est la boîte » et l'onboarding utilisent les heuristiques locales.
+- Limite : les quotas de l'abonnement s'appliquent ; pour proposer l'outil à d'autres entreprises, il faut une clé API (conditions d'Anthropic).
 
 ## Vie privée et sécurité (MVP)
 

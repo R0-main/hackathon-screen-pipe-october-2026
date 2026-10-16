@@ -79,7 +79,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               {ctx.frequent_prompts.map((p, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="mono shrink-0 text-[var(--faint)]">×{p.count}</span>
-                  <span>« {p.summary} »</span>
+                  <span className="min-w-0 break-words">« {p.summary} »</span>
                 </li>
               ))}
               {ctx.frequent_prompts.length === 0 && <li className="text-[var(--muted)]">—</li>}
@@ -91,6 +91,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           items={ctx.items}
           zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color }))}
           canDelete={isSelf || viewer.real.role === "admin"}
+          now={Date.now()}
         />
       </main>
     </div>

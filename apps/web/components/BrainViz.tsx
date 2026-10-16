@@ -12,6 +12,7 @@ import {
   layoutZones,
   neuronPositions,
   polygonPath,
+  round2,
   smoothPath,
   type Pt,
 } from "./brain-geometry"
@@ -118,16 +119,16 @@ export function BrainViz(props: {
           const b = cellBy.get(s.b)
           if (!a || !b) return null
           const active = intensity(s.a) > 0 || intensity(s.b) > 0
-          const ctrl: Pt = [(a.center[0] + b.center[0]) / 2 * 0.6 + CENTER[0] * 0.4, (a.center[1] + b.center[1]) / 2 * 0.6 + CENTER[1] * 0.4]
+          const ctrl: Pt = [round2(((a.center[0] + b.center[0]) / 2) * 0.6 + CENTER[0] * 0.4), round2(((a.center[1] + b.center[1]) / 2) * 0.6 + CENTER[1] * 0.4)]
           const za = zones.find((z) => z.id === s.a)
           return (
             <path
-              key={`${s.a}-${s.b}`}
+              key={`${s.a}|${s.b}`}
               d={`M${a.center[0]},${a.center[1]} Q${ctrl[0]},${ctrl[1]} ${b.center[0]},${b.center[1]}`}
               fill="none"
               stroke={za?.color ?? "#94a3b8"}
               strokeOpacity={active ? 0.55 : 0.12}
-              strokeWidth={Math.min(3.2, 0.7 + Math.log2(1 + s.weight) * 0.45)}
+              strokeWidth={round2(Math.min(3.2, 0.7 + Math.log2(1 + s.weight) * 0.45))}
               className={active ? "synapse-flow" : undefined}
             >
               {s.via.length > 0 && <title>{`Liées par : ${s.via.join(", ")}`}</title>}

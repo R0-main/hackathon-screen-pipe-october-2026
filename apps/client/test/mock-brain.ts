@@ -16,8 +16,13 @@ export const DEPLOY_ITEM = {
   author: "Hugo Bernard",
 }
 
-export async function mockBrain() {
+/** Faux cerveau. `failIngestAt` : numéros (1, 2…) des appels à /api/ingest qui échouent en 500. */
+export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
   const ingested: unknown[] = []
+  const received: unknown[] = []
+  const automations: unknown[] = []
+  const keys = new Set<string>()
+  let ingestCalls = 0
   const srv = await mockServer((req) => {
     if (req.headers.authorization !== "Bearer cb_test_token_123456") return { status: 401, body: { error: "Non authentifié" } }
     const path = req.url.split("?")[0]
@@ -54,12 +59,30 @@ export async function mockBrain() {
       }
     }
     if (req.method === "POST" && path === "/api/ingest") {
-      const items = (req.body as { items: unknown[] }).items
-      ingested.push(...items)
-      return { status: 201, body: { inserted: items.length, ids: items.map((_, i) => `n${i}`), zones: ["dev"] } }
+      ingestCalls++
+      if (opts.failIngestAt?.includes(ingestCalls)) return { status: 500, body: { error: "panne simulée" } }
+      const items = (req.body as { items: { zone: string; title: string }[] }).items
+      received.push(...items)
+      // Comme le vrai cerveau : un item déjà reçu (même zone, même titre) est ignoré et compté dans `skipped`.
+      const fresh = items.filter((i) => {
+        const k = `${i.zone}:${i.title.toLowerCase()}`
+        if (keys.has(k)) return false
+        keys.add(k)
+        return true
+      })
+      ingested.push(...fresh)
+      return {
+        status: 201,
+        body: { inserted: fresh.length, skipped: items.length - fresh.length, ids: fresh.map((_, i) => `n${i}`), zones: [...new Set(fresh.map((i) => i.zone))] },
+      }
+    }
+    if (req.method === "POST" && path === "/api/automations") {
+      const list = (req.body as { workflows: unknown[] }).workflows
+      automations.push(...list)
+      return { status: 201, body: { saved: list.length } }
     }
     if (req.method === "POST" && path === "/api/events") return { status: 201, body: { recorded: 1, zones: [] } }
     return undefined
   })
-  return { ...srv, ingested }
+  return { ...srv, ingested, received, automations, ingestCalls: () => ingestCalls }
 }

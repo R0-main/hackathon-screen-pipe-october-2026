@@ -4,6 +4,7 @@ import { statSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { DISTILL_MARKER, type Conversation, type ConversationMessage } from "@brain/core"
 import type { FileCheckpoint, State } from "../config"
+import { isBrainSetupText } from "../secrets"
 import { asString, listJsonlFiles, readNewLines, toIso } from "./jsonl"
 import { buildConversation, type SourceResult } from "./types"
 
@@ -53,10 +54,13 @@ export function parseClaudeLine(j: Record<string, unknown>): { sessionId?: strin
 
 export type ClaudeParseResult = { conversations: Conversation[]; internal: boolean }
 
-/** Regroupe les lignes d'un fichier par session. `internal` : session issue de nos propres appels `claude -p`. */
+/**
+ * Regroupe les lignes d'un fichier par session. `internal` : session issue de nos propres appels `claude -p`,
+ * ou session d'installation du cerveau (le prompt magique contient le jeton personnel en clair).
+ */
 export function parseClaudeLines(
   lines: Record<string, unknown>[],
-  opts: { fallbackId: string; since?: Date; brainHome?: string },
+  opts: { fallbackId: string; since?: Date; brainHome?: string; secrets?: string[] },
 ): ClaudeParseResult {
   const sessions = new Map<string, { messages: ConversationMessage[]; cwd?: string }>()
   let title: string | undefined
@@ -68,7 +72,7 @@ export function parseClaudeLines(
     if (cwd && opts.brainHome && resolve(cwd) === opts.brainHome) internal = true
     const p = parseClaudeLine(j)
     if (!p) continue
-    if (p.text.includes(DISTILL_MARKER)) internal = true
+    if (p.text.includes(DISTILL_MARKER) || isBrainSetupText(p.text, opts.secrets)) internal = true
     if (sinceMs !== undefined && p.at && Date.parse(p.at) < sinceMs) continue
     const id = p.sessionId ?? opts.fallbackId
     const s = sessions.get(id) ?? { messages: [] }
@@ -85,19 +89,59 @@ export function parseClaudeLines(
   return { conversations, internal }
 }
 
+/** Une session restée muette depuis ce délai est considérée comme terminée, même au milieu d'un tour. */
+export const TURN_IDLE_MS = 30 * 60_000
+
+/**
+ * Nombre de lignes à traiter maintenant : tout, sauf le dernier tour s'il n'est pas fini (pas encore de réponse texte
+ * de l'assistant, ou dernière réponse qui attend un outil) et encore actif (activité depuis moins de `idleMs`).
+ * Le tour en cours sera lu en entier au prochain passage.
+ */
+export function completeLineCount(lines: Record<string, unknown>[], now = Date.now(), idleMs = TURN_IDLE_MS): number {
+  let lastUser = -1
+  for (let i = 0; i < lines.length; i++) if (parseClaudeLine(lines[i])?.role === "user") lastUser = i
+  if (lastUser === -1) return lines.length
+  let hasText = false
+  let lastStop: unknown
+  let lastActivity = -Infinity
+  for (let i = lastUser; i < lines.length; i++) {
+    const j = lines[i]
+    const t = Date.parse(String(j.timestamp ?? ""))
+    if (Number.isFinite(t) && t > lastActivity) lastActivity = t
+    if (i === lastUser || j.type !== "assistant" || j.isSidechain === true) continue
+    lastStop = (j.message as { stop_reason?: unknown } | undefined)?.stop_reason
+    if (parseClaudeLine(j)?.role === "assistant") hasText = true
+  }
+  if (hasText && lastStop !== "tool_use") return lines.length
+  // Tour abandonné (ou format sans horodatage) : on le traite tel quel.
+  if (lastActivity === -Infinity || now - lastActivity >= idleMs) return lines.length
+  return lastUser
+}
+
 /**
  * `since` s'applique aux fichiers jamais lus ; aux autres seulement si `explicitSince`
  * (sinon on reprend simplement à l'offset enregistré).
  */
-export function readClaudeLogs(opts: { dir: string; state: State; since: Date; explicitSince?: boolean; reset?: boolean; brainHome?: string }): SourceResult {
+export function readClaudeLogs(opts: {
+  dir: string
+  state: State
+  since: Date
+  explicitSince?: boolean
+  reset?: boolean
+  brainHome?: string
+  secrets?: string[]
+  now?: number
+  idleMs?: number
+}): SourceResult {
   const root = join(opts.dir, "projects")
-  const result: SourceResult = { source: "claude", available: true, conversations: [], commits: [], warnings: [], stats: { files: 0, bytes: 0, internal: 0 } }
+  const result: SourceResult = { source: "claude", available: true, conversations: [], commits: [], warnings: [], stats: { files: 0, bytes: 0, internal: 0, pending: 0 } }
   const files = listJsonlFiles(root, (name) => name === "subagents")
   if (files.length === 0) {
     result.available = false
     result.warnings.push(`Aucun transcript Claude Code trouvé dans ${root}.`)
     return result
   }
+  const now = opts.now ?? Date.now()
   const known = opts.reset ? {} : (opts.state.claude?.files ?? {})
   for (const file of files) {
     const prev = known[file]
@@ -124,14 +168,21 @@ export function readClaudeLogs(opts: { dir: string; state: State; since: Date; e
       continue
     }
     const since = !prev || opts.explicitSince ? opts.since : undefined
-    const parsed = parseClaudeLines(chunk.lines, { fallbackId: basename(file, ".jsonl"), since, brainHome: opts.brainHome })
-    if (parsed.internal) {
+    const base = { fallbackId: basename(file, ".jsonl"), since, brainHome: opts.brainHome, secrets: opts.secrets }
+    const full = parseClaudeLines(chunk.lines, base)
+    if (full.internal) {
       result.stats.internal = Number(result.stats.internal) + 1
       result.commits.push({ covers: [], apply: (s) => setFile(s, file, { ...cp, internal: true }) })
       continue
     }
+    // Tour en cours (réponse pas encore écrite) : on s'arrête avant, sans avancer l'offset au-delà.
+    const n = completeLineCount(chunk.lines, now, opts.idleMs)
+    if (n < chunk.lines.length) result.stats.pending = Number(result.stats.pending) + 1
+    if (n === 0) continue
+    const parsed = n === chunk.lines.length ? full : parseClaudeLines(chunk.lines.slice(0, n), base)
+    const upTo: FileCheckpoint = n === chunk.lines.length ? cp : { ...cp, offset: chunk.ends[n - 1] }
     result.conversations.push(...parsed.conversations)
-    result.commits.push({ covers: parsed.conversations.map((c) => c.id), apply: (s) => setFile(s, file, cp) })
+    result.commits.push({ covers: parsed.conversations.map((c) => c.id), apply: (s) => setFile(s, file, upTo) })
   }
   return result
 }

@@ -2,7 +2,7 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { delimiter, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Zone } from "@brain/core"
 
@@ -22,14 +22,31 @@ export type Config = {
   sources: SourceName[]
   app_whitelist?: string[]
   screenpipe_content_types?: string[]
+  /** Hook UserPromptSubmit : envoyer un court résumé masqué des prompts classés dans une zone (défaut : oui). */
+  share_prompt_summaries?: boolean
+  /** Environnement relevé par install-schedule, réappliqué par `sync --scheduled` (utile sous Windows). */
+  schedule_env?: Partial<Record<(typeof SCHEDULE_ENV_KEYS)[number], string>>
 }
 
+/** Variables utiles à la synchro planifiée (PATH pour trouver `claude`, dossiers personnalisés). */
+export const SCHEDULE_ENV_KEYS = ["PATH", "COMPANY_BRAIN_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"] as const
+
 export type FileCheckpoint = { offset: number; size: number; mtime: number; internal?: boolean }
+
+export type SeenLines = { at: string; h: string[] }
 
 export type State = {
   claude?: { files: Record<string, FileCheckpoint> }
   codex?: { files: Record<string, FileCheckpoint> }
-  screenpipe?: { last_timestamp?: string }
+  screenpipe?: {
+    last_timestamp?: string
+    /** Lignes déjà envoyées, par fenêtre (empreintes) : une fenêtre restée ouverte n'est pas renvoyée à chaque passage. */
+    seen?: Record<string, SeenLines>
+    /** Taille de fenêtre de lecture apprise quand Screenpipe ne donne pas le total (ms). */
+    span_ms?: number
+  }
+  /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
+  baseline_at?: string
   last_sync?: {
     at: string
     distiller: string
@@ -65,6 +82,7 @@ export const paths = {
   cache: () => join(brainHome(), "cache.json"),
   lock: () => join(brainHome(), "sync.lock"),
   log: () => join(brainHome(), "sync.log"),
+  preview: () => join(brainHome(), "preview.json"),
   claudeSettings: () => join(claudeDir(), "settings.json"),
 }
 
@@ -74,7 +92,7 @@ export function selfScript(): string {
   return fileURLToPath(import.meta.url)
 }
 
-function readJson<T>(file: string): T | null {
+export function readJson<T>(file: string): T | null {
   try {
     return JSON.parse(readFileSync(file, "utf8")) as T
   } catch {
@@ -110,10 +128,18 @@ export function withDefaults(raw: Partial<Config>): Partial<Config> {
   return {
     screenpipe_url: DEFAULT_SCREENPIPE_URL,
     use_claude_cli: true,
+    share_prompt_summaries: true,
     sources: [...SOURCE_NAMES],
     ...raw,
     url: raw.url?.replace(/\/+$/, ""),
   }
+}
+
+/** `sync --scheduled` : complète l'environnement avec celui relevé par install-schedule (sans écraser l'existant). */
+export function applyScheduleEnv(cfg: Partial<Config>, env: NodeJS.ProcessEnv = process.env) {
+  const saved = cfg.schedule_env ?? {}
+  for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] as const) if (saved[k] && !env[k]) env[k] = saved[k]
+  if (saved.PATH) env.PATH = [...new Set([...(env.PATH ?? "").split(delimiter), ...saved.PATH.split(delimiter)].filter(Boolean))].join(delimiter)
 }
 
 export function saveConfig(cfg: Partial<Config>) {

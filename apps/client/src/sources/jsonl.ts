@@ -27,6 +27,10 @@ export function listJsonlFiles(root: string, skipDir: (name: string) => boolean 
 
 export type JsonlChunk = {
   lines: Record<string, unknown>[]
+  /** Offset absolu de fin de chaque ligne de `lines` (pour reprendre au milieu d'un morceau). */
+  ends: number[]
+  /** Offset absolu où commence ce morceau. */
+  start: number
   checkpoint: FileCheckpoint
   bytesRead: number
   /** Vrai si le fichier a rétréci (tronqué / remplacé) : relu depuis le début. */
@@ -53,7 +57,7 @@ export function readNewLines(file: string, prev?: FileCheckpoint): JsonlChunk | 
     reset = true
   }
   const checkpoint: FileCheckpoint = { offset, size, mtime, ...(prev?.internal ? { internal: true } : {}) }
-  if (size === offset) return { lines: [], checkpoint, bytesRead: 0, reset }
+  if (size === offset) return { lines: [], ends: [], start: offset, checkpoint, bytesRead: 0, reset }
 
   const length = size - offset
   const buf = Buffer.alloc(length)
@@ -71,26 +75,36 @@ export function readNewLines(file: string, prev?: FileCheckpoint): JsonlChunk | 
 
   let consumed = buf.lastIndexOf(0x0a) + 1
   const lines: Record<string, unknown>[] = []
-  const parse = (s: string) => {
+  const ends: number[] = []
+  const parse = (s: string, end: number) => {
     const t = s.trim()
     if (!t) return true
     try {
       const v = JSON.parse(t)
-      if (v && typeof v === "object" && !Array.isArray(v)) lines.push(v as Record<string, unknown>)
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        lines.push(v as Record<string, unknown>)
+        ends.push(end)
+      }
       return true
     } catch {
       return false
     }
   }
-  for (const line of buf.subarray(0, consumed).toString("utf8").split("\n")) parse(line)
+  let pos = 0
+  while (pos < consumed) {
+    const nl = buf.indexOf(0x0a, pos)
+    const stop = nl === -1 || nl >= consumed ? consumed : nl + 1
+    parse(buf.subarray(pos, stop).toString("utf8"), offset + stop)
+    pos = stop
+  }
   // Dernier morceau sans saut de ligne : on ne le consomme que s'il est un JSON complet.
   if (consumed < length) {
     const tail = buf.subarray(consumed).toString("utf8")
     const before = lines.length
-    if (tail.trim().startsWith("{") && parse(tail) && lines.length > before) consumed = length
+    if (tail.trim().startsWith("{") && parse(tail, offset + length) && lines.length > before) consumed = length
   }
   checkpoint.offset = offset + consumed
-  return { lines, checkpoint, bytesRead: consumed, reset }
+  return { lines, ends, start: offset, checkpoint, bytesRead: consumed, reset }
 }
 
 export function asString(v: unknown): string | undefined {

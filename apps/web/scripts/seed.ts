@@ -42,6 +42,19 @@ function rand(seed: number) {
   }
 }
 
+/**
+ * Les jetons suivent le stockage seedé : un seed Postgres lancé depuis apps/web n'écrase pas les jetons du cerveau
+ * fichier (.brain/demo-tokens.json), qui ne correspondraient plus à aucun compte.
+ */
+function tokenFileName(kind: string): string {
+  if (kind !== "postgres") return "demo-tokens.json"
+  let db = "postgres"
+  try {
+    db = new URL(process.env.DATABASE_URL ?? "").pathname.replace(/^\//, "") || db
+  } catch {}
+  return `demo-tokens.postgres-${db.replace(/[^a-zA-Z0-9_-]+/g, "_")}.json`
+}
+
 async function main() {
   const force = process.argv.includes("--force")
   const store = getStore()
@@ -151,7 +164,7 @@ async function main() {
 
   const dir = path.resolve(process.env.BRAIN_DATA_DIR ?? ".brain")
   fs.mkdirSync(dir, { recursive: true })
-  const tokenFile = path.join(dir, "demo-tokens.json")
+  const tokenFile = path.join(dir, tokenFileName(store.kind))
   fs.writeFileSync(tokenFile, JSON.stringify(tokens, null, 2), { mode: 0o600 })
 
   console.log(`✓ ${DEMO_USERS.length} comptes, ${items.length} connaissances, ${tasks.length} tâches, ${inserted.length} événements, ${autos.length} automatisation(s) détectée(s).`)

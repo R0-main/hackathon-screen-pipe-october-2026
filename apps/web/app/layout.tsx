@@ -1,6 +1,7 @@
 import "./globals.css"
 import type { ReactNode } from "react"
 import type { Metadata, Viewport } from "next"
+import { RestoreGuard } from "@/components/RestoreGuard"
 
 export const metadata: Metadata = {
   title: "Cerveau d'entreprise",
@@ -12,7 +13,10 @@ export const viewport: Viewport = { themeColor: "#04060c", width: "device-width"
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="fr">
-      <body>{children}</body>
+      <body>
+        <RestoreGuard />
+        {children}
+      </body>
     </html>
   )
 }

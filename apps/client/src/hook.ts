@@ -1,10 +1,11 @@
 // Hook Claude Code (SessionStart, UserPromptSubmit, Stop) : rapide, silencieux, ne casse jamais Claude Code.
 
 import { appendFileSync } from "node:fs"
-import { classifyZones, promptFingerprint, redactText, truncate, type AgentEventInput } from "@brain/core"
+import { classifyZones, looksPersonal, promptFingerprint, redactText, truncate, type AgentEventInput } from "@brain/core"
 import { BrainApi } from "./api"
 import { firstName, zoneName } from "./cache"
 import { loadCache, loadConfig, paths, type Cache } from "./config"
+import { isBrainSetupText, maskOwnSecrets, ownSecrets } from "./secrets"
 
 export const HOOK_GLOBAL_TIMEOUT_MS = 2500
 export const HOOK_NETWORK_TIMEOUT_MS = 1500
@@ -57,8 +58,19 @@ export function sessionStartLine(cache: Cache | null): string {
   )
 }
 
-/** Construit l'événement à envoyer, ou null si l'événement est ignoré. */
-export function eventForHook(input: HookInput, cache: Cache | null): AgentEventInput | null {
+export type HookOptions = {
+  /** `share_prompt_summaries` de la config : false → jamais de résumé de prompt. */
+  shareSummaries?: boolean
+  /** Secrets du poste (jeton du cerveau…), masqués et signe d'une session d'installation. */
+  secrets?: string[]
+}
+
+/**
+ * Construit l'événement à envoyer, ou null si l'événement est ignoré.
+ * UserPromptSubmit : le résumé (160 caractères masqués) ne part que si le prompt se rattache à au moins une zone
+ * et n'a rien de personnel ; sinon l'événement part sans résumé (empreinte seule, ou rien pour un prompt perso).
+ */
+export function eventForHook(input: HookInput, cache: Cache | null, opts: HookOptions = {}): AgentEventInput | null {
   const session_id = input.session_id ? String(input.session_id).slice(0, 200) : undefined
   switch (input.hook_event_name) {
     case "SessionStart":
@@ -68,15 +80,15 @@ export function eventForHook(input: HookInput, cache: Cache | null): AgentEventI
     case "UserPromptSubmit": {
       const prompt = (input.prompt ?? "").trim()
       if (!prompt) return null
+      const secrets = opts.secrets ?? []
+      // Prompt d'installation ou jeton collé : on signale juste l'activité.
+      if (isBrainSetupText(prompt, secrets) || maskOwnSecrets(prompt, secrets).count > 0) return { agent: "claude-code", type: "query", zones: [], session_id }
+      // Contenu perso : ni zone, ni empreinte, ni résumé.
+      if (looksPersonal(prompt)) return { agent: "claude-code", type: "query", zones: [], session_id }
       const zones = cache?.zones?.length ? classifyZones(prompt, cache.zones, 2) : []
-      return {
-        agent: "claude-code",
-        type: "query",
-        zones,
-        summary: truncate(redactText(prompt).replace(/\s+/g, " "), 160),
-        fingerprint: promptFingerprint(prompt),
-        session_id,
-      }
+      const event: AgentEventInput = { agent: "claude-code", type: "query", zones, fingerprint: promptFingerprint(prompt), session_id }
+      if (opts.shareSummaries !== false && zones.length > 0) event.summary = truncate(redactText(prompt).replace(/\s+/g, " "), 160)
+      return event
     }
     default:
       return null
@@ -95,7 +107,7 @@ async function hookMain(): Promise<void> {
   const cache = loadCache()
   // SessionStart : le stdout est injecté dans le contexte de Claude Code → une seule ligne.
   if (input.hook_event_name === "SessionStart" && cfg) process.stdout.write(sessionStartLine(cache) + "\n")
-  const event = eventForHook(input, cache)
+  const event = eventForHook(input, cache, { shareSummaries: cfg?.share_prompt_summaries !== false, secrets: ownSecrets(cfg) })
   if (!cfg || !event) return
   await new BrainApi(cfg.url, cfg.token, HOOK_NETWORK_TIMEOUT_MS).events([event], HOOK_NETWORK_TIMEOUT_MS)
 }

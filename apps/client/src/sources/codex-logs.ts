@@ -4,6 +4,7 @@ import { statSync } from "node:fs"
 import { basename, join } from "node:path"
 import { DISTILL_MARKER, type Conversation, type ConversationMessage } from "@brain/core"
 import type { FileCheckpoint, State } from "../config"
+import { isBrainSetupText } from "../secrets"
 import { asString, listJsonlFiles, readNewLines, toIso } from "./jsonl"
 import { buildConversation, type SourceResult } from "./types"
 
@@ -56,7 +57,7 @@ export function parseCodexLine(j: Record<string, unknown>): { msg?: Parsed; even
   return { msg: { role, text, at: at ?? toIso(m.timestamp) } }
 }
 
-export function parseCodexLines(lines: Record<string, unknown>[], opts: { fallbackId: string; since?: Date }): { conversation: Conversation | null; internal: boolean } {
+export function parseCodexLines(lines: Record<string, unknown>[], opts: { fallbackId: string; since?: Date; secrets?: string[] }): { conversation: Conversation | null; internal: boolean } {
   const msgs: ConversationMessage[] = []
   const events: ConversationMessage[] = []
   let cwd: string | undefined
@@ -67,7 +68,8 @@ export function parseCodexLines(lines: Record<string, unknown>[], opts: { fallba
     if (p.cwd) cwd = p.cwd
     for (const [list, m] of [[msgs, p.msg], [events, p.event]] as const) {
       if (!m) continue
-      if (m.text.includes(DISTILL_MARKER)) internal = true
+      // Nos propres appels, ou la session d'installation du cerveau (jeton en clair) : ignorés.
+      if (m.text.includes(DISTILL_MARKER) || isBrainSetupText(m.text, opts.secrets)) internal = true
       if (sinceMs !== undefined && m.at && Date.parse(m.at) < sinceMs) continue
       list.push(m)
     }
@@ -84,7 +86,7 @@ export function codexSessionId(file: string): string {
   return `codex:${m ? m[0] : name}`
 }
 
-export function readCodexLogs(opts: { dir: string; state: State; since: Date; explicitSince?: boolean; reset?: boolean }): SourceResult {
+export function readCodexLogs(opts: { dir: string; state: State; since: Date; explicitSince?: boolean; reset?: boolean; secrets?: string[] }): SourceResult {
   const root = join(opts.dir, "sessions")
   const result: SourceResult = { source: "codex", available: true, conversations: [], commits: [], warnings: [], stats: { files: 0, bytes: 0 } }
   const files = listJsonlFiles(root)
@@ -117,7 +119,7 @@ export function readCodexLogs(opts: { dir: string; state: State; since: Date; ex
       continue
     }
     const since = !prev || opts.explicitSince ? opts.since : undefined
-    const { conversation, internal } = parseCodexLines(chunk.lines, { fallbackId: codexSessionId(file), since })
+    const { conversation, internal } = parseCodexLines(chunk.lines, { fallbackId: codexSessionId(file), since, secrets: opts.secrets })
     if (internal) {
       result.commits.push({ covers: [], apply: (s) => setFile(s, file, { ...cp, internal: true }) })
       continue

@@ -3,7 +3,8 @@
 import { useState } from "react"
 import type { KnowledgeItem } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
-import { KIND_COLOR, KIND_LABEL, firstName, relativeTime } from "./format"
+import { KIND_COLOR, KIND_LABEL, firstName } from "./format"
+import { RelTime } from "./RelTime"
 
 export function KnowledgeCard({ item, author, zone, now }: { item: KnowledgeItem; author?: string; zone?: ZoneView | { name: string; color: string }; now?: number }) {
   const [open, setOpen] = useState(false)
@@ -21,17 +22,17 @@ export function KnowledgeCard({ item, author, zone, now }: { item: KnowledgeItem
           )}
           <span className="ml-auto text-[var(--faint)]">
             {author ? `${firstName(author)} · ` : ""}
-            {relativeTime(item.created_at, now)}
+            <RelTime iso={item.created_at} now={now} />
           </span>
         </div>
-        <h4 className="mt-2 text-[13.5px] font-medium leading-snug">{item.title}</h4>
+        <h4 className="mt-2 break-words text-[13.5px] font-medium leading-snug">{item.title}</h4>
       </button>
       {open && (
         <div className="mt-2 space-y-2">
           <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-[var(--muted)]">{item.body}</p>
           <div className="flex flex-wrap gap-1.5 text-[11px]">
-            {item.entities.map((e) => (
-              <span key={`${e.type}:${e.name}`} className="chip !py-0">
+            {item.entities.map((e, i) => (
+              <span key={`${e.type}:${e.name}:${i}`} className="chip !py-0">
                 {e.name}
               </span>
             ))}

@@ -3,7 +3,7 @@
 //         npm run simulate -- --once       (une seule scène)
 //         npm run simulate -- --speed 2    (deux fois plus rapide)
 
-import { promptFingerprint, type KnowledgeItemInput } from "@brain/core"
+import { normalize, promptFingerprint, type KnowledgeItemInput } from "@brain/core"
 import { getStore } from "../lib/store"
 import { getAccess } from "../lib/access"
 import { ingestItems, queryBrain, recordEvents } from "../lib/brain"
@@ -58,7 +58,37 @@ const FRESH: (KnowledgeItemInput & { author: string })[] = [
     entities: [{ type: "project", name: "Caisse" }, { type: "tool", name: "Playwright" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.76,
   },
+  {
+    author: "sarah", zone: "support", kind: "procedure", title: "Répondre à une demande de remboursement d'abonnement",
+    body: "1. Vérifier la date de souscription dans Stripe.\n2. Rembourser au prorata si moins de 14 jours.\n3. Noter le motif dans HubSpot pour le suivi du churn.",
+    entities: [{ type: "tool", name: "Stripe" }, { type: "tool", name: "HubSpot" }],
+    source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.8,
+  },
+  {
+    author: "claire", zone: "direction", kind: "decision", title: "Le recrutement d'un second profil support est avancé à novembre",
+    body: "Le volume de tickets a doublé depuis la rentrée ; budget validé sur la trésorerie actuelle, sans attendre la levée.",
+    entities: [{ type: "project", name: "Recrutement" }],
+    source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.79,
+  },
+  {
+    author: "hugo", zone: "dev", kind: "procedure", title: "Rejouer un webhook Stripe en local",
+    body: "stripe listen --forward-to localhost:3000/api/stripe puis stripe events resend <id>. Ne jamais rejouer en production sans vérifier l'idempotence.",
+    entities: [{ type: "tool", name: "Stripe" }],
+    source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.84,
+  },
 ]
+
+const titleKey = (zone: string, title: string) => `${zone}|${normalize(title).replace(/\s+/g, " ").trim()}`
+
+/**
+ * Connaissances fraîches pas encore présentes dans le cerveau : chacune n'est distillée qu'une fois (relancer le
+ * simulateur ou le laisser tourner longtemps ne crée pas de doublons ; le serveur dédoublonne aussi).
+ */
+async function freshQueue(): Promise<typeof FRESH> {
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString()
+  const known = new Set((await getStore().listItems({ sinceIso: since, limit: 100_000 })).map((i) => titleKey(i.zone, i.title)))
+  return FRESH.filter((f) => !known.has(titleKey(f.zone, f.title)))
+}
 
 async function viewers(): Promise<Record<string, Viewer>> {
   const store = getStore()
@@ -72,7 +102,7 @@ async function viewers(): Promise<Record<string, Viewer>> {
   return out
 }
 
-async function scene(vs: Record<string, Viewer>, freshIndex: number) {
+async function scene(vs: Record<string, Viewer>, queue: typeof FRESH) {
   const zone = pick(Object.keys(DEMO_PROMPTS))
   const prompt = pick(DEMO_PROMPTS[zone])
   const v = vs[prompt.user]
@@ -89,25 +119,25 @@ async function scene(vs: Record<string, Viewer>, freshIndex: number) {
   const res = await queryBrain(v, { query: q, agent: "mcp" })
   console.log(`  ↳ MCP search_brain « ${q} » → ${res.items.length} résultat(s) dans ${res.zones_hit.join(", ") || "aucune zone"}`)
   await sleep(2200)
-  // De temps en temps, brain-sync remonte une nouvelle connaissance.
-  if (Math.random() < 0.45) {
-    const f = FRESH[freshIndex % FRESH.length]
+  // De temps en temps, brain-sync remonte une nouvelle connaissance (jamais deux fois la même).
+  if (queue.length > 0 && Math.random() < 0.45) {
+    const f = queue.shift()!
     const author = vs[f.author] ?? v
     const { author: _a, ...item } = f
-    await ingestItems(author, [{ ...item, source: { ...item.source, at: new Date().toISOString() } }])
-    console.log(`  ↳ brain-sync : « ${f.title} » (${f.zone})`)
-    return true
+    const res = await ingestItems(author, [{ ...item, source: { ...item.source, at: new Date().toISOString() } }])
+    console.log(res.inserted ? `  ↳ brain-sync : « ${f.title} » (${f.zone})` : `  ↳ brain-sync : « ${f.title} » déjà connue, ignorée`)
+    if (queue.length === 0) console.log("  (toutes les connaissances fraîches ont été distillées : la suite ne fait plus que des recherches)")
   }
   await recordEvents(v, [{ agent, type: "stopped", session_id: session }])
-  return false
 }
 
 async function main() {
   const vs = await viewers()
-  let fresh = 0
+  const queue = await freshQueue()
   console.log(`Simulation sur le cerveau (${getStore().kind}). Ouvrez le dashboard pour voir les zones s'allumer.`)
+  console.log(`${queue.length}/${FRESH.length} connaissance(s) fraîche(s) à distiller pendant la démo.`)
   do {
-    if (await scene(vs, fresh)) fresh++
+    await scene(vs, queue)
     if (!once) await sleep(1500 + Math.random() * 2500)
   } while (!once)
 }
