@@ -21,7 +21,7 @@ test("groupScreenpipeItems : liste blanche, regroupement app+fenêtre avec trou 
     frame(5, 4, "Google Chrome", "Claude - Nouvelle conversation", "Question sur la TVA"),
     frame(6, 30, "Terminal", "claude — fournil", "Nouvelle session après une pause"),
   ]
-  const items = raw.map(normalizeScreenpipeItem).filter((x) => x !== null)
+  const items = raw.map((r) => normalizeScreenpipeItem(r)).filter((x) => x !== null)
   const convs = groupScreenpipeItems(items)
   assert.equal(convs.length, 3)
   const first = convs.find((c) => c.screenpipe_ref === "1")!
