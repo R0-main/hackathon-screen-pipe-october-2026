@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+.env*.local
+# Local brain data (file store) and generated demo tokens
+.brain/
+apps/web/.brain/
+# Built client bundle served by the dashboard
+apps/web/public/brain.mjs
+.DS_Store
