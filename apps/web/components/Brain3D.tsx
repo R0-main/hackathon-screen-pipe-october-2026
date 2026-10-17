@@ -21,7 +21,6 @@ export type Brain3DProps = {
 
 // Encre sur blanc. La seule couleur vive est le phosphore, réservé à une zone qu'un agent touche en direct.
 const INK = 0x0a0a0a
-const TRACE = 0x78786f
 const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
 const WHITE = 0xffffff
@@ -329,16 +328,22 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
   }
 
-  // Synapses : arcs entre deux zones qui partagent des entités, plus marqués quand elles sont actives.
+  // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
+  // l'autre, plus marqués quand elles sont actives.
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const A = gfx.get(s.a)
     const B = gfx.get(s.b)
     if (!A || !B) continue
     const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
-    const baseOpacity = 0.18 + Math.min(0.27, Math.log2(1 + s.weight) * 0.06)
-    const mat = new T.LineBasicMaterial({ color: TRACE, transparent: true, opacity: baseOpacity })
+    const baseOpacity = 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08)
+    const mat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity })
     const geo = new T.BufferGeometry().setFromPoints(pts)
+    const from = new T.Color(A.locked ? NEUTRAL : A.color)
+    const to = new T.Color(B.locked ? NEUTRAL : B.color)
+    const cols = new Float32Array(pts.length * 3)
+    pts.forEach((_, k) => tone.copy(from).lerp(to, k / (pts.length - 1)).toArray(cols, k * 3))
+    geo.setAttribute("color", new T.BufferAttribute(cols, 3))
     group.add(new T.Line(geo, mat))
     geometries.push(geo)
     materials.push(mat)
@@ -495,8 +500,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const on = Boolean(gfx.get(s.a)?.active || gfx.get(s.b)?.active)
       if (on !== s.active) {
         s.active = on
-        s.mat.color.setHex(on ? INK : TRACE)
-        s.mat.opacity = on ? 0.9 : s.baseOpacity
+        s.mat.opacity = on ? 1 : s.baseOpacity
       }
     }
 

@@ -22,7 +22,6 @@ export type ScrollBrainProps = {
 
 // Mêmes valeurs que le cerveau du dashboard : encre sur bone, phosphore réservé à une zone qu'un agent touche.
 const INK = 0x0a0a0a
-const TRACE = 0x78786f
 const LINE = 0xd6d6cf
 const RAW = 0xc6c6bf
 const WHITE = 0xffffff
@@ -277,19 +276,24 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   group.add(dustMesh)
   materials.push(dustMat)
 
-  // Synapses : arcs entre zones qui partagent des entités, par-dessus le cerveau.
+  // Synapses : arcs entre zones qui partagent des entités, en dégradé de la couleur de l'une à celle de l'autre.
   const index = new Map(gfx.map((g, i) => [g.id, i]))
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const a = index.get(s.a)
     const b = index.get(s.b)
     if (a === undefined || b === undefined) continue
-    const geo = new T.BufferGeometry().setFromPoints(arcBetween(gfx[a].pos.toArray(), gfx[b].pos.toArray()).map((p) => new T.Vector3(...p)))
-    const mat = new T.LineBasicMaterial({ color: TRACE, transparent: true, opacity: 0 })
+    const pts = arcBetween(gfx[a].pos.toArray(), gfx[b].pos.toArray())
+    const geo = new T.BufferGeometry().setFromPoints(pts.map((p) => new T.Vector3(...p)))
+    const cols = new Float32Array(pts.length * 3)
+    const tone = new T.Color()
+    pts.forEach((_, k) => tone.copy(gfx[a].color).lerp(gfx[b].color, k / (pts.length - 1)).toArray(cols, k * 3))
+    geo.setAttribute("color", new T.BufferAttribute(cols, 3))
+    const mat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 })
     group.add(new T.Line(geo, mat))
     geometries.push(geo)
     materials.push(mat)
-    syn.push({ a, b, mat, base: 0.2 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08) })
+    syn.push({ a, b, mat, base: 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08) })
   }
 
   // Ondes phosphore sous chaque agent : deux anneaux décalés, entièrement pilotés par le scroll (réversibles).
@@ -460,8 +464,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     }
     for (const sy of syn) {
       const on = lit.has(gfx[sy.a].id) || lit.has(gfx[sy.b].id)
-      sy.mat.color.setHex(on ? INK : TRACE)
-      sy.mat.opacity = on ? 0.9 : sy.base * (still ? 1 : smooth(0.43, 0.55, s))
+      sy.mat.opacity = on ? 1 : sy.base * (still ? 1 : smooth(0.43, 0.55, s))
     }
 
     // La poussière brute s'éteint à mesure que le cerveau se remplit : elle reste sur le poste.
