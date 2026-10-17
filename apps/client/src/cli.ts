@@ -57,6 +57,13 @@ Commandes :
                      jeton expiré ne compte pas (si Claude ne répond plus du tout : abandon après 24 h d'échecs).
   sync --confirm     Envoie exactement ce que la dernière simulation a montré (valable 24 h).
                      Options avancées : --distiller heuristic|claude-cli|claude-api, --reset (ignore les checkpoints).
+  skills [sync|list] Installe dans ~/.claude/skills les skills de l'entreprise attribués à ce poste (toute l'entreprise, plus
+                     ceux des cortex que vous lisez) et retire ceux qui ne le sont plus. Fait aussi après chaque synchro.
+                     Un skill personnel du même nom n'est jamais touché. list : affiche sans rien installer.
+  skills push <dossier> [--cortex <zone>|entreprise] [--name <nom>] [--description <texte>]
+                     Publie le dossier (SKILL.md et les scripts qu'il utilise) dans le cerveau ; même nom : version suivante.
+                     Demande le droit de publier des skills (accordé par un admin). Sans --cortex : celui de la version
+                     précédente, ou toute l'entreprise pour un nouveau skill. Un fichier qui contient un secret est refusé.
   refresh-status [--dry-run]
                      Admins : rédige « où en est la boîte » sur ce poste avec Claude (\`claude -p\`, votre abonnement ;
                      sinon la clé API) et l'envoie au dashboard. --dry-run : affiche le résumé sans l'envoyer.
@@ -69,14 +76,14 @@ Commandes :
                      automatiquement. À lancer après sync --confirm.
   install-pipe       Écrit le pipe Screenpipe « brain-sync » (~/.screenpipe/pipes/brain-sync/pipe.md) : la synchro apparaît dans les tâches
                      planifiées de Screenpipe et se relance à la fin de chaque réunion. Demande l'application Screenpipe (moteur de pipes).
-  uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP et le service Screenpipe installé par setup ;
+  uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP, skills de l'entreprise et le service Screenpipe installé par setup ;
                      --purge supprime aussi ~/.company-brain.
 
 Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
 }
 
 async function main(argv: string[]): Promise<number> {
-  const { cmd, flags } = parseArgs(argv)
+  const { cmd, flags, positional } = parseArgs(argv)
   // --home : dossier du client (utilisé par la tâche planifiée Windows, qui n'hérite pas des variables du terminal).
   if (typeof flags.home === "string" && flags.home.trim()) process.env.COMPANY_BRAIN_HOME = resolve(flags.home.trim())
   // Le hook passe en premier : aucune sortie parasite, toujours code 0.
@@ -131,7 +138,16 @@ async function main(argv: string[]): Promise<number> {
         full: Boolean(flags.full),
         confirm: Boolean(flags.confirm),
       })
+      // Les skills attribués au poste suivent la même cadence que la synchro (simulation exceptée).
+      if (!flags["dry-run"]) {
+        const { refreshSkills } = await import("./skills")
+        await refreshSkills(console.log, { quiet: true })
+      }
       return 0
+    }
+    case "skills": {
+      const { cmdSkills } = await import("./skills")
+      return cmdSkills(positional, flags)
     }
     case "refresh-status": {
       const { cmdRefreshStatus } = await import("./refresh-status")

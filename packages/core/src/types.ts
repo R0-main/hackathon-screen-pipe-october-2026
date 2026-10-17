@@ -82,6 +82,8 @@ export type Profile = {
   role: Role
   /** Personne à qui ce poste est rattaché dans l'organigramme ; absent pour la tête (ou les têtes). */
   manager_id?: string | null
+  /** Droit de pousser des skills dans le cerveau (les admins l'ont toujours). */
+  can_publish_skills?: boolean
   created_at: string
 }
 
@@ -144,3 +146,25 @@ export type CompanyStatus = {
 }
 
 export type ScoredItem = KnowledgeItem & { score: number }
+
+/** Un fichier d'un skill : SKILL.md à la racine, ou un script qu'il utilise (`scripts/export.py`…). Texte seulement. */
+export type SkillFile = { path: string; content: string }
+
+/**
+ * Un skill de l'entreprise (format Claude Code : un dossier avec SKILL.md et ses scripts), conservé dans le cerveau.
+ * `zone` : le cortex auquel il est attribué ; seuls ceux qui lisent cette zone le reçoivent. null : toute l'entreprise.
+ */
+export type Skill = {
+  id: string
+  /** Nom du dossier installé dans ~/.claude/skills (minuscules, chiffres, tirets). Unique dans l'entreprise. */
+  name: string
+  description: string
+  zone: string | null
+  files: SkillFile[]
+  author_id: string | null
+  /** Dernière personne qui a publié une version. */
+  updated_by: string | null
+  version: number
+  created_at: string
+  updated_at: string
+}

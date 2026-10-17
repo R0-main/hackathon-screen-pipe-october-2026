@@ -14,11 +14,12 @@ import {
   type Org,
   type Profile,
   type ScoredItem,
+  type Skill,
   type Task,
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, ProfilePatch, ZoneStat } from "./types"
+import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewSkill, NewTask, ProfilePatch, ZoneStat } from "./types"
 import { SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
 type Row = Record<string, any>
@@ -39,6 +40,7 @@ function toProfile(r: Row): Profile {
     title: r.title ?? undefined,
     role: r.role,
     manager_id: r.manager_id ?? null,
+    can_publish_skills: Boolean(r.can_publish_skills),
     created_at: iso(r.created_at),
   }
 }
@@ -102,6 +104,25 @@ function toAutomation(r: Row): AutomationSuggestion {
     created_at: iso(r.created_at),
   }
 }
+
+function toSkill(r: Row): Skill {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    zone: r.zone ?? null,
+    files: r.files ?? [],
+    author_id: r.author_id ?? null,
+    updated_by: r.updated_by ?? null,
+    version: r.version,
+    created_at: iso(r.created_at),
+    updated_at: iso(r.updated_at),
+  }
+}
+
+/** Table skills absente : la migration des skills n'a pas été appliquée. */
+const SKILLS_MISSING_MESSAGE =
+  "Base de données à mettre à jour : la table skills est absente. Appliquez les migrations (npm run db:migrate)."
 
 const UUID_RE = /^[0-9a-f-]{36}$/i
 /** L'organisation est relue régulièrement : un reseed (ou un onboarding servi par une autre instance) est vu sans redémarrage. */
@@ -223,8 +244,9 @@ export class PostgresStore implements BrainStore {
     return rows.map(toProfile)
   }
   async createProfile(p: NewProfile) {
-    const [r] = await this.sql`insert into profiles (org_id, name, email, title, role, manager_id, token_hash)
-      values (${await this.orgId()}, ${p.name}, ${p.email ?? null}, ${p.title ?? null}, ${p.role}, ${p.manager_id ?? null}, ${p.token_hash}) returning *`
+    const [r] = await this.sql`insert into profiles (org_id, name, email, title, role, manager_id, can_publish_skills, token_hash)
+      values (${await this.orgId()}, ${p.name}, ${p.email ?? null}, ${p.title ?? null}, ${p.role}, ${p.manager_id ?? null},
+        ${p.can_publish_skills ?? false}, ${p.token_hash}) returning *`
     return toProfile(r)
   }
   async updateProfile(id: string, patch: ProfilePatch) {
@@ -234,7 +256,8 @@ export class PostgresStore implements BrainStore {
     const [r] = await this.sql`update profiles set
         name = ${patch.name ?? c.name}, email = ${patch.email ?? c.email}, title = ${patch.title ?? c.title},
         role = ${patch.role ?? c.role}, token_hash = ${patch.token_hash ?? c.token_hash},
-        manager_id = ${patch.manager_id === undefined ? c.manager_id : patch.manager_id}
+        manager_id = ${patch.manager_id === undefined ? c.manager_id : patch.manager_id},
+        can_publish_skills = ${patch.can_publish_skills ?? c.can_publish_skills}
       where id = ${id} returning *`
     return toProfile(r)
   }
@@ -448,6 +471,56 @@ export class PostgresStore implements BrainStore {
     const [r] = await this.sql`update automation_suggestions set status = ${patch.status}
       where id = ${id} and org_id = ${await this.orgId()} returning *`
     return r ? toAutomation(r) : null
+  }
+
+  /** Requête sur skills : table absente (migration non appliquée) → erreur de configuration claire (503). */
+  private async skills<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run()
+    } catch (err) {
+      if (missingTable(err)) throw new StoreSetupError(SKILLS_MISSING_MESSAGE)
+      throw err
+    }
+  }
+
+  async listSkills() {
+    const org = await this.orgId()
+    const rows = await this.skills(() => this.sql`select * from skills where org_id = ${org} order by name`)
+    return rows.map(toSkill)
+  }
+  async getSkill(id: string) {
+    if (!UUID_RE.test(id)) return null
+    const org = await this.orgId()
+    const [r] = await this.skills(() => this.sql`select * from skills where id = ${id} and org_id = ${org}`)
+    return r ? toSkill(r) : null
+  }
+  async getSkillByName(name: string) {
+    const org = await this.orgId()
+    const [r] = await this.skills(() => this.sql`select * from skills where name = ${name} and org_id = ${org}`)
+    return r ? toSkill(r) : null
+  }
+  async publishSkill(s: NewSkill) {
+    const org = await this.orgId()
+    // Même nom : nouvelle version (l'auteur d'origine est gardé), en une instruction (deux publications simultanées s'enchaînent).
+    const [r] = await this.skills(() => this.sql`insert into skills (org_id, name, description, zone, files, author_id, updated_by)
+      values (${org}, ${s.name}, ${s.description}, ${s.zone}, ${this.sql.json(s.files)}, ${s.publisher_id}, ${s.publisher_id})
+      on conflict (org_id, name) do update set description = excluded.description, zone = excluded.zone, files = excluded.files,
+        updated_by = excluded.updated_by, version = skills.version + 1, updated_at = now()
+      returning *`)
+    return toSkill(r)
+  }
+  async updateSkill(id: string, patch: { zone: string | null }) {
+    if (!UUID_RE.test(id)) return null
+    const org = await this.orgId()
+    const [r] = await this.skills(() => this.sql`update skills set zone = ${patch.zone}, updated_at = now()
+      where id = ${id} and org_id = ${org} returning *`)
+    return r ? toSkill(r) : null
+  }
+  async deleteSkill(id: string) {
+    if (!UUID_RE.test(id)) return false
+    const org = await this.orgId()
+    const rows = await this.skills(() => this.sql`delete from skills where id = ${id} and org_id = ${org} returning id`)
+    return rows.length > 0
   }
 
   async getStatus() {

@@ -35,7 +35,7 @@ Le contexte vient du travail réel avec l'IA, capté sur chaque poste par Screen
 - Propositions d'automatisation à partir des prompts répétitifs (empreinte, sans stocker le prompt brut).
 - Passation de poste : contexte d'un poste repris par son remplaçant, l'employé peut supprimer ses items.
 - Sans clé Claude, tout fonctionne avec des heuristiques locales.
-- Prévu : skills de l'entreprise conservés dans le cerveau avec leurs scripts, publication réservée aux personnes autorisées, onglet Skills, attribution d'un skill à un cortex (zone) pour ne le donner qu'à qui a accès à ce contexte.
+- Skills de l'entreprise : conservés dans le cerveau avec leurs scripts, publication réservée aux personnes autorisées, onglet Skills, attribution d'un skill à un cortex (zone) pour ne le donner qu'à qui a accès à ce contexte ; chaque poste installe les siens dans ~/.claude/skills.
 - Non décidé : prix, offre commerciale, hébergement géré.
 
 ## Brand Commitments

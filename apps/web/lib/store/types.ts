@@ -12,17 +12,30 @@ import type {
   Profile,
   Role,
   ScoredItem,
+  Skill,
+  SkillFile,
   Task,
   TaskStatus,
   Zone,
   ZoneAccess,
 } from "@brain/core"
 
-export type NewProfile = { name: string; email?: string; title?: string; role: Role; manager_id?: string | null; token_hash: string }
+export type NewProfile = {
+  name: string
+  email?: string
+  title?: string
+  role: Role
+  manager_id?: string | null
+  can_publish_skills?: boolean
+  token_hash: string
+}
 export type ProfilePatch = Partial<NewProfile>
 export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: string }
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">
 export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created_at?: string }
+
+/** Publication d'un skill : nouveau nom → version 1, nom existant → version suivante (l'auteur d'origine est gardé). */
+export type NewSkill = { name: string; description: string; zone: string | null; files: SkillFile[]; publisher_id: string }
 
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
@@ -69,6 +82,13 @@ export interface BrainStore {
   /** Insère ou met à jour par `key`, en conservant le statut (accepté / écarté) déjà choisi. */
   upsertAutomations(c: AutomationCandidate[]): Promise<AutomationSuggestion[]>
   updateAutomation(id: string, patch: { status: AutomationStatus }): Promise<AutomationSuggestion | null>
+
+  listSkills(): Promise<Skill[]>
+  getSkill(id: string): Promise<Skill | null>
+  getSkillByName(name: string): Promise<Skill | null>
+  publishSkill(s: NewSkill): Promise<Skill>
+  updateSkill(id: string, patch: { zone: string | null }): Promise<Skill | null>
+  deleteSkill(id: string): Promise<boolean>
 
   getStatus(): Promise<CompanyStatus | null>
   setStatus(s: CompanyStatus): Promise<void>

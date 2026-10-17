@@ -90,8 +90,10 @@ export async function api<T = unknown>(path: string, init?: RequestInit & { json
   }
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const msg = (data as { error?: string }).error
-    if (msg) throw new Error(msg)
+    const { error: msg, details } = data as { error?: string; details?: unknown }
+    // Détails lisibles (liste de phrases) : ajoutés au message, par exemple le fichier d'un skill qui contient un secret.
+    const lines = Array.isArray(details) && details.every((d) => typeof d === "string") ? (details as string[]) : []
+    if (msg) throw new Error(lines.length ? `${msg} ${lines.join(" ; ")}` : msg)
     throw new Error(res.status === 401 ? "Session expirée : reconnectez-vous." : `Erreur ${res.status}`)
   }
   return data as T

@@ -35,6 +35,7 @@ Le cerveau ne garde pas que la connaissance : il conserve aussi **les skills de 
 - **Publication sous autorisation** : pour pousser un skill dans le cerveau, il faut un droit particulier, accordé par un admin.
 - **Un onglet Skills** dans le dashboard regroupe tous les skills de l'entreprise.
 - **Attribution à un cortex** : un skill peut être rattaché à un cortex du cerveau (une zone : dev, compta, sales…). Il n'est alors donné qu'aux personnes qui ont accès à ce contexte.
+- **Sur le poste** : chaque employé reçoit automatiquement ses skills dans Claude Code (`~/.claude/skills`), et ceux qui ne lui sont plus attribués sont retirés.
 
 ### 5. Propositions d'automatisation
 On détecte les tâches répétitives à partir de l'activité enregistrée et on les propose aux dirigeants.
