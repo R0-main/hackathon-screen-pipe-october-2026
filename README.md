@@ -1,14 +1,71 @@
 # NOS Brainer
 
-> The company brain that is a *no-brainer*: one prompt to paste into Claude Code, and your company has a brain.
+> **The company brain that is a *no-brainer*.** Screenpipe remembers for one person; NOS Brainer turns what every
+> computer remembers into one brain the whole company, and every AI agent in it, can use.
 
-> Screenpipe hackathon "Build Agents That Remember" — 42 Paris, October 2026.
-> The pitch is in [IDEA.md](IDEA.md), the architecture in [ARCHITECTURE.md](ARCHITECTURE.md), the demo run-through in [demo/DEMO.md](demo/DEMO.md), hosting on a company machine in [docs/LOCAL.md](docs/LOCAL.md).
+**Screenpipe hackathon "Build Agents That Remember", 42 Paris, October 2026. Track 3: Make it work for a team.**
 
-Every employee already works with Claude Code, Codex or ChatGPT, but that context stays locked in individual sessions.
-**Screenpipe** captures these sessions on each computer, **brain-sync** distills them into knowledge (decisions, procedures, facts, tasks) and sends it to **a single company brain**. Everyone's agents query that brain through an **MCP**, with **per-zone access**, and the dashboard shows the brain light up live.
+| | |
+|---|---|
+| **Live demo** | [nos-brainer.tech/demo](https://www.nos-brainer.tech/demo): pick *Claire Martin, CEO* to see everything |
+| **Create your own brain** | [nos-brainer.tech/create](https://www.nos-brainer.tech/create) |
+| **Demo video (2 min)** | _link to add before submission_ |
+| **Run it on your machine** | `make dev` ([Run locally](#run-locally)) |
 
-**The raw data stays on the computer, only the distilled knowledge goes up to the brain.**
+![The company brain: zones light up as agents work, with the live feed of what they learn and ask](docs/screenshots/dashboard-brain.png)
+
+## The problem
+
+Every employee already works with AI: Claude Code and Codex for developers, ChatGPT or Claude in the browser for sales,
+finance and product, plus meetings where decisions get made. What they learn stays locked in one session on one
+computer. Screenpipe solves memory **for one person** (its own team says it: 30 employees means 30 local databases, not
+one queryable company brain). Nobody shares what they learned, nobody sees what is worth automating across the team.
+
+## What we built
+
+- **One prompt to join.** An admin invites a colleague; the colleague pastes the prompt into Claude Code, which runs one
+  command: Screenpipe installed and started, macOS permissions opened at the right place, company MCP, hooks and a
+  15-minute sync set up. The brain opens, already signed in.
+- **Distilled, never raw.** On each computer, `brain-sync` reads Screenpipe and the local agent logs, filters secrets
+  and personal content, and distills the rest with Claude into decisions, procedures, facts and tasks. Only that goes up.
+- **One brain, per-zone access.** Knowledge lands in zones (Dev, Sales, Finance…). Everyone's agents query the brain
+  through an MCP with the rights of their owner: finance never sees the dev zone, and neither do its agents.
+- **The team view.** A live 3D brain, "where the company stands" per zone, the org chart, shared Claude Code skills, and
+  automations detected across people.
+
+## How Screenpipe is used
+
+Screenpipe is the sensor on every computer. Without it, the brain would only hear the coding agents that write logs:
+the browser chats of sales and finance, the meetings and the repeated workflows would be invisible.
+
+| What | How | Code |
+|---|---|---|
+| **Installed by the prompt** | `brain setup` installs and starts Screenpipe, opens the macOS Screen Recording pane, waits until frames arrive, reads its local API token | `apps/client/src/setup.ts`, `screenpipe-cli.ts` |
+| **AI chats with no logs** | Local API `/search` with the semantic parser (`parsed` items with resolved speakers), accessibility text, OCR as fallback, `filter_pii=true`, app allowlist and `browser_url`: ChatGPT, Claude.ai or Gemini in the browser become conversations, distilled like a Claude Code session | `apps/client/src/sources/screenpipe.ts` |
+| **Meetings** | `/meetings` and their transcripts become a conversation, so decisions and commitments reach the brain (microphone is off by default: `setup --audio yes`) | `readScreenpipeMeetings` |
+| **A Screenpipe agent** | On each sync, Claude Code or Codex explores the recent activity itself through the Screenpipe MCP, read-only tools only (`activity-summary`, `search-content`, `keyword-search`, `list-meetings`, `get-meeting`), and proposes knowledge that goes through the same filters | `apps/client/src/agent.ts` |
+| **Workflows worth automating** | Screenpipe's detected workflows (occurrences, days, usual time, minutes per week) become automation suggestions in the company, next to the repeated prompts seen by the hooks | `fetchScreenpipeWorkflows`, `/automations` |
+| **A native pipe** | `brain install-pipe` writes the `brain-sync` pipe: the sync runs from Screenpipe every 15 minutes and after each meeting | `apps/client/src/install.ts` |
+| **Privacy by design** | The raw capture never leaves the computer; `sync --dry-run --full` shows exactly what would be sent | `apps/client/src/sync.ts` |
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Create your company](docs/screenshots/create-company.png) **Create your company**: three questions, Claude proposes the zones, then one prompt per colleague. | ![Where the company stands](docs/screenshots/company-status.png) **Where the company stands**: per zone, from what the team actually did. |
+| ![Team and access](docs/screenshots/team-access.png) **Team and access**: org chart, zones per person, invitations. | ![Automations](docs/screenshots/automations.png) **Automations**: a prompt run every morning at 09:04, proposed to run itself at 08:59. |
+
+## Reproduce the demo
+
+1. **Without installing anything**: open [nos-brainer.tech/demo](https://www.nos-brainer.tech/demo), sign in as *Claire
+   Martin (CEO)*, then "View as: Jean-Marc Dubois" at the bottom left: the brain locks everything except Finance.
+2. **On your machine**: `make demo`, then `make simulate` in a second terminal to watch zones light up live.
+3. **With a real computer and Screenpipe**: `make dev` (or the live site), create your company on `/create`, paste the
+   install prompt into Claude Code on a Mac, work a few minutes in ChatGPT or Claude Code, then run
+   `~/.company-brain/brain sync --dry-run --full` to see what Screenpipe captured and what would be sent.
+
+The pitch is in [IDEA.md](IDEA.md), the architecture in [ARCHITECTURE.md](ARCHITECTURE.md), the stage run-through in
+[demo/DEMO.md](demo/DEMO.md), hosting on a company machine in [docs/LOCAL.md](docs/LOCAL.md).
 
 ## Run locally
 
