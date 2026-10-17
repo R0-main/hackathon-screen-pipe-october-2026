@@ -111,7 +111,7 @@ export function InstallActions({ demo }: { demo: boolean }) {
 
       <p className="mt-4 border-t border-line pt-4 text-[13px] leading-relaxed text-trace">
         Démo publique : le prompt vous crée un compte visiteur sur le cerveau de Fournil, avec votre propre jeton. Ce que votre poste y envoie ensuite est visible
-        des autres visiteurs de la démo. Tout se retire avec <span className="mono text-ink">brain.mjs uninstall</span>.
+        des autres visiteurs de la démo. Tout se retire avec <span className="mono text-ink">~/.company-brain/brain uninstall</span>.
       </p>
     </div>
   )
