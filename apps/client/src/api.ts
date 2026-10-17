@@ -1,6 +1,6 @@
 // Client HTTP de l'API du cerveau (jeton Bearer personnel).
 
-import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, Skill, SkillFile, StatusInput, Zone, ZoneStatus } from "@brain/core"
+import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, NewZonesInput, Profile, Skill, SkillFile, StatusInput, Zone, ZoneStatus } from "@brain/core"
 
 export class ApiError extends Error {
   constructor(
@@ -12,6 +12,11 @@ export class ApiError extends Error {
 }
 
 export type ApiZone = Zone & { readable: boolean; count?: number }
+
+export type NewZonesRunResult =
+  | { status: "created"; zones: { id: string; name: string; items: number; readers: number }[] }
+  | { status: "unchanged" }
+  | { status: "skipped"; reason: string }
 
 export type WhoAmI = {
   org: { name: string; description: string }
@@ -161,6 +166,14 @@ export class BrainApi {
   /** Admins : enregistre un résumé d'état produit sur ce poste (masqué et validé par le cerveau). */
   saveStatus(status: { headline: string; zones: ZoneStatus[] }) {
     return this.request<NonNullable<CompanyStatusResult>>("POST", "/api/status", { status }, 30000)
+  }
+  /** Admins : matière d'un passage « nouvelles zones », ou la raison de ne rien faire. */
+  newZonesInput() {
+    return this.request<{ input: NewZonesInput } | { skipped: string }>("GET", "/api/admin/zones/auto/input", undefined, 30000)
+  }
+  /** Admins : applique les zones proposées par Claude sur ce poste (mêmes garde-fous qu'un passage du serveur). */
+  applyNewZones(zones: { name: string; description: string; keywords: string[]; item_ids: string[] }[]) {
+    return this.request<NewZonesRunResult>("POST", "/api/admin/zones/auto", { zones }, 60000)
   }
   query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
     return this.request<QueryResult>("POST", "/api/query", input)

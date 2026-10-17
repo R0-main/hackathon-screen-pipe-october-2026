@@ -26,7 +26,13 @@ export type NewZonesOutcome =
   | { status: "unchanged" }
   | { status: "skipped"; reason: "no_claude" | "max_zones" | "too_few_items" | "claude_error" }
 
-export type NewZonesRun = NewZonesOutcome & { at: string }
+/** `server` : Claude appelé par le serveur (clé API) ; `claude-code` : proposition faite par le Claude Code de l'entreprise (abonnement). */
+export type NewZonesVia = "server" | "claude-code"
+
+export type NewZonesRun = NewZonesOutcome & { at: string; via?: NewZonesVia }
+
+/** Ce que propose le Claude Code de l'entreprise (`brain refresh-zones`) : les connaissances par identifiant, pas par numéro. */
+export type AgentZoneProposal = { name: string; description: string; keywords: string[]; item_ids: string[] }
 
 /** Heure locale (fuseau de l'entreprise) du passage quotidien. vercel.json déclenche le job à 8 h et 9 h UTC : l'un des deux tombe à 10 h à Paris, été comme hiver. */
 export const NEW_ZONES_HOUR = 10
@@ -49,24 +55,48 @@ type Propose = (input: NewZonesInput) => Promise<NewZoneProposal[] | null>
  * Un passage pour l'entreprise courante. `propose` remplace l'appel à Claude (tests). Sans clé API côté serveur, rien
  * n'est créé : une zone inventée par une heuristique, sans relecture, ferait plus de mal que de bien.
  */
-export async function runNewZones(opts: { propose?: Propose } = {}): Promise<NewZonesRun> {
+export async function runNewZones(opts: { propose?: Propose; via?: NewZonesVia } = {}): Promise<NewZonesRun> {
   const outcome = await evolve(opts.propose)
-  const run: NewZonesRun = { ...outcome, at: new Date().toISOString() }
-  await appendLog(run)
+  const run: NewZonesRun = { ...outcome, at: new Date().toISOString(), via: opts.via ?? "server" }
+  // Sans clé, le cron du serveur passe chaque jour pour rien (l'entreprise passe peut-être par son abonnement, en CI) :
+  // l'historique ne garde que les vrais passages.
+  if (!(outcome.status === "skipped" && outcome.reason === "no_claude")) await appendLog(run)
   return run
+}
+
+/** Matière envoyée au Claude Code de l'entreprise (GET /api/admin/zones/auto/input), ou la raison de ne rien faire. */
+export async function newZonesInput(): Promise<{ input: NewZonesInput } | { skipped: "max_zones" | "too_few_items" }> {
+  const s = getStore()
+  const zones = await s.listZones()
+  if (zones.length >= MAX_ZONES) return { skipped: "max_zones" }
+  const since = new Date(Date.now() - NEW_ZONES_WINDOW_DAYS * 86400_000).toISOString()
+  const [items, org] = await Promise.all([s.listItems({ sinceIso: since, limit: NEW_ZONES_MAX_ITEMS }), s.getOrg()])
+  if (items.length < NEW_ZONES_MIN_CORPUS) return { skipped: "too_few_items" }
+  return { input: buildNewZonesInput({ companyName: org.name, zones, items }) }
+}
+
+/**
+ * Applique ce que le Claude Code de l'entreprise a proposé, avec exactement les garde-fous d'un passage du serveur.
+ * La matière est relue ici : une connaissance arrivée, supprimée ou sortie de la fenêtre entre-temps est simplement
+ * ignorée, et un identifiant inventé ne désigne rien.
+ */
+export function applyAgentProposals(zones: AgentZoneProposal[]): Promise<NewZonesRun> {
+  return runNewZones({
+    via: "claude-code",
+    propose: async (input) => {
+      const refs = new Map(input.items.map((i) => [i.id, i.ref]))
+      return zones.map((z) => ({ ...z, items: z.item_ids.map((id) => refs.get(id)).filter((r): r is number => r !== undefined) }))
+    },
+  })
 }
 
 async function evolve(propose?: Propose): Promise<NewZonesOutcome> {
   const s = getStore()
   const claude = propose ? null : await getClaude()
   if (!propose && !claude) return { status: "skipped", reason: "no_claude" }
-  const zones = await s.listZones()
-  if (zones.length >= MAX_ZONES) return { status: "skipped", reason: "max_zones" }
-  const since = new Date(Date.now() - NEW_ZONES_WINDOW_DAYS * 86400_000).toISOString()
-  const [items, org] = await Promise.all([s.listItems({ sinceIso: since, limit: NEW_ZONES_MAX_ITEMS }), s.getOrg()])
-  if (items.length < NEW_ZONES_MIN_CORPUS) return { status: "skipped", reason: "too_few_items" }
-
-  const input = buildNewZonesInput({ companyName: org.name, zones, items })
+  const material = await newZonesInput()
+  if ("skipped" in material) return { status: "skipped", reason: material.skipped }
+  const input = material.input
   const proposals = propose ? await propose(input) : await proposeNewZones(claude!, input)
   if (!proposals) return { status: "skipped", reason: "claude_error" }
   // Relu juste avant d'écrire : une zone créée entre-temps dans l'admin n'est pas doublée.

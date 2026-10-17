@@ -159,3 +159,15 @@ ${renderZones(input.zones)}
 Connaissances récentes :
 ${items || "(aucune)"}`
 }
+
+/** Version « texte » pour `claude -p` (abonnement Claude Code de l'entreprise) : JSON brut, analysé par parseNewZonesJson. */
+export function buildCliNewZonesPrompt(input: NewZonesInput): string {
+  return `${DISTILL_MARKER}
+${NEW_ZONES_SYSTEM}
+
+${buildNewZonesPrompt(input)}
+
+Réponds UNIQUEMENT avec un objet JSON de la forme :
+{"zones":[{"name":"…","description":"…","keywords":["…"],"items":[12,15,18,21]}]}
+{"zones":[]} si aucune zone ne s'impose. Sans texte autour, sans bloc de code.`
+}

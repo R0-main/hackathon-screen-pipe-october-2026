@@ -32,6 +32,7 @@ import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
+import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
 import * as cronNewZonesRoute from "../app/api/cron/new-zones/route"
 import * as adminClaudeRoute from "../app/api/admin/claude/route"
 import { runNewZones } from "../lib/new-zones"
@@ -879,6 +880,19 @@ async function main() {
         assert(log.status === 200 && log.data.runs.map((r: { status: string }) => r.status).join() === "unchanged,created", "les admins voient l'historique des passages")
         const bobSession = await createSessionValue(bob.id)
         assert((await call(adminNewZonesRoute.POST, "/api/admin/zones/auto", { method: "POST", session: bobSession })).status === 403, "lancer un passage est réservé aux admins")
+
+        // Passage fait par le Claude Code de l'entreprise (brain refresh-zones, abonnement) : matière, puis proposition par identifiants.
+        assert((await call(adminNewZonesInputRoute.GET, "/api/admin/zones/auto/input", { session: bobSession })).status === 403, "la matière est réservée aux admins")
+        const material = await call(adminNewZonesInputRoute.GET, "/api/admin/zones/auto/input", { session: cookie })
+        const astreintes = (material.data.input?.items ?? []).filter((i: { title: string }) => i.title.startsWith("Astreinte Acme")).map((i: { id: string }) => i.id)
+        assert(material.status === 200 && astreintes.length === 9, "le Claude Code de l'entreprise reçoit les connaissances récentes, avec leurs identifiants")
+        assert((await call(adminNewZonesRoute.POST, "/api/admin/zones/auto", { method: "POST", session: cookie, body: { zones: "rh" } })).status === 400, "une proposition mal formée est refusée")
+        const agent = await call(adminNewZonesRoute.POST, "/api/admin/zones/auto", {
+          method: "POST",
+          session: cookie,
+          body: { zones: [{ name: "Astreintes", description: "Planning d'astreinte.", keywords: ["astreinte"], item_ids: [...astreintes.slice(0, 4), "inventé"] }] },
+        })
+        assert(agent.status === 200 && agent.data.status === "created" && agent.data.via === "claude-code" && agent.data.zones[0].items === 4, "sa proposition est appliquée, un identifiant inventé ne désigne rien")
 
         const cron = (headers: Record<string, string> = {}, qs = "") => cronNewZonesRoute.GET(new Request(`http://smoke.test/api/cron/new-zones${qs}`, { headers }))
         const prevSecret = process.env.CRON_SECRET

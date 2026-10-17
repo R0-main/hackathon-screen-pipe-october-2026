@@ -1,10 +1,13 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
+  DISTILL_MARKER,
   MAX_ZONES,
   NEW_ZONES_MAX_ITEMS,
+  buildCliNewZonesPrompt,
   buildNewZonesInput,
   buildNewZonesPrompt,
+  parseNewZonesJson,
   planNewZones,
   readersOfNewZone,
   type KnowledgeItem,
@@ -90,4 +93,15 @@ test("lecteurs de la nouvelle zone : ses auteurs, et qui lisait toutes ses zones
     { id: "u-hugo", readable: ["dev"] },
   ]
   assert.deepEqual(readersOfNewZone(plan, members), ["u-jm", "u-sarah"])
+})
+
+test("lit la réponse de claude -p : enveloppe, bloc de code, numéros « #12 », liste vide", () => {
+  const body = { zones: [{ name: "Juridique", description: "Contrats.", keywords: ["contrat", 3], items: ["#1", 2, "3", "x", 4.5] }] }
+  const envelope = JSON.stringify({ type: "result", is_error: false, result: "Voici :\n```json\n" + JSON.stringify(body) + "\n```" })
+  assert.deepEqual(parseNewZonesJson(envelope), [{ name: "Juridique", description: "Contrats.", keywords: ["contrat"], items: [1, 2, 3] }])
+  assert.deepEqual(parseNewZonesJson('{"zones":[]}'), [])
+  assert.equal(parseNewZonesJson(JSON.stringify({ is_error: true, result: "rate limit" })), null)
+  assert.equal(parseNewZonesJson("Je ne sais pas."), null)
+  const prompt = buildCliNewZonesPrompt(input())
+  assert.ok(prompt.startsWith(DISTILL_MARKER) && prompt.includes("#4 [compta]") && prompt.includes('{"zones":[]}'))
 })

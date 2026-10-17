@@ -2,8 +2,10 @@
 // travail qui n'a pas de zone à lui (du juridique rangé faute de mieux dans « Direction »…). Rien n'attend de validation :
 // les garde-fous ci-dessous décident seuls de ce qui est créé, et l'ordre des zones existantes n'est jamais touché.
 
+import { z } from "zod"
 import type { KnowledgeItem, KnowledgeKind, Zone } from "./types"
 import type { ZoneHint } from "./distill"
+import { jsonObjects } from "./status"
 import { normalize, truncate } from "./text"
 import { slugify } from "./zones"
 
@@ -97,4 +99,41 @@ export function readersOfNewZone(plan: NewZonePlan, members: { id: string; reada
   const sources = [...new Set(plan.items.map((i) => i.from))]
   const authors = new Set(plan.items.map((i) => i.author_id))
   return members.filter((m) => authors.has(m.id) || sources.every((z) => m.readable.includes(z))).map((m) => m.id)
+}
+
+const LooseProposalSchema = z.object({
+  name: z.string(),
+  description: z.string().catch(""),
+  keywords: z.array(z.unknown()).catch([]),
+  items: z.array(z.unknown()).catch([]),
+})
+
+/**
+ * Réponse de `claude -p` (abonnement Claude Code, sur un poste ou en CI) : tolère le texte autour, un bloc de code,
+ * l'enveloppe JSON de la CLI, et des numéros écrits « #12 » ou « 12 ». `[]` si Claude ne propose rien, null si illisible.
+ */
+export function parseNewZonesJson(text: string): NewZoneProposal[] | null {
+  if (typeof text !== "string" || !text.trim()) return null
+  const objects = jsonObjects(text)
+  const envelope = objects.find((o) => !("zones" in o) && ("result" in o || "structured_output" in o || "is_error" in o))
+  if (envelope && !objects.some((o) => "zones" in o)) {
+    if (envelope.is_error === true) return null
+    if (envelope.structured_output && typeof envelope.structured_output === "object") return parseNewZonesJson(JSON.stringify(envelope.structured_output))
+    return typeof envelope.result === "string" ? parseNewZonesJson(envelope.result) : null
+  }
+  const candidate = objects.find((o) => Array.isArray(o.zones))
+  if (!candidate) return null
+  const out: NewZoneProposal[] = []
+  for (const raw of candidate.zones as unknown[]) {
+    const parsed = LooseProposalSchema.safeParse(raw)
+    if (!parsed.success) continue
+    const p = parsed.data
+    out.push({
+      name: p.name,
+      description: p.description,
+      keywords: p.keywords.filter((k): k is string => typeof k === "string"),
+      items: p.items.map((r) => (typeof r === "number" ? r : Number(String(r).replace(/^#/, "")))).filter((r) => Number.isInteger(r)),
+    })
+  }
+  return out
 }
