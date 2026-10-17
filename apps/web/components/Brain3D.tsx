@@ -35,7 +35,7 @@ const BACK = 0.86
 const NEURON_R = 0.008
 
 const CENTER_R = 0.06
-const ZOOM = { min: 2.6, max: 8, start: 5, step: 0.6 }
+const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
 
