@@ -8,13 +8,15 @@ import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
 import { BrainIcon, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
+import { PrivacyFlow } from "./PrivacyFlow"
 import { ScrollBrain } from "./ScrollBrain"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
+import { setupLandingMotion } from "./motion/setup"
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
-/** Longueur de la scène épinglée, en hauteurs d'écran. */
-const PIN_SCREENS = 4
+/** Longueur de la scène épinglée, en hauteurs d'écran : chaque chapitre a le temps d'être lu. */
+const PIN_SCREENS = 7
 
 /** Entrée et sortie de chaque chapitre, en fraction de la scène. */
 const CHAPTERS = [
@@ -33,6 +35,7 @@ const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!
  * Sans JavaScript ou sous `prefers-reduced-motion`, les chapitres se lisent à la suite, cerveau immobile.
  */
 export function Landing({ demo, signup, signedIn = false }: { demo: boolean; signup: boolean; signedIn?: boolean }) {
+  const rootRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLElement>(null)
   const heroRef = useRef<HTMLDivElement>(null)
   const chapterRefs = useRef<(HTMLDivElement | null)[]>([])
@@ -88,7 +91,13 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
       })
       tl.fromTo(barRef.current, { scaleX: 0 }, { scaleX: 1, duration: 1 }, 0)
 
+      // Le reste de la page (arrêts, calage, sections au scroll). Créé après la scène épinglée, pour l'ordre des déclencheurs.
+      const scene = tl.scrollTrigger
+      const stops = CHAPTERS.map((c) => (c.in + 0.045 + c.out) / 2)
+      const offMotion = rootRef.current && scene ? setupLandingMotion(rootRef.current, { lenis, scene, stops }) : () => {}
+
       return () => {
+        offMotion()
         gsap.ticker.remove(tick)
         lenis.destroy()
         lenisRef.current = null
@@ -115,13 +124,13 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
   const primary = cta.label
 
   return (
-    <main className="landing">
+    <main ref={rootRef} className="landing">
       <section ref={stageRef} className={`landing-stage ${mode === "scroll" ? "is-scroll" : ""}`} aria-labelledby="landing-title">
         <div className="landing-screen">
           <ScrollBrain zones={LANDING_ZONES} synapses={LANDING_SYNAPSES} agents={LANDING_AGENTS} progress={progress} still={mode !== "scroll"} />
 
           <header className="absolute inset-x-0 top-0 z-10">
-            <nav className="landing-wrap flex items-center justify-between py-4" aria-label="Principal">
+            <nav data-hero="nav" className="landing-wrap flex items-center justify-between py-4" aria-label="Principal">
               <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
                 <BrainIcon size={26} />
                 <span className="text-[15px] font-medium">NOS Brainer</span>
@@ -146,13 +155,13 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
 
           <div ref={heroRef} className="landing-hero">
             <div className="landing-wrap">
-              <h1 id="landing-title" className="landing-display max-w-[11.5em]">
+              <h1 id="landing-title" data-hero="title" className="landing-display max-w-[9.5em]">
                 Tout ce que votre équipe apprend avec l'IA, dans un seul cerveau.
               </h1>
-              <p className="mt-5 max-w-[34em] text-[16px] leading-relaxed sm:text-[18px]">
+              <p data-hero="sub" className="mt-5 max-w-[34em] text-[16px] leading-relaxed sm:text-[18px]">
                 Chaque employé travaille déjà avec Claude Code ou Codex. Screenpipe capte ces sessions sur son poste, et le cerveau en garde l'essentiel pour tous les agents de l'entreprise.
               </p>
-              <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <div data-hero="cta" className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
                 <Link href={cta.href} className="btn btn-primary btn-lg">
                   {primary}
                 </Link>
@@ -165,7 +174,9 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                   Voir comment ça marche
                 </a>
               </div>
-              <p className="mt-8 text-[13px] text-trace">Le cerveau de Fournil, l'entreprise fictive de la démo.</p>
+              <p data-hero="note" className="mt-8 text-[13px] text-trace">
+                Le cerveau de Fournil, l'entreprise fictive de la démo.
+              </p>
             </div>
           </div>
 
@@ -208,11 +219,23 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
         </div>
       </section>
 
-      <Dashboard />
-      <Install demo={demo} signup={signup} />
-      <Privacy />
-      <Close cta={cta} second={second} demo={demo} signup={signup && !signedIn} />
+      <div data-after className="relative">
+        <span data-thread className="landing-thread" aria-hidden />
+        <Dashboard />
+        <Install demo={demo} signup={signup} />
+        <Privacy />
+        <Close cta={cta} second={second} demo={demo} signup={signup && !signedIn} />
+      </div>
     </main>
+  )
+}
+
+/** Bille du fil qui relie les sections : elle se remplit quand on arrive sur la section. */
+function Bead() {
+  return (
+    <span data-bead className="landing-bead" aria-hidden>
+      <span data-bead-fill />
+    </span>
   )
 }
 
@@ -234,23 +257,24 @@ function Dashboard() {
     { zone: "compta", text: "TVA de septembre à déclarer avant le 19\u00a0octobre." },
   ]
   return (
-    <section className="landing-section" aria-labelledby="dirigeant">
+    <section className="landing-section relative" aria-labelledby="dirigeant">
+      <Bead />
       <div className="landing-wrap grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
         <div className="lg:pt-6">
-          <h2 id="dirigeant" className="landing-h2 max-w-[13em]">
+          <h2 id="dirigeant" data-reveal="title" className="landing-h2 max-w-[13em]">
             Claire, la CEO, voit où en est la boîte.
           </h2>
-          <p className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
+          <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
             Le résumé part de ce que l'équipe a vraiment fait : objectifs, tâches en cours et qui a fait quoi. Et quand quelqu'un lance le même prompt chaque matin, le cerveau propose de le faire à sa place.
           </p>
         </div>
 
-        <figure className="panel overflow-hidden">
+        <figure data-reveal="panel" className="panel overflow-hidden">
           <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
             <span className="panel-title">Où en est Fournil</span>
             <span className="text-[12px] text-trace">Cette semaine</span>
           </div>
-          <ul className="divide-y divide-line">
+          <ul data-rows className="divide-y divide-line">
             {status.map((s) => (
               <li key={s.text} className="flex flex-col gap-1 px-5 py-3.5 sm:flex-row sm:gap-4">
                 <ZoneTag name={zone(s.zone).name} color={zoneColor(zone(s.zone).color, zone(s.zone).position)} className="w-[92px] shrink-0 text-[13px] text-trace" />
@@ -262,7 +286,7 @@ function Dashboard() {
             <p className="text-[13px] text-trace">Automatisation proposée</p>
             <div className="inset mt-2 px-3.5 py-3">
               <p className="text-[14px]">Jean-Marc lance ce prompt tous les jours vers 9{"\u00a0"}h :</p>
-              <p className="mono mt-1.5 text-[13px] leading-relaxed">Rapproche les relevés Qonto d'hier avec les factures Pennylane et liste les écarts</p>
+              <p data-type className="mono mt-1.5 text-[13px] leading-relaxed">Rapproche les relevés Qonto d'hier avec les factures Pennylane et liste les écarts</p>
             </div>
           </div>
           <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Extrait du dashboard de la démo. Fournil est une entreprise fictive.</figcaption>
@@ -274,27 +298,30 @@ function Dashboard() {
 
 function Install({ demo, signup }: { demo: boolean; signup: boolean }) {
   return (
-    <section className="landing-section border-t border-line" aria-labelledby="installer">
+    <section className="landing-section relative border-t border-line" aria-labelledby="installer">
+      <Bead />
       <div className="landing-wrap">
-        <h2 id="installer" className="landing-display max-w-[12em]">
+        <h2 id="installer" data-reveal="title" className="landing-display max-w-[12em]">
           Un message à coller dans Claude Code ou Codex.
         </h2>
         <div className="mt-12 grid gap-10 lg:mt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
-          <div className="max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
+          <div data-reveal="text" className="max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
             <p>
               Le prompt contient votre jeton personnel. Claude Code ou Codex lance une seule commande : elle installe Screenpipe, branche le MCP et les hooks, puis ouvre le
               cerveau déjà connecté.
             </p>
             <p className="mt-4">Aucun historique n'est envoyé : le cerveau apprend à partir de l'installation. Ensuite, il n'y a plus rien à faire.</p>
           </div>
-          <InstallActions demo={demo} signup={signup} />
+          <div data-reveal="panel">
+            <InstallActions demo={demo} signup={signup} />
+          </div>
         </div>
       </div>
     </section>
   )
 }
 
-/** Le brut reste sur le poste : un schéma de billes et de traits, dans la langue du cerveau. */
+/** Le brut reste sur le poste : le parcours des captures, du poste au cerveau (PrivacyFlow). */
 function Privacy() {
   const facts = [
     { term: "Liste blanche d'applications", def: "brain-sync ne lit que les applications de travail autorisées." },
@@ -302,20 +329,22 @@ function Privacy() {
     { term: "Droit de regard", def: "Chacun voit ce qu'il a apporté au cerveau et peut le supprimer." },
   ]
   return (
-    <section className="landing-section border-t border-line" aria-labelledby="vie-privee">
+    <section data-hold="1.4" className="landing-section relative border-t border-line" aria-labelledby="vie-privee">
+      <Bead />
       <div className="landing-wrap">
         <div className="grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
           <div>
-            <h2 id="vie-privee" className="landing-h2 max-w-[11em]">
+            <h2 id="vie-privee" data-reveal="title" className="landing-h2 max-w-[11em]">
               Le brut reste sur le poste.
             </h2>
-            <p className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
+            <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
               Screenpipe enregistre environ 19{"\u00a0"}Go en deux semaines sur un poste. Rien de cela ne quitte le PC : seules les connaissances distillées montent au cerveau.
             </p>
           </div>
-          <RawToDistilled />
+          <PrivacyFlow />
         </div>
-        <dl className="mt-16 grid border-t border-ink sm:grid-cols-3">
+        <div data-rule className="mt-16 h-px bg-ink" />
+        <dl data-facts className="grid sm:grid-cols-3">
           {facts.map((f) => (
             <div key={f.term} className="border-b border-line py-5 sm:border-b-0 sm:pr-8 sm:pt-6">
               <dt className="text-[15px] font-medium">{f.term}</dt>
@@ -328,60 +357,17 @@ function Privacy() {
   )
 }
 
-function RawToDistilled() {
-  // Poussière brute à gauche (le poste), quelques billes reliées à droite (le cerveau). Positions fixes.
-  const raw = Array.from({ length: 64 }, (_, i) => {
-    const a = i * 2.399963
-    const r = 6 + Math.sqrt(i) * 9.5
-    return { x: 120 + Math.cos(a) * r, y: 110 + Math.sin(a) * r * 0.86, r: 1.6 + ((i * 7) % 5) * 0.35 }
-  })
-  const kept = [
-    { x: 468, y: 74 },
-    { x: 566, y: 66 },
-    { x: 458, y: 148 },
-    { x: 516, y: 170 },
-    { x: 578, y: 136 },
-  ]
-  const hub = { x: 520, y: 108 }
-  return (
-    <figure className="flex flex-col justify-center">
-      <svg viewBox="0 0 640 220" className="h-auto w-full" role="img" aria-label="Sur le poste, beaucoup de données brutes ; vers le cerveau, quelques connaissances seulement.">
-        {raw.map((p, i) => (
-          <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r={p.r.toFixed(2)} fill="var(--color-line-strong)" />
-        ))}
-        <line x1="250" y1="110" x2="410" y2="110" stroke="var(--color-ink)" strokeWidth="1" />
-        <line x1="330" y1="92" x2="330" y2="128" stroke="var(--color-ink)" strokeWidth="1" />
-        {kept.map((p, i) => (
-          <line key={`l${i}`} x1={hub.x} y1={hub.y} x2={p.x} y2={p.y} stroke="var(--color-line-strong)" strokeWidth="1" />
-        ))}
-        {kept.map((p, i) => (
-          <circle key={`k${i}`} cx={p.x} cy={p.y} r="4.5" fill="var(--color-ink)" />
-        ))}
-        <circle cx={hub.x} cy={hub.y} r="7" fill="var(--color-surface)" stroke="var(--color-ink)" strokeWidth="1.5" />
-        <text x="120" y="210" textAnchor="middle" className="fill-trace text-[13px]">
-          Le poste
-        </text>
-        <text x="330" y="150" textAnchor="middle" className="fill-trace text-[13px]">
-          filtre local
-        </text>
-        <text x="515" y="210" textAnchor="middle" className="fill-trace text-[13px]">
-          Le cerveau
-        </text>
-      </svg>
-    </figure>
-  )
-}
-
 type Cta = { href: string; label: string }
 
 function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; demo: boolean; signup: boolean }) {
   return (
-    <section className="landing-section !pb-10 border-t border-line" aria-labelledby="fin">
+    <section data-close className="landing-section relative !pb-10 border-t border-line" aria-labelledby="fin">
+      <Bead />
       <div className="landing-wrap">
-        <h2 id="fin" className="landing-display max-w-[10em]">
+        <h2 id="fin" data-reveal="title" className="landing-display max-w-[10em]">
           {signup ? "Donnez un cerveau à votre entreprise." : "Ouvrez le cerveau de Fournil."}
         </h2>
-        <p className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
+        <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
           {signup
             ? "Quatre questions pour créer votre dashboard, un prompt à coller dans Claude Code ou Codex pour brancher votre poste, puis un prompt par collègue pour les inviter."
             : demo
