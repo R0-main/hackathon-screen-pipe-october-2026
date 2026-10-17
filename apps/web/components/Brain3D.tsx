@@ -63,6 +63,8 @@ const DOT_R = 0.052
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
+/** Intervalle entre deux ondes tant qu'une zone est choisie. */
+const PULSE_MS = 1000
 
 type ThreeModule = typeof import("three")
 type SphereMesh = THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>
@@ -83,6 +85,8 @@ type ZoneGfx = {
   linkMat: THREE.LineBasicMaterial
   active: boolean
   selected: boolean
+  /** Allumée : touchée en direct ou choisie au clic. */
+  lit: boolean
 }
 
 type SynapseGfx = { a: string; b: string; mat: THREE.MeshBasicMaterial; baseOpacity: number; active: boolean }
@@ -349,7 +353,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     materials.push(centerMat, nodeMat, linkMat)
     const glow = new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
     const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
+    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, active: false, selected: false, lit: false })
   })
 
   // Le réseau qui dessine le cerveau : des liaisons en arcs, à l'encre ; seules les zones portent la couleur.
@@ -574,6 +578,13 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const live: RippleGfx[] = []
   /** Rayon de l'onde à l'instant k (0 → 1) : elle part du centre et s'éteint un peu après la connaissance la plus lointaine. */
   const rippleRadius = (r: RippleGfx, k: number) => 0.05 + (r.zone.reach + 0.08) * k
+  const spawnRipple = (g: ZoneGfx, key: string, t: number) => {
+    const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: g.glow, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
+    mesh.position.copy(g.center.position)
+    group.add(mesh)
+    live.push({ key, zone: g, mesh, start: t })
+  }
+  const pulse = { zone: null as string | null, next: 0, seq: 0 }
   const seen = new Set<string>()
   const tmp = new T.Vector3()
   let raf = 0
@@ -592,11 +603,25 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
     const act = refs.activityRef.current
     const sel = refs.selectedRef.current
+    // Zone choisie au clic : une onde part tout de suite (sans attendre l'aller-retour du serveur), puis une par seconde
+    // tant qu'elle reste choisie.
+    if (sel !== pulse.zone) {
+      pulse.zone = sel ?? null
+      pulse.next = t
+    }
+    const selG = sel ? gfx.get(sel) : undefined
+    if (selG && t >= pulse.next) {
+      spawnRipple(selG, `sel-${++pulse.seq}`, t)
+      pulse.next = reduced ? Infinity : t + PULSE_MS
+    }
     for (const g of gfx.values()) {
       const a = act[g.id]
-      const on = Boolean(a && a.until > nowMs)
-      if (on !== g.active) {
-        g.active = on
+      g.active = Boolean(a && a.until > nowMs)
+      const isSel = sel === g.id
+      g.selected = isSel
+      const on = g.active || isSel
+      if (on !== g.lit) {
+        g.lit = on
         g.center.material.color.setHex(on ? g.glow : g.locked ? NEUTRAL : g.color)
         g.linkMat.color.setHex(on ? INK : LINE)
       }
@@ -613,11 +638,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
           }
         node.scale.setScalar((node.userData.r as number) * (on ? 1.6 : 1) * (1 + 1.4 * pulse))
       }
-      const isSel = sel === g.id
-      if (isSel !== g.selected) {
-        g.selected = isSel
-      }
-      g.outline.visible = g.active || g.selected
+      g.outline.visible = on
       const target = CENTER_R * (on ? 1.3 : 1)
       g.center.scale.setScalar(g.center.scale.x + (target - g.center.scale.x) * Math.min(1, dt * 10))
       g.outline.scale.setScalar(g.center.scale.x * 1.3)
@@ -636,11 +657,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       if (seen.has(r.key)) continue
       seen.add(r.key)
       const g = gfx.get(r.zone)
-      if (!g) continue
-      const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: g.glow, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
-      mesh.position.copy(g.center.position)
-      group.add(mesh)
-      live.push({ key: r.key, zone: g, mesh, start: t })
+      // La zone choisie a déjà ses ondes à la seconde : celle du serveur (le clic qui revient) ferait doublon.
+      if (g && r.zone !== sel) spawnRipple(g, r.key, t)
     }
     for (const k of seen) if (!wanted.some((r) => r.key === k)) seen.delete(k)
     for (let i = live.length - 1; i >= 0; i--) {
