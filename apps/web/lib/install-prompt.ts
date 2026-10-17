@@ -15,7 +15,10 @@
  * Nos prompts n'ont de sens que sur le poste de la personne (installer le client, lire son historique). Une session
  * Claude Code dans le cloud (app de bureau en environnement distant) s'arrête au lieu d'installer dans un conteneur.
  */
-export const LOCAL_ONLY = "Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`)."
+export const LOCAL_ONLY = "Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi en une phrase de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`)."
+
+/** Une action refusée (mode de permission, bac à sable) : une phrase qui dit quoi faire, pas une liste de raisons ni d'options. */
+export const IF_BLOCKED = "Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire, sans liste ni explication, puis attends."
 
 /** Le raccourci écrit par install.sh : marche même quand Node.js est une copie privée hors du PATH. */
 export const BRAIN_CLI = "~/.company-brain/brain"
@@ -90,7 +93,7 @@ function commonCodes(brain: string): string {
   return (
     `Code ${EXIT.permissions} (« EN ATTENTE ») : redis-moi où cocher, puis relance \`${brain} setup\` (même délai). ` +
     `Code ${EXIT.download} : réseau ou adresse, relance la même commande. ` +
-    `Autre code (${EXIT.noScreenpipe} : branché sans Screenpipe) : lance \`${brain} doctor --json\`, explique simplement chaque point KO et lance les corrections marquées « safe » (même délai). ` +
+    `Autre code (${EXIT.noScreenpipe} : branché sans Screenpipe) : lance \`${brain} doctor --json\` et les corrections marquées « safe » (même délai), puis dis-moi en une phrase ce qui reste à faire. ` +
     `Sous Windows, le client est \`${BRAIN_CLI_WINDOWS}\`.`
   )
 }
@@ -110,7 +113,7 @@ export function buildInstallPrompt(opts: { baseUrl: string; token: string; name:
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--token ${token}`, caFingerprint)
   return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}. Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
-Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY}
+Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
 2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
@@ -132,7 +135,7 @@ export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: 
   const org = deNom(orgName)
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"`, caFingerprint)
-  return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY}
+  return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
 
 1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md ou AGENTS.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
 2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).

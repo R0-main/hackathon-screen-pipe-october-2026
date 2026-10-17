@@ -5,7 +5,7 @@ import { fmt } from "@/lib/i18n"
 import { requirePageViewer } from "@/lib/session"
 import { runInOrg } from "@/lib/store"
 import { PageScroll } from "@/components/AppShell"
-import { entityHref } from "@/components/KnowledgeList"
+import { entityHref } from "@/components/format"
 
 export const dynamic = "force-dynamic"
 
