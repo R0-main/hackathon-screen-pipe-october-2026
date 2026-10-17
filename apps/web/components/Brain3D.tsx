@@ -57,10 +57,10 @@ const SYNAPSE_R = 0.0045
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
-const DOT_GAP = 26
-const DOT_SPACING = 34
-/** Rayon d'un dot dans la scène : une dizaine de pixels au zoom de départ. */
-const DOT_R = 0.039
+const DOT_GAP = 32
+const DOT_SPACING = 44
+/** Rayon d'un dot dans la scène : une vingtaine de pixels de large au zoom de départ. */
+const DOT_R = 0.052
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
