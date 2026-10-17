@@ -47,7 +47,10 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
   const endRef = useRef<HTMLDivElement>(null)
   const agentPrompt = useRef<Promise<string> | null>(null)
   const [waiting, setWaiting] = useState(false)
+  const [interview, setInterview] = useState(false)
   const done = step >= questions.length
+  // L'interview est l'autre chemin, replié par défaut : le contexte des comptes passe en premier.
+  const showInterview = (interview || step > 0 || Boolean(draft)) && draft?.generator !== "agent"
 
   // La proposition de Claude Code ou Codex arrive par l'API : la page la relit et se remplit toute seule.
   useEffect(() => {
@@ -134,19 +137,19 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
         </p>
       </header>
       {!draft && (
-        <section className="panel mb-6 px-5 py-5" aria-labelledby="agent-fill">
-          <h2 id="agent-fill" className="panel-title">
-            Le faire remplir par Claude Code ou Codex
+        <section className="panel mb-6 px-5 py-6 sm:px-7" aria-labelledby="agent-fill">
+          <h2 id="agent-fill" className="text-[20px] font-medium leading-tight">
+            Donnez au cerveau le contexte de vos comptes
           </h2>
-          <p className="mt-1.5 max-w-[46em] text-[13px] leading-relaxed text-trace">
-            Collez ce prompt dans l&apos;agent de votre poste : il lit vos anciennes conversations (Claude Code et Codex) et les README de vos projets, en tire
-            les zones et les premières connaissances de {orgName}, et les envoie au cerveau. La proposition s&apos;affiche ici toute seule ; rien n&apos;est
-            appliqué avant que vous l&apos;ayez relue et validée.
+          <p className="mt-2 max-w-[46em] text-[14px] leading-relaxed text-trace">
+            Claude Code ou Codex relit vos anciennes conversations sur ce poste et les README de vos projets, en tire les zones et les premières connaissances de{" "}
+            {orgName}, et les envoie au cerveau. Il vous demande votre accord avant de lire quoi que ce soit ; la proposition s&apos;affiche ici toute seule, et
+            rien n&apos;est appliqué avant que vous l&apos;ayez relue et validée.
           </p>
           <div className="mt-4">
-            <PromptActions getPrompt={getAgentPrompt} size="md" />
+            <PromptActions getPrompt={getAgentPrompt} size="md" sends />
           </div>
-          <p className="text-[12px] text-trace">Avec Codex : copiez le prompt et collez-le dans codex. Le code d&apos;envoi qu&apos;il contient vaut 2 heures.</p>
+          <p className="text-[12px] text-trace">Le code d&apos;envoi qu&apos;il contient vaut 2 heures.</p>
           {waiting && (
             <p className="mt-3 flex items-center gap-2 text-[13px]" aria-live="polite">
               <span className="live-dot" aria-hidden /> En attente de la proposition de votre agent. Cette page se remplira toute seule.
@@ -154,9 +157,18 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
           )}
         </section>
       )}
-      {!draft && <h2 className="mb-3 text-[15px] font-medium">Ou répondez à l&apos;interview</h2>}
+      {!draft && !showInterview && (
+        <p className="text-[13px] text-trace">
+          Pas d&apos;historique sur ce poste ?{" "}
+          <button type="button" className="landing-link text-ink" onClick={() => setInterview(true)}>
+            Répondez plutôt à 7 questions
+          </button>
+          .
+        </p>
+      )}
+      {!draft && showInterview && <h2 className="mb-3 text-[15px] font-medium">Ou répondez à l&apos;interview</h2>}
       <div className="space-y-3">
-        {draft?.generator !== "agent" &&
+        {showInterview &&
           questions.slice(0, Math.min(step + 1, questions.length)).map((q, i) => (
           <div key={q.id} className="space-y-2">
             <div className="flex gap-3">
@@ -180,7 +192,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
           </div>
         ))}
 
-        {!done && draft?.generator !== "agent" && (
+        {!done && showInterview && (
           <form onSubmit={answer} className="panel sticky bottom-4 flex gap-2 p-3">
             <textarea
               className="input min-h-[60px] flex-1"
