@@ -1,5 +1,5 @@
-// Appels Claude (SDK officiel) : tri, extraction, résumé d'état, onboarding.
-// Chaque fonction renvoie null en cas d'échec ou de refus : l'appelant retombe alors sur l'heuristique.
+// Claude calls (official SDK): triage, extraction, status summary, onboarding.
+// Each function returns null on failure or refusal: the caller then falls back to the heuristic.
 
 import Anthropic from "@anthropic-ai/sdk"
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod"
@@ -23,7 +23,7 @@ import type { NewZoneProposal, NewZonesInput } from "./new-zones"
 import { classifyZones, slugify } from "./zones"
 import { truncate } from "./text"
 
-/** Haiku pour trier le volume, Sonnet pour extraire et résumer (cf. ARCHITECTURE.md). */
+/** Haiku to triage the volume, Sonnet to extract and summarize (see ARCHITECTURE.md). */
 export const TRIAGE_MODEL = "claude-haiku-5-5"
 export const EXTRACT_MODEL = "claude-sonnet-5-5"
 
@@ -51,13 +51,13 @@ const TriageSchema = z.object({ useful: z.boolean(), zone: z.string(), reason: z
 type ParsedItem = z.infer<typeof ItemSchema>
 
 function logError(where: string, err: unknown) {
-  if (err instanceof Anthropic.AuthenticationError) console.error(`[claude] ${where} : clé API invalide`)
-  else if (err instanceof Anthropic.RateLimitError) console.error(`[claude] ${where} : limite de débit atteinte`)
-  else if (err instanceof Anthropic.APIError) console.error(`[claude] ${where} : erreur API ${err.status} — ${err.message}`)
-  else console.error(`[claude] ${where} :`, err instanceof Error ? err.message : err)
+  if (err instanceof Anthropic.AuthenticationError) console.error(`[claude] ${where}: invalid API key`)
+  else if (err instanceof Anthropic.RateLimitError) console.error(`[claude] ${where}: rate limit reached`)
+  else if (err instanceof Anthropic.APIError) console.error(`[claude] ${where}: API error ${err.status} — ${err.message}`)
+  else console.error(`[claude] ${where}:`, err instanceof Error ? err.message : err)
 }
 
-/** Appel Sonnet avec repli serveur automatique en cas de refus (paramètre `fallbacks`). */
+/** Sonnet call with automatic server-side fallback on refusal (`fallbacks` parameter). */
 async function parseWithSonnet<T extends z.ZodType>(
   client: Anthropic,
   schema: T,
@@ -85,7 +85,7 @@ export function toKnowledgeInput(
   fallbackZone: string,
 ): KnowledgeItemInput {
   const zoneIds = new Set(zones.map((z) => z.id))
-  // Zone inconnue : mots-clés, et à égalité la zone de repli (celle de la conversation) plutôt que la première de la liste.
+  // Unknown zone: keywords, and on a tie the fallback zone (the conversation's) rather than the first of the list.
   const zone = zoneIds.has(parsed.zone) ? parsed.zone : (classifyZones(`${parsed.title} ${parsed.body}`, zones, 1, { prefer: [fallbackZone] })[0] ?? fallbackZone)
   return {
     zone,
@@ -114,7 +114,7 @@ export async function triageConversation(
     if (response.stop_reason === "refusal") return null
     return response.parsed_output ?? null
   } catch (err) {
-    logError("tri", err)
+    logError("triage", err)
     return null
   }
 }
@@ -136,7 +136,7 @@ export async function extractKnowledge(
   }
 }
 
-/** Tri Haiku puis extraction Sonnet. `null` = Claude indisponible (l'appelant utilise l'heuristique). */
+/** Haiku triage then Sonnet extraction. `null` = Claude unavailable (the caller uses the heuristic). */
 export async function distillWithClaude(
   client: Anthropic,
   conv: Conversation,
@@ -163,7 +163,7 @@ const StatusSchema = z.object({
   ),
 })
 
-/** Résumé d'état à partir de la matière déjà préparée (serveur, ou poste d'un admin avec une clé API). */
+/** Status summary from already prepared material (server, or an admin's workstation with an API key). */
 export async function summarizeStatusInput(client: Anthropic, input: StatusInput): Promise<CompanyStatus | null> {
   try {
     const parsed = await parseWithSonnet(client, StatusSchema, STATUS_SYSTEM, buildStatusPrompt(input), "medium")
@@ -173,12 +173,12 @@ export async function summarizeStatusInput(client: Anthropic, input: StatusInput
     for (const z of parsed.zones) if (known.has(z.zone) && !zones.has(z.zone)) zones.set(z.zone, z)
     return { headline: parsed.headline, zones: [...zones.values()], generated_at: new Date().toISOString(), generator: "claude" }
   } catch (err) {
-    logError("résumé d'état", err)
+    logError("status summary", err)
     return null
   }
 }
 
-/** Résumé d'état côté serveur : même matière (30 jours, 400 connaissances) et même prompt que sur un poste. */
+/** Server-side status summary: same material (30 days, 400 items) and same prompt as on a workstation. */
 export async function summarizeStatus(
   client: Anthropic,
   input: { zones: Zone[]; items: KnowledgeItem[]; tasks: Task[]; profiles: Pick<Profile, "id" | "name">[]; companyName: string },
@@ -201,8 +201,8 @@ export type OnboardingDraft = {
 }
 
 /**
- * Identifiants de zone propres (slug sans accents, « service_client » → « service-client », sans doublon) et
- * correspondance depuis ce que Claude a pu écrire dans les items (id d'origine, nom de zone, variantes de casse).
+ * Clean zone ids (slug without accents, "customer_service" → "customer-service", no duplicates) and
+ * mapping from what Claude may have written in the items (original id, zone name, case variants).
  */
 export function normalizeOnboardingZones<Z extends { id: string; name: string }>(
   raw: Z[],
@@ -216,7 +216,7 @@ export function normalizeOnboardingZones<Z extends { id: string; name: string }>
     used.add(id)
     return { ...z, id }
   })
-  // Les identifiants d'abord, les noms ensuite : un nom ne masque jamais l'identifiant d'une autre zone.
+  // Ids first, names second: a name never shadows another zone's id.
   const keys = (z: Z) => [[z.id, z.id.trim().toLowerCase(), slugify(z.id || z.name)], [z.name.trim().toLowerCase(), slugify(z.name)]]
   for (const pass of [0, 1]) {
     raw.forEach((z, i) => {
@@ -231,14 +231,14 @@ export async function synthesizeOnboarding(
   client: Anthropic,
   input: { answers: { question: string; answer: string }[]; pages: { url: string; title: string; text: string }[]; existingZones: ZoneHint[] },
 ): Promise<OnboardingDraft | null> {
-  const interview = input.answers.map((a) => `Q : ${a.question}\nR : ${a.answer}`).join("\n\n")
+  const interview = input.answers.map((a) => `Q: ${a.question}\nA: ${a.answer}`).join("\n\n")
   const pages = input.pages.map((p) => `<page url="${p.url}" title="${p.title}">\n${p.text}\n</page>`).join("\n\n")
   try {
     const parsed = await parseWithSonnet(
       client,
       OnboardingSchema,
       ONBOARDING_SYSTEM,
-      `Zones existantes :\n${renderZones(input.existingZones)}\n\n<interview>\n${interview}\n</interview>\n\n<pages>\n${pages || "(aucune)"}\n</pages>`,
+      `Existing zones:\n${renderZones(input.existingZones)}\n\n<interview>\n${interview}\n</interview>\n\n<pages>\n${pages || "(none)"}\n</pages>`,
       "high",
     )
     if (!parsed) return null
@@ -249,8 +249,8 @@ export async function synthesizeOnboarding(
       company_name: parsed.company_name,
       description: parsed.description,
       zones,
-      // Les items citent les identifiants d'origine (« service_client ») : on les fait suivre le renommage.
-      items: parsed.items.map((i) => toKnowledgeInput({ ...i, zone: zoneId(i.zone) ?? i.zone }, hints, source, zones[0]?.id ?? "direction")),
+      // Items cite the original ids ("customer_service"): they follow the renaming.
+      items: parsed.items.map((i) => toKnowledgeInput({ ...i, zone: zoneId(i.zone) ?? i.zone }, hints, source, zones[0]?.id ?? "leadership")),
     }
   } catch (err) {
     logError("onboarding", err)
@@ -262,13 +262,13 @@ const NewZonesSchema = z.object({
   zones: z.array(z.object({ name: z.string(), description: z.string(), keywords: z.array(z.string()), items: z.array(z.number()) })),
 })
 
-/** Nouvelles zones à créer d'après les connaissances récentes ([] le plus souvent). Null si Claude n'a pas répondu. */
+/** New zones to create from recent knowledge ([] most of the time). Null if Claude did not answer. */
 export async function proposeNewZones(client: Anthropic, input: NewZonesInput): Promise<NewZoneProposal[] | null> {
   try {
     const parsed = await parseWithSonnet(client, NewZonesSchema, NEW_ZONES_SYSTEM, buildNewZonesPrompt(input), "medium")
     return parsed ? parsed.zones : null
   } catch (err) {
-    logError("nouvelles zones", err)
+    logError("new zones", err)
     return null
   }
 }

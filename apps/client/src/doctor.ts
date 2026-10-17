@@ -1,8 +1,8 @@
-// `brain doctor` : diagnostic du poste, en lecture seule. Chaque point dit ce qui va, ce qui cloche et la commande qui
-// répare. Pour l'employé, et surtout pour Claude Code quand l'installation ou la synchro coince (`--json`).
-// Rien n'est modifié : ni config, ni cache, ni état, ni réglages de Claude Code (pas de `claude mcp get`, qui écrit des
-// fichiers et contacte le réseau). Aucun jeton n'est affiché, même en partie : seulement sa présence (la sortie finit dans
-// la session de Claude Code, que brain-sync relit).
+// `brain doctor`: diagnosis of the computer, read-only. Each item says what works, what is wrong and the command that
+// fixes it. For the employee, and above all for Claude Code when the install or the sync gets stuck (`--json`).
+// Nothing is modified: not the config, the cache, the state, or Claude Code's settings (no `claude mcp get`, which writes
+// files and contacts the network). No token is shown, not even in part: only its presence (the output ends up in
+// the Claude Code session, which brain-sync reads).
 
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -50,13 +50,13 @@ import { LOCK_STALE_MS, PREVIEW_TTL_MS, pidAlive } from "./sync"
 type Log = (s: string) => void
 
 export type Status = "ok" | "warn" | "fail" | "skip" | "info"
-export const GROUPS = ["Poste", "Cerveau", "Screenpipe", "Claude Code", "Synchro", "Distillation"] as const
+export const GROUPS = ["Computer", "Brain", "Screenpipe", "Claude Code", "Sync", "Distillation"] as const
 export type Group = (typeof GROUPS)[number]
 
 /**
- * Un point du diagnostic. `fix` : quoi faire, en une phrase ; `command` : la commande exacte, quand il y en a une ;
- * `safe` : cette commande ne fait que (re)brancher le poste (rien n'est envoyé, rien n'est effacé, aucun choix à faire) :
- * Claude Code peut la lancer sans redemander.
+ * A diagnosis item. `fix`: what to do, in one sentence; `command`: the exact command, when there is one;
+ * `safe`: this command only (re)connects the computer (nothing is sent, nothing is deleted, no choice to make):
+ * Claude Code can run it without asking again.
  */
 export type Check = { id: string; group: Group; status: Status; detail: string; fix?: string; command?: string; safe?: boolean }
 
@@ -69,22 +69,22 @@ export type DoctorReport = {
   home: string
   summary: Record<Status, number>
   exit_code: number
-  /** Le premier problème à régler (le premier KO, sinon le premier point à surveiller), dans l'ordre du diagnostic. */
+  /** The first problem to solve (the first KO, otherwise the first item to watch), in the diagnosis order. */
   next: Check | null
   checks: Check[]
 }
 
-/** Chemins de Node.js gérés par un gestionnaire de versions : la prochaine mise à jour les supprime. */
+/** Node.js paths managed by a version manager: the next update deletes them. */
 const VERSIONED_NODE_RE = /[\\/](Cellar|\.nvm|nvm|fnm|\.fnm|\.volta|Volta|\.asdf|mise|\.nodenv|n[\\/]versions|pnpm)[\\/]/i
 
 type Probe = { ok: true; node: string; script: string; version: string } | { ok: false; error: string }
 
-/** Lance un client enregistré (raccourci, hook, MCP, synchro planifiée) avec `_probe` : démarre-t-il, et lequel ? */
+/** Runs a registered client (shortcut, hook, MCP, scheduled sync) with `_probe`: does it start, and which one? */
 function probe(cmd: string, args: string[]): Probe {
-  if (!existsSync(cmd)) return { ok: false, error: `introuvable : ${cmd}` }
-  // Seulement notre client (jamais `npx … _probe` ou un autre serveur MCP qui porterait notre nom).
-  if (args.length && !/brain\.mjs$/i.test(args[0]) && !samePath(args[0], selfScript())) return { ok: false, error: `ce n'est pas le client du cerveau (${args[0]})` }
-  if (args.length && !existsSync(args[0])) return { ok: false, error: `introuvable : ${args[0]}` }
+  if (!existsSync(cmd)) return { ok: false, error: `not found: ${cmd}` }
+  // Only our client (never `npx … _probe` or another MCP server that would carry our name).
+  if (args.length && !/brain\.mjs$/i.test(args[0]) && !samePath(args[0], selfScript())) return { ok: false, error: `it is not the brain client (${args[0]})` }
+  if (args.length && !existsSync(args[0])) return { ok: false, error: `not found: ${args[0]}` }
   const t = spawnTarget(cmd, [...args, "_probe"])
   const r = spawnSync(t.cmd, t.args, { encoding: "utf8", timeout: 15_000, shell: t.shell, windowsHide: true, env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" } })
   if (r.error) return { ok: false, error: r.error.message }
@@ -93,7 +93,7 @@ function probe(cmd: string, args: string[]): Probe {
     const p = JSON.parse(line) as { node?: string; script?: string; version?: string }
     if (r.status === 0 && p.node && p.script) return { ok: true, node: p.node, script: p.script, version: p.version ?? "?" }
   } catch {
-    // pas notre client, ou il a planté
+    // not our client, or it crashed
   }
   const err = `${r.stderr ?? ""}`.trim().split(/\r?\n/).find(Boolean) ?? `code ${r.status}`
   return { ok: false, error: truncate(err, 200) }
@@ -107,28 +107,28 @@ function probeOnce(cmd: string, args: string[]): Probe {
 }
 
 /**
- * Le client de référence : celui que lance le raccourci du poste s'il marche (doctor peut tourner sur un autre Node.js,
- * ex. `node ~/.company-brain/brain.mjs doctor`), sinon ce processus. C'est aussi lui que `setup` enregistre quand on le
- * relance par le raccourci, comme le proposent les corrections.
+ * The reference client: the one the computer's shortcut starts if it works (doctor can run on another Node.js,
+ * e.g. `node ~/.company-brain/brain.mjs doctor`), otherwise this process. It is also the one `setup` registers when it is
+ * run again through the shortcut, as the fixes suggest.
  */
 let reference: { execPath: string; script: string } = { execPath: process.execPath, script: selfScript() }
 
-/** Que dire d'un branchement qui ne lance pas le client de référence (null : c'est bien lui). */
+/** What to say about a connection that does not start the reference client (null: it is the right one). */
 function mismatch(execPath: string, script: string): string | null {
-  if (!samePath(script, reference.script)) return `lance un autre client (${script})`
-  if (!samePath(execPath, reference.execPath)) return `lance un autre Node.js (${execPath}, au lieu de ${reference.execPath})`
+  if (!samePath(script, reference.script)) return `starts another client (${script})`
+  if (!samePath(execPath, reference.execPath)) return `starts another Node.js (${execPath}, instead of ${reference.execPath})`
   return null
 }
 
 function ago(ms: number): string {
   const min = Math.round(ms / 60_000)
-  if (min < 1) return "à l'instant"
-  if (min < 60) return `il y a ${min} min`
+  if (min < 1) return "just now"
+  if (min < 60) return `${min} min ago`
   const h = Math.round(min / 60)
-  return h < 48 ? `il y a ${h} h` : `il y a ${Math.round(h / 24)} jours`
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`
 }
 
-/** Fin d'un fichier (journal), sans tout lire. */
+/** End of a file (log), without reading all of it. */
 function readTail(file: string, bytes = 256 * 1024): string {
   try {
     const size = statSync(file).size
@@ -146,7 +146,7 @@ function readTail(file: string, bytes = 256 * 1024): string {
   }
 }
 
-/** Date d'un en-tête « brain-sync — 17/10/2026 12:18:32 » (fr-FR, heure locale). */
+/** Date of a "brain-sync — 17/10/2026, 12:18:32" header (en-GB, or fr-FR in older logs; local time). */
 function headerDate(line: string): number | null {
   const m = /brain-sync — (\d{1,2})\/(\d{1,2})\/(\d{4})[ ,à]+(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(line)
   if (!m) return null
@@ -156,7 +156,7 @@ function headerDate(line: string): number | null {
 
 export type LastRun = { at: number | null; sent: boolean; auth: boolean; error: string | null }
 
-/** La dernière synchro du journal (planifiée : launchd et cron écrivent dans sync.log) : envoi, connexion perdue, erreur. */
+/** The log's last sync (scheduled: launchd and cron write to sync.log): sending, lost sign-in, error. */
 export function lastLoggedRun(text: string): LastRun | null {
   const lines = text.split(/\r?\n/)
   let start = -1
@@ -167,22 +167,22 @@ export function lastLoggedRun(text: string): LastRun | null {
     }
   }
   if (start < 0) return null
-  const block = lines.slice(start + 1).filter((l) => !/^\[\d{4}-\d\d-\d\dT[^\]]*\] hook : /.test(l))
-  const error = block.find((l) => /^(Erreur :|Client non configuré|Impossible de joindre|Jeton refusé|Le cerveau a répondu)/.test(l.trim())) ?? null
+  const block = lines.slice(start + 1).filter((l) => !/^\[\d{4}-\d\d-\d\dT[^\]]*\] hook ?: /.test(l))
+  const error = block.find((l) => /^(Error:|Client not configured|Cannot reach|Token refused|The brain answered|Erreur :|Client non configuré|Impossible de joindre|Jeton refusé|Le cerveau a répondu)/.test(l.trim())) ?? null
   return {
     at: headerDate(lines[start]),
-    sent: block.some((l) => /^Envoyé : /.test(l)),
-    auth: block.some((l) => /n'est plus connecté|Clé API Anthropic refusée/.test(l)),
+    sent: block.some((l) => /^(Sent: |Envoyé : )/.test(l)),
+    auth: block.some((l) => /is no longer signed in|Anthropic API key refused|n'est plus connecté|Clé API Anthropic refusée/.test(l)),
     error: error ? error.trim() : null,
   }
 }
 
-/** Erreurs des hooks (`[ISO] hook : message`) des dernières 24 h. */
+/** Hook errors (`[ISO] hook: message`) of the last 24 h. */
 export function recentHookErrors(text: string, now = Date.now()): { count: number; last: string | null } {
   let count = 0
   let last: string | null = null
   for (const l of text.split(/\r?\n/)) {
-    const m = /^\[(\d{4}-\d\d-\d\dT[^\]]+)\] hook : (.*)$/.exec(l)
+    const m = /^\[(\d{4}-\d\d-\d\dT[^\]]+)\] hook ?: (.*)$/.exec(l)
     if (!m || !(now - Date.parse(m[1]) < 24 * 3_600_000)) continue
     count++
     last = m[2]
@@ -190,7 +190,7 @@ export function recentHookErrors(text: string, now = Date.now()): { count: numbe
   return { count, last }
 }
 
-/** Lecture de l'état de capture dans GET /health (Screenpipe 0.4.x) : `vision_reason` d'abord, puis l'âge de la dernière image. */
+/** Reading the capture state in GET /health (Screenpipe 0.4.x): `vision_reason` first, then the age of the last frame. */
 export function captureDiagnosis(
   health: Record<string, unknown>,
   platform: NodeJS.Platform = process.platform,
@@ -199,23 +199,23 @@ export function captureDiagnosis(
   const vision = typeof health.vision_reason === "string" ? health.vision_reason : ""
   const frame = typeof health.frame_status === "string" ? health.frame_status : ""
   const last = typeof health.last_frame_timestamp === "string" ? Date.parse(health.last_frame_timestamp) : NaN
-  const age = Number.isFinite(last) ? ` (dernière image ${ago(now - last)})` : ""
-  if (vision === "permission_denied") return { status: "fail", reason: "permission", detail: platform === "darwin" ? "macOS n'autorise pas screenpipe à enregistrer l'écran" : "le système refuse la capture d'écran à screenpipe" }
-  if (vision === "disabled_by_setting" || vision === "screenshots_disabled_by_config") return { status: "warn", reason: "disabled", detail: "capture de l'écran désactivée dans les réglages de Screenpipe" }
-  if (vision === "screenshots_disabled_by_power_profile") return { status: "info", reason: "power", detail: `capture en pause (économie d'énergie)${age}` }
-  if (vision === "no_displays_expected") return { status: "info", reason: "no-display", detail: "aucun écran à capturer (écran verrouillé ou éteint ?)" }
-  if (vision === "capture_stalled") return { status: "warn", reason: "stalled", detail: `capture bloquée${age}` }
-  if (vision === "ocr_unavailable") return { status: "warn", reason: "ocr", detail: `lecture du texte à l'image indisponible${age}` }
+  const age = Number.isFinite(last) ? ` (last frame ${ago(now - last)})` : ""
+  if (vision === "permission_denied") return { status: "fail", reason: "permission", detail: platform === "darwin" ? "macOS does not allow screenpipe to record the screen" : "the system refuses screen capture to screenpipe" }
+  if (vision === "disabled_by_setting" || vision === "screenshots_disabled_by_config") return { status: "warn", reason: "disabled", detail: "screen capture disabled in Screenpipe's settings" }
+  if (vision === "screenshots_disabled_by_power_profile") return { status: "info", reason: "power", detail: `capture paused (power saving)${age}` }
+  if (vision === "no_displays_expected") return { status: "info", reason: "no-display", detail: "no screen to capture (screen locked or off?)" }
+  if (vision === "capture_stalled") return { status: "warn", reason: "stalled", detail: `capture stalled${age}` }
+  if (vision === "ocr_unavailable") return { status: "warn", reason: "ocr", detail: `reading text from the image unavailable${age}` }
   if (vision === "not_started" || frame === "not_started" || (!vision && !frame && !Number.isFinite(last))) {
-    return { status: "warn", reason: "not-started", detail: platform === "darwin" ? "aucune image capturée pour l'instant (autorisation « Enregistrement de l'écran » pas encore accordée ?)" : "aucune image capturée pour l'instant" }
+    return { status: "warn", reason: "not-started", detail: platform === "darwin" ? "no frame captured yet (\"Screen Recording\" permission not granted yet?)" : "no frame captured yet" }
   }
-  if (frame === "stale") return { status: "warn", reason: "stale", detail: `plus d'image récente${age} (écran verrouillé, ou capture arrêtée)` }
-  return { status: "ok", reason: "ok", detail: `capture de l'écran active${age}` }
+  if (frame === "stale") return { status: "warn", reason: "stale", detail: `no recent frame${age} (screen locked, or capture stopped)` }
+  return { status: "ok", reason: "ok", detail: `screen capture active${age}` }
 }
 
-/** Commande d'installation à relancer (la config garde le jeton : l'adresse du cerveau suffit, et le certificat s'il y en a un). */
+/** Install command to run again (the config keeps the token: the brain's address is enough, plus the certificate if there is one). */
 export function reinstallCommand(url: string, platform: NodeJS.Platform = process.platform, caFile?: string): string {
-  // Les commandes du prompt d'installation, sans le jeton.
+  // The install prompt's commands, without the token.
   const c = reinstallCommands(url, caFile)
   return platform === "win32" ? c.windows : c.posix
 }
@@ -226,7 +226,7 @@ type Ctx = {
   platform: NodeJS.Platform
   now: number
   cfg: Config | null
-  /** Pour masquer ce qui viendrait d'un journal. */
+  /** To redact what would come from a log. */
   secrets: string[]
 }
 
@@ -234,12 +234,12 @@ function add(ctx: Ctx, c: Check) {
   ctx.checks.push(c)
 }
 
-/** Ce qu'on peut afficher d'une ligne de journal : nos propres messages, masqués et tronqués. */
+/** What can be shown of a log line: our own messages, redacted and truncated. */
 function clean(ctx: Ctx, s: string): string {
   return truncate(redactText(maskOwnSecrets(s, ctx.secrets).text), 160)
 }
 
-// ——— Poste ———
+// ——— Computer ———
 
 function checkNode(ctx: Ctx) {
   const v = process.versions.node
@@ -247,7 +247,7 @@ function checkNode(ctx: Ctx) {
   const exec = process.execPath
   const reinstall = ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform, ctx.cfg.ca_file), safe: true } : {}
   if (major < 20) {
-    return add(ctx, { id: "node", group: "Poste", status: "fail", detail: `Node.js ${v} (${exec}) : il faut la version 20 ou plus`, fix: "Relance la commande d'installation : elle installe sa propre copie de Node.js.", ...reinstall })
+    return add(ctx, { id: "node", group: "Computer", status: "fail", detail: `Node.js ${v} (${exec}): version 20 or later is required`, fix: "Run the install command again: it installs its own copy of Node.js.", ...reinstall })
   }
   let translated = false
   if (ctx.platform === "darwin" && process.arch === "x64") {
@@ -257,24 +257,24 @@ function checkNode(ctx: Ctx) {
   if (translated) {
     return add(ctx, {
       id: "node",
-      group: "Poste",
+      group: "Computer",
       status: "warn",
-      detail: `Node.js ${v} x64 sous Rosetta sur un Mac Apple Silicon (${exec}) : Screenpipe tournerait en émulation`,
-      fix: "Relance la commande d'installation : elle choisit Node.js pour Apple Silicon.",
+      detail: `Node.js ${v} x64 under Rosetta on an Apple Silicon Mac (${exec}): Screenpipe would run under emulation`,
+      fix: "Run the install command again: it picks Node.js for Apple Silicon.",
       ...reinstall,
     })
   }
   if (VERSIONED_NODE_RE.test(exec)) {
     return add(ctx, {
       id: "node",
-      group: "Poste",
+      group: "Computer",
       status: "warn",
-      detail: `Node.js ${v} vient d'un gestionnaire de versions (${exec}) : sa prochaine mise à jour cassera hooks, MCP et synchro`,
-      fix: "Relance la commande d'installation : elle installe une copie de Node.js propre au client.",
+      detail: `Node.js ${v} comes from a version manager (${exec}): its next update will break hooks, MCP and sync`,
+      fix: "Run the install command again: it installs a copy of Node.js of the client's own.",
       ...reinstall,
     })
   }
-  add(ctx, { id: "node", group: "Poste", status: "ok", detail: `Node.js ${v} (${exec})` })
+  add(ctx, { id: "node", group: "Computer", status: "ok", detail: `Node.js ${v} (${exec})` })
 }
 
 function checkClientFiles(ctx: Ctx) {
@@ -283,10 +283,10 @@ function checkClientFiles(ctx: Ctx) {
   if (script.endsWith(".mjs") && !samePath(script, installed)) {
     add(ctx, {
       id: "client",
-      group: "Poste",
+      group: "Computer",
       status: "warn",
-      detail: `ce client (${script}) n'est pas celui du poste (${installed}) : hooks, MCP et synchro lanceront peut-être un autre fichier`,
-      fix: "Utilise le raccourci du poste, ou relance la commande d'installation.",
+      detail: `this client (${script}) is not the computer's (${installed}): hooks, MCP and sync may start another file`,
+      fix: "Use the computer's shortcut, or run the install command again.",
       ...(ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform, ctx.cfg.ca_file), safe: true } : {}),
     })
   }
@@ -295,21 +295,21 @@ function checkClientFiles(ctx: Ctx) {
   const reinstall = ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform, ctx.cfg.ca_file), safe: true } : {}
   if (!existsSync(shortcut)) {
     add(ctx, {
-      id: "raccourci",
-      group: "Poste",
+      id: "shortcut",
+      group: "Computer",
       status: "warn",
-      detail: `raccourci ${shortcut} absent : les commandes \`~/.company-brain/${basename(shortcut)} …\` ne marcheront pas`,
-      fix: `Relance la commande d'installation (elle écrit le raccourci). En attendant : ${ctx.me} <commande>.`,
+      detail: `shortcut ${shortcut} missing: the \`~/.company-brain/${basename(shortcut)} …\` commands will not work`,
+      fix: `Run the install command again (it writes the shortcut). Meanwhile: ${ctx.me} <command>.`,
       ...reinstall,
     })
   } else {
     const p = probeOnce(shortcut, [])
-    if (!p.ok) add(ctx, { id: "raccourci", group: "Poste", status: "fail", detail: `le raccourci ${shortcut} ne démarre pas (${p.error})`, fix: "Relance la commande d'installation.", ...reinstall })
+    if (!p.ok) add(ctx, { id: "shortcut", group: "Computer", status: "fail", detail: `the shortcut ${shortcut} does not start (${p.error})`, fix: "Run the install command again.", ...reinstall })
     else {
       if (selfScript().endsWith(".mjs") && !samePath(p.script, selfScript()))
-        add(ctx, { id: "raccourci", group: "Poste", status: "warn", detail: `le raccourci lance un autre client (${p.script})`, fix: "Relance la commande d'installation.", ...reinstall })
-      else add(ctx, { id: "raccourci", group: "Poste", status: "ok", detail: `${shortcut} → Node.js ${p.node}` })
-      // Les corrections passent par le raccourci : c'est lui que hooks, MCP et synchro doivent lancer.
+        add(ctx, { id: "shortcut", group: "Computer", status: "warn", detail: `the shortcut starts another client (${p.script})`, fix: "Run the install command again.", ...reinstall })
+      else add(ctx, { id: "shortcut", group: "Computer", status: "ok", detail: `${shortcut} → Node.js ${p.node}` })
+      // The fixes go through the shortcut: it is the one hooks, MCP and sync must start.
       reference = { execPath: p.node, script: p.script }
     }
   }
@@ -324,64 +324,64 @@ function checkClientFiles(ctx: Ctx) {
       const mode = statSync(home).mode & 0o777
       if (mode & 0o077) {
         status = "warn"
-        details.push(`dossier lisible par d'autres comptes du poste (droits ${mode.toString(8)})`)
-        fix = "Restreins-le à ton compte."
+        details.push(`folder readable by other accounts on the computer (permissions ${mode.toString(8)})`)
+        fix = "Restrict it to your account."
         command = `chmod 700 ${home.includes(" ") ? `"${home}"` : home}`
       }
     } catch {
-      // absent : la config le dira
+      // missing: the config will say so
     }
     if (process.getuid?.() === 0) {
       status = "warn"
-      details.push(`client lancé en root${process.env.SUDO_USER ? ` avec sudo (pour ${process.env.SUDO_USER})` : ""} : config, hooks et synchro iraient au compte root`)
-      fix ??= "Relance la commande sans sudo, depuis ta session."
+      details.push(`client run as root${process.env.SUDO_USER ? ` with sudo (for ${process.env.SUDO_USER})` : ""}: config, hooks and sync would go to the root account`)
+      fix ??= "Run the command again without sudo, from your session."
     }
   }
   if (ctx.platform === "linux") {
     try {
       if (/microsoft/i.test(readFileSync("/proc/sys/kernel/osrelease", "utf8"))) {
         status = status === "ok" ? "info" : status
-        details.push("WSL : Screenpipe ne voit pas l'écran de Windows d'ici, et la synchro ne tourne que quand WSL est lancé ; mieux vaut installer le client sous Windows")
+        details.push("WSL: Screenpipe cannot see the Windows screen from here, and the sync only runs while WSL is running; better install the client on Windows")
       }
     } catch {
-      // pas Linux noyau Microsoft
+      // not a Microsoft Linux kernel
     }
   }
-  if (customHome()) details.push(`dossier personnalisé (COMPANY_BRAIN_HOME) : ${home}`)
-  add(ctx, { id: "dossier", group: "Poste", status, detail: details.length ? details.join(" ; ") : home, ...(fix ? { fix } : {}), ...(command ? { command, safe: true } : {}) })
+  if (customHome()) details.push(`custom folder (COMPANY_BRAIN_HOME): ${home}`)
+  add(ctx, { id: "folder", group: "Computer", status, detail: details.length ? details.join("; ") : home, ...(fix ? { fix } : {}), ...(command ? { command, safe: true } : {}) })
 }
 
-// ——— Cerveau ———
+// ——— Brain ———
 
 function checkConfig(ctx: Ctx): boolean {
   const file = paths.config()
   if (!existsSync(file)) {
-    // Message d'équipe : la demande attend un admin ; le poste se branchera dès qu'elle sera acceptée.
+    // Team message: the request waits for an admin; the computer will connect as soon as it is accepted.
     const pending = readJson<{ org?: string }>(joinStatePath())
     if (pending)
       add(ctx, {
         id: "config",
-        group: "Cerveau",
+        group: "Brain",
         status: "fail",
-        detail: `demande pour rejoindre ${pending.org ?? "l'entreprise"} pas encore acceptée : le poste n'est pas encore branché`,
-        fix: "Un admin doit l'accepter (Équipe et accès, puis Demandes) ; join reprend la même demande et installe tout une fois acceptée.",
+        detail: `request to join ${pending.org ?? "the company"} not accepted yet: the computer is not connected yet`,
+        fix: "An admin must accept it (Team and access, then Requests); join resumes the same request and installs everything once accepted.",
         command: `${ctx.me} join`,
         safe: true,
       })
     else
-      add(ctx, { id: "config", group: "Cerveau", status: "fail", detail: `${file} absent : le poste n'est pas branché au cerveau`, fix: "Colle ton prompt d'installation dans Claude Code (ou demande-en un nouveau à un admin, page Équipe et accès)." })
+      add(ctx, { id: "config", group: "Brain", status: "fail", detail: `${file} missing: the computer is not connected to the brain`, fix: "Paste your install prompt into Claude Code (or ask an admin for a new one, Team and access page)." })
     return false
   }
   let raw: Partial<Config>
   try {
     raw = JSON.parse(readFileSync(file, "utf8"))
   } catch {
-    // Pas le message de JSON.parse : il recopie un bout du fichier, jeton compris.
-    add(ctx, { id: "config", group: "Cerveau", status: "fail", detail: `${file} illisible (JSON invalide)`, fix: "Recolle ton prompt d'installation dans Claude Code : il réécrit la config." })
+    // Not JSON.parse's message: it copies a piece of the file, token included.
+    add(ctx, { id: "config", group: "Brain", status: "fail", detail: `${file} unreadable (invalid JSON)`, fix: "Paste your install prompt into Claude Code again: it rewrites the config." })
     return false
   }
   if (!raw.url || !raw.token) {
-    add(ctx, { id: "config", group: "Cerveau", status: "fail", detail: `${file} incomplet (${raw.url ? "jeton" : "adresse du cerveau"} manquant)`, fix: "Recolle ton prompt d'installation dans Claude Code." })
+    add(ctx, { id: "config", group: "Brain", status: "fail", detail: `${file} incomplete (${raw.url ? "token" : "brain address"} missing)`, fix: "Paste your install prompt into Claude Code again." })
     return false
   }
   ctx.cfg = withDefaults(raw) as Config
@@ -392,10 +392,10 @@ function checkConfig(ctx: Ctx): boolean {
     if (m & 0o077) {
       add(ctx, {
         id: "config",
-        group: "Cerveau",
+        group: "Brain",
         status: "warn",
-        detail: `${file} lisible par d'autres comptes (droits ${m.toString(8)}) : il contient ton jeton`,
-        fix: "Restreins-le à ton compte.",
+        detail: `${file} readable by other accounts (permissions ${m.toString(8)}): it contains your token`,
+        fix: "Restrict it to your account.",
         command: `chmod 600 ${file.includes(" ") ? `"${file}"` : file}`,
         safe: true,
       })
@@ -403,7 +403,7 @@ function checkConfig(ctx: Ctx): boolean {
     }
     mode = ", droits 600"
   }
-  add(ctx, { id: "config", group: "Cerveau", status: "ok", detail: `${file} (cerveau ${ctx.cfg.url}, jeton enregistré${mode})` })
+  add(ctx, { id: "config", group: "Brain", status: "ok", detail: `${file} (brain ${ctx.cfg.url}, token saved${mode})` })
   return true
 }
 
@@ -414,51 +414,51 @@ async function checkBrain(ctx: Ctx) {
   if (who.status === "fulfilled") {
     const w = who.value
     const cache = loadCache()
-    const zones = w.access.readable.map((z) => zoneName(cache, z)).join(", ") || "aucune"
-    add(ctx, { id: "connexion", group: "Cerveau", status: "ok", detail: `${w.profile.name} chez ${w.org.name}, zones lisibles : ${zones}${w.access.isAdmin ? " (admin)" : ""}` })
+    const zones = w.access.readable.map((z) => zoneName(cache, z)).join(", ") || "none"
+    add(ctx, { id: "connection", group: "Brain", status: "ok", detail: `${w.profile.name} at ${w.org.name}, readable zones: ${zones}${w.access.isAdmin ? " (admin)" : ""}` })
   } else {
     const err = who.reason as Error
     const status = err instanceof ApiError ? err.status : 0
     if (status === 401 || status === 403)
       add(ctx, {
-        id: "connexion",
-        group: "Cerveau",
+        id: "connection",
+        group: "Brain",
         status: "fail",
-        detail: `le cerveau refuse le jeton de ce poste (${status}) : révoqué, ou compte désactivé`,
-        fix: "Demande à un admin un nouveau prompt d'installation (page Équipe et accès → Nouveau prompt) et colle-le dans Claude Code.",
+        detail: `the brain refuses this computer's token (${status}): revoked, or account disabled`,
+        fix: "Ask an admin for a new install prompt (Team and access page → New prompt) and paste it into Claude Code.",
       })
     else
       add(ctx, {
-        id: "connexion",
-        group: "Cerveau",
+        id: "connection",
+        group: "Brain",
         status: "fail",
         detail: clean(ctx, err.message),
         fix:
           status === 0
-            ? `Vérifie la connexion réseau (VPN, proxy d'entreprise : Node.js ignore le proxy système) et que ${cfg.url} s'ouvre dans le navigateur, puis relance doctor.`
-            : "Le cerveau répond mais en erreur : réessaie dans quelques minutes, ou préviens l'admin.",
+            ? `Check the network connection (VPN, corporate proxy: Node.js ignores the system proxy) and that ${cfg.url} opens in the browser, then run doctor again.`
+            : "The brain answers but with an error: try again in a few minutes, or tell the admin.",
       })
   }
 
-  // Le client du poste est-il celui que sert le cerveau ? (empreinte publiée à côté de /brain.mjs)
+  // Is the computer's client the one the brain serves? (fingerprint published next to /brain.mjs)
   const script = selfScript()
   if (!script.endsWith(".mjs")) return
   const want = sha.status === "fulfilled" ? /^([0-9a-f]{64})\b/.exec(sha.value.trim())?.[1] : undefined
-  if (!want) return add(ctx, { id: "version", group: "Cerveau", status: "skip", detail: "le cerveau ne publie pas l'empreinte du client (brain.mjs.sha256)" })
+  if (!want) return add(ctx, { id: "version", group: "Brain", status: "skip", detail: "the brain does not publish the client's fingerprint (brain.mjs.sha256)" })
   let have = ""
   try {
     have = createHash("sha256").update(readFileSync(script)).digest("hex")
   } catch {
-    // illisible : différent
+    // unreadable: different
   }
-  if (have === want) add(ctx, { id: "version", group: "Cerveau", status: "ok", detail: "client à jour (identique à celui du cerveau)" })
+  if (have === want) add(ctx, { id: "version", group: "Brain", status: "ok", detail: "client up to date (identical to the brain's)" })
   else
     add(ctx, {
       id: "version",
-      group: "Cerveau",
+      group: "Brain",
       status: "warn",
-      detail: "le cerveau sert une version plus récente du client",
-      fix: "Relance la commande d'installation pour la mettre à jour (configuration et historique gardés).",
+      detail: "the brain serves a more recent version of the client",
+      fix: "Run the install command again to update it (configuration and history kept).",
       command: reinstallCommand(cfg.url, ctx.platform, cfg.ca_file),
       safe: true,
     })
@@ -475,7 +475,7 @@ async function fetchText(url: string, timeoutMs: number): Promise<string> {
 async function checkScreenpipe(ctx: Ctx) {
   const cfg = ctx.cfg
   if (cfg && !cfg.sources.includes("screenpipe")) {
-    return add(ctx, { id: "screenpipe", group: "Screenpipe", status: "info", detail: "source désactivée dans la config : brain-sync lit seulement les sessions Claude Code et Codex" })
+    return add(ctx, { id: "screenpipe", group: "Screenpipe", status: "info", detail: "source disabled in the config: brain-sync only reads the Claude Code and Codex sessions" })
   }
   const url = cfg?.screenpipe_url ?? "http://localhost:3030"
   const token = cfg?.screenpipe_token
@@ -490,7 +490,7 @@ async function checkScreenpipe(ctx: Ctx) {
         id: "screenpipe",
         group: "Screenpipe",
         status: "warn",
-        detail: `Screenpipe n'existe pas pour ${ctx.platform}-${process.arch} : brain-sync lit seulement les sessions Claude Code et Codex`,
+        detail: `Screenpipe does not exist for ${ctx.platform}-${process.arch}: brain-sync only reads the Claude Code and Codex sessions`,
       })
     }
     if (bin) {
@@ -500,12 +500,12 @@ async function checkScreenpipe(ctx: Ctx) {
           id: "screenpipe",
           group: "Screenpipe",
           status: "fail",
-          detail: `Screenpipe ne démarre pas sur ce poste (« ${truncate(loadError, 200)} »)`,
+          detail: `Screenpipe does not start on this computer ("${truncate(loadError, 200)}")`,
           fix: /GLIBC|shared object|shared librar/i.test(loadError)
-            ? "Il lui faut glibc ≥ 2.39 (Ubuntu 24.04 ou plus récent) et les bibliothèques pipewire / pulseaudio du système : installe-les, puis relance setup."
+            ? "It needs glibc ≥ 2.39 (Ubuntu 24.04 or later) and the system's pipewire / pulseaudio libraries: install them, then run setup again."
             : /dyld|Library not loaded|Symbol not found/i.test(loadError)
-              ? "Ce macOS est trop ancien pour Screenpipe (macOS 11 minimum)."
-              : `Vérifie que ${bin} est exécutable (dossier personnel monté en noexec ?), puis relance setup.`,
+              ? "This macOS is too old for Screenpipe (macOS 11 minimum)."
+              : `Check that ${bin} is executable (home folder mounted noexec?), then run setup again.`,
         })
       }
     }
@@ -513,16 +513,16 @@ async function checkScreenpipe(ctx: Ctx) {
       id: "screenpipe",
       group: "Screenpipe",
       status: "fail",
-      detail: `Screenpipe ne répond pas sur ${url}${bin ? " (installé par le client, arrêté)" : app ? ` (application ${app} fermée)` : " (pas installé)"}`,
-      fix: "setup le (ré)installe et le relance, sans toucher au reste.",
+      detail: `Screenpipe does not answer on ${url}${bin ? " (installed by the client, stopped)" : app ? ` (app ${app} closed)` : " (not installed)"}`,
+      fix: "setup (re)installs and restarts it, without touching the rest.",
       ...setup,
     })
   }
-  const how = bin ? "CLI installé par le client" : app ? `application ${app}` : "lancé à part"
-  const status = typeof health.status === "string" ? `, état « ${health.status} »` : ""
-  add(ctx, { id: "screenpipe", group: "Screenpipe", status: "ok", detail: `répond sur ${url} (${how}${status})` })
+  const how = bin ? "CLI installed by the client" : app ? `app ${app}` : "started separately"
+  const status = typeof health.status === "string" ? `, status "${health.status}"` : ""
+  add(ctx, { id: "screenpipe", group: "Screenpipe", status: "ok", detail: `answers on ${url} (${how}${status})` })
 
-  // Capture de l'écran (et accessibilité, sur Mac).
+  // Screen capture (and accessibility, on Mac).
   const cap = captureDiagnosis(health, ctx.platform, ctx.now)
   const restart =
     bin && ctx.platform === "darwin"
@@ -532,55 +532,55 @@ async function checkScreenpipe(ctx: Ctx) {
         : undefined
   const capFix: Partial<Check> =
     cap.reason === "permission" || (cap.reason === "not-started" && ctx.platform === "darwin")
-      ? { fix: "Réglages Système → Confidentialité et sécurité → Enregistrement de l'écran → active « screenpipe ». setup ouvre le bon panneau et attend.", ...setup }
+      ? { fix: "System Settings → Privacy & Security → Screen Recording → turn on \"screenpipe\". setup opens the right pane and waits.", ...setup }
       : cap.reason === "stalled" && restart
-        ? { fix: "Redémarre Screenpipe.", command: restart, safe: true }
+        ? { fix: "Restart Screenpipe.", command: restart, safe: true }
         : cap.reason === "stalled"
-          ? { fix: "Redémarre Screenpipe (quitte puis rouvre l'application)." }
+          ? { fix: "Restart Screenpipe (quit then reopen the app)." }
           : cap.reason === "disabled"
-            ? { fix: "Réactive la capture de l'écran dans les réglages de Screenpipe." }
+            ? { fix: "Turn screen capture back on in Screenpipe's settings." }
             : {}
   const ui = health.ui_recorder && typeof health.ui_recorder === "object" ? (health.ui_recorder as { running?: unknown }) : null
   const audio = typeof health.audio_capture_mode === "string" ? health.audio_capture_mode : ""
-  const extras = [audio ? `micro : ${audio === "disabled" ? "coupé" : audio === "meetings-only" ? "réunions seulement" : "toujours"}` : ""].filter(Boolean)
-  add(ctx, { id: "capture", group: "Screenpipe", status: cap.status, detail: [cap.detail, ...extras].join(" ; "), ...capFix })
+  const extras = [audio ? `microphone: ${audio === "disabled" ? "off" : audio === "meetings-only" ? "meetings only" : "always"}` : ""].filter(Boolean)
+  add(ctx, { id: "capture", group: "Screenpipe", status: cap.status, detail: [cap.detail, ...extras].join("; "), ...capFix })
   if (ctx.platform === "darwin" && ui && ui.running === false && cap.status === "ok") {
     add(ctx, {
-      id: "accessibilite",
+      id: "accessibility",
       group: "Screenpipe",
       status: "warn",
-      detail: "Accessibilité non accordée : le texte des terminaux est lu à l'image, moins proprement (facultatif)",
-      fix: "Réglages Système → Confidentialité et sécurité → Accessibilité → active « screenpipe ». Rien à relancer.",
+      detail: "Accessibility not granted: terminal text is read from the image, less cleanly (optional)",
+      fix: "System Settings → Privacy & Security → Accessibility → turn on \"screenpipe\". Nothing to run again.",
     })
   }
 
-  // Jeton d'API local et données « parsed ».
+  // Local API token and "parsed" data.
   const p = await screenpipeProbe(url, token, 6000)
   if (p.auth === "token_required")
     add(ctx, {
-      id: "screenpipe-jeton",
+      id: "screenpipe-token",
       group: "Screenpipe",
       status: "fail",
-      detail: `Screenpipe demande un jeton d'API local${token ? " (celui de la config est refusé)" : " (aucun dans la config)"} : brain-sync ne lit rien`,
-      fix: "setup lit le jeton de Screenpipe et l'enregistre.",
+      detail: `Screenpipe asks for a local API token${token ? " (the one in the config is refused)" : " (none in the config)"}: brain-sync reads nothing`,
+      fix: "setup reads Screenpipe's token and saves it.",
       ...setup,
     })
-  else if (p.auth !== "ok") add(ctx, { id: "screenpipe-jeton", group: "Screenpipe", status: "warn", detail: `lecture des données impossible (${p.detail})` })
+  else if (p.auth !== "ok") add(ctx, { id: "screenpipe-token", group: "Screenpipe", status: "warn", detail: `cannot read the data (${p.detail})` })
   else {
-    add(ctx, { id: "screenpipe-jeton", group: "Screenpipe", status: "ok", detail: token ? "jeton d'API local accepté" : "lecture des données sans jeton (authentification désactivée)" })
+    add(ctx, { id: "screenpipe-token", group: "Screenpipe", status: "ok", detail: token ? "local API token accepted" : "reading data without a token (authentication disabled)" })
     if (p.parsed === false)
       add(ctx, {
         id: "screenpipe-parsed",
         group: "Screenpipe",
         status: "warn",
-        detail: "aucune conversation structurée (« parsed ») sur 24 h : parseur sémantique inactif, ou aucune app IA utilisée depuis",
+        detail: "no structured conversation (\"parsed\") over 24 h: semantic parser off, or no AI app used since",
         fix: bin
-          ? "Le CLI installé par setup l'active déjà : utilise ChatGPT ou Claude quelques minutes, puis relance doctor."
-          : "Dans l'application Screenpipe : Settings → Recording → app context « memory ». Puis utilise ChatGPT ou Claude quelques minutes.",
+          ? "The CLI installed by setup already turns it on: use ChatGPT or Claude for a few minutes, then run doctor again."
+          : "In the Screenpipe app: Settings → Recording → app context \"memory\". Then use ChatGPT or Claude for a few minutes.",
       })
-    else if (p.parsed) add(ctx, { id: "screenpipe-parsed", group: "Screenpipe", status: "ok", detail: "conversations IA structurées captées sur 24 h" })
+    else if (p.parsed) add(ctx, { id: "screenpipe-parsed", group: "Screenpipe", status: "ok", detail: "structured AI conversations captured over 24 h" })
   }
-  if (pipeInstalled()) add(ctx, { id: "pipe", group: "Screenpipe", status: "info", detail: "pipe Screenpipe « brain-sync » installé" })
+  if (pipeInstalled()) add(ctx, { id: "pipe", group: "Screenpipe", status: "info", detail: "\"brain-sync\" Screenpipe pipe installed" })
 }
 
 // ——— Claude Code ———
@@ -594,58 +594,58 @@ function checkClaudeCode(ctx: Ctx) {
       id: "claude",
       group: "Claude Code",
       status: "warn",
-      detail: "CLI `claude` introuvable dans le PATH : MCP non vérifiable, distillation sans Claude",
-      fix: "Installe Claude Code (https://claude.com/claude-code), puis relance setup.",
+      detail: "`claude` CLI not found in the PATH: MCP cannot be checked, distillation without Claude",
+      fix: "Install Claude Code (https://claude.com/claude-code), then run setup again.",
       ...setup,
     })
-  else add(ctx, { id: "claude", group: "Claude Code", status: "ok", detail: `Claude Code ${version ?? "(version inconnue)"} (${claude})` })
+  else add(ctx, { id: "claude", group: "Claude Code", status: "ok", detail: `Claude Code ${version ?? "(unknown version)"} (${claude})` })
 
-  // MCP company-brain : lu dans ~/.claude.json, puis lancé pour de vrai.
+  // company-brain MCP: read from ~/.claude.json, then started for real.
   const entry = readMcpEntry()
-  if (entry === undefined) add(ctx, { id: "mcp", group: "Claude Code", status: "warn", detail: `${claudeJsonPath()} illisible : impossible de vérifier le MCP` })
-  else if (entry === null) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: "MCP company-brain absent de Claude Code : tes agents ne peuvent pas interroger le cerveau", fix: "setup le branche.", ...setup })
+  if (entry === undefined) add(ctx, { id: "mcp", group: "Claude Code", status: "warn", detail: `${claudeJsonPath()} unreadable: cannot check the MCP` })
+  else if (entry === null) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: "company-brain MCP missing from Claude Code: your agents cannot query the brain", fix: "setup connects it.", ...setup })
   else {
     const p = probeOnce(entry.command, entry.args.slice(0, 1))
     const other = p.ok ? mismatch(entry.command, entry.args[0] ?? "") : null
-    if (!p.ok) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `le MCP company-brain ne démarre pas (${p.error})`, fix: "setup le rebranche sur le client actuel.", ...setup })
+    if (!p.ok) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `the company-brain MCP does not start (${p.error})`, fix: "setup reconnects it to the current client.", ...setup })
     else if (other || !mcpUpToDate(entry, reference.execPath, reference.script))
-      add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `le MCP company-brain ${other ?? "n'a pas les bons arguments"}`, fix: "setup le rebranche sur le client actuel.", ...setup })
-    else add(ctx, { id: "mcp", group: "Claude Code", status: "ok", detail: "MCP company-brain branché (portée utilisateur), il démarre" })
+      add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `the company-brain MCP ${other ?? "does not have the right arguments"}`, fix: "setup reconnects it to the current client.", ...setup })
+    else add(ctx, { id: "mcp", group: "Claude Code", status: "ok", detail: "company-brain MCP connected (user scope), it starts" })
   }
 
-  // Hooks : les trois, sur le client actuel, sans doublon, et lançables par le shell de Claude Code.
+  // Hooks: all three, on the current client, without duplicates, and startable by Claude Code's shell.
   const installHooks = { command: `${ctx.me} install-hooks`, safe: true }
   let hooks: Record<string, HookCommand[]>
   try {
     hooks = ourHooks()
   } catch (err) {
-    return add(ctx, { id: "hooks", group: "Claude Code", status: "fail", detail: clean(ctx, (err as Error).message), fix: `Corrige ${paths.claudeSettings()} (JSON invalide), puis relance install-hooks.` })
+    return add(ctx, { id: "hooks", group: "Claude Code", status: "fail", detail: clean(ctx, (err as Error).message), fix: `Fix ${paths.claudeSettings()} (invalid JSON), then run install-hooks again.` })
   }
   const missing = HOOK_EVENTS.filter((e) => !hooks[e]?.length)
   const all = HOOK_EVENTS.flatMap((e) => hooks[e] ?? [])
   const dup = HOOK_EVENTS.filter((e) => (hooks[e]?.length ?? 0) > 1)
   if (missing.length === HOOK_EVENTS.length) {
-    return add(ctx, { id: "hooks", group: "Claude Code", status: "fail", detail: "hooks Claude Code absents : le cerveau ne s'allume pas pendant tes sessions", fix: "install-hooks les ajoute (sans toucher à tes autres réglages).", ...installHooks })
+    return add(ctx, { id: "hooks", group: "Claude Code", status: "fail", detail: "Claude Code hooks missing: the brain does not light up during your sessions", fix: "install-hooks adds them (without touching your other settings).", ...installHooks })
   }
   const problems: string[] = []
   let status: Status = "ok"
   if (missing.length) {
     status = "fail"
-    problems.push(`manquants : ${missing.join(", ")}`)
+    problems.push(`missing: ${missing.join(", ")}`)
   }
   const pairs = new Map<string, { exec: string; script: string } | null>()
   for (const h of all) pairs.set(hookText(h), hookTarget(h))
   for (const [text, t] of pairs) {
     if (!t) {
       status = "fail"
-      problems.push(`commande illisible (${truncate(text, 80)})`)
+      problems.push(`unreadable command (${truncate(text, 80)})`)
       continue
     }
     const p = probeOnce(t.exec, [t.script])
     const other = p.ok ? mismatch(t.exec, t.script) : null
     if (!p.ok) {
       status = "fail"
-      problems.push(`ne démarre pas (${p.error})`)
+      problems.push(`does not start (${p.error})`)
     } else if (other) {
       status = "fail"
       problems.push(other)
@@ -653,66 +653,66 @@ function checkClaudeCode(ctx: Ctx) {
   }
   if (dup.length) {
     if (status === "ok") status = "warn"
-    problems.push(`en double : ${dup.join(", ")}`)
+    problems.push(`duplicated: ${dup.join(", ")}`)
   }
   if (ctx.platform === "win32" && all.some((h) => !Array.isArray(h.args)) && !gitBashInstalled()) {
     status = "fail"
-    problems.push("sans Git Bash, Claude Code passe ces hooks à PowerShell, qui ne sait pas les lancer")
+    problems.push("without Git Bash, Claude Code passes these hooks to PowerShell, which cannot start them")
   }
-  if (status === "ok") add(ctx, { id: "hooks", group: "Claude Code", status, detail: `SessionStart, UserPromptSubmit et Stop branchés (${paths.claudeSettings()})` })
-  else add(ctx, { id: "hooks", group: "Claude Code", status, detail: `hooks : ${problems.join(" ; ")}`, fix: "install-hooks les remet d'aplomb (sans toucher à tes autres réglages).", ...installHooks })
+  if (status === "ok") add(ctx, { id: "hooks", group: "Claude Code", status, detail: `SessionStart, UserPromptSubmit and Stop connected (${paths.claudeSettings()})` })
+  else add(ctx, { id: "hooks", group: "Claude Code", status, detail: `hooks: ${problems.join("; ")}`, fix: "install-hooks puts them right (without touching your other settings).", ...installHooks })
 
   const errors = recentHookErrors(readTail(paths.log()), ctx.now)
   if (errors.count)
     add(ctx, {
-      id: "hooks-erreurs",
+      id: "hook-errors",
       group: "Claude Code",
       status: "warn",
-      detail: `${errors.count} erreur(s) des hooks sur 24 h, la dernière : « ${clean(ctx, errors.last ?? "")} »`,
-      fix: "Sans gravité pour Claude Code (les hooks ne le bloquent jamais) ; si ça dure, regarde la connexion au cerveau ci-dessus.",
+      detail: `${errors.count} hook error(s) over 24 h, the last one: "${clean(ctx, errors.last ?? "")}"`,
+      fix: "Harmless for Claude Code (the hooks never block it); if it lasts, look at the connection to the brain above.",
     })
 }
 
-/** Node.js et script lancés par un hook, quelle que soit sa forme. */
+/** Node.js and script started by a hook, whatever its form. */
 function hookTarget(h: HookCommand): { exec: string; script: string } | null {
   if (Array.isArray(h.args) && typeof h.command === "string" && h.args.length) return { exec: h.command, script: String(h.args[0]) }
   const m = /^\s*"([^"]+)"\s+"([^"]+)"\s+hook\b/.exec(typeof h.command === "string" ? h.command : "")
   return m ? { exec: m[1], script: m[2] } : null
 }
 
-// ——— Synchro ———
+// ——— Sync ———
 
 function checkSync(ctx: Ctx) {
   const setup = { command: `${ctx.me} setup`, safe: true }
   const target = scheduleTarget(ctx.platform)
-  const how = ctx.platform === "darwin" ? "launchd" : ctx.platform === "win32" ? "tâche Windows CompanyBrainSync" : "crontab"
+  const how = ctx.platform === "darwin" ? "launchd" : ctx.platform === "win32" ? "Windows task CompanyBrainSync" : "crontab"
   if (target === null && ctx.platform === "linux" && !findOnPath("crontab"))
     add(ctx, {
-      id: "planification",
-      group: "Synchro",
+      id: "schedule",
+      group: "Sync",
       status: "fail",
-      detail: "synchro automatique impossible à planifier : pas de crontab sur ce poste",
-      fix: "Installe cron (paquet « cron » ou « cronie ») et démarre-le, puis relance setup.",
+      detail: "automatic sync cannot be scheduled: no crontab on this computer",
+      fix: "Install cron (\"cron\" or \"cronie\" package) and start it, then run setup again.",
     })
   else if (target === null)
     add(ctx, {
-      id: "planification",
-      group: "Synchro",
+      id: "schedule",
+      group: "Sync",
       status: "fail",
-      detail: "synchro automatique non planifiée : rien ne part au cerveau tout seul",
-      fix: "setup la planifie (toutes les 15 min, à partir de maintenant : aucun historique n'est envoyé).",
+      detail: "automatic sync not scheduled: nothing goes to the brain on its own",
+      fix: "setup schedules it (every 15 min, from now on: no history is sent).",
       ...setup,
     })
-  else if (target === undefined) add(ctx, { id: "planification", group: "Synchro", status: "warn", detail: `synchro planifiée (${how}), mais sa commande est illisible` })
+  else if (target === undefined) add(ctx, { id: "schedule", group: "Sync", status: "warn", detail: `sync scheduled (${how}), but its command is unreadable` })
   else {
     const p = probeOnce(target.execPath, [target.script])
     const other = p.ok ? mismatch(target.execPath, target.script) : null
-    if (!p.ok) add(ctx, { id: "planification", group: "Synchro", status: "fail", detail: `la synchro planifiée (${how}) ne démarre pas (${p.error})`, fix: "setup la rebranche sur le client actuel, sans rien sauter de ce qui attend.", ...setup })
+    if (!p.ok) add(ctx, { id: "schedule", group: "Sync", status: "fail", detail: `the scheduled sync (${how}) does not start (${p.error})`, fix: "setup reconnects it to the current client, without skipping anything that is waiting.", ...setup })
     else if (other)
-      add(ctx, { id: "planification", group: "Synchro", status: "fail", detail: `la synchro planifiée (${how}) ${other}`, fix: "setup la rebranche sur le client actuel, sans rien sauter de ce qui attend.", ...setup })
+      add(ctx, { id: "schedule", group: "Sync", status: "fail", detail: `the scheduled sync (${how}) ${other}`, fix: "setup reconnects it to the current client, without skipping anything that is waiting.", ...setup })
     else if (target.home && !samePath(target.home, brainHome()))
-      add(ctx, { id: "planification", group: "Synchro", status: "fail", detail: `la synchro planifiée utilise un autre dossier (${target.home})`, fix: "setup la rebranche sur ce dossier.", ...setup })
-    else add(ctx, { id: "planification", group: "Synchro", status: "ok", detail: `toutes les 15 min (${how})` })
+      add(ctx, { id: "schedule", group: "Sync", status: "fail", detail: `the scheduled sync uses another folder (${target.home})`, fix: "setup reconnects it to this folder.", ...setup })
+    else add(ctx, { id: "schedule", group: "Sync", status: "ok", detail: `every 15 min (${how})` })
   }
 
   const state = loadState()
@@ -723,26 +723,26 @@ function checkSync(ctx: Ctx) {
     const zones = Object.entries(last!.zones ?? {})
       .map(([z, n]) => `${zoneName(loadCache(), z)} ${n}`)
       .join(", ")
-    const detail = `dernière synchro ${ago(ctx.now - lastAt)} : ${last!.items_sent} connaissance(s) envoyée(s)${zones ? ` (${zones})` : ""}, distillation ${DISTILLER_LABELS[last!.distiller as keyof typeof DISTILLER_LABELS] ?? last!.distiller}`
+    const detail = `last sync ${ago(ctx.now - lastAt)}: ${last!.items_sent} knowledge item(s) sent${zones ? ` (${zones})` : ""}, distillation ${DISTILLER_LABELS[last!.distiller as keyof typeof DISTILLER_LABELS] ?? last!.distiller}`
     const old = ctx.now - lastAt > 24 * 3_600_000
-    add(ctx, { id: "derniere-synchro", group: "Synchro", status: old ? "warn" : "ok", detail: old ? `${detail} (poste éteint ou en veille ?)` : detail })
+    add(ctx, { id: "last-sync", group: "Sync", status: old ? "warn" : "ok", detail: old ? `${detail} (computer off or asleep?)` : detail })
   } else {
     const since = state.baseline_at ? Date.parse(state.baseline_at) : NaN
     add(ctx, {
-      id: "derniere-synchro",
-      group: "Synchro",
+      id: "last-sync",
+      group: "Sync",
       status: Number.isFinite(since) && ctx.now - since > 3_600_000 && target ? "warn" : "info",
-      detail: Number.isFinite(since) ? `aucune synchro terminée depuis la mise en route (${ago(ctx.now - since)})` : "aucune synchro encore",
+      detail: Number.isFinite(since) ? `no sync finished since the setup (${ago(ctx.now - since)})` : "no sync yet",
     })
   }
-  // La dernière synchro du journal a échoué avant d'envoyer (cerveau injoignable, config…) : last_sync ne le dit pas.
+  // The log's last sync failed before sending (brain unreachable, config…): last_sync does not say so.
   if (run?.error && !run.sent && (run.at === null || !Number.isFinite(lastAt) || run.at > lastAt)) {
     add(ctx, {
-      id: "journal",
-      group: "Synchro",
+      id: "log",
+      group: "Sync",
       status: "fail",
-      detail: `la dernière synchro planifiée${run.at ? ` (${ago(ctx.now - run.at)})` : ""} a échoué : « ${clean(ctx, run.error)} »`,
-      fix: `Corrige le point KO correspondant ci-dessus ; journal complet : ${paths.log()}.`,
+      detail: `the last scheduled sync${run.at ? ` (${ago(ctx.now - run.at)})` : ""} failed: "${clean(ctx, run.error)}"`,
+      fix: `Fix the matching KO item above; full log: ${paths.log()}.`,
     })
   }
 
@@ -753,33 +753,33 @@ function checkSync(ctx: Ctx) {
     try {
       age = ctx.now - statSync(lock).mtimeMs
     } catch {
-      // retiré entre-temps
+      // removed in the meantime
     }
     const alive = typeof info.pid === "number" && pidAlive(info.pid) && age < LOCK_STALE_MS
     add(ctx, {
-      id: "verrou",
-      group: "Synchro",
+      id: "lock",
+      group: "Sync",
       status: alive ? "info" : "warn",
-      detail: alive ? `synchro en cours (processus ${info.pid}, ${ago(age)})` : `verrou orphelin (${ago(age)}) : la prochaine synchro le reprendra toute seule`,
+      detail: alive ? `sync in progress (process ${info.pid}, ${ago(age)})` : `orphaned lock (${ago(age)}): the next sync will take it over on its own`,
     })
   }
 
   const failures = Object.keys(state.distill_failures ?? {}).length
   if (failures)
     add(ctx, {
-      id: "en-attente",
-      group: "Synchro",
+      id: "pending",
+      group: "Sync",
       status: "info",
-      detail: `${failures} conversation(s) que Claude n'a pas encore su distiller : retentées à chaque synchro (abandon après 3 échecs dus à leur contenu)`,
+      detail: `${failures} conversation(s) Claude has not managed to distill yet: retried on each sync (given up after 3 failures due to their content)`,
     })
   const preview = readJson<{ created_at?: string; items?: unknown[] }>(paths.preview())
   if (preview?.created_at && ctx.now - Date.parse(preview.created_at) < PREVIEW_TTL_MS)
     add(ctx, {
-      id: "simulation",
-      group: "Synchro",
+      id: "dry-run",
+      group: "Sync",
       status: "info",
-      detail: `simulation relue ${ago(ctx.now - Date.parse(preview.created_at))} (${preview.items?.length ?? 0} connaissance(s)), pas encore envoyée`,
-      fix: "Elle ne part qu'avec ton accord explicite.",
+      detail: `dry run reviewed ${ago(ctx.now - Date.parse(preview.created_at))} (${preview.items?.length ?? 0} knowledge item(s)), not sent yet`,
+      fix: "It only goes with your explicit approval.",
       command: `${ctx.me} sync --confirm`,
       safe: false,
     })
@@ -795,19 +795,19 @@ function checkDistiller(ctx: Ctx) {
       id: "distillation",
       group: "Distillation",
       status: "warn",
-      detail: `${DISTILLER_LABELS[d.kind]} — ${d.reason} : connaissances moins fines`,
-      fix: "Installe Claude Code et connecte-toi (`claude`), ou donne une clé API avec init --anthropic-key.",
+      detail: `${DISTILLER_LABELS[d.kind]} — ${d.reason}: less precise knowledge`,
+      fix: "Install Claude Code and sign in (`claude`), or give an API key with init --anthropic-key.",
     })
   else add(ctx, { id: "distillation", group: "Distillation", status: "ok", detail: `${DISTILLER_LABELS[d.kind]} — ${d.reason}` })
 
-  // Synchro planifiée : le PATH relevé à l'installation doit mener à `claude`, et Claude doit être connecté.
+  // Scheduled sync: the PATH recorded at install time must lead to `claude`, and Claude must be signed in.
   if (!apiKey(cfg) && cfg.use_claude_cli !== false && cfg.schedule_env?.PATH !== undefined && d.kind === "claude-cli" && !findOnPath("claude", cfg.schedule_env.PATH)) {
     add(ctx, {
-      id: "distillation-planifiee",
+      id: "scheduled-distillation",
       group: "Distillation",
       status: "warn",
-      detail: "la synchro planifiée ne trouve pas `claude` dans son PATH : elle distillerait sans LLM",
-      fix: "setup relève le PATH actuel pour la synchro planifiée.",
+      detail: "the scheduled sync cannot find `claude` in its PATH: it would distill without an LLM",
+      fix: "setup records the current PATH for the scheduled sync.",
       command: `${ctx.me} setup`,
       safe: true,
     })
@@ -815,18 +815,18 @@ function checkDistiller(ctx: Ctx) {
   const run = lastLoggedRun(readTail(paths.log()))
   if (run?.auth)
     add(ctx, {
-      id: "claude-connexion",
+      id: "claude-signin",
       group: "Distillation",
       status: "fail",
-      detail: `à la dernière synchro${run.at ? ` (${ago(ctx.now - run.at)})` : ""}, Claude n'était plus connecté : rien n'a été distillé (rien n'est perdu, tout repart une fois reconnecté)`,
-      fix: "Lance `claude setup-token` dans un terminal (connexion dans le navigateur), puis enregistre le jeton affiché.",
-      command: `${ctx.me} init --claude-token <jeton>`,
+      detail: `on the last sync${run.at ? ` (${ago(ctx.now - run.at)})` : ""}, Claude was no longer signed in: nothing was distilled (nothing is lost, everything goes again once signed in)`,
+      fix: "Run `claude setup-token` in a terminal (sign-in in the browser), then save the token shown.",
+      command: `${ctx.me} init --claude-token <token>`,
       safe: false,
     })
-  else if (cfg.claude_oauth_token) add(ctx, { id: "claude-connexion", group: "Distillation", status: "ok", detail: "jeton Claude Code longue durée enregistré pour la synchro planifiée" })
+  else if (cfg.claude_oauth_token) add(ctx, { id: "claude-signin", group: "Distillation", status: "ok", detail: "long-lived Claude Code token saved for the scheduled sync" })
 }
 
-// ——— Ensemble ———
+// ——— Everything together ———
 
 export async function runDoctor(opts: { version: string; platform?: NodeJS.Platform; now?: number } = { version: "?" }): Promise<DoctorReport> {
   probes.clear()
@@ -835,11 +835,11 @@ export async function runDoctor(opts: { version: string; platform?: NodeJS.Platf
   checkNode(ctx)
   const configured = checkConfig(ctx)
   checkClientFiles(ctx)
-  // Réseau en parallèle (cerveau et Screenpipe), puis ce qui lance des processus.
+  // Network in parallel (brain and Screenpipe), then what starts processes.
   const network: Promise<void>[] = [checkScreenpipe(ctx)]
   if (configured) network.unshift(checkBrain(ctx))
   else {
-    for (const id of ["connexion", "version"]) add(ctx, { id, group: "Cerveau", status: "skip", detail: "sans config" })
+    for (const id of ["connection", "version"]) add(ctx, { id, group: "Brain", status: "skip", detail: "without config" })
   }
   await Promise.all(network)
   checkClaudeCode(ctx)
@@ -867,7 +867,7 @@ export async function runDoctor(opts: { version: string; platform?: NodeJS.Platf
 const TAGS: Record<Status, string> = { ok: "OK", warn: "!!", fail: "KO", skip: "--", info: " i" }
 
 export function formatDoctor(r: DoctorReport): string {
-  const out = [`NOS Brainer — diagnostic du poste (client ${r.version}, ${r.platform}-${r.arch}, Node.js ${r.node})`]
+  const out = [`NOS Brainer — computer diagnosis (client ${r.version}, ${r.platform}-${r.arch}, Node.js ${r.node})`]
   for (const g of GROUPS) {
     const list = r.checks.filter((c) => c.group === g)
     if (!list.length) continue
@@ -880,9 +880,9 @@ export function formatDoctor(r: DoctorReport): string {
     }
   }
   const s = r.summary
-  out.push("", `Bilan : ${s.ok} OK, ${s.warn} à surveiller, ${s.fail} KO${s.info ? `, ${s.info} pour info` : ""}${s.skip ? `, ${s.skip} non vérifié(s)` : ""}.`)
-  if (r.next && r.next.status === "fail") out.push(`À régler d'abord : ${r.next.id} — ${r.next.command ? `\`${r.next.command}\`` : r.next.fix}`)
-  else if (!s.fail) out.push(s.warn ? "Rien de bloquant." : "Tout est en ordre.")
+  out.push("", `Summary: ${s.ok} OK, ${s.warn} to watch, ${s.fail} KO${s.info ? `, ${s.info} for info` : ""}${s.skip ? `, ${s.skip} not checked` : ""}.`)
+  if (r.next && r.next.status === "fail") out.push(`Fix first: ${r.next.id} — ${r.next.command ? `\`${r.next.command}\`` : r.next.fix}`)
+  else if (!s.fail) out.push(s.warn ? "Nothing blocking." : "Everything is in order.")
   return out.join("\n")
 }
 

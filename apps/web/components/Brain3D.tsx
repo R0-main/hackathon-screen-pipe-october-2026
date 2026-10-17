@@ -12,14 +12,14 @@ import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
 
-/** Une personne et son dot, posé hors du cerveau au bord de la zone où elle travaille. */
+/** A person and their dot, placed outside the brain at the edge of the zone where they work. */
 export type BrainPerson = {
   id: string
   name: string
   zone: string | null
-  /** Son agent a travaillé ces dernières minutes : le dot respire. */
+  /** Their agent worked in the last few minutes: the dot breathes. */
   working?: boolean
-  /** Son agent touche le cerveau à l'instant : le dot sautille, cerclé de phosphore. */
+  /** Their agent is touching the brain right now: the dot bounces, ringed with phosphor. */
   live?: boolean
   me?: boolean
 }
@@ -36,30 +36,30 @@ export type Brain3DProps = {
   people?: BrainPerson[]
 }
 
-// Encre sur blanc. La seule couleur vive est le phosphore, réservé à une zone qu'un agent touche en direct.
+// Ink on white. The only bright color is phosphor, reserved to a zone an agent is touching live.
 const INK = 0x0a0a0a
 const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
 const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
-/** Traits du réseau à l'encre, un peu adoucis vers le blanc. */
+/** Network lines in ink, slightly softened toward white. */
 const SOFTEN = 0.35
-/** Petits neurones dans la couleur de leur zone, légèrement adoucie ; gris hors zone (cervelet, tronc, zone verrouillée). */
+/** Small neurons in their zone's color, slightly softened; gray outside zones (cerebellum, brainstem, locked zone). */
 const DOT_SOFTEN = 0.2
 const BARE = 0xc4c4bc
-/** Chaque couche interne est un peu plus pâle et ses neurones un peu plus petits : la profondeur se lit. */
+/** Each inner layer is a bit paler and its neurons a bit smaller: depth reads. */
 const DEPTH_SOFTEN = 0.15
-/** Part de blanc sur la face cachée : il n'en reste qu'un souffle, qui garde la silhouette. */
+/** Share of white on the hidden side: only a breath of it remains, which keeps the silhouette. */
 const BACK = 0.86
 const NEURON_R = 0.008
-/** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
+/** Radius of the arcs between zones: thin tubes, a bit thicker than the links (WebGL lines stay at 1 px). */
 const SYNAPSE_R = 0.0045
 
 const CENTER_R = 0.042
-/** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
+/** People dots: distance from the brain's silhouette and between two neighboring dots, in pixels (before zoom). */
 const DOT_GAP = 32
 const DOT_SPACING = 44
-/** Rayon d'un dot dans la scène : une vingtaine de pixels de large au zoom de départ. */
+/** Radius of a dot in the scene: about twenty pixels wide at the starting zoom. */
 const DOT_R = 0.052
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
@@ -89,11 +89,11 @@ type View = { rx: number; ry: number; zoom: number }
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
 /**
- * Le cerveau en trois dimensions : un réseau de neurones sur la surface d'un cerveau (lobes, cervelet,
- * tronc) dessine la silhouette : traits à l'encre, neurones dans la couleur de leur zone. Les billes (les connaissances)
- * sont groupées par zone sur le cortex, reliées à leur centre et entre zones par des traits fins. On le fait tourner à la
- * souris, on zoome à la molette, en pinçant ou avec les boutons. Il remplit son conteneur : la page ne défile
- * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
+ * The brain in three dimensions: a network of neurons on the surface of a brain (lobes, cerebellum,
+ * brainstem) draws the silhouette: ink lines, neurons in their zone's color. The beads (the knowledge)
+ * are grouped by zone on the cortex, linked to their center and across zones by thin lines. You rotate it with the
+ * mouse, zoom with the wheel, by pinching or with the buttons. It fills its container: the page does not scroll,
+ * the wheel only zooms. Without WebGL, it falls back to the 2D view.
  */
 export function Brain3D(props: Brain3DProps) {
   const { zones, synapses, activity, ripples, now, selected, onSelect, people = [] } = props
@@ -106,7 +106,7 @@ export function Brain3D(props: Brain3DProps) {
   const ripplesRef = useRef(ripples)
   const selectedRef = useRef(selected)
   const onSelectRef = useRef(onSelect)
-  // De profil, front à gauche, légèrement de trois quarts : la silhouette du cerveau se lit d'emblée.
+  // In profile, forehead to the left, slightly three-quarter: the brain's silhouette reads at once.
   const viewRef = useRef<View>({ rx: 0.12, ry: Math.PI - 0.38, zoom: ZOOM.start })
   const zoomRef = useRef<(delta: number) => void>(() => {})
   const [fallback, setFallback] = useState(false)
@@ -115,12 +115,12 @@ export function Brain3D(props: Brain3DProps) {
   selectedRef.current = selected
   onSelectRef.current = onSelect
 
-  // La scène est reconstruite seulement quand la structure change (zones, verrous, volumes, liens).
+  // The scene is only rebuilt when the structure changes (zones, locks, volumes, links).
   const sceneKey = `${zones.map((z) => `${z.id}:${z.locked ? 1 : 0}:${z.count}:${zoneColor(z.color, z.position)}`).join("|")}#${synapses
     .map((s) => `${s.a}-${s.b}:${s.weight}`)
     .join("|")}#${people.map((p) => `${p.id}:${p.zone ?? ""}`).join("|")}`
   const placed = people.filter((p) => p.zone && zones.some((z) => z.id === p.zone))
-  // Deux voisins de zone ne portent pas la même tenue (tant qu'il en reste une libre).
+  // Two neighbors in a zone don't wear the same outfit (as long as a free one remains).
   const looks = new Map<string, DotLook>()
   for (const p of [...placed].sort((a, b) => a.id.localeCompare(b.id))) {
     const taken = new Set(placed.filter((q) => q.zone === p.zone && looks.has(q.id)).map((q) => looks.get(q.id)))
@@ -168,7 +168,7 @@ export function Brain3D(props: Brain3DProps) {
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-surface">
       <canvas ref={canvasRef} className="block h-full w-full cursor-grab touch-none active:cursor-grabbing" aria-hidden />
 
-      {/* Dots : modèles 3D dans la scène. Ici, leur zone cliquable et leur prénom, posés chaque image au même endroit. */}
+      {/* Dots: 3D models in the scene. Here, their clickable area and their first name, placed every frame at the same spot. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {placed.map((p) => {
           const zone = zones.find((z) => z.id === p.zone)!
@@ -183,17 +183,17 @@ export function Brain3D(props: Brain3DProps) {
               className="brain-dot pointer-events-auto absolute left-0 top-0"
               data-live={p.live ? "1" : undefined}
               data-me={p.me ? "1" : undefined}
-              aria-label={`${p.name}${p.me ? " (vous)" : ""}, ${zone.name}`}
+              aria-label={`${p.name}${p.me ? " (you)" : ""}, ${zone.name}`}
               title={`${p.name} · ${zone.name}`}
             >
               <span className="brain-dot-hit" aria-hidden />
-              <span className="brain-dot-name">{p.me ? "Vous" : firstName(p.name)}</span>
+              <span className="brain-dot-name">{p.me ? "You" : firstName(p.name)}</span>
             </Link>
           )
         })}
       </div>
 
-      {/* Libellés : de vrais boutons, positionnés chaque image sur la projection de leur zone. */}
+      {/* Labels: real buttons, positioned every frame on their zone's projection. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {zones.map((z) => {
           const act = activity[z.id]
@@ -219,10 +219,10 @@ export function Brain3D(props: Brain3DProps) {
                   <span className="hidden whitespace-nowrap text-[10.5px] tabular-nums leading-tight text-trace sm:block">
                     {z.locked ? (
                       <span className="inline-flex items-center gap-1">
-                        <LockIcon size={11} /> accès restreint
+                        <LockIcon size={11} /> restricted access
                       </span>
                     ) : (
-                      `${z.count} connaissance${z.count > 1 ? "s" : ""}`
+                      `${z.count} item${z.count === 1 ? "" : "s"}`
                     )}
                   </span>
                 </span>
@@ -239,14 +239,14 @@ export function Brain3D(props: Brain3DProps) {
       </div>
 
       <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
-        <button type="button" className="btn btn-icon" aria-label="Zoomer" onClick={() => zoomRef.current(-ZOOM.step)}>
+        <button type="button" className="btn btn-icon" aria-label="Zoom in" onClick={() => zoomRef.current(-ZOOM.step)}>
           <PlusIcon />
         </button>
-        <button type="button" className="btn btn-icon" aria-label="Dézoomer" onClick={() => zoomRef.current(ZOOM.step)}>
+        <button type="button" className="btn btn-icon" aria-label="Zoom out" onClick={() => zoomRef.current(ZOOM.step)}>
           <MinusIcon />
         </button>
       </div>
-      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Glisser pour tourner, molette ou pincer pour zoomer.</p>
+      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Drag to rotate, scroll or pinch to zoom.</p>
     </div>
   )
 }
@@ -263,14 +263,14 @@ type Refs = {
   zoomRef: React.RefObject<(delta: number) => void>
 }
 
-/** Construit la scène et lance la boucle de rendu. Renvoie la fonction de nettoyage. */
+/** Builds the scene and starts the render loop. Returns the cleanup function. */
 function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], refs: Refs): () => void {
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   renderer.setClearColor(0x000000, 0)
 
   const scene = new T.Scene()
-  // Brouillard blanc : la face arrière pâlit, les liaisons de devant restent lisibles.
+  // White fog: the back side fades, the front links stay readable.
   const fog = new T.Fog(WHITE, 1, 10)
   scene.fog = fog
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 50)
@@ -293,7 +293,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const surface = brainSurface()
   const anchors = zoneAnchors(zones.length)
   const owner = territories(anchors)
-  /** Point de surface i, décalé de k le long de sa normale (k < 0 : sous la surface). */
+  /** Surface point i, shifted by k along its normal (k < 0: under the surface). */
   const onSurface = (i: number, k: number) => {
     const { p, n } = surface[i]
     return new T.Vector3(p[0] + n[0] * k, p[1] + n[1] * k, p[2] + n[2] * k)
@@ -307,7 +307,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const centerPos = onSurface(anchors[i], -0.08)
     const color = new T.Color(zoneColor(z.color, z.position)).getHex()
 
-    // Une pastille de couleur, sans contour : le cercle d'encre ne marque que la zone choisie ou active.
+    // A colored dot, without outline: the ink circle only marks the chosen or active zone.
     const centerMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : color })
     const center: SphereMesh = new T.Mesh(geoSphere, centerMat)
     center.position.copy(centerPos)
@@ -325,7 +325,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const nodes: SphereMesh[] = []
     const linkPts: THREE.Vector3[] = []
     for (const idx of zoneNodes(anchors, owner, i, count)) {
-      // Sous la surface, à des profondeurs variées : les connaissances sont dans le cerveau, pas posées dessus.
+      // Under the surface, at varied depths: the knowledge is in the brain, not laid on top of it.
       const p = onSurface(idx, -(0.04 + rand() * 0.14))
       const r = 0.007 + rand() * 0.006
       const node: SphereMesh = new T.Mesh(geoSphere, nodeMat)
@@ -346,7 +346,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
   })
 
-  // Le réseau qui dessine le cerveau : des liaisons en arcs, à l'encre ; seules les zones portent la couleur.
+  // The network that draws the brain: links as arcs, in ink; only the zones carry color.
   const net = brainNetwork(owner)
   const curves = curveNetwork(net)
   const netCol = new Float32Array(curves.positions.length)
@@ -370,7 +370,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const bareC = new T.Color(BARE)
   const zoneList = [...gfx.values()]
   const tone = new T.Color()
-  // Couleurs de base par neurone (liaison et point), puis estompées chaque image selon la face visible.
+  // Base colors per neuron (link and point), then faded every frame depending on the visible side.
   const linkBase = new Float32Array(net.points.length * 3)
   const dotBase = net.points.map(() => new T.Color())
   const fade = new Float32Array(net.points.length)
@@ -392,7 +392,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
   }
 
-  // Les connaissances reliées entre elles par des traits droits, chacune à ses plus proches voisines, quelle que soit leur zone.
+  // Knowledge items linked to each other by straight lines, each to its nearest neighbors, whatever their zone.
   const known = [...gfx.values()].flatMap((g) => g.nodes.map((node) => ({ p: node.position.toArray(), color: new T.Color(g.locked ? NEUTRAL : g.color).toArray() })))
   const knownSeg = gradientSegments(knowledgeLinks(known.map((k) => k.p)).map(([a, b]) => ({ pts: [known[a].p, known[b].p], from: known[a].color, to: known[b].color })))
   const knownGeo = new T.BufferGeometry()
@@ -403,8 +403,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   geometries.push(knownGeo)
   materials.push(knownMat)
 
-  // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
-  // l'autre, plus marqués quand elles sont actives.
+  // Synapses: arcs between two zones that share entities, as a gradient from one's color to the
+  // other's, stronger when they are active.
   const TUBULAR = 64
   const RADIAL = 6
   const syn: SynapseGfx[] = []
@@ -419,7 +419,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const from = new T.Color(A.locked ? NEUTRAL : A.color)
     const to = new T.Color(B.locked ? NEUTRAL : B.color)
     const cols = new Float32Array(geo.attributes.position.count * 3)
-    // Les sommets du tube vont anneau par anneau : l'anneau donne la position le long de l'arc.
+    // The tube's vertices go ring by ring: the ring gives the position along the arc.
     for (let v = 0; v < geo.attributes.position.count; v++) tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / TUBULAR).toArray(cols, v * 3)
     geo.setAttribute("color", new T.BufferAttribute(cols, 3))
     group.add(new T.Mesh(geo, mat))
@@ -428,17 +428,17 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false })
   }
 
-  // Dots des personnes : posés à l'écran, juste hors de la silhouette du cerveau, dans la direction de leur zone.
-  // La silhouette se lit sur un échantillon de la surface, projeté à chaque image.
+  // People dots: placed on screen, just outside the brain's silhouette, in the direction of their zone.
+  // The silhouette is read from a sample of the surface, projected every frame.
   const outline = surface.filter((_, i) => i % 3 === 0).map((sp) => new T.Vector3(...sp.p))
   const outlineXY = new Float32Array(outline.length * 2)
   const dotGroups = zones
     .map((z) => ({ zone: gfx.get(z.id)!, members: people.filter((p) => p.zone === z.id).sort((a, b) => a.id.localeCompare(b.id)) }))
     .filter((g) => g.members.length > 0)
-  /** Position affichée de chaque dot, lissée d'une image à l'autre (une zone qui passe face caméra ne le fait pas sauter). */
+  /** Displayed position of each dot, smoothed from one frame to the next (a zone passing in front of the camera doesn't make it jump). */
   const dotPos = new Map<string, { x: number; y: number }>()
-  // Les dots vivent hors du cerveau (dans la scène, pas dans le groupe qui tourne) : ils font toujours face à
-  // l'écran. Seuls eux sont éclairés, en feutrine.
+  // The dots live outside the brain (in the scene, not in the rotating group): they always face
+  // the screen. Only they are lit, as felt.
   const kit = dotKit(T)
   const dots = new Map<string, { model: THREE.Group; zone: ZoneGfx; phase: number }>()
   for (const { zone, members } of dotGroups)
@@ -457,7 +457,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const dotWorld = new T.Vector3()
   const zoneWorld = new T.Vector3()
 
-  // Taille : le canvas suit son conteneur.
+  // Size: the canvas follows its container.
   const size = { w: 1, h: 1 }
   const resize = () => {
     const w = container.clientWidth
@@ -474,7 +474,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   ro.observe(container)
   resize()
 
-  // Interaction : glisser pour tourner, clic pour ouvrir une zone, molette (ou pincer au pavé tactile) pour zoomer.
+  // Interaction: drag to rotate, click to open a zone, wheel (or pinch on the touchpad) to zoom.
   const raycaster = new T.Raycaster()
   const ndc = new T.Vector2()
   const pick = (e: PointerEvent): string | null => {
@@ -490,7 +490,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   let lastX = 0
   let lastY = 0
   let downAt = 0
-  // Doigts posés : à deux, l'écart entre eux zoome (pincer sur écran tactile).
+  // Fingers down: with two, the distance between them zooms (pinch on a touch screen).
   const pointers = new Map<number, { x: number; y: number }>()
   let pinch = 0
   const spreadOf = () => {
@@ -548,7 +548,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
   const onWheel = (e: WheelEvent) => {
     e.preventDefault()
-    // Pincer au pavé tactile arrive en molette + Ctrl, avec de petits deltas : on l'amplifie.
+    // A touchpad pinch arrives as wheel + Ctrl, with small deltas: it is amplified.
     const k = e.ctrlKey ? 0.012 : e.deltaMode === 1 ? 0.12 : 0.004
     state.zoomTarget = clamp(state.zoomTarget + e.deltaY * k, ZOOM.min, ZOOM.max)
     state.lastInteraction = performance.now()
@@ -563,7 +563,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     state.lastInteraction = performance.now()
   }
 
-  // Boucle : ondes, états actifs, rotation d'attente, libellés projetés.
+  // Loop: ripples, active states, idle rotation, projected labels.
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
   const live: RippleGfx[] = []
   const seen = new Set<string>()
@@ -640,13 +640,13 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     renderer.render(scene, camera)
 
     const centerDepth = tmp.set(0, 0, 0).project(camera).z
-    // Pixels par unité de scène à distance 1 : sert à mesurer la bille de chaque zone à l'écran.
+    // Pixels per scene unit at distance 1: used to measure each zone's bead on screen.
     const focal = (size.h / 2 / Math.tan((camera.fov * Math.PI) / 360)) * camera.zoom
     for (const g of gfx.values()) {
       const el = refs.labelsRef.current.get(g.id)
       if (!el) continue
       tmp.setFromMatrixPosition(g.center.matrixWorld)
-      // Le libellé se pose toujours à côté de la bille (et de son cercle), jamais dessus, quel que soit le zoom.
+      // The label always sits next to the bead (and its circle), never on top of it, whatever the zoom.
       const gap = (g.outline.scale.x * focal) / tmp.distanceTo(camera.position) + 6
       tmp.project(camera)
       const x = (tmp.x * 0.5 + 0.5) * size.w
@@ -664,9 +664,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
 
   /**
-   * Chaque zone pousse ses membres hors du cerveau : on part du centre projeté du cerveau vers celui de la zone, et
-   * on s'arrête juste après le bord de la silhouette dans cette direction. Les membres d'une même zone se rangent
-   * côte à côte le long du bord ; deux groupes qui se chevauchent s'écartent.
+   * Each zone pushes its members out of the brain: from the brain's projected center toward the zone's, stopping
+   * just past the edge of the silhouette in that direction. Members of the same zone line up
+   * side by side along the edge; two overlapping groups move apart.
    */
   const placeDots = (dt: number, time: number) => {
     if (dotGroups.length === 0) return
@@ -687,7 +687,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const len = Math.hypot(dx, dy)
       if (len < 1) [dx, dy] = [0, -1]
       else [dx, dy] = [dx / len, dy / len]
-      // Bord de la silhouette dans cette direction : le point projeté le plus avancé, parmi ceux proches du rayon.
+      // Edge of the silhouette in that direction: the furthest projected point, among those close to the ray.
       let reach = 0
       for (let i = 0; i < outline.length; i++) {
         const px = outlineXY[i * 2] - cx
@@ -701,7 +701,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         targets.push({ id: p.id, x: cx + dx * r - dy * side, y: cy + dy * r + dx * side })
       })
     }
-    // Quelques passes d'écartement : deux dots ne se recouvrent jamais.
+    // A few spreading passes: two dots never overlap.
     const min = DOT_SPACING * scale * 0.9
     for (let pass = 0; pass < 4; pass++)
       for (let a = 0; a < targets.length; a++)
@@ -720,7 +720,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         }
     const ease = Math.min(1, dt * 6)
     const margin = 24
-    // Profondeur du centre du cerveau : les dots sont posés à cette distance de la caméra.
+    // Depth of the brain's center: the dots are placed at that distance from the camera.
     const depth = tmp.set(0, 0, 0).project(camera).z
     for (const t of targets) {
       const d = dots.get(t.id)
@@ -731,7 +731,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const pos = cur ? { x: cur.x + (x - cur.x) * ease, y: cur.y + (y - cur.y) * ease } : { x, y }
       dotPos.set(t.id, pos)
 
-      // Le modèle : centre du corps au point visé, face à l'écran, tourné un peu vers sa zone.
+      // The model: body center at the target point, facing the screen, turned slightly toward its zone.
       dotWorld.set((pos.x / size.w) * 2 - 1, -(pos.y / size.h) * 2 + 1, depth).unproject(camera)
       zoneWorld.setFromMatrixPosition(d.zone.center.matrixWorld)
       const who = refs.peopleRef.current.get(t.id)

@@ -7,13 +7,13 @@ export const dynamic = "force-dynamic"
 
 type Ctx = { params: Promise<{ id: string }> }
 
-/** Résumé d'une zone : état, connaissances récentes, entités, tâches. */
+/** Summary of a zone: state, recent knowledge, entities, tasks. */
 export const GET = withViewer<Ctx>(async (_req, viewer, { params }) => {
   const { id } = await params
   const store = getStore()
   const zone = (await store.listZones()).find((z) => z.id === id)
-  if (!zone) return error(404, "Zone inconnue.")
-  if (!canRead(viewer.access, id)) return error(403, "Vous n'avez pas accès à cette zone.")
+  if (!zone) return error(404, "Unknown zone.")
+  if (!canRead(viewer.access, id)) return error(403, "You don't have access to this zone.")
   const [items, entities, tasks, status, profiles] = await Promise.all([
     store.listItems({ zones: [id], limit: 60 }),
     store.topEntities({ zones: [id], limit: 20 }),
@@ -23,7 +23,7 @@ export const GET = withViewer<Ctx>(async (_req, viewer, { params }) => {
   ])
   const names = new Map(profiles.map((p) => [p.id, p.name]))
   await store.insertEvents([
-    { user_id: viewer.real.id, agent: "dashboard", type: "query", zones: [id], summary: `Consulte la zone ${zone.name}`, at: new Date().toISOString() },
+    { user_id: viewer.real.id, agent: "dashboard", type: "query", zones: [id], summary: `Viewing the ${zone.name} zone`, at: new Date().toISOString() },
   ])
   return json({
     zone,

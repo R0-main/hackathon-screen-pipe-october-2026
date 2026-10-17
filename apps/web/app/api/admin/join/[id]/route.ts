@@ -21,8 +21,8 @@ const Schema = z.discriminatedUnion("action", [
 ])
 
 /**
- * Admins : accepte une demande (le compte est créé avec ce que l'admin a vérifié ou complété, et l'empreinte du jeton
- * du poste, qui termine alors son installation tout seul) ou la refuse.
+ * Admins: accepts a request (the account is created with what the admin checked or completed, and the fingerprint of
+ * the workstation's token, which then finishes its install on its own) or declines it.
  */
 export const POST = withViewer<Ctx>(
   async (req, _viewer, { params }) => {
@@ -31,14 +31,14 @@ export const POST = withViewer<Ctx>(
     if ("response" in body) return body.response
     const store = getStore()
     const request = await store.getJoinRequest(id)
-    if (!request) return error(404, "Demande introuvable.")
-    if (request.status !== "pending") return error(409, request.status === "accepted" ? "Cette demande a déjà été acceptée." : "Cette demande a déjà été refusée.")
+    if (!request) return error(404, "Request not found.")
+    if (request.status !== "pending") return error(409, request.status === "accepted" ? "This request was already accepted." : "This request was already declined.")
 
     if (body.data.action === "reject") return json(await store.decideJoinRequest(id, { status: "rejected" }))
 
     const d = body.data
-    if (await getRootStore().findUserOrg({ tokenHash: request.token_hash })) return error(409, "Ce poste a déjà un compte.")
-    if (d.manager_id && !(await store.getProfile(d.manager_id))) return error(400, "La personne de rattachement n'existe pas.")
+    if (await getRootStore().findUserOrg({ tokenHash: request.token_hash })) return error(409, "This workstation already has an account.")
+    if (d.manager_id && !(await store.getProfile(d.manager_id))) return error(400, "The manager does not exist.")
     const known = new Set((await store.listZones()).map((z) => z.id))
     const profile = await store.createProfile({
       name: d.name,

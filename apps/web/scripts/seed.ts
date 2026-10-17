@@ -1,7 +1,7 @@
-// Remplit le cerveau avec l'entreprise fictive Fournil (comptes, zones, connaissances, historique d'activité).
-// Usage : npm run seed            (stockage fichier, ou Postgres si DATABASE_URL est défini)
-//         npm run seed -- --force (écrase un cerveau existant)
-// Les données viennent de lib/demo-seed.ts (le même amorçage que le mode démo d'un déploiement neuf).
+// Fills the brain with the fictional company Fournil (accounts, zones, knowledge, activity history).
+// Usage: npm run seed            (file storage, or Postgres if DATABASE_URL is set)
+//        npm run seed -- --force (overwrites an existing brain)
+// The data comes from lib/demo-seed.ts (the same bootstrap as the demo mode of a fresh deployment).
 
 import fs from "node:fs"
 import path from "node:path"
@@ -10,8 +10,8 @@ import { seedDemoBrain } from "../lib/demo-seed"
 import { DEMO_USERS } from "./demo-data"
 
 /**
- * Les jetons suivent le stockage seedé : un seed Postgres lancé depuis apps/web n'écrase pas les jetons du cerveau
- * fichier (.brain/demo-tokens.json), qui ne correspondraient plus à aucun compte.
+ * Tokens follow the seeded storage: a Postgres seed run from apps/web does not overwrite the tokens of the file
+ * brain (.brain/demo-tokens.json), which would no longer match any account.
  */
 function tokenFileName(kind: string): string {
   if (kind !== "postgres") return "demo-tokens.json"
@@ -28,12 +28,12 @@ async function main() {
   try {
     const existing = await store.listProfiles()
     if (existing.length > 0 && !force) {
-      console.error(`Le cerveau contient déjà ${existing.length} comptes. Relancez avec --force pour tout écraser.`)
+      console.error(`The brain already has ${existing.length} accounts. Run again with --force to overwrite everything.`)
       process.exitCode = 1
       return
     }
 
-    console.log(`→ Réinitialisation du cerveau (${store.kind})…`)
+    console.log(`→ Resetting the brain (${store.kind})…`)
     const { tokens, counts } = await seedDemoBrain(store)
 
     const dir = path.resolve(process.env.BRAIN_DATA_DIR ?? ".brain")
@@ -42,9 +42,9 @@ async function main() {
     fs.writeFileSync(tokenFile, JSON.stringify(tokens, null, 2), { mode: 0o600 })
 
     console.log(
-      `✓ ${counts.users} comptes, ${counts.skills} skills, ${counts.items} connaissances, ${counts.tasks} tâches, ${counts.events} événements, ${counts.automations} automatisation(s) détectée(s).`,
+      `✓ ${counts.users} accounts, ${counts.skills} skills, ${counts.items} knowledge items, ${counts.tasks} tasks, ${counts.events} events, ${counts.automations} automation(s) detected.`,
     )
-    console.log(`\nJetons de démo (aussi dans ${tokenFile}) :`)
+    console.log(`\nDemo tokens (also in ${tokenFile}):`)
     for (const u of DEMO_USERS) console.log(`  ${u.name.padEnd(18)} ${u.role === "admin" ? "[admin]" : "       "} ${tokens[u.key].token}`)
   } finally {
     if ("end" in store && typeof (store as { end?: () => Promise<void> }).end === "function") await (store as { end: () => Promise<void> }).end()

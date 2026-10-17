@@ -1,10 +1,10 @@
-// Embeddings (recherche sémantique), optionnels : sans fournisseur configuré, la recherche reste lexicale.
+// Embeddings (semantic search), optional: without a configured provider, search stays lexical.
 //
-// Fournisseurs, par ordre de priorité :
-// - VOYAGE_API_KEY : Voyage AI (https://api.voyageai.com/v1/embeddings), modèle BRAIN_EMBEDDING_MODEL (défaut voyage-3.5-lite) ;
-// - BRAIN_EMBEDDING_URL (+ BRAIN_EMBEDDING_KEY) : tout point de terminaison compatible OpenAI `/v1/embeddings`
-//   (OpenAI, Mistral, Ollama en local avec nomic-embed-text, LM Studio…), modèle BRAIN_EMBEDDING_MODEL.
-// Les vecteurs sont stockés tels quels (tableau de réels) et comparés en cosinus côté serveur : pas d'extension pgvector requise.
+// Providers, in priority order:
+// - VOYAGE_API_KEY: Voyage AI (https://api.voyageai.com/v1/embeddings), model BRAIN_EMBEDDING_MODEL (default voyage-3.5-lite);
+// - BRAIN_EMBEDDING_URL (+ BRAIN_EMBEDDING_KEY): any endpoint compatible with OpenAI's `/v1/embeddings`
+//   (OpenAI, Mistral, Ollama locally with nomic-embed-text, LM Studio…), model BRAIN_EMBEDDING_MODEL.
+// Vectors are stored as is (array of floats) and compared by cosine on the server: no pgvector extension required.
 
 import { cosine } from "@brain/core"
 
@@ -17,9 +17,9 @@ export type EmbeddingProvider = {
 }
 
 const TIMEOUT_MS = 20_000
-/** Taille des lots envoyés au fournisseur (Voyage accepte 128 textes, OpenAI 2048 ; on reste prudent). */
+/** Size of the batches sent to the provider (Voyage accepts 128 texts, OpenAI 2048; we stay careful). */
 export const EMBED_BATCH = 64
-/** Au-delà, un texte est tronqué avant l'envoi (les connaissances sont courtes, c'est une borne de sécurité). */
+/** Beyond this, a text is truncated before sending (knowledge items are short, this is a safety bound). */
 const MAX_CHARS = 6000
 
 const g = globalThis as unknown as { __brainEmbedding?: EmbeddingProvider | null; __brainQueryCache?: Map<string, number[]> }
@@ -59,22 +59,22 @@ async function post(url: string, key: string, body: unknown): Promise<number[][]
   const data = (await res.json()) as { data?: { index?: number; embedding?: number[] }[] }
   const rows = (data.data ?? []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
   const out = rows.map((r) => r.embedding ?? [])
-  if (out.length !== (body as { input: string[] }).input.length || out.some((v) => v.length === 0)) throw new Error("embeddings : réponse incomplète")
+  if (out.length !== (body as { input: string[] }).input.length || out.some((v) => v.length === 0)) throw new Error("embeddings: incomplete response")
   return out
 }
 
-/** Le fournisseur configuré, ou null (recherche lexicale seule). */
+/** The configured provider, or null (lexical search only). */
 export function getEmbeddings(): EmbeddingProvider | null {
   if (g.__brainEmbedding === undefined) g.__brainEmbedding = build()
   return g.__brainEmbedding
 }
 
-/** Texte vectorisé d'une connaissance : titre, corps, entités. */
+/** Embedded text of a knowledge item: title, body, entities. */
 export function embeddingText(item: { title: string; body: string; entities?: { name: string }[] }): string {
   return [item.title, item.body, (item.entities ?? []).map((e) => e.name).join(", ")].filter(Boolean).join("\n")
 }
 
-/** Vecteurs de plusieurs connaissances, par lots ; null si aucun fournisseur. Une erreur du fournisseur remonte. */
+/** Vectors of several items, in batches; null if there is no provider. A provider error propagates. */
 export async function embedDocuments(texts: string[]): Promise<number[][] | null> {
   const p = getEmbeddings()
   if (!p || texts.length === 0) return p ? [] : null
@@ -85,7 +85,7 @@ export async function embedDocuments(texts: string[]): Promise<number[][] | null
 
 const QUERY_CACHE_MAX = 300
 
-/** Vecteur d'une requête (mis en cache : le dashboard et le MCP reposent souvent les mêmes questions) ; null sans fournisseur ou en cas d'échec. */
+/** Vector of a query (cached: the dashboard and the MCP often ask the same questions); null without a provider or on failure. */
 export async function embedQuery(query: string): Promise<number[] | null> {
   const p = getEmbeddings()
   if (!p) return null
@@ -104,7 +104,7 @@ export async function embedQuery(query: string): Promise<number[] | null> {
   }
 }
 
-/** Classe des candidats par similarité cosinus avec la requête (les plus proches d'abord), au-dessus d'un seuil. */
+/** Ranks the candidates by cosine similarity with the query (closest first), above a threshold. */
 export function rankBySimilarity<T extends { embedding?: number[] | null }>(query: number[], candidates: T[], opts: { minScore?: number; limit?: number } = {}): (T & { similarity: number })[] {
   const min = opts.minScore ?? 0.3
   return candidates

@@ -3,7 +3,7 @@ import { hashString } from "./brain-geometry"
 
 type ThreeModule = typeof import("three")
 
-/** Les tenues des dots : choisies par l'identifiant de la personne, elles ne changent jamais d'une visite à l'autre. */
+/** The dots' outfits: chosen from the person's id, they never change from one visit to the next. */
 export const LOOKS = ["plain", "beret", "frog", "glasses", "shades"] as const
 export type DotLook = (typeof LOOKS)[number]
 
@@ -11,15 +11,15 @@ export const dotLook = (id: string): DotLook => LOOKS[hashString(id) % LOOKS.len
 
 const INK = 0x141414
 
-/** Ressources partagées par tous les dots d'une scène : géométries et matériaux noirs, libérés ensemble. */
+/** Resources shared by all the dots of a scene: geometries and black materials, freed together. */
 export type DotKit = { make: (color: number, look: DotLook) => THREE.Group; dispose: () => void }
 
 /**
- * Le dot d'une personne en volume : une boule de feutrine (reflet velours), un peu écrasée, dans la couleur de sa
- * zone, avec sa tenue. Modèle d'une unité de rayon, face à +z ; la base repose sur y = 0.
+ * A person's dot in 3D: a felt ball (velvet sheen), slightly squashed, in their zone's
+ * color, with their outfit. Model of one unit of radius, facing +z; the base rests on y = 0.
  */
 export function dotKit(T: ThreeModule): DotKit {
-  // Le corps : un dôme à base plate (profil tourné), comme une goutte de feutre posée.
+  // The body: a flat-based dome (turned profile), like a drop of felt set down.
   const body = new T.LatheGeometry(
     [[0, 0], [0.84, 0], [0.97, 0.07], [1.02, 0.24], [1, 0.5], [0.94, 0.8], [0.82, 1.1], [0.62, 1.36], [0.36, 1.52], [0, 1.58]].map(([x, y]) => new T.Vector2(x, y)),
     40,

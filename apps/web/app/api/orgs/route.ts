@@ -10,7 +10,7 @@ import { error, internalError, json, parseBody, publicBaseUrl } from "@/lib/http
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Plafond d'entreprises créées depuis la page d'accueil, pour qu'une page publique ne puisse pas remplir la base. */
+/** Cap on companies created from the home page, so that a public page cannot fill the database. */
 const MAX_ORGS = Number(process.env.BRAIN_MAX_ORGS) || 200
 
 const Schema = z.object({
@@ -18,13 +18,13 @@ const Schema = z.object({
   description: z.string().trim().max(300).default(""),
   name: z.string().trim().min(1).max(80),
   title: z.string().trim().max(80).optional(),
-  /** Zones proposées (DEFAULT_ZONES) retenues, par identifiant. */
+  /** Suggested zones (DEFAULT_ZONES) kept, by id. */
   zones: z.array(z.string().max(32)).max(DEFAULT_ZONES.length).default([]),
-  /** Zones ajoutées à la main, par nom. */
+  /** Zones added by hand, by name. */
   custom: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
 })
 
-/** Les zones de la nouvelle entreprise : celles proposées dans l'ordre d'origine, puis les siennes, couleurs sans doublon. */
+/** The new company's zones: the suggested ones in their original order, then its own, with no duplicate color. */
 function buildZones(picked: string[], custom: string[]): Zone[] {
   const out: Zone[] = DEFAULT_ZONES.filter((z) => picked.includes(z.id)).map((z) => ({ ...z }))
   for (const name of custom) {
@@ -40,19 +40,19 @@ function buildZones(picked: string[], custom: string[]): Zone[] {
 }
 
 /**
- * Crée une entreprise depuis /creer : son cerveau (à part de celui de la démo), ses zones, et son premier compte, admin.
- * Ouvre la session du dashboard et renvoie le prompt d'installation de ce premier poste (jeton affiché une seule fois).
+ * Creates a company from /create: its brain (separate from the demo's), its zones, and its first account, an admin.
+ * Opens the dashboard session and returns the install prompt for this first workstation (token shown only once).
  */
 export async function POST(req: Request) {
-  if (!signupOpen()) return error(404, "La création d'entreprise est fermée sur ce cerveau.")
+  if (!signupOpen()) return error(404, "Company creation is closed on this brain.")
   const body = await parseBody(req, Schema)
   if ("response" in body) return body.response
   const { company, description, name, title } = body.data
   const zones = buildZones(body.data.zones, body.data.custom)
-  if (zones.length === 0) return error(400, "Choisissez au moins une zone.")
+  if (zones.length === 0) return error(400, "Choose at least one zone.")
   try {
     const root = getRootStore()
-    if ((await root.countTenantOrgs()) >= MAX_ORGS) return error(429, "Le nombre d'entreprises de ce cerveau est atteint. Réessayez plus tard.")
+    if ((await root.countTenantOrgs()) >= MAX_ORGS) return error(429, "This brain has reached its number of companies. Try again later.")
     const org = await root.createTenantOrg({ name: company, description, zones })
     const store = storeForOrg(org.id)
     const token = newToken()

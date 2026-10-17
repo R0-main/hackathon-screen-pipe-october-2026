@@ -111,10 +111,10 @@ test("doctor : poste bien branché → aucun KO, code 0, chaque groupe vérifié
     const fails = r.checks.filter((c) => c.status === "fail")
     assert.deepEqual(fails, [], formatDoctor(r))
     assert.equal(r.exit_code, 0)
-    for (const id of ["raccourci", "config", "connexion", "screenpipe", "capture", "screenpipe-jeton", "screenpipe-parsed", "claude", "mcp", "hooks", "planification", "distillation"]) {
+    for (const id of ["shortcut", "config", "connection", "screenpipe", "capture", "screenpipe-token", "screenpipe-parsed", "claude", "mcp", "hooks", "schedule", "distillation"]) {
       assert.equal(byId(r, id)?.status, "ok", `${id} : ${JSON.stringify(byId(r, id))}`)
     }
-    assert.match(byId(r, "connexion")!.detail, /Hugo Bernard chez Fournil/)
+    assert.match(byId(r, "connection")!.detail, /Hugo Bernard chez Fournil/)
     assert.match(byId(r, "capture")!.detail, /capture de l'écran active.*micro : coupé/)
     // Aucun jeton, même en partie, ni en texte ni en JSON (la sortie finit dans la session de Claude Code).
     // Le début du jeton, ou sa fin derrière « … » (forme de maskSecret). Pas la fin seule : « 3456 » peut faire partie
@@ -161,7 +161,7 @@ test("doctor : jeton révoqué, branchements sur un ancien client, Screenpipe sa
     })
     const r = await doctorIn(post)
     assert.equal(r.exit_code, 1)
-    const conn = byId(r, "connexion")!
+    const conn = byId(r, "connection")!
     assert.equal(conn.status, "fail")
     assert.match(conn.detail, /refuse le jeton de ce poste \(401\)/)
     assert.match(conn.fix!, /nouveau prompt d'installation/)
@@ -172,7 +172,7 @@ test("doctor : jeton révoqué, branchements sur un ancien client, Screenpipe sa
     assert.match(hooks.detail, /ne démarre pas/)
     assert.match(hooks.command!, /install-hooks$/)
     assert.equal(hooks.safe, true)
-    for (const id of ["mcp", "planification"]) {
+    for (const id of ["mcp", "schedule"]) {
       assert.equal(byId(r, id)?.status, "fail", id)
       assert.match(byId(r, id)!.command!, /setup$/)
       assert.equal(byId(r, id)!.safe, true)
@@ -182,7 +182,7 @@ test("doctor : jeton révoqué, branchements sur un ancien client, Screenpipe sa
     assert.match(cap.detail, /refuse la capture/)
     assert.match(cap.command!, /setup$/)
     // Le premier KO dans l'ordre du diagnostic : la connexion au cerveau.
-    assert.equal(r.next?.id, "connexion")
+    assert.equal(r.next?.id, "connection")
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }
@@ -201,8 +201,8 @@ test("doctor : Screenpipe éteint, jeton Screenpipe refusé, hooks en double", {
     settings.hooks.Stop.push(structuredClone(settings.hooks.Stop[0]))
     writeFileSync(settingsFile, JSON.stringify(settings))
     let r = await doctorIn(post)
-    assert.equal(byId(r, "screenpipe-jeton")?.status, "fail")
-    assert.match(byId(r, "screenpipe-jeton")!.detail, /est refusé/)
+    assert.equal(byId(r, "screenpipe-token")?.status, "fail")
+    assert.match(byId(r, "screenpipe-token")!.detail, /est refusé/)
     assert.equal(byId(r, "hooks")?.status, "warn")
     assert.match(byId(r, "hooks")!.detail, /en double : Stop/)
 
@@ -217,9 +217,9 @@ test("doctor : Screenpipe éteint, jeton Screenpipe refusé, hooks en double", {
     // Pas de crontab : relancer setup n'y changerait rien, il faut installer cron.
     unlinkSync(join(post.bin, "crontab"))
     r = await doctorIn(post)
-    assert.equal(byId(r, "planification")?.status, "fail")
-    assert.match(byId(r, "planification")!.fix!, /Installe cron/)
-    assert.equal(byId(r, "planification")!.command, undefined)
+    assert.equal(byId(r, "schedule")?.status, "fail")
+    assert.match(byId(r, "schedule")!.fix!, /Installe cron/)
+    assert.equal(byId(r, "schedule")!.command, undefined)
   } finally {
     await brain.close()
   }
@@ -244,11 +244,11 @@ test("doctor : synchro planifiée en échec et Claude déconnecté, lus dans syn
       ].join("\n"),
     )
     let r = await doctorIn(post)
-    const auth = byId(r, "claude-connexion")!
+    const auth = byId(r, "claude-signin")!
     assert.equal(auth.status, "fail")
     assert.match(auth.command!, /init --claude-token <jeton>$/)
     assert.equal(auth.safe, false, "jamais lancé sans l'employé")
-    const hookErr = byId(r, "hooks-erreurs")!
+    const hookErr = byId(r, "hook-errors")!
     assert.equal(hookErr.status, "warn")
     assert.ok(!hookErr.detail.includes(TOKEN), hookErr.detail)
 
@@ -282,7 +282,7 @@ test("doctor lancé avec un autre Node.js que celui du poste : pas de faux KO (r
       writeFileSync(join(post.bin, "crontab"), `#!/bin/sh\necho ${JSON.stringify(cronLine(otherNode, post.script, post.home, {}))}\n`, { mode: 0o755 })
     })
     const r = await doctorIn(post)
-    for (const id of ["raccourci", "mcp", "hooks", "planification"]) assert.equal(byId(r, id)?.status, "ok", `${id} : ${byId(r, id)?.detail}`)
+    for (const id of ["shortcut", "mcp", "hooks", "schedule"]) assert.equal(byId(r, id)?.status, "ok", `${id} : ${byId(r, id)?.detail}`)
 
     // Un hook resté sur le Node.js du processus (et non celui du raccourci) : signalé comme tel.
     withEnv(post.env, () => {
@@ -323,7 +323,7 @@ test("doctor sans config : KO config en premier, le reste vérifié quand même"
     const r = await doctorIn(post)
     assert.equal(byId(r, "config")?.status, "fail")
     assert.equal(r.next?.id, "config")
-    assert.equal(byId(r, "connexion")?.status, "skip")
+    assert.equal(byId(r, "connection")?.status, "skip")
     assert.equal(byId(r, "hooks")?.status, "ok")
 
     // Message d'équipe en attente d'un admin : doctor le dit, et join est la commande qui reprend.

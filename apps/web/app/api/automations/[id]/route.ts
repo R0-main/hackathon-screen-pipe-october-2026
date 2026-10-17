@@ -13,7 +13,7 @@ export const PATCH = withViewer<Ctx>(
     const body = await parseBody(req, Schema)
     if ("response" in body) return body.response
     const updated = await getStore().updateAutomation((await params).id, body.data)
-    return updated ? json(updated) : error(404, "Suggestion introuvable.")
+    return updated ? json(updated) : error(404, "Suggestion not found.")
   },
   { admin: true },
 )

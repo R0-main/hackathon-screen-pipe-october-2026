@@ -1,85 +1,85 @@
 import type { Zone } from "./types"
 import { normalize, tokenize } from "./text"
 
-/** Zones proposées par défaut. L'onboarding peut les remplacer ou en ajouter. */
+/** Zones offered by default. Onboarding can replace them or add more. */
 export const DEFAULT_ZONES: Zone[] = [
   {
     id: "dev",
     name: "Dev",
-    description: "Code, architecture, infra, déploiements, bugs.",
+    description: "Code, architecture, infrastructure, deployments, bugs.",
     color: "#2a78d6",
     keywords: [
-      "code", "bug", "deploy", "deploiement", "api", "repo", "git", "github", "gitlab", "pull", "merge", "test", "tests", "build",
+      "code", "bug", "bugs", "deploy", "deployment", "api", "repo", "git", "github", "gitlab", "pull", "merge", "test", "tests", "build",
       "ci", "cicd",
-      "backend", "frontend", "base", "donnees", "database", "sql", "postgres", "supabase", "migration", "serveur", "server",
-      "deployer", "production", "docker", "typescript", "react", "next", "node", "python", "endpoint", "refacto", "refactor", "prod", "staging",
-      "infra", "kubernetes", "aws", "vercel", "auth", "webhook", "stack", "lib", "librairie", "fonction", "function", "erreur",
-      "error", "crash", "logs", "performance", "schema", "commit", "branche", "branch", "release",
+      "backend", "frontend", "database", "sql", "postgres", "supabase", "migration", "server",
+      "production", "docker", "typescript", "react", "next", "node", "python", "endpoint", "refactor", "prod", "staging",
+      "infra", "infrastructure", "kubernetes", "aws", "vercel", "auth", "webhook", "stack", "lib", "library", "function",
+      "error", "crash", "logs", "performance", "schema", "commit", "branch", "release",
     ],
     position: 0,
   },
   {
-    id: "produit",
-    name: "Produit",
-    description: "Roadmap, specs, design, retours utilisateurs.",
+    id: "product",
+    name: "Product",
+    description: "Roadmap, specs, design, user feedback.",
     color: "#eb6834",
     keywords: [
-      "produit", "product", "roadmap", "feature", "fonctionnalite", "spec", "specs", "user", "utilisateur", "utilisateurs",
-      "ux", "ui", "design", "maquette", "figma", "persona", "feedback", "retour", "retours", "onboarding", "parcours",
-      "priorisation", "backlog", "sprint", "mvp", "experimentation", "metrique", "retention", "activation", "interview",
+      "product", "roadmap", "feature", "features", "spec", "specs", "user", "users",
+      "ux", "ui", "design", "mockup", "wireframe", "figma", "persona", "feedback", "onboarding", "journey",
+      "prioritization", "backlog", "sprint", "mvp", "experiment", "metric", "metrics", "retention", "activation", "interview",
     ],
     position: 1,
   },
   {
     id: "sales",
     name: "Sales",
-    description: "Prospects, clients, pipeline, devis, partenariats.",
+    description: "Prospects, customers, pipeline, quotes, partnerships.",
     color: "#1baf7a",
     keywords: [
-      "client", "clients", "prospect", "prospects", "prospection", "devis", "crm", "hubspot", "pipeline", "deal", "deals",
-      "vente", "ventes", "sales", "rdv", "demo", "proposition", "commerciale", "pricing", "prix", "tarif", "tarifs", "contrat",
-      "signature", "lead", "leads", "partenaire", "partenariat", "salon", "relance", "churn", "upsell", "abonnement",
+      "client", "clients", "customer", "customers", "prospect", "prospects", "prospecting", "quote", "quotes", "crm", "hubspot",
+      "pipeline", "deal", "deals", "sale", "sales", "meeting", "demo", "proposal", "pricing", "price", "prices", "contract",
+      "signature", "lead", "leads", "partner", "partnership", "tradeshow", "followup", "churn", "upsell", "subscription",
     ],
     position: 2,
   },
   {
-    id: "compta",
-    name: "Compta",
-    description: "Facturation, trésorerie, clôtures, TVA, paie.",
+    id: "finance",
+    name: "Finance",
+    description: "Invoicing, cash, closing, VAT, payroll.",
     color: "#eda100",
     keywords: [
-      "compta", "comptabilite", "comptable", "facture", "factures", "facturation", "tva", "cloture", "bilan", "tresorerie",
-      "banque", "bancaire", "releve", "releves", "rapprochement", "qonto", "pennylane", "urssaf", "paie", "salaire", "salaires",
-      "budget", "depense", "depenses", "note", "frais", "expert", "fiscal", "impots", "cash", "burn", "encaissement", "avoir",
+      "finance", "accounting", "accountant", "bookkeeping", "invoice", "invoices", "invoicing", "billing", "vat", "tax", "closing",
+      "balance", "cash", "treasury", "bank", "statement", "statements", "reconciliation", "reconcile", "qonto", "pennylane",
+      "payroll", "salary", "salaries", "budget", "expense", "expenses", "receipt", "fiscal", "burn", "runway", "refund", "credit",
     ],
     position: 3,
   },
   {
     id: "support",
     name: "Support",
-    description: "Tickets, incidents clients, FAQ, procédures de support.",
+    description: "Tickets, customer incidents, FAQ, support procedures.",
     color: "#e87ba4",
     keywords: [
-      "support", "ticket", "tickets", "incident", "incidents", "faq", "zendesk", "intercom", "sav", "reclamation", "plainte",
-      "remboursement", "panne", "bloque", "aide", "question", "escalade", "sla", "hotline",
+      "support", "ticket", "tickets", "incident", "incidents", "faq", "zendesk", "intercom", "helpdesk", "complaint",
+      "refund", "outage", "blocked", "help", "question", "escalation", "sla", "hotline",
     ],
     position: 4,
   },
   {
-    id: "direction",
-    name: "Direction",
-    description: "Stratégie, objectifs, levée de fonds, recrutement, organisation.",
+    id: "leadership",
+    name: "Leadership",
+    description: "Strategy, goals, fundraising, hiring, organization.",
     color: "#008300",
     keywords: [
-      "strategie", "objectif", "objectifs", "okr", "okrs", "levee", "fonds", "investisseur", "investisseurs", "board", "bp",
-      "recrutement", "recruter", "embauche", "rh", "organisation", "vision", "kpi", "kpis", "trimestre", "q1", "q2", "q3", "q4",
-      "comite", "associes", "valorisation", "plan",
+      "strategy", "goal", "goals", "objective", "objectives", "okr", "okrs", "fundraising", "funding", "investor", "investors",
+      "board", "hiring", "recruiting", "recruitment", "hr", "organization", "vision", "kpi", "kpis", "quarter", "q1", "q2", "q3", "q4",
+      "committee", "founders", "valuation", "plan", "leadership",
     ],
     position: 5,
   },
 ]
 
-// Palette catégorielle à ordre fixe, validée (daltonisme, contraste) sur fond clair. Même liste que ZONE_PALETTE côté web.
+// Fixed-order categorical palette, validated (color blindness, contrast) on a light background. Same list as ZONE_PALETTE in the web app.
 const ZONE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948", "#0e9aa7", "#9c4dcc"]
 
 export function zoneColor(index: number): string {
@@ -97,13 +97,13 @@ export function slugify(s: string): string {
 }
 
 export type ClassifyOptions = {
-  /** Départage des égalités : ces zones d'abord, dans cet ordre (sinon l'ordre de la liste des zones). */
+  /** Tie-breaker: these zones first, in this order (otherwise the order of the zone list). */
   prefer?: (string | undefined)[]
 }
 
 /**
- * Classe un texte dans les zones par mots-clés (sans accents, préfixes tolérés).
- * Retourne les zones triées par score décroissant, au plus `max`.
+ * Classifies a text into zones by keywords (accent-insensitive, prefixes tolerated).
+ * Returns zones sorted by decreasing score, at most `max`.
  */
 export function classifyZones(text: string, zones: Pick<Zone, "id" | "name" | "keywords">[], max = 2, opts: ClassifyOptions = {}): string[] {
   const scored = scoreZones(text, zones, opts)
@@ -122,8 +122,8 @@ export function scoreZones(text: string, zones: Pick<Zone, "id" | "name" | "keyw
 export type ZoneScorer = (text: string, opts?: ClassifyOptions) => { zone: string; score: number }[]
 
 /**
- * scoreZones avec les mots-clés des zones normalisés une seule fois : pour classer beaucoup de textes avec les mêmes zones
- * (chaque item d'une distillation) sans renormaliser chaque mot-clé à chaque appel.
+ * scoreZones with the zone keywords normalized once: to classify many texts against the same zones
+ * (each item of a distillation) without normalizing every keyword on every call.
  */
 export function zoneScorer(zones: Pick<Zone, "id" | "name" | "keywords">[]): ZoneScorer {
   const prepared = zones.map((z) => {

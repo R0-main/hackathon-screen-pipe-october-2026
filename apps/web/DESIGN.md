@@ -1,114 +1,113 @@
-# Direction artistique du front
+# Front-end art direction
 
-Celle de screenpipe.com (monochrome « bone », phosphore réservé à l'action en cours), poussée vers encore
-plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont codées dans
-`app/globals.css` (tokens `@theme`, classes `.panel`, `.btn`, `.input`, `.chip`, `.inset`) et dans
-`components/ui.tsx` (pastilles de zone, icônes, erreurs).
+That of screenpipe.com (monochrome "bone", phosphor reserved to the action in progress), pushed toward even
+more emptiness. The rules below apply to all of `apps/web`. They are coded in
+`app/globals.css` (`@theme` tokens, `.panel`, `.btn`, `.input`, `.chip`, `.inset` classes) and in
+`components/ui.tsx` (zone dots, icons, errors).
 
-## Couleurs
+## Colors
 
-| Rôle | Valeur | Usage |
+| Role | Value | Use |
 | --- | --- | --- |
-| bone | `#f6f6f3` | fond de page |
-| surface | `#ffffff` | panneaux, champs, étiquettes |
-| ink | `#0a0a0a` | texte, traits, bouton principal |
-| signal | `#333333` | survol du bouton principal |
-| trace | `#78786f` | texte secondaire |
-| line / line-strong | `#e2e2dc` / `#c6c6bf` | traits de 1 px, bordures de champs |
-| phosphor | `#c7ff3e` | **uniquement** une zone qu'un agent touche en direct, le témoin « en direct », les ondes |
-| danger | `#b42318` | texte d'erreur, à côté de l'action |
+| bone | `#f6f6f3` | page background |
+| surface | `#ffffff` | panels, fields, tags |
+| ink | `#0a0a0a` | text, lines, primary button |
+| signal | `#333333` | primary button hover |
+| trace | `#78786f` | secondary text |
+| line / line-strong | `#e2e2dc` / `#c6c6bf` | 1 px lines, field borders |
+| phosphor | `#c7ff3e` | **only** a zone an agent is touching live, the "live" indicator, the ripples |
+| danger | `#b42318` | error text, next to the action |
 
-- Le texte ne porte jamais de couleur. Une zone s'identifie par une pastille de 8 px (`<ZoneTag>`), toujours
-  accompagnée de son nom.
-- Les couleurs de zone viennent de `ZONE_PALETTE` (`components/ui.tsx`), palette catégorielle à ordre fixe
-  validée pour le daltonisme sur fond clair ; la même liste est dans `packages/core/src/zones.ts` pour le seed.
-  Les anciennes couleurs néon encore en base sont remappées par `zoneColor()`.
-- Pas de dégradé, pas d'ombre au repos, pas de flou, pas de halo.
+- Text never carries color. A zone is identified by an 8 px dot (`<ZoneTag>`), always
+  together with its name.
+- Zone colors come from `ZONE_PALETTE` (`components/ui.tsx`), a fixed-order categorical palette
+  checked for color blindness on a light background; the same list is in `packages/core/src/zones.ts` for the seed.
+  Old neon colors still in the database are remapped by `zoneColor()`.
+- No gradient, no shadow at rest, no blur, no glow.
 
-## Typographie
+## Typography
 
-- Space Grotesk pour tout, IBM Plex Mono seulement pour un jeton ou du code (`.mono`).
-- Phrase (sentence case) partout, pas de majuscules espacées, pas d'étiquette au-dessus d'un titre.
-- Les nombres en `tabular-nums`. Titres en `text-balance`, paragraphes en `text-pretty` (par défaut dans le CSS).
-- Pas d'emoji, pas de point d'exclamation, pas de « A · B · C », pas de flèche collée à un lien.
+- Space Grotesk for everything, IBM Plex Mono only for a token or code (`.mono`).
+- Sentence case everywhere, no letter-spaced capitals, no label above a title.
+- Numbers in `tabular-nums`. Titles in `text-balance`, paragraphs in `text-pretty` (the CSS default).
+- No emoji, no exclamation mark, no "A · B · C", no arrow stuck to a link.
 
-## Formes
+## Shapes
 
-- Rayons : 8 px panneaux, 6 px contrôles et blocs internes, 4 px étiquettes, 0 pour le canvas 3D.
-- Un panneau = blanc + trait de 1 px. À l'intérieur, un bloc secondaire = `.inset` (un pas de ton, pas de trait).
-- Bouton principal : fond encre, texte blanc. Un seul par vue. Bouton secondaire : blanc, trait fort.
-- Icônes : SVG inline de `ui.tsx`, trait 1,5, 16 px, `aria-hidden`. Un bouton icône porte un `aria-label`.
+- Radii: 8 px panels, 6 px controls and inner blocks, 4 px tags, 0 for the 3D canvas.
+- A panel = white + 1 px line. Inside, a secondary block = `.inset` (one step of tone, no line).
+- Primary button: ink background, white text. Only one per view. Secondary button: white, strong line.
+- Icons: inline SVG from `ui.tsx`, 1.5 stroke, 16 px, `aria-hidden`. An icon button carries an `aria-label`.
 
-## Mouvement
+## Motion
 
-- Transform et opacité seulement, 200 ms au plus, `ease-out` à l'entrée, `prefers-reduced-motion` respecté.
-- Le cerveau 3D tourne seul lentement quand on ne le touche pas ; il s'arrête hors écran et sous
+- Transform and opacity only, 200 ms at most, `ease-out` on entry, `prefers-reduced-motion` respected.
+- The 3D brain rotates slowly on its own when left alone; it stops off screen and under
   `prefers-reduced-motion`.
 
-## Cerveau 3D (`components/Brain3D.tsx`)
+## 3D brain (`components/Brain3D.tsx`)
 
-- Billes = connaissances (encre), groupées par zone sur une coque ; centre de zone = bille colorée cerclée
-  d'encre ; traits fins vers le centre ; arcs entre zones qui partagent des entités.
-- Zone active : phosphore sur ses billes et son centre, onde phosphore, bulle blanche avec le libellé.
-- Libellés = vrais boutons HTML projetés sur la scène (clavier et lecteur d'écran), glisser pour tourner,
-  molette, pincer ou boutons pour zoomer. Sans WebGL : `BrainViz` (2D, même monochrome).
+- Beads = knowledge (ink), grouped by zone on a shell; zone center = colored bead ringed
+  with ink; thin lines to the center; arcs between zones that share entities.
+- Active zone: phosphor on its beads and its center, phosphor ripple, white bubble with the label.
+- Labels = real HTML buttons projected onto the scene (keyboard and screen reader), drag to rotate,
+  wheel, pinch or buttons to zoom. Without WebGL: `BrainViz` (2D, same monochrome).
 
-## Gabarit (`components/AppShell.tsx`)
+## Layout (`components/AppShell.tsx`)
 
-- Barre latérale à gauche (fond bone, trait de 1 px) : le cerveau, ses pages (agents en direct, état, connaissances,
-  tâches, automatisations), la configuration pour les admins (équipe et accès, onboarding), puis « voir en tant que »,
-  mon contexte et la déconnexion. Sous 768 px, elle s'ouvre par le bouton menu.
-- Une rubrique à sous-pages (Équipe et accès : organigramme, accès par zone, demandes, zones ; une adresse chacune sous
-  `/admin`) se déplie quand on y est, sans chevron : un fil de 1 px aligné sur l'icône, les sous-pages en texte
-  secondaire, et une barre d'encre qui glisse le long du fil jusqu'à la page courante (200 ms). Pas d'onglets en haut
-  de page.
-- À droite, la page. La fenêtre ne défile jamais : le cerveau remplit tout l'espace (la molette zoome), les autres
-  pages défilent dans leur colonne.
-- L'état vivant (flux SSE, zones allumées) est dans le layout (`components/BrainLive.tsx`) : il survit à la navigation.
+- Sidebar on the left (bone background, 1 px line): the brain, its pages (live agents, status, knowledge,
+  tasks, automations), configuration for admins (team and access, onboarding), then "view as",
+  my context and sign-out. Below 768 px, it opens with the menu button.
+- A section with sub-pages (Team and access: org chart, access per zone, requests, zones; one address each under
+  `/admin`) unfolds when you are in it, without a chevron: a 1 px thread aligned with the icon, the sub-pages in
+  secondary text, and an ink bar that slides along the thread to the current page (200 ms). No tabs at the top
+  of the page.
+- On the right, the page. The window never scrolls: the brain fills all the space (the wheel zooms), the other
+  pages scroll within their column.
+- The live state (SSE stream, lit zones) lives in the layout (`components/BrainLive.tsx`): it survives navigation.
 
-## Page d'accueil publique (`/`)
+## Public home page (`/`)
 
-Adresses : `/` la page d'accueil (pour tout le monde), `/creer` la création d'une entreprise, `/demo` l'entrée de la
-démo (choix d'un compte de Fournil, mode démo seulement), `/login` la connexion par jeton, `/dashboard` le cerveau et,
-à côté, les autres pages connectées. `/accueil` redirige vers `/`.
+Addresses: `/` the home page (for everyone), `/create` company creation, `/demo` the demo entrance
+(choosing a Fournil account, demo mode only), `/login` token sign-in, `/dashboard` the brain and,
+next to it, the other signed-in pages. The old French addresses (`/accueil`, `/creer`, …) redirect permanently.
 
-Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accueil » de `globals.css`).
+Same world, at the scale of a page (`components/landing`, "Home page" block of `globals.css`).
 
-- Grands titres Space Grotesk serrés (`.landing-display`, `.landing-h2`), beaucoup de vide, une colonne de texte à gauche.
-- Le cerveau (`ScrollBrain`) reprend la géométrie de `Brain3D` (`brain-geometry.ts`) et ajoute une coque en anneaux
-  de contour ondulés et un brouillard bone pour la profondeur. Pas d'ombre, pas de halo.
-- Mouvement : exception à la règle des 200 ms, réservée à cette page (`components/landing/motion/setup.ts`).
-  - La scène du cerveau est épinglée sur 7 écrans et suit le scroll (GSAP ScrollTrigger, défilement doux Lenis) :
-    le cerveau passe en plein écran et tourne, les connaissances se posent, les zones se nomment, trois agents
-    allument leur zone en phosphore.
-  - Ensuite, chaque section occupe un écran, contenu centré, et marque un arrêt : elle reste calée sur l'écran
-    pendant 0,6 écran de scroll (`data-hold` pour allonger : 1,4 pour « Le brut reste sur le poste »). Lâché tout
-    près d'un chapitre ou d'une section, le scroll s'y cale en douceur.
-  - Toutes les animations des sections suivent le scroll : elles avancent quand on descend, s'arrêtent quand on
-    s'arrête, se rejouent à l'envers quand on remonte. Les titres passent de pâle à encre mot par mot ; le panneau
-    « Où en est Fournil » se remplit et le prompt s'écrit pendant l'arrêt ; le schéma vie privée (`PrivacyFlow`)
-    attend que sa section soit calée pour se jouer.
-  - Un fil encre descend le long des sections, avec une bille qui se remplit à chaque section.
-  - Seule l'entrée du premier écran se joue au chargement (les mots du titre, puis le reste), et la lente rotation
-    d'attente du cerveau tourne seule.
-  - Boutons magnétiques (souris seulement) : ils glissent vers le pointeur, reviennent avec un léger rebond et
-    s'enfoncent au clic.
-- Après « Le brut reste sur le poste », deux sections d'offre (`components/landing/Offer.tsx`) : « Chez vous, ou chez
-  nous » (auto-hébergé, code ouvert, ou notre cloud) puis les tarifs (`#tarifs`, lien « Tarifs » dans l'en-tête),
-  avec un choix mensuel ou annuel. Front seulement : prix indicatifs, aucun paiement branché ; les boutons cloud mènent
-  à `/creer` (ou à la démo si la création est fermée). Leurs cartes (`data-reveal="cards"`) sont en place avant
-  l'arrêt de la section, pour qu'on puisse comparer dès l'arrivée. Un seul bouton principal : l'offre Équipe.
-- `prefers-reduced-motion` : pas d'épinglage, d'arrêt ni de défilement doux, cerveau immobile et assemblé, chapitres
-  lus à la suite, toutes les sections dans leur état final.
-- Le phosphore reste réservé aux zones qu'un agent interroge (ici, les trois agents de la démo).
+- Large, tight Space Grotesk titles (`.landing-display`, `.landing-h2`), lots of emptiness, a text column on the left.
+- The brain (`ScrollBrain`) reuses the geometry of `Brain3D` (`brain-geometry.ts`) and adds a shell of wavy contour
+  rings and a bone fog for depth. No shadow, no glow.
+- Motion: an exception to the 200 ms rule, reserved to this page (`components/landing/motion/setup.ts`).
+  - The brain scene is pinned over 7 screens and follows the scroll (GSAP ScrollTrigger, Lenis smooth scrolling):
+    the brain goes full screen and rotates, the knowledge settles, the zones get named, three agents
+    light up their zone in phosphor.
+  - Then each section fills one screen, content centered, and holds: it stays aligned with the screen
+    for 0.6 screen of scroll (`data-hold` to make it longer: 1.4 for "The raw data stays on the computer"). Let go
+    very close to a chapter or a section, the scroll snaps to it gently.
+  - All section animations follow the scroll: they move forward when you scroll down, stop when you
+    stop, replay backwards when you scroll up. Titles go from pale to ink word by word; the
+    "Where Fournil stands" panel fills and the prompt types itself during the hold; the privacy diagram (`PrivacyFlow`)
+    waits for its section to be snapped before playing.
+  - An ink thread runs down along the sections, with a bead that fills at each section.
+  - Only the entrance of the first screen plays on load (the title's words, then the rest), and the brain's slow
+    idle rotation runs on its own.
+  - Magnetic buttons (mouse only): they slide toward the pointer, come back with a slight bounce and
+    sink in on click.
+- After "The raw data stays on the computer", two offer sections (`components/landing/Offer.tsx`): "Your place, or
+  ours" (self-hosted, open code, or our cloud) then pricing (`#pricing`, "Pricing" link in the header),
+  with a monthly or yearly choice. Front end only: indicative prices, no payment wired; the cloud buttons lead
+  to `/create` (or to the demo when creation is closed). Their cards (`data-reveal="cards"`) are in place before
+  the section's hold, so you can compare as soon as you arrive. A single primary button: the Team plan.
+- `prefers-reduced-motion`: no pinning, hold or smooth scrolling, brain still and assembled, chapters
+  read one after the other, every section in its final state.
+- Phosphor stays reserved to the zones an agent queries (here, the demo's three agents).
 
-## Créer son entreprise (`/creer`, `components/CreateCompany.tsx`)
+## Create your company (`/create`, `components/CreateCompany.tsx`)
 
-- Une question par écran, à la manière d'une page blanche : grand titre (`.create-title`), champ sans cadre souligné
-  d'un trait qui s'épaissit au focus (`.create-input`), « Continuer » ou Entrée, « Retour » discret.
-- Un trait de 1 px sous l'en-tête avance d'étape en étape. Entrée de chaque écran : 8 px et opacité, 200 ms.
-- À droite (≥ 1024 px), le cerveau se construit dans la langue du dashboard : un centre, une bille par zone choisie,
-  les personnes autour, pleines une fois leur poste branché. Les couleurs sont celles que le serveur attribuera.
-- Après la création : le prompt de son poste (`PromptActions`, partagé avec la page d'accueil), le témoin « en direct »
-  qui s'allume quand le poste se branche, puis un prompt par collègue invité.
-
+- One question per screen, like a blank page: large title (`.create-title`), frameless field underlined
+  by a line that thickens on focus (`.create-input`), "Continue" or Enter, a discreet "Back".
+- A 1 px line under the header moves forward step by step. Entry of each screen: 8 px and opacity, 200 ms.
+- On the right (≥ 1024 px), the brain builds itself in the dashboard's language: a center, one bead per chosen zone,
+  the people around it, filled once their computer is connected. The colors are the ones the server will assign.
+- After creation: the prompt for one's own computer (`PromptActions`, shared with the home page), the "live" indicator
+  that lights up when the computer connects, then one prompt per invited colleague.

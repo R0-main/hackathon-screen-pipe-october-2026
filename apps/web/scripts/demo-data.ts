@@ -1,16 +1,16 @@
-// Entreprise fictive pour la démo : Fournil, SaaS de gestion pour boulangeries artisanales.
+// Fictional company for the demo: Fournil, management software for artisan bakeries.
 
 import type { Entity, KnowledgeKind, Role, SkillFile } from "@brain/core"
 
 export const DEMO_ORG = {
   name: "Fournil",
   description:
-    "Fournil édite un logiciel de caisse, de stocks et de précommandes pour les boulangeries artisanales. 85 boulangeries clientes, 6 personnes, basée à Paris.",
+    "Fournil makes point-of-sale, inventory and preorder software for artisan bakeries. 85 bakery customers, 6 people, based in Paris.",
 }
 
 /**
- * `manager` : clé de la personne à qui le poste est rattaché (déclarée avant dans la liste).
- * `publishSkills` : peut pousser des skills dans le cerveau (les admins le peuvent toujours).
+ * `manager`: key of the person this seat reports to (declared earlier in the list).
+ * `publishSkills`: can push skills into the brain (admins always can).
  */
 export type DemoUser = {
   key: string
@@ -25,11 +25,11 @@ export type DemoUser = {
 
 export const DEMO_USERS: DemoUser[] = [
   { key: "claire", name: "Claire Martin", title: "CEO", role: "admin", zones: [], email: "claire@fournil.example" },
-  { key: "hugo", name: "Hugo Bernard", title: "Lead dev", role: "member", zones: ["dev", "produit", "support"], email: "hugo@fournil.example", manager: "claire", publishSkills: true },
-  { key: "ines", name: "Inès Lefèvre", title: "Développeuse full-stack", role: "member", zones: ["dev", "produit"], email: "ines@fournil.example", manager: "hugo" },
-  { key: "jeanmarc", name: "Jean-Marc Dubois", title: "Responsable compta", role: "member", zones: ["compta"], email: "jean-marc@fournil.example", manager: "claire", publishSkills: true },
-  { key: "sarah", name: "Sarah Cohen", title: "Head of Sales", role: "member", zones: ["sales", "support", "produit"], email: "sarah@fournil.example", manager: "claire" },
-  { key: "leo", name: "Léo Petit", title: "Product manager", role: "member", zones: ["produit", "dev", "support", "sales"], email: "leo@fournil.example", manager: "claire" },
+  { key: "hugo", name: "Hugo Bernard", title: "Lead dev", role: "member", zones: ["dev", "product", "support"], email: "hugo@fournil.example", manager: "claire", publishSkills: true },
+  { key: "ines", name: "Inès Lefèvre", title: "Full-stack developer", role: "member", zones: ["dev", "product"], email: "ines@fournil.example", manager: "hugo" },
+  { key: "jeanmarc", name: "Jean-Marc Dubois", title: "Finance lead", role: "member", zones: ["finance"], email: "jean-marc@fournil.example", manager: "claire", publishSkills: true },
+  { key: "sarah", name: "Sarah Cohen", title: "Head of Sales", role: "member", zones: ["sales", "support", "product"], email: "sarah@fournil.example", manager: "claire" },
+  { key: "leo", name: "Léo Petit", title: "Product manager", role: "member", zones: ["product", "dev", "support", "sales"], email: "leo@fournil.example", manager: "claire" },
 ]
 
 export type DemoItem = {
@@ -53,361 +53,361 @@ export const DEMO_ITEMS: DemoItem[] = [
   // --- Dev ---
   {
     author: "hugo", zone: "dev", kind: "decision", daysAgo: 9, tool: "claude-code",
-    title: "Les abonnements passent de Stripe Checkout à Stripe Billing",
-    body: "Stripe Billing gère la proration, les essais gratuits et la facturation annuelle demandée par les clients multi-boutiques. Checkout reste utilisé pour les achats ponctuels (matériel). Décidé avec Léo.",
-    entities: [t("Stripe"), p("Léo Petit"), pr("Abonnements")],
+    title: "Subscriptions move from Stripe Checkout to Stripe Billing",
+    body: "Stripe Billing handles proration, free trials and the yearly billing requested by multi-shop customers. Checkout stays for one-off purchases (hardware). Decided with Léo.",
+    entities: [t("Stripe"), p("Léo Petit"), pr("Subscriptions")],
   },
   {
     author: "hugo", zone: "dev", kind: "procedure", daysAgo: 8, tool: "claude-code",
-    title: "Déployer Fournil en production",
-    body: "1. Merger sur main via une PR approuvée.\n2. La CI GitHub Actions lance les tests et applique les migrations Supabase sur staging.\n3. Créer le tag vX.Y.Z : Vercel déploie la prod.\n4. Surveiller Sentry pendant 15 minutes ; rollback via « Promote » de la release précédente sur Vercel.",
+    title: "Deploy Fournil to production",
+    body: "1. Merge into main through an approved PR.\n2. GitHub Actions CI runs the tests and applies the Supabase migrations on staging.\n3. Create the vX.Y.Z tag: Vercel deploys prod.\n4. Watch Sentry for 15 minutes; roll back by promoting the previous release on Vercel.",
     entities: [t("GitHub"), t("Supabase"), t("Vercel"), t("Sentry")],
   },
   {
     author: "ines", zone: "dev", kind: "fact", daysAgo: 7, tool: "claude-code",
-    title: "Les terminaux SumUp se déconnectent après 30 min d'inactivité",
-    body: "Le SDK SumUp coupe la session Bluetooth au bout de 30 minutes. Contournement en place : un keepalive toutes les 10 minutes dans le service caisse (caisse/sumup-keepalive.ts).",
-    entities: [t("SumUp"), pr("Caisse")],
+    title: "SumUp terminals disconnect after 30 min of inactivity",
+    body: "The SumUp SDK drops the Bluetooth session after 30 minutes. Workaround in place: a keepalive every 10 minutes in the POS service (pos/sumup-keepalive.ts).",
+    entities: [t("SumUp"), pr("POS")],
   },
   {
     author: "hugo", zone: "dev", kind: "decision", daysAgo: 6, tool: "claude-code",
-    title: "Isolation des boulangeries par RLS Supabase plutôt que par schémas séparés",
-    body: "Toutes les tables métier portent un bakery_id et des politiques RLS. Un schéma par client aurait compliqué les migrations pour 85 boulangeries.",
+    title: "Bakeries isolated with Supabase RLS rather than separate schemas",
+    body: "Every business table carries a bakery_id and RLS policies. One schema per customer would have made migrations harder for 85 bakeries.",
     entities: [t("Supabase"), t("Postgres")],
   },
   {
     author: "ines", zone: "dev", kind: "task", daysAgo: 3, tool: "claude-code",
-    title: "Corriger le calcul des stocks négatifs sur les viennoiseries",
-    body: "Les retours d'invendus sont décomptés deux fois quand la boutique clôture la journée hors ligne.",
-    entities: [pr("Stocks")],
+    title: "Fix the negative stock computation on pastries",
+    body: "Unsold returns are counted twice when the shop closes the day offline.",
+    entities: [pr("Inventory")],
   },
   {
     author: "ines", zone: "dev", kind: "task", daysAgo: 5, tool: "claude-code", done: true,
-    title: "Ajouter des tests e2e Playwright sur le parcours de commande",
-    body: "Couvre la création de commande, le paiement et l'impression du ticket.",
-    entities: [t("Playwright"), pr("Précommandes")],
+    title: "Add Playwright e2e tests on the ordering flow",
+    body: "Covers order creation, payment and receipt printing.",
+    entities: [t("Playwright"), pr("Preorders")],
   },
   {
     author: "hugo", zone: "dev", kind: "fact", daysAgo: 4, tool: "codex",
-    title: "Le webhook Stripe invoice.paid peut arriver avant la création du client",
-    body: "On rend le handler idempotent (clé = event.id) et on réessaie trois fois avec backoff si le client n'existe pas encore.",
-    entities: [t("Stripe"), pr("Abonnements")],
+    title: "The Stripe invoice.paid webhook can arrive before the customer is created",
+    body: "The handler is made idempotent (key = event.id) and retries three times with backoff if the customer does not exist yet.",
+    entities: [t("Stripe"), pr("Subscriptions")],
   },
   {
     author: "hugo", zone: "dev", kind: "procedure", daysAgo: 2, tool: "claude-code",
-    title: "Restaurer une sauvegarde Supabase sur staging",
-    body: "1. Télécharger le backup quotidien depuis le dashboard Supabase.\n2. supabase db reset --linked sur staging.\n3. Restaurer avec pg_restore --no-owner.\n4. Relancer les migrations manquantes puis vérifier le nombre de boulangeries.",
+    title: "Restore a Supabase backup on staging",
+    body: "1. Download the daily backup from the Supabase dashboard.\n2. supabase db reset --linked on staging.\n3. Restore with pg_restore --no-owner.\n4. Rerun the missing migrations then check the number of bakeries.",
     entities: [t("Supabase"), t("Postgres")],
   },
   {
     author: "ines", zone: "dev", kind: "question", daysAgo: 1, tool: "claude-code",
-    title: "Faut-il passer l'app caisse en offline-first (PWA) ?",
-    body: "Les coupures réseau du matin causent la moitié des tickets de synchro. Une PWA avec file d'attente locale réglerait le problème mais demande ~3 semaines.",
-    entities: [pr("Caisse")],
+    title: "Should the POS app go offline-first (PWA)?",
+    body: "Morning network outages cause half of the sync tickets. A PWA with a local queue would solve it but takes ~3 weeks.",
+    entities: [pr("POS")],
   },
-  // --- Produit ---
+  // --- Product ---
   {
-    author: "leo", zone: "produit", kind: "decision", daysAgo: 9, tool: "claude",
-    title: "Priorité du trimestre : le module de précommandes en ligne",
-    body: "Objectif T4 : permettre aux clients des boulangeries de précommander le pain et les gâteaux du week-end. C'est la demande n°1 des boulangers interrogés.",
-    entities: [pr("Précommandes")],
-  },
-  {
-    author: "leo", zone: "produit", kind: "fact", daysAgo: 8, tool: "claude",
-    title: "Les boulangers utilisent l'app surtout entre 5 h et 7 h du matin",
-    body: "D'où le mode sombre par défaut, les gros boutons et l'absence de saisie clavier sur l'écran de fournée.",
-    entities: [pr("Caisse")],
+    author: "leo", zone: "product", kind: "decision", daysAgo: 9, tool: "claude",
+    title: "Priority of the quarter: the online preorder module",
+    body: "Q4 goal: let bakery customers preorder the weekend's bread and cakes. It is the number one request from the bakers we interviewed.",
+    entities: [pr("Preorders")],
   },
   {
-    author: "sarah", zone: "produit", kind: "fact", daysAgo: 6, tool: "chatgpt",
-    title: "La Mie Dorée considère l'export des ventes vers Excel comme indispensable",
-    body: "Leur comptable retraite les ventes par boutique dans Excel chaque semaine. Sans export, pas de signature.",
+    author: "leo", zone: "product", kind: "fact", daysAgo: 8, tool: "claude",
+    title: "Bakers mostly use the app between 5am and 7am",
+    body: "Hence dark mode by default, big buttons and no keyboard input on the batch screen.",
+    entities: [pr("POS")],
+  },
+  {
+    author: "sarah", zone: "product", kind: "fact", daysAgo: 6, tool: "chatgpt",
+    title: "La Mie Dorée considers exporting sales to Excel essential",
+    body: "Their accountant reworks sales per shop in Excel every week. Without an export, no signature.",
     entities: [c("La Mie Dorée"), t("Excel")],
   },
   {
-    author: "leo", zone: "produit", kind: "task", daysAgo: 4, tool: "claude",
-    title: "Rédiger la spec du module de précommandes",
-    body: "Parcours client, créneaux de retrait, paiement en ligne optionnel, notifications SMS.",
-    entities: [pr("Précommandes")],
+    author: "leo", zone: "product", kind: "task", daysAgo: 4, tool: "claude",
+    title: "Write the spec of the preorder module",
+    body: "Customer journey, pickup slots, optional online payment, SMS notifications.",
+    entities: [pr("Preorders")],
   },
   {
-    author: "leo", zone: "produit", kind: "decision", daysAgo: 3, tool: "claude",
-    title: "Pas de multi-boutiques dans la première version des précommandes",
-    body: "On livre d'abord pour une boutique unique ; le multi-boutiques viendra en janvier avec La Mie Dorée comme client pilote.",
-    entities: [pr("Précommandes"), c("La Mie Dorée")],
+    author: "leo", zone: "product", kind: "decision", daysAgo: 3, tool: "claude",
+    title: "No multi-shop support in the first version of preorders",
+    body: "We ship for a single shop first; multi-shop comes in January with La Mie Dorée as the pilot customer.",
+    entities: [pr("Preorders"), c("La Mie Dorée")],
   },
   {
-    author: "leo", zone: "produit", kind: "fact", daysAgo: 2, tool: "claude",
-    title: "Objectif produit : 40 % des boulangeries actives sur les précommandes fin décembre",
-    body: "Mesuré par au moins une précommande par semaine. Suivi dans le tableau de bord produit.",
-    entities: [pr("Précommandes")],
+    author: "leo", zone: "product", kind: "fact", daysAgo: 2, tool: "claude",
+    title: "Product goal: 40% of bakeries active on preorders by the end of December",
+    body: "Measured as at least one preorder per week. Tracked in the product dashboard.",
+    entities: [pr("Preorders")],
   },
   // --- Sales ---
   {
     author: "sarah", zone: "sales", kind: "fact", daysAgo: 7, tool: "chatgpt",
-    title: "La Mie Dorée (12 boutiques) prête à signer si l'export comptable arrive en novembre",
-    body: "Contrat estimé à 7 000 €/an. Décideur : la directrice financière. Prochaine étape : démo de l'export le 5 novembre.",
+    title: "La Mie Dorée (12 shops) ready to sign if the accounting export ships in November",
+    body: "Contract estimated at €7,000/year. Decision maker: the CFO. Next step: export demo on November 5.",
     entities: [c("La Mie Dorée")],
   },
   {
     author: "sarah", zone: "sales", kind: "fact", daysAgo: 5, tool: "claude",
-    title: "Pipeline d'octobre : 18 prospects, 6 démos planifiées, 3 négociations",
-    body: "Les trois négociations : La Mie Dorée, Maison Kayser Lyon et Au Pain d'Antan. Taux de conversion démo → signature de 35 % sur le trimestre.",
+    title: "October pipeline: 18 prospects, 6 demos scheduled, 3 negotiations",
+    body: "The three negotiations: La Mie Dorée, Maison Kayser Lyon and Au Pain d'Antan. Demo → signature conversion rate of 35% over the quarter.",
     entities: [c("La Mie Dorée"), c("Maison Kayser Lyon"), c("Au Pain d'Antan"), t("HubSpot")],
   },
   {
     author: "claire", zone: "sales", kind: "decision", daysAgo: 6, tool: "claude",
-    title: "Nouveau prix : 49 € par mois et par boutique, -20 % en annuel",
-    body: "Aligné sur la concurrence directe et compatible avec l'objectif de MRR. Les clients existants gardent leur tarif jusqu'en juin.",
-    entities: [pr("Abonnements")],
+    title: "New price: €49 per month per shop, -20% yearly",
+    body: "In line with direct competitors and compatible with the MRR goal. Existing customers keep their price until June.",
+    entities: [pr("Subscriptions")],
   },
   {
     author: "sarah", zone: "sales", kind: "procedure", daysAgo: 4, tool: "claude",
-    title: "Préparer une démo Fournil",
-    body: "1. Créer une boulangerie de démo depuis l'admin (bouton « Démo »).\n2. Importer le catalogue type (pains, viennoiseries, pâtisseries).\n3. Montrer la fournée du matin, la caisse puis l'export des ventes.\n4. Finir sur les précommandes (maquettes Figma tant que le module n'est pas livré).",
-    entities: [t("Figma"), pr("Précommandes")],
+    title: "Prepare a Fournil demo",
+    body: "1. Create a demo bakery from the admin (\"Demo\" button).\n2. Import the template catalog (breads, pastries, cakes).\n3. Show the morning batch, the POS, then the sales export.\n4. End on preorders (Figma mockups until the module ships).",
+    entities: [t("Figma"), pr("Preorders")],
   },
   {
     author: "sarah", zone: "sales", kind: "task", daysAgo: 2, tool: "claude",
-    title: "Relancer Maison Kayser Lyon après le salon Europain",
-    body: "Ils attendaient le nouveau pricing annuel. Envoyer la proposition avant vendredi.",
+    title: "Follow up with Maison Kayser Lyon after the Europain trade show",
+    body: "They were waiting for the new yearly pricing. Send the proposal before Friday.",
     entities: [c("Maison Kayser Lyon")],
   },
   {
     author: "sarah", zone: "sales", kind: "fact", daysAgo: 1, tool: "chatgpt",
-    title: "Le salon Europain génère 40 % des leads de l'année",
-    body: "Budget stand 2027 à prévoir dès janvier ; inscription avant le 15 décembre pour le tarif réduit.",
+    title: "The Europain trade show brings 40% of the year's leads",
+    body: "Budget the 2027 booth from January; register before December 15 for the discounted rate.",
     entities: [],
   },
-  // --- Compta ---
+  // --- Finance ---
   {
-    author: "jeanmarc", zone: "compta", kind: "procedure", daysAgo: 9, tool: "claude",
-    title: "Rapprochement bancaire quotidien Qonto ↔ Pennylane",
-    body: "1. Exporter les transactions Qonto de la veille.\n2. Les rapprocher des factures et des versements Stripe dans Pennylane.\n3. Lister les écarts (paiement sans facture, facture non payée à J+30).\n4. Envoyer les écarts à Sarah pour les relances clients.",
+    author: "jeanmarc", zone: "finance", kind: "procedure", daysAgo: 9, tool: "claude",
+    title: "Daily Qonto ↔ Pennylane bank reconciliation",
+    body: "1. Export yesterday's Qonto transactions.\n2. Match them with the invoices and Stripe payouts in Pennylane.\n3. List the variances (payment without an invoice, invoice unpaid at D+30).\n4. Send the variances to Sarah for customer follow-ups.",
     entities: [t("Qonto"), t("Pennylane"), t("Stripe"), p("Sarah Cohen")],
   },
   {
-    author: "jeanmarc", zone: "compta", kind: "fact", daysAgo: 8, tool: "claude",
-    title: "Clôture mensuelle : export Pennylane avant le 5 pour le cabinet Durand",
-    body: "L'expert-comptable (cabinet Durand) produit la situation mensuelle sous 10 jours à partir de cet export.",
-    entities: [t("Pennylane"), c("Cabinet Durand")],
+    author: "jeanmarc", zone: "finance", kind: "fact", daysAgo: 8, tool: "claude",
+    title: "Month-end close: Pennylane export before the 5th for Durand Accounting",
+    body: "The accountant (Durand Accounting) produces the monthly statement within 10 days from that export.",
+    entities: [t("Pennylane"), c("Durand Accounting")],
   },
   {
-    author: "jeanmarc", zone: "compta", kind: "decision", daysAgo: 6, tool: "claude",
-    title: "Les notes de frais passent par Swile à partir de novembre",
-    body: "Fin des tableurs : chaque dépense est photographiée dans Swile et synchronisée avec Pennylane.",
+    author: "jeanmarc", zone: "finance", kind: "decision", daysAgo: 6, tool: "claude",
+    title: "Expense reports go through Swile from November",
+    body: "No more spreadsheets: every expense is photographed in Swile and synced with Pennylane.",
     entities: [t("Swile"), t("Pennylane")],
   },
   {
-    author: "jeanmarc", zone: "compta", kind: "fact", daysAgo: 5, tool: "claude",
-    title: "Burn mensuel d'environ 62 k€, runway de 14 mois au 1er octobre",
-    body: "Hors levée de fonds. Le passage au pricing annuel améliorerait le BFR dès le premier trimestre 2027.",
+    author: "jeanmarc", zone: "finance", kind: "fact", daysAgo: 5, tool: "claude",
+    title: "Monthly burn of about €62k, 14 months of runway as of October 1",
+    body: "Excluding fundraising. Moving to yearly pricing would improve working capital from the first quarter of 2027.",
     entities: [],
   },
   {
-    author: "jeanmarc", zone: "compta", kind: "task", daysAgo: 3, tool: "claude",
-    title: "Déclarer la TVA de septembre avant le 19 octobre",
-    body: "Montant estimé : 8 400 €. Vérifier l'autoliquidation sur les achats de matériel SumUp.",
+    author: "jeanmarc", zone: "finance", kind: "task", daysAgo: 3, tool: "claude",
+    title: "File the September VAT return before October 19",
+    body: "Estimated amount: €8,400. Check the reverse charge on SumUp hardware purchases.",
     entities: [t("SumUp")],
   },
   {
-    author: "jeanmarc", zone: "compta", kind: "fact", daysAgo: 2, tool: "claude",
-    title: "Les paiements Stripe arrivent sur Qonto à J+7",
-    body: "À prendre en compte dans le prévisionnel de trésorerie et dans le rapprochement quotidien.",
+    author: "jeanmarc", zone: "finance", kind: "fact", daysAgo: 2, tool: "claude",
+    title: "Stripe payouts land on Qonto at D+7",
+    body: "To take into account in the cash forecast and in the daily reconciliation.",
     entities: [t("Stripe"), t("Qonto")],
   },
   // --- Support ---
   {
     author: "hugo", zone: "support", kind: "procedure", daysAgo: 7, tool: "claude-code",
-    title: "Réinitialiser l'imprimante de tickets d'une boutique",
-    body: "1. Éteindre l'imprimante 10 secondes.\n2. Dans l'app : Réglages > Périphériques > Oublier l'imprimante.\n3. Ré-appairer en Bluetooth en maintenant le bouton FEED.\n4. Imprimer un ticket test.",
-    entities: [pr("Caisse")],
+    title: "Reset a shop's receipt printer",
+    body: "1. Turn the printer off for 10 seconds.\n2. In the app: Settings > Devices > Forget the printer.\n3. Pair again over Bluetooth while holding the FEED button.\n4. Print a test receipt.",
+    entities: [pr("POS")],
   },
   {
     author: "leo", zone: "support", kind: "fact", daysAgo: 4, tool: "claude",
-    title: "Top 3 des tickets d'octobre : imprimante, synchro caisse, export Excel",
-    body: "62 tickets au total, dont 24 sur l'imprimante. L'export Excel et la PWA hors ligne supprimeraient la moitié du volume.",
-    entities: [t("Excel"), pr("Caisse")],
+    title: "Top 3 October tickets: printer, POS sync, Excel export",
+    body: "62 tickets in total, 24 of them about the printer. The Excel export and the offline PWA would remove half of the volume.",
+    entities: [t("Excel"), pr("POS")],
   },
   {
     author: "sarah", zone: "support", kind: "task", daysAgo: 1, tool: "claude",
-    title: "Écrire la FAQ sur la synchronisation hors ligne",
-    body: "Expliquer ce qui se passe quand la boutique perd le réseau et comment forcer une synchronisation.",
-    entities: [pr("Caisse")],
+    title: "Write the FAQ on offline sync",
+    body: "Explain what happens when the shop loses the network and how to force a sync.",
+    entities: [pr("POS")],
   },
-  // --- Direction ---
+  // --- Leadership ---
   {
-    author: "claire", zone: "direction", kind: "fact", daysAgo: 9, tool: "claude",
-    title: "Objectif T4 : 120 boulangeries clientes et 25 k€ de MRR",
-    body: "Nous sommes à 85 boulangeries et 17,8 k€ de MRR au 1er octobre. Les précommandes et La Mie Dorée sont les deux leviers principaux.",
-    entities: [c("La Mie Dorée"), pr("Précommandes")],
+    author: "claire", zone: "leadership", kind: "fact", daysAgo: 9, tool: "claude",
+    title: "Q4 goal: 120 bakery customers and €25k MRR",
+    body: "We are at 85 bakeries and €17.8k MRR as of October 1. Preorders and La Mie Dorée are the two main levers.",
+    entities: [c("La Mie Dorée"), pr("Preorders")],
   },
   {
-    author: "claire", zone: "direction", kind: "decision", daysAgo: 7, tool: "claude",
-    title: "Levée seed reportée à mars 2027 : priorité à la rentabilité",
-    body: "Avec 14 mois de runway, on préfère lever avec 30 k€ de MRR. Le board a validé le 2 octobre.",
+    author: "claire", zone: "leadership", kind: "decision", daysAgo: 7, tool: "claude",
+    title: "Seed round postponed to March 2027: profitability first",
+    body: "With 14 months of runway, we would rather raise with €30k MRR. The board approved it on October 2.",
     entities: [],
   },
   {
-    author: "claire", zone: "direction", kind: "task", daysAgo: 4, tool: "claude",
-    title: "Recruter un ou une développeur·se mobile d'ici janvier",
-    body: "Pour la PWA caisse puis l'app de précommandes. Fiche de poste à valider avec Hugo.",
+    author: "claire", zone: "leadership", kind: "task", daysAgo: 4, tool: "claude",
+    title: "Hire a mobile developer by January",
+    body: "For the POS PWA then the preorder app. Job description to validate with Hugo.",
     entities: [p("Hugo Bernard")],
   },
   {
-    author: "claire", zone: "direction", kind: "fact", daysAgo: 1, tool: "claude",
-    title: "Board trimestriel le 12 novembre : KPIs MRR, churn et NPS",
-    body: "Jean-Marc prépare les chiffres financiers, Léo le NPS et l'adoption des précommandes.",
+    author: "claire", zone: "leadership", kind: "fact", daysAgo: 1, tool: "claude",
+    title: "Quarterly board on November 12: MRR, churn and NPS KPIs",
+    body: "Jean-Marc prepares the financials, Léo the NPS and preorder adoption.",
     entities: [p("Jean-Marc Dubois"), p("Léo Petit")],
   },
 ]
 
-/** Prompts typiques par zone, pour l'historique et le simulateur. */
+/** Typical prompts per zone, for the history and the simulator. */
 export const DEMO_PROMPTS: Record<string, { user: string; text: string }[]> = {
   dev: [
-    { user: "hugo", text: "Pourquoi le webhook Stripe invoice.paid échoue en prod ce matin ?" },
-    { user: "ines", text: "Corrige le calcul des stocks quand la boutique clôture hors ligne" },
-    { user: "hugo", text: "Prépare la migration Supabase pour la table des précommandes" },
-    { user: "ines", text: "Écris les tests Playwright du parcours de paiement" },
+    { user: "hugo", text: "Why is the Stripe invoice.paid webhook failing in prod this morning?" },
+    { user: "ines", text: "Fix the stock computation when the shop closes offline" },
+    { user: "hugo", text: "Prepare the Supabase migration for the preorders table" },
+    { user: "ines", text: "Write the Playwright tests for the payment flow" },
   ],
-  produit: [
-    { user: "leo", text: "Rédige la spec des créneaux de retrait pour les précommandes" },
-    { user: "leo", text: "Synthétise les retours utilisateurs sur l'écran de fournée" },
+  product: [
+    { user: "leo", text: "Write the spec of the pickup slots for preorders" },
+    { user: "leo", text: "Summarize the user feedback on the batch screen" },
   ],
   sales: [
-    { user: "sarah", text: "Prépare une proposition commerciale annuelle pour Maison Kayser Lyon" },
-    { user: "sarah", text: "Résume le pipeline et les deals en négociation cette semaine" },
+    { user: "sarah", text: "Prepare a yearly sales proposal for Maison Kayser Lyon" },
+    { user: "sarah", text: "Summarize the pipeline and the deals in negotiation this week" },
   ],
-  compta: [
-    { user: "jeanmarc", text: "Prépare la déclaration de TVA de septembre à partir de Pennylane" },
-    { user: "jeanmarc", text: "Mets à jour le prévisionnel de trésorerie avec les versements Stripe" },
+  finance: [
+    { user: "jeanmarc", text: "Prepare the September VAT return from Pennylane" },
+    { user: "jeanmarc", text: "Update the cash forecast with the Stripe payouts" },
   ],
   support: [
-    { user: "hugo", text: "Pourquoi l'imprimante de tickets de la boutique Rivoli ne répond plus ?" },
-    { user: "sarah", text: "Rédige la réponse au ticket sur l'export Excel des ventes" },
+    { user: "hugo", text: "Why is the Rivoli shop's receipt printer not responding anymore?" },
+    { user: "sarah", text: "Write the answer to the ticket about the Excel sales export" },
   ],
-  direction: [
-    { user: "claire", text: "Prépare les KPIs MRR et churn pour le board du 12 novembre" },
-    { user: "claire", text: "Quel est l'état d'avancement des objectifs du trimestre ?" },
+  leadership: [
+    { user: "claire", text: "Prepare the MRR and churn KPIs for the November 12 board" },
+    { user: "claire", text: "Where do we stand on the quarter's goals?" },
   ],
 }
 
-/** Le prompt que Jean-Marc lance chaque matin vers 9 h : la suggestion d'automatisation de la démo. */
-export const JEANMARC_DAILY_PROMPT = "Rapproche les relevés Qonto d'hier avec les factures Pennylane et liste les écarts"
+/** The prompt Jean-Marc runs every morning around 9am: the demo's automation suggestion. */
+export const JEANMARC_DAILY_PROMPT = "Reconcile yesterday's Qonto statements with the Pennylane invoices and list the variances"
 
-/** Skills de Fournil : `zone` est le cortex qui les reçoit (null : toute l'entreprise). */
+/** Fournil's skills: `zone` is the cortex that receives them (null: the whole company). */
 export type DemoSkill = { author: string; name: string; description: string; zone: string | null; daysAgo: number; version?: number; files: SkillFile[] }
 
 export const DEMO_SKILLS: DemoSkill[] = [
   {
-    author: "claire", name: "ton-fournil", zone: null, daysAgo: 9,
-    description: "Rédiger un email, un post ou une réponse client dans le ton de Fournil. À utiliser pour tout texte destiné à un boulanger.",
+    author: "claire", name: "fournil-tone", zone: null, daysAgo: 9,
+    description: "Write an email, a post or a customer reply in Fournil's tone. Use it for any text meant for a baker.",
     files: [
       {
         path: "SKILL.md",
-        content: `# Le ton de Fournil
+        content: `# Fournil's tone
 
-Nos clients sont des artisans boulangers : ils lisent entre deux fournées, souvent sur leur téléphone.
+Our customers are artisan bakers: they read between two batches, often on their phone.
 
-- Vouvoyer, phrases courtes, un message = une idée.
-- Parler de leur métier (fournée, vitrine, précommandes), jamais de « solution » ou de « plateforme ».
-- Pas d'emoji, pas de point d'exclamation.
-- Finir par une action claire et une date quand il y en a une.
-- Signer avec le prénom de la personne, suivi de « l'équipe Fournil ».
+- Short sentences, one message = one idea, polite and warm.
+- Talk about their trade (batch, shop window, preorders), never about a "solution" or a "platform".
+- No emoji, no exclamation mark.
+- End with a clear action and a date when there is one.
+- Sign with the person's first name, followed by "the Fournil team".
 `,
       },
     ],
   },
   {
-    author: "hugo", name: "deployer-fournil", zone: "dev", daysAgo: 8, version: 3,
-    description: "Déployer Fournil en production (tag, Vercel, surveillance Sentry) et revenir en arrière si besoin.",
+    author: "hugo", name: "deploy-fournil", zone: "dev", daysAgo: 8, version: 3,
+    description: "Deploy Fournil to production (tag, Vercel, Sentry watch) and roll back if needed.",
     files: [
       {
         path: "SKILL.md",
-        content: `# Déployer Fournil en production
+        content: `# Deploy Fournil to production
 
-1. Vérifier que main est verte : \`gh run list --branch main --limit 1\`.
-2. Lancer \`scripts/release.sh <version>\` : il crée le tag vX.Y.Z, Vercel déploie la prod.
-3. Surveiller Sentry 15 minutes (\`scripts/release.sh --watch\`).
-4. En cas d'erreur nouvelle : « Promote » de la release précédente sur Vercel, puis prévenir #dev.
+1. Check that main is green: \`gh run list --branch main --limit 1\`.
+2. Run \`scripts/release.sh <version>\`: it creates the vX.Y.Z tag, Vercel deploys prod.
+3. Watch Sentry for 15 minutes (\`scripts/release.sh --watch\`).
+4. If there is a new error: promote the previous release on Vercel, then tell #dev.
 
-Les migrations Supabase sont appliquées par la CI sur staging avant le tag : ne jamais les lancer à la main en prod.
+Supabase migrations are applied by CI on staging before the tag: never run them by hand in prod.
 `,
       },
       {
         path: "scripts/release.sh",
         content: `#!/usr/bin/env bash
-# Crée le tag de release (Vercel déploie la prod sur le tag), ou surveille Sentry avec --watch.
+# Creates the release tag (Vercel deploys prod on the tag), or watches Sentry with --watch.
 set -euo pipefail
 
 if [[ "\${1:-}" == "--watch" ]]; then
-  echo "Nouvelles erreurs Sentry des 15 dernières minutes :"
+  echo "New Sentry errors in the last 15 minutes:"
   sentry-cli issues list --project fournil-web --query "firstSeen:-15m" --status unresolved
   exit 0
 fi
 
-version="\${1:?usage : release.sh 1.42.0}"
+version="\${1:?usage: release.sh 1.42.0}"
 git fetch origin main --tags
 if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
-  echo "Placez-vous sur origin/main à jour avant de taguer." >&2
+  echo "Check out an up-to-date origin/main before tagging." >&2
   exit 1
 fi
 git tag -a "v$version" -m "Release v$version"
 git push origin "v$version"
-echo "Tag v$version poussé : Vercel déploie la prod. Lancez ensuite : $0 --watch"
+echo "Tag v$version pushed: Vercel deploys prod. Then run: $0 --watch"
 `,
       },
     ],
   },
   {
-    author: "jeanmarc", name: "rapprochement-qonto-pennylane", zone: "compta", daysAgo: 5, version: 2,
-    description: "Rapprocher les transactions Qonto de la veille avec les factures Pennylane et lister les écarts à relancer.",
+    author: "jeanmarc", name: "qonto-pennylane-reconciliation", zone: "finance", daysAgo: 5, version: 2,
+    description: "Reconcile yesterday's Qonto transactions with the Pennylane invoices and list the variances to follow up.",
     files: [
       {
         path: "SKILL.md",
-        content: `# Rapprochement Qonto ↔ Pennylane
+        content: `# Qonto ↔ Pennylane reconciliation
 
-Chaque matin, pour la veille :
+Every morning, for the previous day:
 
-1. Lancer \`python3 scripts/ecarts.py --jour hier\` : il lit l'export Qonto (CSV) et l'export des factures Pennylane.
-2. Relire les écarts : paiement sans facture, facture non payée à J+30, versement Stripe incomplet.
-3. Envoyer la liste des factures à relancer à Sarah (sales).
+1. Run \`python3 scripts/variances.py --day yesterday\`: it reads the Qonto export (CSV) and the Pennylane invoices export.
+2. Review the variances: payment without an invoice, invoice unpaid at D+30, incomplete Stripe payout.
+3. Send the list of invoices to follow up to Sarah (sales).
 
-Les versements Stripe arrivent sur Qonto à J+7 : un écart Stripe de moins de 7 jours n'en est pas un.
+Stripe payouts land on Qonto at D+7: a Stripe variance under 7 days old is not one.
 `,
       },
       {
-        path: "scripts/ecarts.py",
+        path: "scripts/variances.py",
         content: `#!/usr/bin/env python3
-"""Écarts entre l'export Qonto et les factures Pennylane (CSV exportés dans ~/Compta/exports)."""
+"""Variances between the Qonto export and the Pennylane invoices (CSV files exported to ~/Finance/exports)."""
 import argparse
 import csv
 import datetime as dt
 from pathlib import Path
 
-EXPORTS = Path.home() / "Compta" / "exports"
+EXPORTS = Path.home() / "Finance" / "exports"
 
 
-def lire(fichier):
-    with open(EXPORTS / fichier, newline="", encoding="utf-8") as f:
+def read(name):
+    with open(EXPORTS / name, newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f, delimiter=";"))
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--jour", default="hier", help="hier, ou une date AAAA-MM-JJ")
+    p.add_argument("--day", default="yesterday", help="yesterday, or a YYYY-MM-DD date")
     args = p.parse_args()
-    jour = dt.date.today() - dt.timedelta(days=1) if args.jour == "hier" else dt.date.fromisoformat(args.jour)
-    transactions = [t for t in lire(f"qonto-{jour}.csv") if t["sens"] == "credit"]
-    factures = {f["numero"]: f for f in lire("pennylane-factures.csv")}
+    day = dt.date.today() - dt.timedelta(days=1) if args.day == "yesterday" else dt.date.fromisoformat(args.day)
+    transactions = [t for t in read(f"qonto-{day}.csv") if t["direction"] == "credit"]
+    invoices = {f["number"]: f for f in read("pennylane-invoices.csv")}
     for t in transactions:
-        numero = t["reference"].strip()
-        if numero not in factures:
-            print(f"Paiement sans facture : {t['montant']} € ({t['libelle']})")
-    for f in factures.values():
-        echeance = dt.date.fromisoformat(f["echeance"])
-        if f["statut"] != "payee" and (jour - echeance).days > 30:
-            print(f"À relancer : facture {f['numero']} ({f['client']}, {f['montant']} €)")
+        number = t["reference"].strip()
+        if number not in invoices:
+            print(f"Payment without an invoice: €{t['amount']} ({t['label']})")
+    for f in invoices.values():
+        due = dt.date.fromisoformat(f["due_date"])
+        if f["status"] != "paid" and (day - due).days > 30:
+            print(f"To follow up: invoice {f['number']} ({f['customer']}, €{f['amount']})")
 
 
 if __name__ == "__main__":
@@ -417,33 +417,33 @@ if __name__ == "__main__":
     ],
   },
   {
-    author: "claire", name: "preparer-demo-client", zone: "sales", daysAgo: 4,
-    description: "Préparer la démo de Fournil pour un prospect : boulangerie de démo, catalogue type, déroulé en 20 minutes.",
+    author: "claire", name: "prepare-customer-demo", zone: "sales", daysAgo: 4,
+    description: "Prepare the Fournil demo for a prospect: demo bakery, template catalog, a 20-minute run-through.",
     files: [
       {
         path: "SKILL.md",
-        content: `# Préparer une démo client
+        content: `# Prepare a customer demo
 
-1. Créer une boulangerie de démo depuis l'admin (bouton « Démo »), au nom du prospect.
-2. Importer le catalogue type (pains, viennoiseries, pâtisseries).
-3. Déroulé : fournée du matin, caisse, export des ventes, puis précommandes.
-4. Noter dans le cerveau ce que le prospect a demandé (zone Sales), avec la prochaine étape et sa date.
+1. Create a demo bakery from the admin ("Demo" button), named after the prospect.
+2. Import the template catalog (breads, pastries, cakes).
+3. Run-through: morning batch, POS, sales export, then preorders.
+4. Record in the brain what the prospect asked for (Sales zone), with the next step and its date.
 `,
       },
     ],
   },
   {
-    author: "hugo", name: "depanner-imprimante", zone: "support", daysAgo: 3,
-    description: "Guider un boulanger dont l'imprimante de tickets Bluetooth ne répond plus.",
+    author: "hugo", name: "fix-printer", zone: "support", daysAgo: 3,
+    description: "Guide a baker whose Bluetooth receipt printer is no longer responding.",
     files: [
       {
         path: "SKILL.md",
-        content: `# Dépanner l'imprimante de tickets
+        content: `# Fix the receipt printer
 
-1. Éteindre l'imprimante 10 secondes.
-2. Dans l'app : Réglages > Périphériques > Oublier l'imprimante.
-3. Ré-appairer en Bluetooth en maintenant le bouton FEED.
-4. Imprimer un ticket test. Si rien ne sort : ouvrir un ticket « matériel » avec le numéro de série.
+1. Turn the printer off for 10 seconds.
+2. In the app: Settings > Devices > Forget the printer.
+3. Pair again over Bluetooth while holding the FEED button.
+4. Print a test receipt. If nothing comes out: open a "hardware" ticket with the serial number.
 `,
       },
     ],

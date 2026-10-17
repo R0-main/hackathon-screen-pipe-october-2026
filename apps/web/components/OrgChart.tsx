@@ -6,7 +6,7 @@ import { initials } from "./format"
 import { Dot, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 export type OrgUser = Profile & { zones: string[] }
-/** Présence d'un poste, tirée du fil des agents : session ouverte récemment, et agents utilisés. */
+/** A workstation's presence, from the agents feed: session opened recently, and agents used. */
 export type Presence = { active: boolean; agents: string[] }
 
 const CARD_W = 248
@@ -15,7 +15,7 @@ const GAP_X = 36
 const GAP_Y = 76
 const TREE_GAP = 72
 const ZOOM = { min: 0.35, max: 1.6 }
-/** Largeur du panneau d'une personne (max-w-md), ouvert par-dessus la droite de l'organigramme. */
+/** Width of a person's panel (max-w-md), opened over the right of the org chart. */
 const DRAWER_W = 448
 
 type Placed = { user: OrgUser; x: number; y: number; children: Placed[] }
@@ -23,8 +23,8 @@ type Placed = { user: OrgUser; x: number; y: number; children: Placed[] }
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
 /**
- * Forêt de l'organigramme : une personne sans rattachement (ou rattachée à quelqu'un d'inconnu) est une tête.
- * Un rattachement en boucle (données anciennes ou modifiées à la main) est cassé : la personne devient une tête.
+ * The org chart forest: a person without a manager (or reporting to someone unknown) is a head.
+ * A reporting loop (old data or edited by hand) is broken: the person becomes a head.
  */
 export function buildForest(users: OrgUser[]): { roots: Placed[]; width: number; height: number } {
   const byId = new Map(users.map((u) => [u.id, u]))
@@ -52,7 +52,7 @@ export function buildForest(users: OrgUser[]): { roots: Placed[]; width: number;
 
   const roots: Placed[] = []
   const heads = users.filter((u) => !u.manager_id || u.manager_id === u.id || !byId.has(u.manager_id))
-  // Admins d'abord : la tête de l'entreprise à gauche, puis les postes non rattachés.
+  // Admins first: the head of the company on the left, then the unattached workstations.
   heads.sort((a, b) => (a.role === b.role ? 0 : a.role === "admin" ? -1 : 1))
   for (const u of [...heads, ...users]) {
     if (visited.has(u.id)) continue
@@ -66,7 +66,7 @@ function flatten(nodes: Placed[]): Placed[] {
   return nodes.flatMap((n) => [n, ...flatten(n.children)])
 }
 
-/** Traits orthogonaux parent → enfants : descente, barre horizontale, descente vers chaque carte. */
+/** Orthogonal lines parent → children: down, horizontal bar, down to each card. */
 function edgePath(n: Placed): string {
   if (n.children.length === 0) return ""
   const px = n.x + CARD_W / 2
@@ -78,8 +78,8 @@ function edgePath(n: Placed): string {
 }
 
 /**
- * Organigramme de l'équipe : une carte par poste, reliée à la personne à qui il est rattaché. On le déplace en
- * glissant, on zoome à la molette ou avec les boutons. Cliquer une carte l'ouvre.
+ * The team's org chart: one card per workstation, linked to the person it reports to. You move it by
+ * dragging, zoom with the wheel or the buttons. Clicking a card opens it.
  */
 export function OrgChart({
   users,
@@ -105,7 +105,7 @@ export function OrgChart({
   const selectedRef = useRef(selected)
   selectedRef.current = selected
 
-  /** Décale la vue pour que la carte ouverte ne reste pas cachée sous le panneau latéral (écrans larges). */
+  /** Shifts the view so the open card does not stay hidden under the side panel (wide screens). */
   const reveal = useCallback(
     (v: { x: number; y: number; k: number }) => {
       const box = boxRef.current
@@ -125,7 +125,7 @@ export function OrgChart({
     const ch = box.clientHeight
     if (!cw || !ch) return
     if (cw < 640) {
-      // Téléphone : tout faire tenir rendrait les cartes illisibles ; on centre la tête à une échelle lisible.
+      // Phone: fitting everything would make the cards unreadable; the head is centered at a readable scale.
       const k = 0.6
       const head = nodes[0]
       setView({ k, x: cw / 2 - ((head?.x ?? 0) + CARD_W / 2) * k, y: 32 })
@@ -135,8 +135,8 @@ export function OrgChart({
     setView(reveal({ k, x: (cw - width * k) / 2, y: Math.max(48, (ch - height * k) / 2) }))
   }, [width, height, nodes, reveal])
 
-  // Recadrage à l'ouverture, quand l'équipe change de forme (rattachements compris), et quand la fenêtre change
-  // de taille.
+  // Reframing on open, when the team changes shape (reporting lines included), and when the window changes
+  // size.
   const shape = users.map((u) => `${u.id}:${u.manager_id ?? ""}`).join("|")
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(fit, [shape, width, height])
@@ -145,14 +145,14 @@ export function OrgChart({
   useEffect(() => {
     const box = boxRef.current
     if (!box) return
-    // Via une ref : un changement de données (zones cochées…) ne doit pas recréer l'observateur, qui recadrerait
-    // aussitôt et perdrait le déplacement fait à la main.
+    // Through a ref: a data change (ticked zones…) must not recreate the observer, which would reframe
+    // right away and lose the manual pan.
     const ro = new ResizeObserver(() => fitRef.current())
     ro.observe(box)
     return () => ro.disconnect()
   }, [])
 
-  // Une carte qu'on ouvre ne doit pas rester sous le panneau latéral.
+  // A card being opened must not stay under the side panel.
   useEffect(() => {
     if (selected) setView((v) => reveal(v))
   }, [selected, reveal])
@@ -167,7 +167,7 @@ export function OrgChart({
     setView({ k, x: cx - ((cx - v.x) * k) / v.k, y: cy - ((cy - v.y) * k) / v.k })
   }, [])
 
-  // Molette : zoom autour du pointeur (écouteur non passif pour empêcher le défilement).
+  // Wheel: zoom around the pointer (non-passive listener to prevent scrolling).
   useEffect(() => {
     const box = boxRef.current
     if (!box) return
@@ -180,7 +180,7 @@ export function OrgChart({
     return () => box.removeEventListener("wheel", onWheel)
   }, [zoomAt])
 
-  // Glisser le fond pour déplacer ; un clic sur le fond (sans glisser) ferme la carte ouverte.
+  // Drag the background to pan; a click on the background (without dragging) closes the open card.
   const drag = useRef<{ id: number; x: number; y: number; moved: number } | null>(null)
   const onPointerDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("[data-org-control]")) return
@@ -225,7 +225,7 @@ export function OrgChart({
             <path key={n.user.id} d={edgePath(n)} fill="none" stroke="var(--color-line-strong)" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />
           ))}
         </svg>
-        <ul aria-label="Organigramme">
+        <ul aria-label="Org chart">
           {nodes.map((n) => {
             const u = n.user
             const p = presence[u.id]
@@ -237,7 +237,7 @@ export function OrgChart({
                   type="button"
                   data-org-card={u.id}
                   aria-pressed={isSel}
-                  // Le clic est géré au relâchement du pointeur (pour distinguer un glissé) ; le clavier passe ici.
+                  // The click is handled on pointer release (to tell a drag apart); the keyboard goes through here.
                   onClick={(e) => e.detail === 0 && onSelect(u.id)}
                   className={`flex h-full w-full cursor-pointer flex-col justify-between rounded-[8px] border bg-surface p-3.5 text-left transition-colors duration-150 ease-out ${
                     isSel ? "border-ink" : "border-line hover:border-line-strong"
@@ -248,22 +248,22 @@ export function OrgChart({
                       {initials(u.name)}
                       <span
                         className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-ink ${p?.active ? "bg-phosphor" : "bg-surface"}`}
-                        title={p?.active ? "Agent actif ces 15 dernières minutes" : "Pas d'agent actif"}
+                        title={p?.active ? "Agent active in the last 15 minutes" : "No active agent"}
                       />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[14px] font-medium leading-tight">{u.name}</span>
-                      <span className="mt-0.5 block truncate text-[12.5px] leading-tight text-trace">{u.title || (u.role === "admin" ? "Admin" : "Membre")}</span>
+                      <span className="mt-0.5 block truncate text-[12.5px] leading-tight text-trace">{u.title || (u.role === "admin" ? "Admin" : "Member")}</span>
                       <span className="mono mt-1 block truncate text-[11.5px] leading-tight text-trace">
-                        {p?.agents.length ? p.agents.join(", ") : "Pas encore d'agent"}
+                        {p?.agents.length ? p.agents.join(", ") : "No agent yet"}
                       </span>
                     </span>
                   </span>
                   <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-trace">
                     {u.role === "admin" ? (
-                      <span>Admin, toutes les zones</span>
+                      <span>Admin, all zones</span>
                     ) : visible.length === 0 ? (
-                      <span>Aucune zone</span>
+                      <span>No zone</span>
                     ) : (
                       <>
                         {visible.slice(0, 8).map((z) => (
@@ -272,7 +272,7 @@ export function OrgChart({
                           </span>
                         ))}
                         <span className="ml-0.5 tabular-nums">
-                          {visible.length} zone{visible.length > 1 ? "s" : ""}
+                          {visible.length} zone{visible.length === 1 ? "" : "s"}
                         </span>
                       </>
                     )}
@@ -285,17 +285,17 @@ export function OrgChart({
       </div>
 
       <div data-org-control className="absolute bottom-4 right-4 flex flex-col gap-1.5">
-        <button type="button" className="btn btn-icon" aria-label="Zoomer" onClick={() => zoomAt(1.2)}>
+        <button type="button" className="btn btn-icon" aria-label="Zoom in" onClick={() => zoomAt(1.2)}>
           <PlusIcon />
         </button>
-        <button type="button" className="btn btn-icon" aria-label="Dézoomer" onClick={() => zoomAt(1 / 1.2)}>
+        <button type="button" className="btn btn-icon" aria-label="Zoom out" onClick={() => zoomAt(1 / 1.2)}>
           <MinusIcon />
         </button>
-        <button type="button" className="btn btn-icon" aria-label="Recentrer l'organigramme" title="Recentrer" onClick={fit}>
+        <button type="button" className="btn btn-icon" aria-label="Recenter the org chart" title="Recenter" onClick={fit}>
           <FitIcon />
         </button>
       </div>
-      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Glisser pour déplacer, molette pour zoomer, cliquer une carte pour l&apos;ouvrir.</p>
+      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Drag to pan, scroll to zoom, click a card to open it.</p>
     </div>
   )
 }

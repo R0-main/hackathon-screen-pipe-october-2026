@@ -5,7 +5,7 @@ import { runInOrg } from "@/lib/store"
 
 export const dynamic = "force-dynamic"
 
-/** Connecteurs (admins) : Notion, Linear, Todoist, calendrier ICS. */
+/** Connectors (admins): Notion, Linear, Todoist, ICS calendar. */
 export default async function ConnectorsPage() {
   const viewer = await requirePageViewer({ admin: true })
   const connectors = await runInOrg(viewer.real.org_id, () => listConnectors())

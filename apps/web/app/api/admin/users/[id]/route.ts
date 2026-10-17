@@ -17,7 +17,7 @@ const Schema = z.object({
   can_publish_skills: z.boolean().optional(),
 })
 
-/** Rattacher `id` à `managerId` boucle-t-il l'organigramme (managerId est `id` ou l'un de ses subordonnés) ? */
+/** Does attaching `id` to `managerId` loop the org chart (managerId is `id` or one of its reports)? */
 function makesCycle(id: string, managerId: string, profiles: Profile[]): boolean {
   const managerOf = new Map(profiles.map((p) => [p.id, p.manager_id ?? null]))
   const seen = new Set<string>()
@@ -28,19 +28,19 @@ function makesCycle(id: string, managerId: string, profiles: Profile[]): boolean
   return false
 }
 
-/** Met à jour le rôle, le rattachement, les zones visibles et le droit de publier des skills d'un membre. */
+/** Updates a member's role, manager, visible zones and right to publish skills. */
 export const PATCH = withViewer<Ctx>(
   async (req, viewer, { params }) => {
     const { id } = await params
     const body = await parseBody(req, Schema)
     if ("response" in body) return body.response
     const store = getStore()
-    if (body.data.role === "member" && id === viewer.real.id) return error(400, "Vous ne pouvez pas retirer vos propres droits admin.")
+    if (body.data.role === "member" && id === viewer.real.id) return error(400, "You cannot remove your own admin rights.")
     const managerId = body.data.manager_id
     if (managerId) {
       const profiles = await store.listProfiles()
-      if (!profiles.some((p) => p.id === managerId)) return error(400, "La personne de rattachement n'existe pas.")
-      if (makesCycle(id, managerId, profiles)) return error(400, "Rattachement impossible : cette personne fait partie de son équipe.")
+      if (!profiles.some((p) => p.id === managerId)) return error(400, "The manager does not exist.")
+      if (makesCycle(id, managerId, profiles)) return error(400, "Cannot attach: this person is part of their team.")
     }
     const profile = await store.updateProfile(id, {
       name: body.data.name,
@@ -49,7 +49,7 @@ export const PATCH = withViewer<Ctx>(
       manager_id: managerId,
       can_publish_skills: body.data.can_publish_skills,
     })
-    if (!profile) return error(404, "Membre introuvable.")
+    if (!profile) return error(404, "Member not found.")
     if (body.data.zones) {
       const known = new Set((await store.listZones()).map((z) => z.id))
       await store.setZoneAccess(id, body.data.zones.filter((z) => known.has(z)).map((zone_id) => ({ zone_id, can_write: true })))

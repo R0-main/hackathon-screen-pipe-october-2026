@@ -1,4 +1,4 @@
-// Chemins, configuration et état local du client (~/.company-brain).
+// Paths, configuration and local state of the client (~/.company-brain).
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -18,23 +18,23 @@ export type Config = {
   screenpipe_url: string
   screenpipe_token?: string
   anthropic_api_key?: string
-  /** Jeton Claude Code longue durée (`claude setup-token`) : passé à chaque `claude -p` (CLAUDE_CODE_OAUTH_TOKEN). */
+  /** Long-lived Claude Code token (`claude setup-token`): passed to every `claude -p` (CLAUDE_CODE_OAUTH_TOKEN). */
   claude_oauth_token?: string
   use_claude_cli: boolean
   sources: SourceName[]
   app_whitelist?: string[]
   screenpipe_content_types?: string[]
-  /** Réunions Screenpipe (transcriptions) distillées comme les sessions IA (défaut : oui). */
+  /** Screenpipe meetings (transcriptions) distilled like the AI sessions (default: yes). */
   screenpipe_meetings?: boolean
-  /** Hook UserPromptSubmit : envoyer un court résumé masqué des prompts classés dans une zone (défaut : oui). */
+  /** UserPromptSubmit hook: send a short redacted summary of the prompts classified in a zone (default: yes). */
   share_prompt_summaries?: boolean
-  /** Certificat (PEM) de l'autorité qui signe un cerveau auto-hébergé : le client lui fait confiance en plus des certificats publics. */
+  /** Certificate (PEM) of the authority that signs a self-hosted brain: the client trusts it on top of the public certificates. */
   ca_file?: string
-  /** Environnement relevé par install-schedule, réappliqué par `sync --scheduled` (utile sous Windows). */
+  /** Environment recorded by install-schedule, applied again by `sync --scheduled` (useful on Windows). */
   schedule_env?: Partial<Record<(typeof SCHEDULE_ENV_KEYS)[number], string>>
 }
 
-/** Variables utiles à la synchro planifiée (PATH pour trouver `claude`, dossiers personnalisés). */
+/** Variables useful to the scheduled sync (PATH to find `claude`, custom folders). */
 export const SCHEDULE_ENV_KEYS = ["PATH", "COMPANY_BRAIN_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"] as const
 
 export type FileCheckpoint = { offset: number; size: number; mtime: number; internal?: boolean }
@@ -46,21 +46,21 @@ export type State = {
   codex?: { files: Record<string, FileCheckpoint> }
   screenpipe?: {
     last_timestamp?: string
-    /** Lignes déjà envoyées, par fenêtre (empreintes) : une fenêtre restée ouverte n'est pas renvoyée à chaque passage. */
+    /** Lines already sent, per window (fingerprints): a window left open is not sent again on every pass. */
     seen?: Record<string, SeenLines>
-    /** Taille de fenêtre de lecture apprise quand Screenpipe ne donne pas le total (ms). */
+    /** Read window size learned when Screenpipe does not give the total (ms). */
     span_ms?: number
-    /** Fin de la dernière réunion distillée : les réunions terminées avant sont faites. */
+    /** End of the last distilled meeting: the meetings finished before it are done. */
     meetings_last_end?: string
   }
-  /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
+  /** Set by install-schedule: the automatic sync sends up nothing earlier that has not already been read. */
   baseline_at?: string
-  /** Empreinte du certificat du cerveau déjà installé pour les navigateurs du poste (setup ne le redemande pas). */
+  /** Fingerprint of the brain certificate already installed for the computer's browsers (setup does not ask again). */
   ca_trusted?: string
   /**
-   * Conversations que Claude n'a pas su distiller (elles passent après les autres). n : essais probants (le modèle a
-   * répondu, ou Claude a répondu à un autre appel de la synchro), abandon à MAX_DISTILL_ATTEMPTS ; tries : tous les essais
-   * décomptés, probants ou non, depuis first_at (garde-fou : abandon après 24 h et 5 essais) ; at : dernier échec.
+   * Conversations Claude could not distill (they go after the others). n: conclusive attempts (the model
+   * answered, or Claude answered another call of the sync), given up at MAX_DISTILL_ATTEMPTS; tries: every attempt
+   * counted, conclusive or not, since first_at (safeguard: given up after 24 h and 5 attempts); at: last failure.
    */
   distill_failures?: Record<string, { n: number; at: string; error?: string; tries?: number; first_at?: string }>
   last_sync?: {
@@ -80,7 +80,7 @@ export type Cache = {
   zones?: CachedZone[]
 }
 
-// Une variable vide vaut « non définie » (sinon resolve("") donnerait le dossier courant, et la config irait dans un projet).
+// An empty variable counts as "not set" (otherwise resolve("") would give the current folder, and the config would go into a project).
 export function brainHome(): string {
   return resolve(process.env.COMPANY_BRAIN_HOME || join(homedir(), ".company-brain"))
 }
@@ -93,7 +93,7 @@ export function codexDir(): string {
   return resolve(process.env.CODEX_HOME || join(homedir(), ".codex"))
 }
 
-/** Le dossier du client est-il personnalisé (COMPANY_BRAIN_HOME) ? Hooks, MCP et planification le transmettent alors. */
+/** Is the client folder customized (COMPANY_BRAIN_HOME)? Hooks, MCP and scheduling then pass it on. */
 export function customHome(): boolean {
   return Boolean(process.env.COMPANY_BRAIN_HOME) && brainHome() !== resolve(homedir(), ".company-brain")
 }
@@ -108,20 +108,20 @@ export const paths = {
   claudeSettings: () => join(claudeDir(), "settings.json"),
 }
 
-/** Chemin absolu du script en cours (brain.mjs une fois empaqueté). */
+/** Absolute path of the running script (brain.mjs once bundled). */
 export function selfScript(): string {
   if (process.env.COMPANY_BRAIN_SCRIPT) return resolve(process.env.COMPANY_BRAIN_SCRIPT)
   return fileURLToPath(import.meta.url)
 }
 
-/** Le raccourci écrit par install.sh (`brain`) ou install.ps1 (`brain.cmd`, utilisable depuis PowerShell et Git Bash). */
+/** The shortcut written by install.sh (`brain`) or install.ps1 (`brain.cmd`, usable from PowerShell and Git Bash). */
 export function shortcutPath(platform: NodeJS.Platform = process.platform): string {
   return join(brainHome(), platform === "win32" ? "brain.cmd" : "brain")
 }
 
 /**
- * La commande à citer dans les messages pour relancer le client : le raccourci s'il existe (il marche même quand Node.js
- * est une copie privée, hors du PATH : `node …` y échouerait), sinon Node.js et le script en chemins absolus.
+ * The command to quote in messages to run the client again: the shortcut if it exists (it works even when Node.js
+ * is a private copy, outside the PATH: `node …` would fail there), otherwise Node.js and the script as absolute paths.
  */
 export function selfCommand(platform: NodeJS.Platform = process.platform): string {
   const shortcut = shortcutPath(platform)
@@ -130,8 +130,8 @@ export function selfCommand(platform: NodeJS.Platform = process.platform): strin
 }
 
 /**
- * Un chemin prêt à coller dans un terminal. Windows : barres obliques (Git Bash efface les `\` hors guillemets ; Node.js,
- * cmd et PowerShell les acceptent), guillemets doubles s'il le faut (aucun `"` possible). Ailleurs : guillemets simples.
+ * A path ready to paste into a terminal. Windows: forward slashes (Git Bash removes `\` outside quotes; Node.js,
+ * cmd and PowerShell accept them), double quotes if needed (no `"` possible). Elsewhere: single quotes.
  */
 export function quoteArg(s: string, platform: NodeJS.Platform = process.platform): string {
   if (platform === "win32") {
@@ -149,7 +149,7 @@ export function readJson<T>(file: string): T | null {
   }
 }
 
-/** Écriture atomique (fichier temporaire puis renommage), avec mode optionnel. */
+/** Atomic write (temporary file then rename), with an optional mode. */
 export function writeJson(file: string, data: unknown, mode?: number) {
   mkdirSync(dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.tmp`
@@ -161,12 +161,12 @@ export function writeJson(file: string, data: unknown, mode?: number) {
 
 export function ensureHome() {
   mkdirSync(brainHome(), { recursive: true, mode: 0o700 })
-  // Le dossier existe souvent déjà (créé par curl ou install.sh avec les droits par défaut) : il garde config et jeton.
+  // The folder often already exists (created by curl or install.sh with default permissions): it holds config and token.
   if (process.platform !== "win32") {
     try {
       chmodSync(brainHome(), 0o700)
     } catch {
-      // pas à nous : on n'insiste pas
+      // not ours: we do not insist
     }
   }
 }
@@ -193,7 +193,7 @@ export function withDefaults(raw: Partial<Config>): Partial<Config> {
   }
 }
 
-/** `sync --scheduled` : complète l'environnement avec celui relevé par install-schedule (sans écraser l'existant). */
+/** `sync --scheduled`: completes the environment with the one recorded by install-schedule (without overwriting what exists). */
 export function applyScheduleEnv(cfg: Partial<Config>, env: NodeJS.ProcessEnv = process.env) {
   const saved = cfg.schedule_env ?? {}
   for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] as const) if (saved[k] && !env[k]) env[k] = saved[k]
@@ -209,7 +209,7 @@ export function requireConfig(): Config {
   const cfg = loadConfig()
   if (!cfg) {
     throw new UserError(
-      `Client non configuré (${paths.config()} absent ou incomplet). Lancez d'abord : ${selfCommand()} init --url <url du cerveau> --token <jeton>`,
+      `Client not configured (${paths.config()} missing or incomplete). First run: ${selfCommand()} init --url <brain url> --token <token>`,
     )
   }
   return cfg
@@ -237,11 +237,11 @@ export function fileExists(file: string): boolean {
   return existsSync(file)
 }
 
-/** Erreur « attendue » : message français affiché sans pile d'appels. */
+/** "Expected" error: message shown without a stack trace. */
 export class UserError extends Error {}
 
 export function maskSecret(s: string | undefined): string {
-  if (!s) return "(aucun)"
+  if (!s) return "(none)"
   if (s.length <= 10) return "•".repeat(s.length)
   return `${s.slice(0, 6)}…${s.slice(-4)}`
 }

@@ -5,7 +5,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * Admins : la matière d'un passage « nouvelles zones » (zones, connaissances récentes numérotées), pour que le Claude
- * Code de l'entreprise fasse l'analyse avec son abonnement (`brain refresh-zones`). `{skipped}` s'il n'y a rien à faire.
+ * Admins: the material for a "new zones" run (zones, recent numbered knowledge), so that the company's Claude
+ * Code does the analysis with its subscription (`brain refresh-zones`). `{skipped}` if there is nothing to do.
  */
 export const GET = withViewer(async () => json(await newZonesInput()), { admin: true })

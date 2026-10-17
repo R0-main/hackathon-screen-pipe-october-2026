@@ -8,20 +8,20 @@ export const dynamic = "force-dynamic"
 
 const Schema = z.object({ token: z.string().min(8).max(200) })
 
-/** Connexion au dashboard avec son jeton personnel. */
+/** Sign in to the dashboard with one's personal token. */
 export async function POST(req: Request) {
   const body = await parseBody(req, Schema)
   if ("response" in body) return body.response
   try {
     const profile = await profileFromToken(body.data.token)
-    if (!profile) return error(401, "Jeton invalide.")
+    if (!profile) return error(401, "Invalid token.")
     const session = await createSessionValue(profile.id)
     const jar = await cookies()
     jar.set(SESSION_COOKIE, session, sessionCookieOptions)
     jar.delete(VIEW_AS_COOKIE)
     return json({ ok: true, profile })
   } catch (err) {
-    // Migration manquante (table brain_settings) : 503 avec la marche à suivre, plutôt qu'une erreur 500 opaque.
+    // Missing migration (brain_settings table): 503 with the steps to follow, rather than an opaque 500 error.
     return internalError(err)
   }
 }

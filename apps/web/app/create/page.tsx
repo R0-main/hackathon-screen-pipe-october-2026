@@ -6,9 +6,9 @@ import { isDemoMode, signupOpen } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
-export const metadata: Metadata = { title: "Créer mon entreprise" }
+export const metadata: Metadata = { title: "Create my company" }
 
-/** Créer le cerveau de son entreprise à partir de zéro : quelques questions, son prompt, puis ceux de l'équipe. */
+/** Create one's company brain from scratch: a few questions, one's prompt, then the team's. */
 export default function CreatePage() {
   if (!signupOpen()) redirect("/login")
   const zones = DEFAULT_ZONES.map(({ id, name, description, color, position }) => ({ id, name, description, color, position }))

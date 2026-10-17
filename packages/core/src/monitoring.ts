@@ -1,38 +1,38 @@
-// Supervision des postes : l'état d'un poste à partir de son dernier compte rendu de synchro et de son activité.
+// Workstation monitoring: the state of a workstation from its last sync report and its activity.
 
-import type { PosteHealth, SyncReport } from "./types"
+import type { WorkstationHealth, SyncReport } from "./types"
 
-/** Cadence normale de la synchro planifiée (install-schedule) : toutes les 15 minutes. */
+/** Normal cadence of the scheduled sync (install-schedule): every 15 minutes. */
 export const SYNC_EVERY_MS = 15 * 60_000
-/** Au-delà de 4 synchros manquées, le poste est « en retard ». */
+/** Beyond 4 missed syncs, the workstation is "late". */
 export const LATE_AFTER_MS = 4 * SYNC_EVERY_MS
 
-export type PosteHealthInput = {
+export type WorkstationHealthInput = {
   report: Pick<SyncReport, "at" | "ok" | "error"> | null
-  /** Dernier événement d'agent du poste (hooks, MCP…), ou null. */
+  /** Last agent event from the workstation (hooks, MCP…), or null. */
   lastEventAt: string | null
   now: number
 }
 
-export type PosteHealthResult = { status: PosteHealth; since: string | null; reason: string }
+export type WorkstationHealthResult = { status: WorkstationHealth; since: string | null; reason: string }
 
 /**
- * - `never` : aucun compte rendu ni activité, le poste n'est pas branché (ou n'a jamais synchronisé) ;
- * - `error` : la dernière synchro a échoué ;
- * - `late` : la dernière synchro réussie date de plus de LATE_AFTER_MS ;
- * - `ok` : sinon.
- * Un poste sans compte rendu mais avec de l'activité (hooks) est « late » : il nourrit le cerveau sans synchro planifiée.
+ * - `never`: no report and no activity, the workstation is not connected (or has never synced);
+ * - `error`: the last sync failed;
+ * - `late`: the last successful sync is older than LATE_AFTER_MS;
+ * - `ok`: otherwise.
+ * A workstation with no report but with activity (hooks) is "late": it feeds the brain without a scheduled sync.
  */
-export function posteHealth({ report, lastEventAt, now }: PosteHealthInput): PosteHealthResult {
+export function workstationHealth({ report, lastEventAt, now }: WorkstationHealthInput): WorkstationHealthResult {
   if (!report) {
-    if (!lastEventAt) return { status: "never", since: null, reason: "Aucune synchronisation ni activité reçue de ce poste." }
-    return { status: "late", since: lastEventAt, reason: "Activité reçue (hooks) mais aucun compte rendu de synchronisation : la synchro planifiée ne tourne pas." }
+    if (!lastEventAt) return { status: "never", since: null, reason: "No sync or activity received from this workstation." }
+    return { status: "late", since: lastEventAt, reason: "Activity received (hooks) but no sync report: the scheduled sync is not running." }
   }
-  if (!report.ok) return { status: "error", since: report.at, reason: report.error ?? "La dernière synchronisation a échoué." }
+  if (!report.ok) return { status: "error", since: report.at, reason: report.error ?? "The last sync failed." }
   const age = now - Date.parse(report.at)
-  if (!(age < LATE_AFTER_MS)) return { status: "late", since: report.at, reason: `Dernière synchronisation réussie il y a ${Math.round(age / 60_000)} min (attendue toutes les ${SYNC_EVERY_MS / 60_000} min).` }
-  return { status: "ok", since: report.at, reason: "Synchronisation récente." }
+  if (!(age < LATE_AFTER_MS)) return { status: "late", since: report.at, reason: `Last successful sync ${Math.round(age / 60_000)} min ago (expected every ${SYNC_EVERY_MS / 60_000} min).` }
+  return { status: "ok", since: report.at, reason: "Recent sync." }
 }
 
-/** Ordre d'affichage : les postes qui demandent une action d'abord. */
-export const HEALTH_ORDER: Record<PosteHealth, number> = { error: 0, late: 1, never: 2, ok: 3 }
+/** Display order: workstations that need action first. */
+export const HEALTH_ORDER: Record<WorkstationHealth, number> = { error: 0, late: 1, never: 2, ok: 3 }

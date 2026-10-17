@@ -1,5 +1,5 @@
-// Choix du distillateur : SDK Claude (clé API) → CLI `claude -p` → heuristique sans LLM.
-// L'heuristique ne sert que si aucun LLM n'est disponible : un échec du LLM laisse la conversation pour plus tard.
+// Choosing the distiller: Claude SDK (API key) → `claude -p` CLI → heuristic without an LLM.
+// The heuristic is only used if no LLM is available: an LLM failure leaves the conversation for later.
 
 import { AsyncLocalStorage } from "node:async_hooks"
 import { spawn, spawnSync } from "node:child_process"
@@ -23,24 +23,24 @@ export type DistillerKind = "claude-api" | "claude-cli" | "heuristic"
 
 export const DISTILLER_LABELS: Record<DistillerKind, string> = {
   "claude-api": "Claude (API Anthropic)",
-  "claude-cli": "Claude Code en local (`claude -p`)",
-  heuristic: "heuristique locale (sans LLM)",
+  "claude-cli": "Local Claude Code (`claude -p`)",
+  heuristic: "local heuristic (no LLM)",
 }
 
 /**
- * Nature d'un échec du LLM. `auth` : Claude n'est plus connecté (jeton expiré ou révoqué, « Please run /login », clé
- * refusée) ; `outage` : panne du poste ou du service (CLI introuvable, réseau, limite d'abonnement ou quotas,
- * surcharge). Ces deux-là touchent toutes les conversations : aucun essai n'est décompté. `conversation` : échec sur
- * cette entrée (refus, sortie illisible, délai dépassé, erreur inconnue), décompté pour elle.
+ * Nature of an LLM failure. `auth`: Claude is no longer signed in (expired or revoked token, "Please run /login", key
+ * refused); `outage`: computer or service outage (CLI not found, network, subscription limit or quotas,
+ * overload). Those two affect every conversation: no attempt is counted. `conversation`: failure on
+ * this entry (refusal, unreadable output, timeout, unknown error), counted for it.
  */
 export type FailureKind = "auth" | "outage" | "conversation"
 
 /**
- * `failed` : le LLM n'a rien donné d'utilisable. Aucun item n'est produit et la conversation n'est pas marquée comme
- * traitée : elle sera redistillée à la prochaine synchro (jamais par l'heuristique).
- * `signature` : pour un échec sans réponse du modèle (délai, erreur inconnue), de quoi reconnaître « tous les appels
- * échouent de la même façon ». Un tel échec ne prouve rien sur la conversation à lui seul. Absente quand le modèle a
- * répondu (refus, sortie illisible) : l'échec tient à la conversation.
+ * `failed`: the LLM gave nothing usable. No item is produced and the conversation is not marked as
+ * processed: it will be distilled again on the next sync (never by the heuristic).
+ * `signature`: for a failure without an answer from the model (timeout, unknown error), something to recognize "every call
+ * fails the same way". Such a failure proves nothing about the conversation on its own. Missing when the model
+ * answered (refusal, unreadable output): the failure is down to the conversation.
  */
 export type DistillResult = {
   items: KnowledgeItemInput[]
@@ -53,16 +53,16 @@ export type DistillResult = {
 
 export type Failure = { error: string; failure: FailureKind; signature?: string }
 
-// Motifs d'erreurs de la CLI ou de l'API. Sur une réponse du modèle, ils ne servent qu'à la juger non probante (voir
-// unreadableFailure), jamais à en faire une panne. Alternatives simples, quantificateurs bornés : temps linéaire.
+// Error patterns of the CLI or the API. On a model answer, they only serve to judge it inconclusive (see
+// unreadableFailure), never to turn it into an outage. Simple alternatives, bounded quantifiers: linear time.
 const AUTH_FAILURE =
   /please run \/login|\/login\b|not logged in|oauth token|token (?:has )?expired|token (?:has been |was )?revoked|authentication_error|authentication failed|failed to authenticate|invalid api key|invalid bearer token|invalid x-api-key|unauthori[sz]ed|(?:api error|status|http)\W{0,3}401\b/i
-// Limites d'abonnement de la CLI actuelle : « You've hit your session limit · resets 3pm » (weekly, Opus…),
-// « Session limit reached », « 5-hour limit reached », « You're out of usage credits », « Your org is out of usage ».
+// Subscription limits of the current CLI: "You've hit your session limit · resets 3pm" (weekly, Opus…),
+// "Session limit reached", "5-hour limit reached", "You're out of usage credits", "Your org is out of usage".
 const OUTAGE_FAILURE =
   /\b(?:ENOENT|EACCES|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH)\b|fetch failed|connection error|network error|socket hang up|overloaded|(?:session|weekly|opus|usage|hour|spend|rate)[ _-]?limit|(?:hit|reached) your [\w'’ -]{0,30}limit|out of usage|credit balance|quota|permission_error|(?:api error|status|http)\W{0,3}(?:403|429|5\d\d)\b/i
 
-/** Classe un message d'erreur de la CLI `claude` ou de l'API : connexion perdue, panne générale, ou propre à la requête. */
+/** Classifies an error message from the `claude` CLI or the API: lost sign-in, general outage, or specific to the request. */
 export function classifyFailure(text: string): FailureKind {
   if (AUTH_FAILURE.test(text)) return "auth"
   if (OUTAGE_FAILURE.test(text)) return "outage"
@@ -70,8 +70,8 @@ export function classifyFailure(text: string): FailureKind {
 }
 
 /**
- * Statut HTTP de l'erreur d'API qui a terminé un `claude -p` (champ numérique `api_error_status` de l'enveloppe JSON) :
- * 401/403 → connexion perdue ; 429, 529 et 5xx → panne (limite d'abonnement, surcharge). Sinon null : on lit le texte.
+ * HTTP status of the API error that ended a `claude -p` (numeric `api_error_status` field of the JSON envelope):
+ * 401/403 → lost sign-in; 429, 529 and 5xx → outage (subscription limit, overload). Otherwise null: the text is read.
  */
 export function statusFailure(status: unknown): FailureKind | null {
   if (typeof status !== "number") return null
@@ -80,17 +80,17 @@ export function statusFailure(status: unknown): FailureKind | null {
   return null
 }
 
-/** Claude Code n'est plus connecté : quoi faire (affiché par sync et refresh-status). */
+/** Claude Code is no longer signed in: what to do (shown by sync and refresh-status). */
 export function claudeAuthHelp(detail?: string): string {
   return (
-    `Claude Code n'est plus connecté sur ce poste : le jeton Claude a expiré ou a été révoqué${detail ? ` (« ${truncate(detail, 160)} »)` : ""}. ` +
-    `Lancez \`claude setup-token\`, puis \`${selfCommand()} init --claude-token <jeton>\` (ou \`claude /login\`).`
+    `Claude Code is no longer signed in on this computer: the Claude token has expired or was revoked${detail ? ` ("${truncate(detail, 160)}")` : ""}. ` +
+    `Run \`claude setup-token\`, then \`${selfCommand()} init --claude-token <token>\` (or \`claude /login\`).`
   )
 }
 
-/** Clé API refusée (distillation par le SDK). */
+/** API key refused (distillation through the SDK). */
 export function apiAuthHelp(detail?: string): string {
-  return `Clé API Anthropic refusée${detail ? ` (« ${truncate(detail, 160)} »)` : ""} : vérifiez-la, ou remplacez-la avec \`init --anthropic-key <clé>\`.`
+  return `Anthropic API key refused${detail ? ` ("${truncate(detail, 160)}")` : ""}: check it, or replace it with \`init --anthropic-key <key>\`.`
 }
 
 export type Distiller = {
@@ -100,9 +100,9 @@ export type Distiller = {
 }
 
 /**
- * Comment lancer `cmd` : sous Windows, un .cmd / .bat (npm, npx, claude installé par npm) ne se lance que via le shell,
- * qui ne cite rien lui-même (chemins avec espaces : « C:\Users\Jean Dupont\… ») ; un .exe se lance directement, sans
- * shell, arguments vides compris. Ailleurs, jamais de shell.
+ * How to run `cmd`: on Windows, a .cmd / .bat (npm, npx, claude installed by npm) only starts through the shell,
+ * which quotes nothing itself (paths with spaces: "C:\Users\Jane Doe\…"); an .exe starts directly, without a
+ * shell, empty arguments included. Elsewhere, never a shell.
  */
 export function spawnTarget(cmd: string, args: string[], platform: NodeJS.Platform = process.platform): { cmd: string; args: string[]; shell: boolean } {
   const shell = platform === "win32" && /\.(cmd|bat)$/i.test(cmd)
@@ -111,7 +111,7 @@ export function spawnTarget(cmd: string, args: string[], platform: NodeJS.Platfo
   return { cmd: q(cmd), args: args.map(q), shell }
 }
 
-/** Cherche un exécutable dans le PATH (gère PATHEXT sous Windows). */
+/** Looks for an executable in the PATH (handles PATHEXT on Windows). */
 export function findOnPath(cmd: string, pathEnv = process.env.PATH ?? ""): string | null {
   const exts = process.platform === "win32" ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").concat([""]) : [""]
   for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
@@ -122,7 +122,7 @@ export function findOnPath(cmd: string, pathEnv = process.env.PATH ?? ""): strin
         if (process.platform !== "win32") accessSync(p, constants.X_OK)
         return p
       } catch {
-        // suivant
+        // next
       }
     }
   }
@@ -133,27 +133,27 @@ export function apiKey(cfg: Pick<Config, "anthropic_api_key">): string | undefin
   return cfg.anthropic_api_key || process.env.ANTHROPIC_API_KEY || undefined
 }
 
-/** Quel distillateur serait utilisé, et pourquoi. */
+/** Which distiller would be used, and why. */
 export function pickDistiller(cfg: Pick<Config, "anthropic_api_key" | "use_claude_cli">, force?: DistillerKind): { kind: DistillerKind; reason: string; claudePath?: string } {
   const claudePath = findOnPath("claude") ?? undefined
-  if (force === "heuristic") return { kind: "heuristic", reason: "forcé par --distiller" }
-  if (force === "claude-api") return { kind: "claude-api", reason: "forcé par --distiller" }
-  if (force === "claude-cli") return { kind: "claude-cli", reason: "forcé par --distiller", claudePath }
-  if (apiKey(cfg)) return { kind: "claude-api", reason: cfg.anthropic_api_key ? "clé API dans la config" : "ANTHROPIC_API_KEY définie" }
-  if (cfg.use_claude_cli !== false && claudePath) return { kind: "claude-cli", reason: `CLI trouvée (${claudePath})`, claudePath }
+  if (force === "heuristic") return { kind: "heuristic", reason: "forced by --distiller" }
+  if (force === "claude-api") return { kind: "claude-api", reason: "forced by --distiller" }
+  if (force === "claude-cli") return { kind: "claude-cli", reason: "forced by --distiller", claudePath }
+  if (apiKey(cfg)) return { kind: "claude-api", reason: cfg.anthropic_api_key ? "API key in the config" : "ANTHROPIC_API_KEY set" }
+  if (cfg.use_claude_cli !== false && claudePath) return { kind: "claude-cli", reason: `CLI found (${claudePath})`, claudePath }
   return {
     kind: "heuristic",
-    reason: cfg.use_claude_cli === false ? "CLI Claude désactivée (use_claude_cli: false) et pas de clé API" : "ni clé API ni CLI `claude` dans le PATH",
+    reason: cfg.use_claude_cli === false ? "Claude CLI disabled (use_claude_cli: false) and no API key" : "neither an API key nor a `claude` CLI in the PATH",
   }
 }
 
-/** Extrait le premier objet JSON d'un texte (tolère blocs de code et texte autour). */
+/** Extracts the first JSON object of a text (tolerates code blocks and text around it). */
 export function extractJsonObject(text: string): unknown {
   const t = text.replace(/```(?:json)?/gi, "").trim()
   try {
     return JSON.parse(t)
   } catch {
-    // on cherche l'objet le plus large
+    // we look for the widest object
   }
   const start = t.indexOf("{")
   const end = t.lastIndexOf("}")
@@ -165,7 +165,7 @@ export function extractJsonObject(text: string): unknown {
   }
 }
 
-/** Valide et complète les items renvoyés par un LLM (source, zone connue, bornes). */
+/** Validates and completes the items returned by an LLM (source, known zone, bounds). */
 export function normalizeItems(raw: unknown, conv: Conversation, zones: ZoneHint[], fallbackZone: string): KnowledgeItemInput[] {
   const list = Array.isArray(raw) ? raw : Array.isArray((raw as { items?: unknown })?.items) ? (raw as { items: unknown[] }).items : []
   const zoneIds = new Set(zones.map((z) => z.id))
@@ -188,7 +188,7 @@ export function normalizeItems(raw: unknown, conv: Conversation, zones: ZoneHint
   return out
 }
 
-/** Analyse la sortie de `claude -p --output-format json` ({ result: "…" }). */
+/** Parses the output of `claude -p --output-format json` ({ result: "…" }). */
 export function parseCliOutput(stdout: string, conv: Conversation, zones: ZoneHint[], fallbackZone: string): KnowledgeItemInput[] | null {
   const envelope = extractJsonObject(stdout) as { result?: unknown; is_error?: boolean } | null
   if (!envelope || envelope.is_error) return null
@@ -197,7 +197,7 @@ export function parseCliOutput(stdout: string, conv: Conversation, zones: ZoneHi
   return normalizeItems(inner, conv, zones, fallbackZone)
 }
 
-/** Résultat d'un `claude -p` : sortie standard, ou erreur (lancement impossible, délai dépassé, code de sortie non nul). */
+/** Result of a `claude -p`: standard output, or an error (cannot start, timeout, non-zero exit code). */
 export type ClaudeCliRun = { stdout: string; error?: string; failure?: FailureKind; signature?: string }
 
 type CliEnvelope = { result?: unknown; is_error?: unknown; api_error_status?: unknown }
@@ -207,21 +207,21 @@ function cliEnvelope(stdout: string): CliEnvelope | null {
   return e && typeof e === "object" ? (e as CliEnvelope) : null
 }
 
-/** Texte d'erreur lisible d'une CLI qui a échoué : stderr, sinon le champ `result` de l'enveloppe JSON, sinon stdout. */
+/** Readable error text of a CLI that failed: stderr, otherwise the `result` field of the JSON envelope, otherwise stdout. */
 function cliErrorText(stdout: string, stderr: string, envelope: CliEnvelope | null): string {
   if (stderr.trim()) return stderr.trim()
   return typeof envelope?.result === "string" ? envelope.result.trim() : stdout.trim()
 }
 
 /**
- * Échec d'un `claude -p` (processus, délai, ou enveloppe `is_error` avec un code 0), ou null si la CLI a répondu.
- * Une réponse du modèle qui n'est pas du JSON exploitable n'est pas traitée ici (c'est un échec propre à l'entrée).
+ * Failure of a `claude -p` (process, timeout, or `is_error` envelope with code 0), or null if the CLI answered.
+ * A model answer that is not usable JSON is not handled here (it is a failure specific to the entry).
  */
 export function cliFailure(run: ClaudeCliRun): Failure | null {
   if (run.error) return { error: run.error, failure: run.failure ?? classifyFailure(run.error), ...(run.signature ? { signature: run.signature } : {}) }
   const envelope = cliEnvelope(run.stdout)
   if (envelope?.is_error !== true) return null
-  const text = typeof envelope.result === "string" && envelope.result.trim() ? envelope.result.trim() : "erreur sans détail"
+  const text = typeof envelope.result === "string" && envelope.result.trim() ? envelope.result.trim() : "error without details"
   const failure = statusFailure(envelope.api_error_status) ?? classifyFailure(text)
   const error = truncate(text, 200)
   return failure === "conversation" ? { error, failure, signature: truncate(text, 160) } : { error, failure }
@@ -229,7 +229,7 @@ export function cliFailure(run: ClaudeCliRun): Failure | null {
 
 let cliFlags: string[] | null = null
 
-/** Options facultatives selon la version de la CLI : pas de session enregistrée, aucun outil. */
+/** Optional options depending on the CLI version: no saved session, no tools. */
 function detectCliFlags(claudePath: string): string[] {
   if (cliFlags) return cliFlags
   const t = spawnTarget(claudePath, ["--help"])
@@ -237,26 +237,26 @@ function detectCliFlags(claudePath: string): string[] {
   const text = `${help.stdout ?? ""}${help.stderr ?? ""}`
   cliFlags = []
   if (text.includes("--no-session-persistence")) cliFlags.push("--no-session-persistence")
-  // `--tools ""` (aucun outil) : pas via le shell de Windows (claude.cmd), qui perdrait l'argument vide.
+  // `--tools ""` (no tools): not through the Windows shell (claude.cmd), which would lose the empty argument.
   if (/--tools\b/.test(text) && !t.shell) cliFlags.push("--tools", "")
-  // Jamais `--bare` : ce mode ignore CLAUDE_CODE_OAUTH_TOKEN (le jeton de `init --claude-token`), même si la CLI le propose.
+  // Never `--bare`: that mode ignores CLAUDE_CODE_OAUTH_TOKEN (the token from `init --claude-token`), even if the CLI offers it.
   return cliFlags
 }
 
-/** Arguments de chaque `claude -p` (exportés pour les tests : jamais `--bare`). */
+/** Arguments of each `claude -p` (exported for the tests: never `--bare`). */
 export function claudeCliArgs(claudePath: string): string[] {
   return ["-p", "--output-format", "json", "--model", "sonnet", ...detectCliFlags(claudePath)].filter((a) => a !== "--bare")
 }
 
 export type ClaudeCliOptions = {
-  /** Jeton longue durée (`claude setup-token`, config claude_oauth_token) : transmis en CLAUDE_CODE_OAUTH_TOKEN. */
+  /** Long-lived token (`claude setup-token`, config claude_oauth_token): passed as CLAUDE_CODE_OAUTH_TOKEN. */
   oauthToken?: string
 }
 
 /**
- * Environnement de chaque `claude -p` : session marquée interne (nos hooks l'ignorent), jeton Claude Code si configuré.
- * CLAUDE_CODE_SIMPLE est retiré : c'est l'équivalent de `--bare`, qui ignore CLAUDE_CODE_OAUTH_TOKEN. Il est hérité
- * quand brain.mjs tourne depuis une session `claude --bare` (outil Bash de Claude Code, prompt d'installation).
+ * Environment of each `claude -p`: session marked internal (our hooks ignore it), Claude Code token if configured.
+ * CLAUDE_CODE_SIMPLE is removed: it is the equivalent of `--bare`, which ignores CLAUDE_CODE_OAUTH_TOKEN. It is inherited
+ * when brain.mjs runs from a `claude --bare` session (Claude Code's Bash tool, install prompt).
  */
 export function claudeCliEnv(opts: ClaudeCliOptions = {}, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, COMPANY_BRAIN_INTERNAL: "1" }
@@ -266,15 +266,15 @@ export function claudeCliEnv(opts: ClaudeCliOptions = {}, base: NodeJS.ProcessEn
   return env
 }
 
-/** Options de `claude -p` tirées de la config. */
+/** `claude -p` options taken from the config. */
 export function claudeCliOptions(cfg: Partial<Pick<Config, "claude_oauth_token">> | null | undefined): ClaudeCliOptions {
   return cfg?.claude_oauth_token ? { oauthToken: cfg.claude_oauth_token } : {}
 }
 
-/** Ne laisse jamais le jeton Claude Code apparaître dans un message d'erreur. */
+/** Never lets the Claude Code token appear in an error message. */
 function hideToken(s: string, opts: ClaudeCliOptions): string {
   const t = opts.oauthToken?.trim()
-  return t && t.length >= 8 ? s.split(t).join("[jeton masqué]") : s
+  return t && t.length >= 8 ? s.split(t).join("[token redacted]") : s
 }
 
 export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120_000, opts: ClaudeCliOptions = {}): Promise<ClaudeCliRun> {
@@ -300,23 +300,23 @@ export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120
         windowsHide: true,
       })
     } catch (err) {
-      done({ stdout: "", error: `lancement de \`claude\` impossible : ${(err as Error).message}`, failure: "outage" })
+      done({ stdout: "", error: `cannot start \`claude\`: ${(err as Error).message}`, failure: "outage" })
       return
     }
     timer = setTimeout(() => {
       child.kill("SIGTERM")
-      // Délai dépassé : propre à cette entrée, sauf si tous les appels de la synchro finissent pareil (panne).
-      done({ stdout, error: `délai de ${Math.round(timeoutMs / 1000)} s dépassé`, failure: "conversation", signature: "délai dépassé" })
+      // Timeout: specific to this entry, unless every call of the sync ends the same way (outage).
+      done({ stdout, error: `timeout of ${Math.round(timeoutMs / 1000)} s exceeded`, failure: "conversation", signature: "timeout" })
     }, timeoutMs)
     child.stdout.on("data", (d: Buffer) => (stdout += d.toString("utf8")))
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")))
-    child.on("error", (err) => done({ stdout, error: `lancement de \`claude\` impossible : ${err.message}`, failure: "outage" }))
+    child.on("error", (err) => done({ stdout, error: `cannot start \`claude\`: ${err.message}`, failure: "outage" }))
     child.on("close", (code) => {
       if (code === 0) return done({ stdout })
       const envelope = cliEnvelope(stdout)
       const text = cliErrorText(stdout, stderr, envelope)
-      // Classé sur le statut HTTP de l'enveloppe s'il y en a un, sinon sur le texte d'erreur (stderr, champ `result`),
-      // jamais sur l'enveloppe brute (durées, jetons…).
+      // Classified on the envelope's HTTP status if there is one, otherwise on the error text (stderr, `result` field),
+      // never on the raw envelope (durations, tokens…).
       const failure = statusFailure(envelope?.api_error_status) ?? classifyFailure(`${stderr}\n${text}`)
       const error = `code ${code}${text ? ` : ${truncate(text, 200)}` : ""}`
       done(failure === "conversation" ? { stdout, error, failure, signature: truncate(hideToken(text, opts), 160) || `code ${code}` } : { stdout, error, failure })
@@ -327,18 +327,18 @@ export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120
 }
 
 /**
- * Sortie de `claude -p` sans JSON exploitable. En général le modèle a répondu (refus, prose) : échec propre à la
- * conversation. Mais une sortie vide, ou un texte court qui se lit comme une erreur de la CLI (limite d'abonnement,
- * connexion…), ne prouve rien sur la conversation : traité comme une erreur inconnue (avec signature), jamais comme
- * une panne, pour qu'une vraie réponse qui parle de « rate limit » ne bloque pas la file.
+ * `claude -p` output without usable JSON. Usually the model answered (refusal, prose): failure specific to the
+ * conversation. But an empty output, or a short text that reads like a CLI error (subscription limit,
+ * sign-in…), proves nothing about the conversation: treated as an unknown error (with a signature), never as
+ * an outage, so that a real answer that talks about "rate limit" does not block the queue.
  */
 export function unreadableFailure(stdout: string): Failure {
   const envelope = cliEnvelope(stdout)
   const text = (typeof envelope?.result === "string" ? envelope.result : envelope ? "" : stdout).trim()
-  // Rien du tout : le modèle n'a pas répondu, ça ne prouve rien non plus.
-  if (!text) return { error: "sortie de `claude -p` vide", failure: "conversation", signature: "sortie vide" }
-  if (text.length <= 300 && classifyFailure(text) !== "conversation") return { error: `réponse inattendue de \`claude -p\` : ${truncate(text, 160)}`, failure: "conversation", signature: truncate(text, 160) }
-  return { error: "sortie de `claude -p` illisible : refus ou réponse hors format", failure: "conversation" }
+  // Nothing at all: the model did not answer, that proves nothing either.
+  if (!text) return { error: "empty `claude -p` output", failure: "conversation", signature: "empty output" }
+  if (text.length <= 300 && classifyFailure(text) !== "conversation") return { error: `unexpected answer from \`claude -p\`: ${truncate(text, 160)}`, failure: "conversation", signature: truncate(text, 160) }
+  return { error: "unreadable `claude -p` output: refusal or answer out of format", failure: "conversation" }
 }
 
 function heuristic(conv: Conversation, zones: ZoneHint[], fallbackZone: string): KnowledgeItemInput[] {
@@ -348,7 +348,7 @@ function heuristic(conv: Conversation, zones: ZoneHint[], fallbackZone: string):
 type HttpTrace = { status?: number; body?: string; network?: string; thrown?: string }
 const httpTrace = new AsyncLocalStorage<HttpTrace>()
 
-/** fetch du SDK Anthropic : note, pour l'appel en cours (AsyncLocalStorage), le dernier statut HTTP ou l'erreur réseau. */
+/** Anthropic SDK fetch: records, for the call in progress (AsyncLocalStorage), the last HTTP status or the network error. */
 const tracedFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
   const trace = httpTrace.getStore()
   try {
@@ -365,16 +365,16 @@ const tracedFetch = async (input: string | URL | Request, init?: RequestInit): P
   }
 }
 
-/** Échec d'une distillation par l'API, d'après le dernier appel HTTP. */
+/** Failure of a distillation through the API, from the last HTTP call. */
 export function apiFailure(trace: { status?: number; body?: string; network?: string; thrown?: string }): Failure {
-  if (trace.network) return { error: `API Anthropic injoignable : ${truncate(trace.network, 160)}`, failure: "outage" }
+  if (trace.network) return { error: `Anthropic API unreachable: ${truncate(trace.network, 160)}`, failure: "outage" }
   const s = trace.status
-  if (s === undefined) return { error: `aucune réponse de l'API${trace.thrown ? ` : ${truncate(trace.thrown, 160)}` : ""}`, failure: "conversation", signature: "sans réponse" }
-  // Le modèle a répondu (refus, sortie hors schéma) : Claude fonctionne, l'échec tient à cette conversation.
-  if (s >= 200 && s < 300) return { error: "réponse Claude vide, refusée ou hors format", failure: "conversation" }
+  if (s === undefined) return { error: `no answer from the API${trace.thrown ? `: ${truncate(trace.thrown, 160)}` : ""}`, failure: "conversation", signature: "no answer" }
+  // The model answered (refusal, output out of schema): Claude works, the failure is down to this conversation.
+  if (s >= 200 && s < 300) return { error: "Claude answer empty, refused or out of format", failure: "conversation" }
   const detail = `HTTP ${s}${trace.body ? ` ${truncate(trace.body.replace(/\s+/g, " "), 160)}` : ""}`
-  if (s === 401) return { error: `API Anthropic : ${detail}`, failure: "auth" }
-  if (s === 403 || s === 408 || s === 429 || s >= 500) return { error: `API Anthropic : ${detail}`, failure: "outage" }
+  if (s === 401) return { error: `Anthropic API: ${detail}`, failure: "auth" }
+  if (s === 403 || s === 408 || s === 429 || s >= 500) return { error: `Anthropic API: ${detail}`, failure: "outage" }
   const failure = classifyFailure(trace.body ?? "")
   return failure === "conversation" ? { error: `API Anthropic : ${detail}`, failure, signature: `HTTP ${s}` } : { error: `API Anthropic : ${detail}`, failure }
 }
@@ -386,7 +386,7 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
     if (key || process.env.ANTHROPIC_AUTH_TOKEN) {
       const { distillWithClaude } = await import("@brain/core/claude")
       const { default: Anthropic } = await import("@anthropic-ai/sdk")
-      // Statut HTTP de chaque appel (via un fetch instrumenté) : distingue clé refusée, panne et refus du modèle.
+      // HTTP status of each call (through an instrumented fetch): tells apart a refused key, an outage and a model refusal.
       const client = new Anthropic({ ...(key ? { apiKey: key } : {}), fetch: tracedFetch })
       return {
         kind: "claude-api",
@@ -404,14 +404,14 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
         },
       }
     }
-    if (force === "claude-api") throw new UserError("--distiller claude-api : aucune clé API (init --anthropic-key <clé> ou ANTHROPIC_API_KEY).")
+    if (force === "claude-api") throw new UserError("--distiller claude-api: no API key (init --anthropic-key <key> or ANTHROPIC_API_KEY).")
   }
   if (pick.kind === "claude-cli" && pick.claudePath) {
     const claudePath = pick.claudePath
     const cliOpts = claudeCliOptions(cfg)
     return {
       kind: "claude-cli",
-      reason: pick.reason + (cliOpts.oauthToken ? ", jeton Claude Code de la config" : ""),
+      reason: pick.reason + (cliOpts.oauthToken ? ", Claude Code token from the config" : ""),
       concurrency: 2,
       async distill(conv, zones, fallbackZone) {
         const run = await runClaudeCli(claudePath, buildCliExtractionPrompt(conv, zones), 120_000, cliOpts)
@@ -423,10 +423,10 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
       },
     }
   }
-  if (force === "claude-cli") throw new UserError("--distiller claude-cli : CLI `claude` introuvable dans le PATH.")
+  if (force === "claude-cli") throw new UserError("--distiller claude-cli: `claude` CLI not found in the PATH.")
   return {
     kind: "heuristic",
-    reason: pick.kind === "heuristic" ? pick.reason : `${DISTILLER_LABELS[pick.kind]} indisponible`,
+    reason: pick.kind === "heuristic" ? pick.reason : `${DISTILLER_LABELS[pick.kind]} unavailable`,
     concurrency: 8,
     async distill(conv, zones, fallbackZone) {
       return { items: heuristic(conv, zones, fallbackZone), used: "heuristic" }
@@ -435,8 +435,8 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
 }
 
 /**
- * Dernier filet de sécurité avant envoi : re-masquage (avec les secrets du poste, pris tels quels) et validation du contrat.
- * `seen` : dédoublonnage partagé entre appels.
+ * Last safety net before sending: redacted again (with the computer's secrets, taken as is) and contract validation.
+ * `seen`: deduplication shared between calls.
  */
 export function finalizeItems(items: KnowledgeItemInput[], seen = new Set<string>(), literals: string[] = []): KnowledgeItemInput[] {
   const out: KnowledgeItemInput[] = []

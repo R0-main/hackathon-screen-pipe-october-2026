@@ -1,5 +1,5 @@
-// Installation locale : hooks Claude Code (settings.json), synchro planifiée (launchd / crontab / schtasks),
-// pipe Screenpipe « brain-sync » (~/.screenpipe/pipes), désinstallation.
+// Local install: Claude Code hooks (settings.json), scheduled sync (launchd / crontab / schtasks),
+// "brain-sync" Screenpipe pipe (~/.screenpipe/pipes), uninstall.
 
 import { spawnSync } from "node:child_process"
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs"
@@ -22,7 +22,7 @@ export type HookCommand = { type?: string; command?: string; args?: unknown; tim
 type HookGroup = { matcher?: string; hooks?: HookCommand[]; [k: string]: unknown }
 export type Settings = { hooks?: Record<string, HookGroup[] | unknown>; [k: string]: unknown }
 
-/** Arguments du client après Node.js : le dossier du client suit quand il est personnalisé (hooks et MCP n'héritent pas de l'environnement). */
+/** Client arguments after Node.js: the client folder follows when it is customized (hooks and MCP do not inherit the environment). */
 function clientArgs(script: string, cmd: string): string[] {
   return [script, cmd, ...(customHome() ? ["--home", brainHome()] : [])]
 }
@@ -31,15 +31,15 @@ export function hookArgs(script = selfScript()): string[] {
   return clientArgs(script, "hook")
 }
 
-/** Forme « shell » : une ligne passée à sh (macOS, Linux) ou à Git Bash (Windows). */
+/** "Shell" form: a line passed to sh (macOS, Linux) or to Git Bash (Windows). */
 export function hookCommand(execPath = process.execPath, script = selfScript()): string {
   return [execPath, ...hookArgs(script)].map((a) => (a === "hook" || a === "--home" ? a : `"${a}"`)).join(" ")
 }
 
-/** Version de Claude Code à partir de laquelle un hook peut être lancé sans shell (`command` + `args`). */
+/** Claude Code version from which a hook can be started without a shell (`command` + `args`). */
 export const EXEC_HOOKS_SINCE = "2.1.139"
 
-/** Git Bash (Windows) : sans lui, Claude Code passe les hooks en ligne de commande à PowerShell. */
+/** Git Bash (Windows): without it, Claude Code passes the hooks' command line to PowerShell. */
 export function gitBashInstalled(env: NodeJS.ProcessEnv = process.env): boolean {
   const candidates = [
     env.CLAUDE_CODE_GIT_BASH_PATH,
@@ -52,10 +52,10 @@ export function gitBashInstalled(env: NodeJS.ProcessEnv = process.env): boolean 
 }
 
 /**
- * Notre hook. Windows : forme « exec » (node.exe lancé directement avec ses arguments), car sans Git Bash Claude Code
- * passe la ligne à PowerShell, qui n'accepte pas `"node.exe" "brain.mjs" hook`. Version de Claude Code inconnue : la
- * forme « exec » seulement s'il n'y a pas de Git Bash (sinon la ligne de commande, qui y marche depuis toujours).
- * Ailleurs, ou avec un Claude Code trop ancien pour la forme « exec », la ligne de commande habituelle.
+ * Our hook. Windows: "exec" form (node.exe started directly with its arguments), because without Git Bash Claude Code
+ * passes the line to PowerShell, which does not accept `"node.exe" "brain.mjs" hook`. Unknown Claude Code version: the
+ * "exec" form only if there is no Git Bash (otherwise the command line, which has always worked there).
+ * Elsewhere, or with a Claude Code too old for the "exec" form, the usual command line.
  */
 export function hookEntry(
   opts: { platform?: NodeJS.Platform; claudeVersion?: string | null; gitBash?: boolean; execPath?: string; script?: string } = {},
@@ -68,7 +68,7 @@ export function hookEntry(
     : { type: "command", command: hookCommand(execPath, script), timeout: HOOK_TIMEOUT_S }
 }
 
-/** « 2.1.38 » < « 2.1.139 » (comparaison numérique, composante par composante). */
+/** "2.1.38" < "2.1.139" (numeric comparison, component by component). */
 export function versionLt(a: string, b: string): boolean {
   const pa = a.split(".").map((n) => Number.parseInt(n, 10) || 0)
   const pb = b.split(".").map((n) => Number.parseInt(n, 10) || 0)
@@ -76,7 +76,7 @@ export function versionLt(a: string, b: string): boolean {
   return false
 }
 
-/** Version de Claude Code installée (`claude --version` → « 2.1.302 (Claude Code) »), ou null. */
+/** Installed Claude Code version (`claude --version` → "2.1.302 (Claude Code)"), or null. */
 export function claudeCodeVersion(claude = findOnPath("claude")): string | null {
   if (!claude) return null
   const t = spawnTarget(claude, ["--version"])
@@ -84,7 +84,7 @@ export function claudeCodeVersion(claude = findOnPath("claude")): string | null 
   return /(\d+\.\d+\.\d+)/.exec(`${r.stdout ?? ""}`)?.[1] ?? null
 }
 
-/** La ligne de commande complète d'un hook, quelle que soit sa forme (chaîne seule, ou commande et arguments). */
+/** The full command line of a hook, whatever its form (string alone, or command and arguments). */
 export function hookText(h: unknown): string {
   if (typeof h === "string") return h
   if (!h || typeof h !== "object") return ""
@@ -92,7 +92,7 @@ export function hookText(h: unknown): string {
   return [typeof command === "string" ? command : "", ...(Array.isArray(args) ? args.map(String) : [])].join(" ")
 }
 
-/** Un hook à nous (accepte l'objet du hook ou sa seule commande). */
+/** One of our hooks (accepts the hook object or only its command). */
 export function isOurHook(h: unknown): boolean {
   return OUR_HOOK_RE.test(hookText(h))
 }
@@ -101,15 +101,15 @@ function sameHook(h: HookCommand, want: HookCommand): boolean {
   return h.type === want.type && h.command === want.command && JSON.stringify(h.args ?? null) === JSON.stringify(want.args ?? null) && h.timeout === want.timeout
 }
 
-/** Groupe sans filtre (`matcher`) : le hook s'y déclenche à chaque fois. */
+/** Group without a filter (`matcher`): the hook fires there every time. */
 function unfiltered(g: HookGroup): boolean {
   return g.matcher === undefined || g.matcher === "" || g.matcher === "*"
 }
 
 /**
- * Ajoute nos hooks sans toucher au reste : idempotent, met à jour notre hook si le chemin (ou sa forme) a changé et
- * retire nos doublons (une copie restée sur un ancien chemin échouerait à chaque prompt).
- * Renvoie les nouveaux réglages et la liste des changements.
+ * Adds our hooks without touching the rest: idempotent, updates our hook if the path (or its form) changed and
+ * removes our duplicates (a copy left on an old path would fail on every prompt).
+ * Returns the new settings and the list of changes.
  */
 export function mergeHooks(settings: Settings, entry: HookCommand | string): { settings: Settings; changes: string[] } {
   const want: HookCommand = typeof entry === "string" ? { type: "command", command: entry, timeout: HOOK_TIMEOUT_S } : entry
@@ -119,7 +119,7 @@ export function mergeHooks(settings: Settings, entry: HookCommand | string): { s
   const changes: string[] = []
   for (const event of HOOK_EVENTS) {
     let groups = (Array.isArray(hooks[event]) ? hooks[event] : []) as HookGroup[]
-    // Le hook à garder s'il y en a plusieurs : déjà à jour et sans filtre, sinon sans filtre, sinon le premier.
+    // The hook to keep if there are several: already up to date and without a filter, otherwise without a filter, otherwise the first.
     const ours = groups.flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks.filter((h) => isOurHook(h)).map((h) => ({ g, h })) : []))
     const keep = (ours.find((o) => unfiltered(o.g) && sameHook(o.h, want)) ?? ours.find((o) => unfiltered(o.g)) ?? ours[0])?.h
     let found = false
@@ -136,25 +136,25 @@ export function mergeHooks(settings: Settings, entry: HookCommand | string): { s
         if (!sameHook(h, want)) {
           for (const k of ["type", "command", "args", "timeout", "shell"]) delete h[k]
           Object.assign(h, structuredClone(want))
-          changes.push(`${event} : commande mise à jour`)
+          changes.push(`${event}: command updated`)
         }
         return true
       })
     }
     if (duplicates) {
       groups = groups.filter((g) => !Array.isArray(g?.hooks) || g.hooks.length > 0)
-      changes.push(`${event} : ${duplicates} doublon(s) retiré(s)`)
+      changes.push(`${event}: ${duplicates} duplicate(s) removed`)
     }
     if (!found) {
       groups.push({ hooks: [structuredClone(want)] })
-      changes.push(`${event} : hook ajouté`)
+      changes.push(`${event}: hook added`)
     }
     hooks[event] = groups
   }
   return { settings: next, changes }
 }
 
-/** Retire uniquement nos hooks (et les groupes / clés devenus vides à cause de nous). */
+/** Removes only our hooks (and the groups / keys left empty because of us). */
 export function removeHooks(settings: Settings): { settings: Settings; removed: number } {
   const next: Settings = structuredClone(settings ?? {})
   if (!next.hooks || typeof next.hooks !== "object" || Array.isArray(next.hooks)) return { settings: next, removed: 0 }
@@ -187,7 +187,7 @@ export function readSettings(file: string): Settings {
   try {
     return JSON.parse(text) as Settings
   } catch {
-    throw new Error(`${file} n'est pas un JSON valide : corrigez-le avant de relancer (rien n'a été modifié).`)
+    throw new Error(`${file} is not valid JSON: fix it before running again (nothing was changed).`)
   }
 }
 
@@ -211,7 +211,7 @@ export function hooksInstalled(file = paths.claudeSettings()): boolean {
   }
 }
 
-/** Nos hooks, événement par événement (diagnostic) ; lève une erreur si settings.json n'est pas un JSON valide. */
+/** Our hooks, event by event (diagnosis); throws if settings.json is not valid JSON. */
 export function ourHooks(file = paths.claudeSettings()): Record<(typeof HOOK_EVENTS)[number], HookCommand[]> {
   const s = readSettings(file)
   const out = {} as Record<(typeof HOOK_EVENTS)[number], HookCommand[]>
@@ -227,44 +227,44 @@ export function installHooks(log: (s: string) => void = console.log, file = path
   const entry = hookEntry({ claudeVersion: process.platform === "win32" ? claudeCodeVersion() : null })
   const { settings, changes } = mergeHooks(before, entry)
   if (changes.length === 0) {
-    log(`Hooks déjà installés dans ${file} : rien à changer.`)
+    log(`Hooks already installed in ${file}: nothing to change.`)
     return { changes, backup: null }
   }
   const bak = backup(file)
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, JSON.stringify(settings, null, 2) + "\n")
-  log(`Hooks Claude Code installés dans ${file} :`)
+  log(`Claude Code hooks installed in ${file}:`)
   for (const c of changes) log(`  - ${c}`)
-  log(`  commande : ${hookText(entry)}`)
-  if (bak) log(`  sauvegarde de l'ancien fichier : ${bak}`)
-  log("Les autres réglages et hooks n'ont pas été touchés. Effet à la prochaine session Claude Code.")
+  log(`  command: ${hookText(entry)}`)
+  if (bak) log(`  backup of the old file: ${bak}`)
+  log("The other settings and hooks were not touched. Takes effect in the next Claude Code session.")
   return { changes, backup: bak }
 }
 
 export function uninstallHooks(log: (s: string) => void = console.log, file = paths.claudeSettings()): number {
   if (!existsSync(file)) {
-    log(`Pas de ${file} : aucun hook à retirer.`)
+    log(`No ${file}: no hook to remove.`)
     return 0
   }
   const { settings, removed } = removeHooks(readSettings(file))
   if (removed === 0) {
-    log("Aucun hook company-brain dans les réglages Claude Code.")
+    log("No company-brain hook in the Claude Code settings.")
     return 0
   }
   const bak = backup(file)
   writeFileSync(file, JSON.stringify(settings, null, 2) + "\n")
-  log(`${removed} hook(s) company-brain retiré(s) de ${file}${bak ? ` (sauvegarde : ${bak})` : ""}.`)
+  log(`${removed} company-brain hook(s) removed from ${file}${bak ? ` (backup: ${bak})` : ""}.`)
   return removed
 }
 
-// ——— Synchro planifiée ———
+// ——— Scheduled sync ———
 
 export const LAUNCHD_LABEL = "com.company-brain.sync"
 export const WINDOWS_TASK = "CompanyBrainSync"
 
 /**
- * Environnement de la synchro planifiée, relevé au moment de l'installation : cron et launchd partent d'un PATH minimal
- * (sans `claude`, donc sans distillation LLM) et ignorent les dossiers personnalisés.
+ * Environment of the scheduled sync, recorded at install time: cron and launchd start from a minimal PATH
+ * (without `claude`, so without LLM distillation) and ignore custom folders.
  */
 export function scheduleEnv(env: NodeJS.ProcessEnv = process.env, execPath = process.execPath, home = brainHome()): Record<string, string> {
   const dirs = [dirname(execPath)]
@@ -283,12 +283,12 @@ function shQuote(v: string): string {
 
 export function cronLine(execPath = process.execPath, script = selfScript(), home = brainHome(), env: Record<string, string> = {}): string {
   const vars = Object.entries(env).map(([k, v]) => `${k}=${shQuote(v)} `).join("")
-  // Dans un crontab, « % » veut dire saut de ligne : on l'échappe.
+  // In a crontab, "%" means a line break: we escape it.
   const cmd = `${vars}"${execPath}" "${script}" sync --scheduled >> "${join(home, "sync.log")}" 2>&1`.replace(/%/g, "\\%")
   return `*/15 * * * * ${cmd}`
 }
 
-/** Remplace notre ligne (s'il y en a une) et garde tout le reste du crontab. */
+/** Replaces our line (if there is one) and keeps the rest of the crontab. */
 export function mergeCrontab(existing: string, line: string): { text: string; changed: boolean } {
   const lines = existing.split("\n").filter((l, i, arr) => !(i === arr.length - 1 && l === ""))
   const others = lines.filter((l) => !OUR_SYNC_RE.test(l))
@@ -318,7 +318,7 @@ export function launchdPlist(execPath = process.execPath, script = selfScript(),
   const envXml = Object.entries(vars)
     .map(([k, v]) => `    <key>${xml(k)}</key>\n    <string>${xml(v)}</string>`)
     .join("\n")
-  // RunAtLoad false : rien ne part au chargement ; la première synchro planifiée a lieu 15 min plus tard.
+  // RunAtLoad false: nothing starts on load; the first scheduled sync happens 15 min later.
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -353,7 +353,7 @@ export function launchdPlistPath(): string {
   return join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
 }
 
-/** Windows : la commande reste courte (/TR ≤ 261 caractères) ; PATH et dossiers viennent de config.json (`sync --scheduled`). */
+/** Windows: the command stays short (/TR ≤ 261 characters); PATH and folders come from config.json (`sync --scheduled`). */
 export function windowsTaskArgs(execPath = process.execPath, script = selfScript(), home?: string): string[] {
   const tr = `"${execPath}" "${script}" sync --scheduled${home ? ` --home "${home}"` : ""}`
   return ["/Create", "/SC", "MINUTE", "/MO", "15", "/TN", WINDOWS_TASK, "/TR", tr, "/F"]
@@ -362,7 +362,7 @@ export function windowsTaskArgs(execPath = process.execPath, script = selfScript
 const RECENT_MS = 24 * 3_600_000
 const MAX_SCAN_BYTES = 64 * 1024 * 1024
 
-/** Session interne (nos `claude -p`, la session d'installation, un secret du poste collé) : jamais remontée, même sa suite. */
+/** Internal session (our `claude -p`, the install session, a pasted secret of the computer): never sent up, nor what follows it. */
 function looksInternalFile(file: string, secrets: string[], home: string): boolean {
   try {
     const st = statSync(file)
@@ -382,9 +382,9 @@ function looksInternalFile(file: string, secrets: string[], home: string): boole
 }
 
 /**
- * Point de départ de la synchro planifiée, pour TOUTES les sources : checkpoint Screenpipe à `at` (même s'il était plus
- * ancien, ou absent) et offsets de tous les fichiers Claude Code / Codex à leur fin actuelle. Ce qui précède n'a pas été
- * relu dans la simulation (ou y était reporté, ou tronqué) : il ne partira jamais tout seul.
+ * Starting point of the scheduled sync, for ALL sources: Screenpipe checkpoint at `at` (even if it was older,
+ * or missing) and offsets of all the Claude Code / Codex files at their current end. What came before was not
+ * read in the dry run (or was postponed there, or truncated): it will never be sent on its own.
  */
 export function baselineSources(
   state: State,
@@ -422,8 +422,8 @@ export function baselineSources(
 }
 
 /**
- * Avant de planifier : la synchro automatique part de maintenant pour toutes les sources (rien d'antérieur qui n'ait été
- * relu ne partira tout seul) et l'environnement courant est noté dans config.json pour `sync --scheduled`.
+ * Before scheduling: the automatic sync starts from now for every source (nothing earlier that was not
+ * read will be sent on its own) and the current environment is noted in config.json for `sync --scheduled`.
  */
 export function prepareSchedule(env: Record<string, string>, log: (s: string) => void = console.log) {
   const cfg = loadPartialConfig()
@@ -432,18 +432,18 @@ export function prepareSchedule(env: Record<string, string>, log: (s: string) =>
   saveState(state)
   if (cfg.url && cfg.token) saveConfig({ ...cfg, schedule_env: env })
   log(
-    `La synchro planifiée part de maintenant : elle n'envoie que l'activité à venir, jamais l'historique non relu` +
-      ` (Screenpipe à partir de maintenant, ${b.files} fichier(s) Claude Code / Codex repris à leur fin actuelle).`,
+    `The scheduled sync starts from now: it only sends upcoming activity, never history that was not read` +
+      ` (Screenpipe from now on, ${b.files} Claude Code / Codex file(s) resumed at their current end).`,
   )
   const claude = findOnPath("claude", env.PATH ?? "")
-  if (cfg.anthropic_api_key) log("Distillation planifiée : Claude (API Anthropic), clé enregistrée dans la config.")
+  if (cfg.anthropic_api_key) log("Scheduled distillation: Claude (Anthropic API), key saved in the config.")
   else if (cfg.use_claude_cli !== false && claude) {
-    log(`Distillation planifiée : Claude Code en local (\`claude -p\`, ${claude})${cfg.claude_oauth_token ? ", avec le jeton Claude Code de la config" : ""}.`)
+    log(`Scheduled distillation: local Claude Code (\`claude -p\`, ${claude})${cfg.claude_oauth_token ? ", with the Claude Code token from the config" : ""}.`)
     if (!cfg.claude_oauth_token)
-      log("Si la synchro planifiée n'arrive pas à utiliser votre session Claude Code : `claude setup-token`, puis `init --claude-token <jeton>` (le jeton reste dans config.json).")
-  } else log(`Distillation planifiée : heuristique locale (${cfg.use_claude_cli === false ? "CLI Claude désactivée" : "CLI `claude` introuvable dans le PATH transmis"}).`)
+      log("If the scheduled sync cannot use your Claude Code session: `claude setup-token`, then `init --claude-token <token>` (the token stays in config.json).")
+  } else log(`Scheduled distillation: local heuristic (${cfg.use_claude_cli === false ? "Claude CLI disabled" : "`claude` CLI not found in the PATH passed on"}).`)
   if (!cfg.anthropic_api_key && process.env.ANTHROPIC_API_KEY) {
-    log("ANTHROPIC_API_KEY n'est pas transmise à la synchro planifiée (elle n'est jamais écrite dans le planificateur) : `init --anthropic-key <clé>` pour l'utiliser.")
+    log("ANTHROPIC_API_KEY is not passed to the scheduled sync (it is never written into the scheduler): `init --anthropic-key <key>` to use it.")
   }
 }
 
@@ -461,7 +461,7 @@ export function scheduleInstalled(): boolean {
 
 export type ScheduleTarget = { execPath: string; script: string; home?: string }
 
-/** Node.js et script de la synchro planifiée installée (diagnostic) ; null si aucune, undefined si illisible. */
+/** Node.js and script of the installed scheduled sync (diagnosis); null if none, undefined if unreadable. */
 export function scheduleTarget(platform: NodeJS.Platform = process.platform): ScheduleTarget | null | undefined {
   if (platform === "darwin") {
     if (!existsSync(launchdPlistPath())) return null
@@ -497,7 +497,7 @@ export function parseTaskXmlTarget(xmlText: string): ScheduleTarget | undefined 
   const command = /<Command>([\s\S]*?)<\/Command>/.exec(xmlText)?.[1]
   const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xmlText)?.[1]
   if (!command || !args) return undefined
-  // schtasks écrit dans la page de code de la console : un chemin accentué (C:\Users\Jérôme) arrive abîmé, illisible.
+  // schtasks writes in the console's code page: a path with accents (C:\Users\Jérôme) arrives damaged, unreadable.
   if (/[\uFFFD?]/.test(command + args)) return undefined
   const script = /^\s*"([^"]+)"/.exec(unxml(args))?.[1]
   const home = /--home "([^"]+)"/.exec(unxml(args))?.[1]
@@ -511,9 +511,9 @@ export function installSchedule(log: (s: string) => void = console.log): boolean
 }
 
 /**
- * Synchro déjà planifiée (setup relancé) : la définition est réécrite avec le Node.js et le script actuels (après une
- * réinstallation ou une mise à jour de Node, l'ancienne pointerait dans le vide), SANS nouveau point de départ : rien de
- * ce qui attend d'être envoyé n'est sauté.
+ * Sync already scheduled (setup run again): the definition is rewritten with the current Node.js and script (after a
+ * reinstall or a Node update, the old one would point to nothing), WITHOUT a new starting point: nothing
+ * waiting to be sent is skipped.
  */
 export function refreshSchedule(log: (s: string) => void = console.log): boolean {
   const env = scheduleEnv(process.env, process.execPath)
@@ -522,7 +522,7 @@ export function refreshSchedule(log: (s: string) => void = console.log): boolean
   return writeSchedule(env, log)
 }
 
-/** Écrit la planification (launchd, crontab ou tâche Windows) avec le Node.js et le script actuels. */
+/** Writes the schedule (launchd, crontab or Windows task) with the current Node.js and script. */
 export function writeSchedule(env: Record<string, string>, log: (s: string) => void = console.log): boolean {
   const execPath = process.execPath
   const script = selfScript()
@@ -532,7 +532,7 @@ export function writeSchedule(env: Record<string, string>, log: (s: string) => v
     mkdirSync(dirname(file), { recursive: true })
     const changed = !existsSync(file) || readFileSync(file, "utf8") !== plist
     if (!changed && run("launchctl", ["list", LAUNCHD_LABEL]).ok) {
-      log(`Synchro déjà planifiée toutes les 15 min via launchd (${file}) : à jour.`)
+      log(`Sync already scheduled every 15 min through launchd (${file}): up to date.`)
       return true
     }
     if (changed) {
@@ -545,73 +545,75 @@ export function writeSchedule(env: Record<string, string>, log: (s: string) => v
       r = run("launchctl", ["bootstrap", `gui/${uid}`, file])
     }
     if (r.ok || /already loaded|service already/i.test(r.stderr)) {
-      log(`Synchro planifiée toutes les 15 min via launchd (${file}). Journal : ${paths.log()}`)
+      log(`Sync scheduled every 15 min through launchd (${file}). Log: ${paths.log()}`)
       return true
     }
-    log(`Impossible de charger le LaunchAgent (${r.stderr.trim()}). À lancer à la main :\n  launchctl load -w "${file}"`)
+    log(`Cannot load the LaunchAgent (${r.stderr.trim()}). To run by hand:\n  launchctl load -w "${file}"`)
     return false
   }
   if (process.platform === "win32") {
     const args = windowsTaskArgs(execPath, script, customHome() ? brainHome() : undefined)
     const r = run("schtasks", args)
     if (r.ok) {
-      log(`Synchro planifiée toutes les 15 min (tâche Windows « ${WINDOWS_TASK} »).`)
+      log(`Sync scheduled every 15 min (Windows task "${WINDOWS_TASK}").`)
       return true
     }
-    log(`Échec de schtasks (${r.stderr.trim()}). Relance \`install-schedule\` dans PowerShell ou cmd (pas dans Git Bash, qui transforme « /Create » en chemin).`)
+    log(`schtasks failed (${r.stderr.trim()}). Run \`install-schedule\` again in PowerShell or cmd (not in Git Bash, which turns "/Create" into a path).`)
     return false
   }
   const line = cronLine(execPath, script, brainHome(), env)
   const current = run("crontab", ["-l"])
   const existing = current.ok ? current.stdout : ""
   if (!current.ok && /not found|ENOENT/i.test(current.stderr)) {
-    log(`crontab est introuvable sur ce poste. Ajoutez cette ligne à votre planificateur :\n  ${line}`)
+    log(`crontab not found on this computer. Add this line to your scheduler:\n  ${line}`)
     return false
   }
   const { text, changed } = mergeCrontab(existing, line)
   if (!changed) {
-    log("Synchro déjà planifiée dans le crontab : rien à changer.")
+    log("Sync already scheduled in the crontab: nothing to change.")
     return true
   }
   const w = run("crontab", ["-"], text)
   if (w.ok) {
-    log(`Synchro planifiée toutes les 15 min dans le crontab :\n  ${line}`)
+    log(`Sync scheduled every 15 min in the crontab:\n  ${line}`)
     return true
   }
-  log(`Impossible d'écrire le crontab (${w.stderr.trim()}). Ajoutez cette ligne avec \`crontab -e\` :\n  ${line}`)
+  log(`Cannot write the crontab (${w.stderr.trim()}). Add this line with \`crontab -e\`:\n  ${line}`)
   return false
 }
 
 export function uninstallSchedule(log: (s: string) => void = console.log) {
   if (process.platform === "darwin") {
     const file = launchdPlistPath()
-    if (!existsSync(file)) return log("Aucune synchro launchd à retirer.")
+    if (!existsSync(file)) return log("No launchd sync to remove.")
     run("launchctl", ["unload", "-w", file])
     unlinkSync(file)
-    return log(`Synchro launchd retirée (${file}).`)
+    return log(`launchd sync removed (${file}).`)
   }
   if (process.platform === "win32") {
     const r = run("schtasks", ["/Delete", "/TN", WINDOWS_TASK, "/F"])
-    return log(r.ok ? `Tâche planifiée « ${WINDOWS_TASK} » supprimée.` : "Aucune tâche planifiée à supprimer.")
+    return log(r.ok ? `Scheduled task "${WINDOWS_TASK}" deleted.` : "No scheduled task to delete.")
   }
   const current = run("crontab", ["-l"])
-  if (!current.ok) return log("Aucun crontab : rien à retirer.")
+  if (!current.ok) return log("No crontab: nothing to remove.")
   const { text, removed } = removeFromCrontab(current.stdout)
-  if (!removed) return log("Aucune ligne company-brain dans le crontab.")
+  if (!removed) return log("No company-brain line in the crontab.")
   const w = text ? run("crontab", ["-"], text) : run("crontab", ["-r"])
-  log(w.ok ? "Ligne company-brain retirée du crontab." : `Impossible de modifier le crontab (${w.stderr.trim()}) : retirez la ligne « brain.mjs sync » avec \`crontab -e\`.`)
+  log(w.ok ? "company-brain line removed from the crontab." : `Cannot modify the crontab (${w.stderr.trim()}): remove the "brain.mjs sync" line with \`crontab -e\`.`)
 }
 
 // --- Pipe Screenpipe ------------------------------------------------------------------------------------------------
 
 export const PIPE_NAME = "brain-sync"
-/** Reconnaît notre pipe par son titre et sa commande, quel que soit le chemin du script (brain.mjs ou source). */
-export const PIPE_TITLE = "Cerveau d'entreprise, synchro"
+/** Recognizes our pipe by its title and its command, whatever the script's path (brain.mjs or source). */
+export const PIPE_TITLE = "Company brain, sync"
+/** Title of pipes written before the English version: still recognized (uninstall, status). */
+const LEGACY_PIPE_TITLE = "Cerveau d'entreprise, synchro"
 
-/** Commande CLI Screenpipe (celle du skill officiel ; `bun x` marche aussi). */
+/** Screenpipe CLI command (the one from the official skill; `bun x` works too). */
 export const SCREENPIPE_CLI = "npx -y screenpipe@latest"
 
-/** Dossier de Screenpipe (~/.screenpipe), surchargeable pour les tests. */
+/** Screenpipe's folder (~/.screenpipe), can be overridden for tests. */
 export function screenpipeDir(): string {
   return resolve(process.env.COMPANY_BRAIN_SCREENPIPE_DIR ?? join(homedir(), ".screenpipe"))
 }
@@ -621,15 +623,15 @@ export function pipePath(): string {
 }
 
 /**
- * Le pipe : Screenpipe exécute ce prompt toutes les 15 minutes et à la fin de chaque réunion, avec un jeton borné
- * aux lectures listées (permissions.allow) et le masquage natif (privacy_filter). Il ne fait que lancer brain-sync.
+ * The pipe: Screenpipe runs this prompt every 15 minutes and at the end of each meeting, with a token limited
+ * to the listed reads (permissions.allow) and the native redaction (privacy_filter). It only starts brain-sync.
  */
 export function pipeMarkdown(execPath = process.execPath, script = selfScript(), home = brainHome()): string {
   return `---
 schedule: every 15m
 enabled: true
 title: ${PIPE_TITLE}
-description: Distille les sessions IA et les réunions de ce poste vers le cerveau partagé (rien de brut ne quitte le poste)
+description: Distills this computer's AI sessions and meetings into the shared brain (nothing raw leaves the computer)
 trigger:
   events:
     - meeting_ended
@@ -643,9 +645,9 @@ permissions:
 privacy_filter: true
 ---
 
-Lance exactement cette commande dans un shell, puis rapporte sa sortie en une ou deux phrases (connaissances envoyées,
-avertissements). Ne lis aucune donnée toi-même, n'envoie rien ailleurs, ne modifie aucun fichier. Si la commande échoue,
-rapporte l'erreur telle quelle.
+Run exactly this command in a shell, then report its output in one or two sentences (knowledge sent,
+warnings). Do not read any data yourself, do not send anything elsewhere, do not modify any file. If the command fails,
+report the error as is.
 
 \`"${execPath}" "${script}" sync --scheduled --home "${home}"\`
 `
@@ -655,7 +657,7 @@ export function pipeInstalled(file = pipePath()): boolean {
   try {
     if (!existsSync(file)) return false
     const text = readFileSync(file, "utf8")
-    return text.includes(`title: ${PIPE_TITLE}`) && /\bsync --scheduled\b/.test(text)
+    return (text.includes(`title: ${PIPE_TITLE}`) || text.includes(`title: ${LEGACY_PIPE_TITLE}`)) && /\bsync --scheduled\b/.test(text)
   } catch {
     return false
   }
@@ -664,28 +666,28 @@ export function pipeInstalled(file = pipePath()): boolean {
 export function installPipe(log: (s: string) => void = console.log, file = pipePath()): string {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, pipeMarkdown())
-  log(`Pipe « ${PIPE_NAME} » écrit dans ${file}.`)
-  log(`Activer : ${SCREENPIPE_CLI} pipe enable ${PIPE_NAME} — tester : ${SCREENPIPE_CLI} pipe run ${PIPE_NAME} — journaux : ${SCREENPIPE_CLI} pipe logs ${PIPE_NAME}`)
-  log("Il faut l'application Screenpipe (le moteur de pipes) ; avec le CLI seul, la synchro planifiée de install-schedule suffit.")
+  log(`Pipe "${PIPE_NAME}" written in ${file}.`)
+  log(`Enable: ${SCREENPIPE_CLI} pipe enable ${PIPE_NAME} — test: ${SCREENPIPE_CLI} pipe run ${PIPE_NAME} — logs: ${SCREENPIPE_CLI} pipe logs ${PIPE_NAME}`)
+  log("It needs the Screenpipe app (the pipe engine); with the CLI alone, the scheduled sync from install-schedule is enough.")
   return file
 }
 
 export function uninstallPipe(log: (s: string) => void = console.log, file = pipePath()) {
-  if (!pipeInstalled(file)) return log("Pipe Screenpipe : rien à retirer.")
+  if (!pipeInstalled(file)) return log("Screenpipe pipe: nothing to remove.")
   rmSync(dirname(file), { recursive: true, force: true })
-  log(`Pipe « ${PIPE_NAME} » retiré de Screenpipe.`)
+  log(`Pipe "${PIPE_NAME}" removed from Screenpipe.`)
 }
 
 // --- MCP company-brain (Claude Code) ----------------------------------------------------------------------------------
 
 export const MCP_NAME = "company-brain"
 
-/** Arguments du serveur MCP après Node.js. */
+/** MCP server arguments after Node.js. */
 export function mcpArgs(script = selfScript()): string[] {
   return clientArgs(script, "mcp")
 }
 
-/** Où Claude Code range les serveurs MCP de portée utilisateur : ~/.claude.json, ou dans CLAUDE_CONFIG_DIR s'il est défini. */
+/** Where Claude Code keeps user-scope MCP servers: ~/.claude.json, or in CLAUDE_CONFIG_DIR if it is set. */
 export function claudeJsonPath(): string {
   return process.env.CLAUDE_CONFIG_DIR ? join(claudeDir(), ".claude.json") : join(homedir(), ".claude.json")
 }
@@ -693,8 +695,8 @@ export function claudeJsonPath(): string {
 export type McpEntry = { command: string; args: string[] }
 
 /**
- * Notre serveur MCP tel que Claude Code l'a enregistré (lecture du fichier, sans lancer `claude mcp get`, qui écrit
- * des fichiers et contacte le réseau). null : pas enregistré ; undefined : fichier illisible.
+ * Our MCP server as Claude Code registered it (reading the file, without running `claude mcp get`, which writes
+ * files and contacts the network). null: not registered; undefined: unreadable file.
  */
 export function readMcpEntry(file = claudeJsonPath()): McpEntry | null | undefined {
   if (!existsSync(file)) return null
@@ -709,27 +711,27 @@ export function readMcpEntry(file = claudeJsonPath()): McpEntry | null | undefin
   return { command: e.command, args: Array.isArray(e.args) ? e.args.map(String) : [] }
 }
 
-/** Deux chemins désignent-ils le même fichier ? (liens résolus ; casse ignorée sous Windows et macOS.) */
+/** Do two paths point to the same file? (links resolved; case ignored on Windows and macOS.) */
 export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
   const norm = (p: string) => {
     let r = resolve(p)
     try {
       r = realpathSync(r)
     } catch {
-      // fichier absent : on compare le chemin tel quel
+      // file missing: we compare the path as is
     }
     return platform === "win32" || platform === "darwin" ? r.toLowerCase() : r
   }
   return norm(a) === norm(b)
 }
 
-/** L'entrée MCP lance-t-elle bien ce Node.js et ce script, avec les bons arguments ? */
+/** Does the MCP entry really start this Node.js and this script, with the right arguments? */
 export function mcpUpToDate(e: McpEntry, execPath = process.execPath, script = selfScript()): boolean {
   const want = mcpArgs(script)
   return samePath(e.command, execPath) && e.args.length === want.length && samePath(e.args[0] ?? "", want[0]) && e.args.slice(1).join(" ") === want.slice(1).join(" ")
 }
 
-/** La commande `claude mcp add` à lancer à la main si le CLI `claude` n'a pas pu le faire. */
+/** The `claude mcp add` command to run by hand if the `claude` CLI could not do it. */
 export function mcpAddCommand(): string {
   return `claude mcp add ${MCP_NAME} --scope user -- ${[process.execPath, ...mcpArgs()].map((a) => quoteArg(a)).join(" ")}`
 }
@@ -738,27 +740,27 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
   try {
     uninstallHooks(log)
   } catch (err) {
-    log(`Hooks : ${(err as Error).message}`)
+    log(`Hooks: ${(err as Error).message}`)
   }
   try {
     uninstallPipe(log)
   } catch (err) {
-    log(`Pipe Screenpipe : ${(err as Error).message}`)
+    log(`Screenpipe pipe: ${(err as Error).message}`)
   }
   try {
     uninstallSchedule(log)
   } catch (err) {
-    log(`Planification : ${(err as Error).message}`)
+    log(`Scheduling: ${(err as Error).message}`)
   }
   try {
     removeInstalledSkills(log)
   } catch (err) {
-    log(`Skills : ${(err as Error).message}`)
+    log(`Skills: ${(err as Error).message}`)
   }
   try {
     uninstallScreenpipeService(log)
   } catch (err) {
-    log(`Screenpipe : ${(err as Error).message}`)
+    log(`Screenpipe: ${(err as Error).message}`)
   }
   const r = spawnSync("claude", ["mcp", "remove", "company-brain", "--scope", "user"], {
     encoding: "utf8",
@@ -766,18 +768,18 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
     shell: process.platform === "win32",
     env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" },
   })
-  if (!r.error && r.status === 0) log("Serveur MCP company-brain retiré de Claude Code.")
-  else log("MCP : rien retiré (absent, ou CLI `claude` introuvable). À la main : claude mcp remove company-brain --scope user")
+  if (!r.error && r.status === 0) log("company-brain MCP server removed from Claude Code.")
+  else log("MCP: nothing removed (missing, or `claude` CLI not found). By hand: claude mcp remove company-brain --scope user")
   if (opts.purge) {
     try {
       rmSync(brainHome(), { recursive: true, force: true })
-      log(`Dossier ${brainHome()} supprimé (config, jeton, état, journaux).`)
+      log(`Folder ${brainHome()} deleted (config, token, state, logs).`)
     } catch (err) {
-      // Windows : le node.exe de la copie privée qui exécute cette commande ne peut pas s'effacer lui-même.
-      log(`Dossier ${brainHome()} vidé en partie (${(err as Error).message}) : supprime-le à la main une fois ce terminal fermé.`)
+      // Windows: the private copy's node.exe running this command cannot delete itself.
+      log(`Folder ${brainHome()} partly emptied (${(err as Error).message}): delete it by hand once this terminal is closed.`)
     }
   } else {
-    log(`Config et jeton conservés dans ${brainHome()} (ajoutez --purge pour tout supprimer).`)
+    log(`Config and token kept in ${brainHome()} (add --purge to delete everything).`)
   }
 }
 

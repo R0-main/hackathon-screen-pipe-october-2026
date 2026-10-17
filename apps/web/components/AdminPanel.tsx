@@ -18,7 +18,7 @@ type User = Profile & { zones: string[] }
 
 const ACTIVE_MS = 15 * 60_000
 
-/** Ids de `id` et de tout son sous-arbre : on ne peut pas rattacher quelqu'un à l'un d'eux. */
+/** Ids of `id` and of its whole subtree: nobody can be attached to one of them. */
 function teamOf(id: string, users: User[]): Set<string> {
   const out = new Set([id])
   let grew = true
@@ -46,7 +46,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
 
-  // Présence de chaque poste d'après le fil des agents : session récente et agents de code utilisés.
+  // Presence of each workstation from the agents feed: recent session and coding agents used.
   const presence = useMemo(() => {
     const out: Record<string, Presence & { lastAt?: string }> = {}
     for (const e of feed) {
@@ -60,7 +60,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
     return out
   }, [feed, now])
 
-  /** Relit membres et zones ; ne lève jamais (l'erreur s'affiche en haut de page). Renvoie les zones à jour. */
+  /** Re-reads members and zones; never throws (the error shows at the top of the page). Returns the up-to-date zones. */
   async function reload(): Promise<Zone[] | null> {
     try {
       const r = await api<{ users: User[]; zones: Zone[] }>("/api/admin/users")
@@ -68,7 +68,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
       setZones(r.zones)
       return r.zones
     } catch (e) {
-      setErr(`Rechargement impossible : ${errorMessage(e)}`)
+      setErr(`Could not reload: ${errorMessage(e)}`)
       return null
     }
   }
@@ -81,7 +81,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
       await api(`/api/admin/users/${u.id}`, { method: "PATCH", json: body })
       if (!optimistic) await reload()
     } catch (e) {
-      setErr(`${u.name} : ${errorMessage(e)}`)
+      setErr(`${u.name}: ${errorMessage(e)}`)
       await reload()
     } finally {
       setSaving(null)
@@ -95,14 +95,14 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
   }
 
   async function regenerate(u: User) {
-    if (!confirm(`Régénérer le jeton de ${u.name} ? L'ancien cessera de fonctionner sur son poste.`)) return
+    if (!confirm(`Regenerate ${u.name}'s token? The old one will stop working on their computer.`)) return
     setSaving(u.id)
     setErr(null)
     try {
       const r = await api<{ prompt: string }>(`/api/admin/users/${u.id}/token`, { method: "POST" })
       setPrompt({ name: u.name, prompt: r.prompt })
     } catch (e) {
-      setErr(`Nouveau prompt impossible pour ${u.name} : ${errorMessage(e)}`)
+      setErr(`Could not create a new prompt for ${u.name}: ${errorMessage(e)}`)
     } finally {
       setSaving(null)
     }
@@ -117,19 +117,19 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
         <div className="min-w-0">
           <h1 className="text-[22px] font-medium leading-tight">{view.label}</h1>
           <p className="mt-1 text-[13px] text-trace">
-            {view.lead} Chez {props.orgName} : <span className="tabular-nums">{users.length}</span> personne{users.length > 1 ? "s" : ""},{" "}
-            <span className="tabular-nums">{zones.length}</span> zone{zones.length > 1 ? "s" : ""}.
+            {view.lead} At {props.orgName}: <span className="tabular-nums">{users.length}</span> {users.length === 1 ? "person" : "people"},{" "}
+            <span className="tabular-nums">{zones.length}</span> zone{zones.length === 1 ? "" : "s"}.
           </p>
         </div>
         <button type="button" className="btn btn-primary ml-auto" onClick={() => setInvite({ managerId: selected ?? defaultManager })}>
-          Inviter quelqu&apos;un
+          Invite someone
         </button>
       </header>
 
       {err && (
         <div role="alert" className="flex items-start gap-3 border-b border-line bg-surface px-4 py-2.5 text-[13px] text-danger sm:px-8">
           <span className="min-w-0 flex-1">{err}</span>
-          <button type="button" className="btn btn-icon btn-sm shrink-0" onClick={() => setErr(null)} aria-label="Masquer l'erreur">
+          <button type="button" className="btn btn-icon btn-sm shrink-0" onClick={() => setErr(null)} aria-label="Hide the error">
             <CloseIcon size={14} />
           </button>
         </div>
@@ -186,7 +186,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
       )}
 
       {invite && (
-        <Modal title="Inviter quelqu'un" onClose={() => setInvite(null)}>
+        <Modal title="Invite someone" onClose={() => setInvite(null)}>
           <InviteForm
             zones={zones}
             users={users}
@@ -204,7 +204,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
   )
 }
 
-/** Panneau latéral d'une personne de l'organigramme : rattachement, rôle, zones, prompt et passation. */
+/** Side panel of a person in the org chart: manager, role, zones, prompt and handover. */
 function MemberDrawer(props: {
   user: User
   users: User[]
@@ -227,7 +227,7 @@ function MemberDrawer(props: {
   const reports = users.filter((x) => x.manager_id === u.id)
   const manager = users.find((x) => x.id === u.manager_id)
 
-  // Dialogue : focus initial sur « Fermer », Échap pour fermer, retour du focus à l'élément déclencheur.
+  // Dialog: initial focus on "Close", Escape to close, focus back to the triggering element.
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     closeRef.current?.focus()
@@ -256,9 +256,9 @@ function MemberDrawer(props: {
           <h2 id="member-drawer-title" className="text-[20px] font-medium leading-tight">
             {u.name}
           </h2>
-          <p className="text-[13px] text-trace">{[u.title, u.email].filter(Boolean).join(", ") || "Sans poste renseigné"}</p>
+          <p className="text-[13px] text-trace">{[u.title, u.email].filter(Boolean).join(", ") || "No role given"}</p>
         </div>
-        <button ref={closeRef} type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Fermer">
+        <button ref={closeRef} type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Close">
           <CloseIcon />
         </button>
       </div>
@@ -266,19 +266,19 @@ function MemberDrawer(props: {
       <div className="inset mt-4 px-3 py-2.5 text-[13px]">
         {p?.lastAt ? (
           <>
-            {p.active ? "Agent actif" : "Dernière activité"} <RelTime iso={p.lastAt} now={props.now} className="tabular-nums" />
-            {p.agents.length > 0 && <span className="text-trace">, avec {p.agents.join(" et ")}</span>}
+            {p.active ? "Agent active" : "Last activity"} <RelTime iso={p.lastAt} now={props.now} className="tabular-nums" />
+            {p.agents.length > 0 && <span className="text-trace">, with {p.agents.join(" and ")}</span>}
           </>
         ) : (
-          <span className="text-trace">Aucune activité d&apos;agent pour l&apos;instant : le poste n&apos;est peut-être pas encore installé.</span>
+          <span className="text-trace">No agent activity yet: the computer may not be set up yet.</span>
         )}
       </div>
 
       <div className="mt-5 space-y-4">
         <label className="block">
-          <span className="mb-1.5 block text-[13px] font-medium">Rattaché à</span>
+          <span className="mb-1.5 block text-[13px] font-medium">Reports to</span>
           <select className="input" value={u.manager_id ?? ""} disabled={props.saving} onChange={(e) => props.onManager(e.target.value || null)}>
-            <option value="">Personne (tête de l&apos;organigramme)</option>
+            <option value="">Nobody (head of the org chart)</option>
             {users
               .filter((x) => !blocked.has(x.id))
               .map((x) => (
@@ -288,29 +288,29 @@ function MemberDrawer(props: {
                 </option>
               ))}
           </select>
-          {manager && <span className="mt-1 block text-[12px] text-trace">Rend compte à {manager.name.split(" ")[0]}.</span>}
+          {manager && <span className="mt-1 block text-[12px] text-trace">Reports to {manager.name.split(" ")[0]}.</span>}
         </label>
 
         <label className="block">
-          <span className="mb-1.5 block text-[13px] font-medium">Rôle</span>
+          <span className="mb-1.5 block text-[13px] font-medium">Role</span>
           <select
             className="input"
             value={u.role}
             disabled={u.id === props.meId || props.saving}
             onChange={(e) => props.onRole(e.target.value as "admin" | "member")}
           >
-            <option value="member">Membre</option>
-            <option value="admin">Admin (voit tout)</option>
+            <option value="member">Member</option>
+            <option value="admin">Admin (sees everything)</option>
           </select>
-          {u.id === props.meId && <span className="mt-1 block text-[12px] text-trace">Vous ne pouvez pas retirer vos propres droits admin.</span>}
+          {u.id === props.meId && <span className="mt-1 block text-[12px] text-trace">You cannot remove your own admin rights.</span>}
         </label>
 
         <div>
-          <span className="mb-1.5 block text-[13px] font-medium">Zones visibles</span>
+          <span className="mb-1.5 block text-[13px] font-medium">Visible zones</span>
           {u.role === "admin" ? (
-            <p className="text-[13px] text-trace">Les admins lisent toutes les zones.</p>
+            <p className="text-[13px] text-trace">Admins read all zones.</p>
           ) : (
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Zones visibles par ${u.name}`}>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Zones visible to ${u.name}`}>
               {zones.map((z) => {
                 const on = u.zones.includes(z.id)
                 return (
@@ -329,13 +329,13 @@ function MemberDrawer(props: {
               })}
             </div>
           )}
-          <p className="mt-1.5 text-[12px] text-trace">La personne et ses agents (MCP) ne lisent que ces zones ; tout le monde nourrit le cerveau.</p>
+          <p className="mt-1.5 text-[12px] text-trace">The person and their agents (MCP) only read these zones; everyone feeds the brain.</p>
         </div>
 
         <div>
-          <span className="mb-1.5 block text-[13px] font-medium">Skills de l&apos;entreprise</span>
+          <span className="mb-1.5 block text-[13px] font-medium">Company skills</span>
           {u.role === "admin" ? (
-            <p className="text-[13px] text-trace">Les admins peuvent toujours publier des skills.</p>
+            <p className="text-[13px] text-trace">Admins can always publish skills.</p>
           ) : (
             <label className="flex items-start gap-2 text-[13px]">
               <input
@@ -346,8 +346,8 @@ function MemberDrawer(props: {
                 onChange={(e) => props.onPublishSkills(e.target.checked)}
               />
               <span>
-                Peut publier des skills
-                <span className="block text-[12px] text-trace">Dans toute l&apos;entreprise, ou dans les cortex qu&apos;il ou elle lit.</span>
+                Can publish skills
+                <span className="block text-[12px] text-trace">Company-wide, or in the cortexes they read.</span>
               </span>
             </label>
           )}
@@ -355,7 +355,7 @@ function MemberDrawer(props: {
 
         {reports.length > 0 && (
           <div>
-            <span className="mb-1.5 block text-[13px] font-medium">Équipe directe</span>
+            <span className="mb-1.5 block text-[13px] font-medium">Direct reports</span>
             <ul className="flex flex-wrap gap-1.5">
               {reports.map((r) => (
                 <li key={r.id} className="chip">
@@ -368,13 +368,13 @@ function MemberDrawer(props: {
 
         <div className="flex flex-wrap gap-2 border-t border-line pt-4">
           <button type="button" className="btn" onClick={props.onAddReport}>
-            Ajouter quelqu&apos;un dans son équipe
+            Add someone to their team
           </button>
           <Link className="btn" href={`/people/${u.id}`}>
-            Passation
+            Handover
           </Link>
           <button type="button" className="btn" onClick={props.onPrompt} disabled={props.saving}>
-            Nouveau prompt
+            New prompt
           </button>
         </div>
       </div>
@@ -395,28 +395,28 @@ function AccessTable(props: {
   const { users, zones, saving } = props
   return (
     <section className="panel p-4 sm:p-5">
-      <h2 className="panel-title">Qui voit quelles zones</h2>
+      <h2 className="panel-title">Who sees which zones</h2>
       <p className="mt-1 max-w-3xl text-[13px] text-trace">
-        Un membre, et ses agents via le MCP, ne lit que les zones cochées. Tout le monde nourrit le cerveau ; seule la lecture est restreinte. Les admins voient tout.
-        Publier des skills demande une autorisation ; un skill attribué à un cortex n&apos;est donné qu&apos;à ceux qui lisent cette zone.
+        A member, and their agents through the MCP, only reads the ticked zones. Everyone feeds the brain; only reading is restricted. Admins see everything.
+        Publishing skills requires permission; a skill assigned to a cortex is only given to those who read that zone.
       </p>
       <div className="scroll-thin mt-4 overflow-x-auto">
         <table className="w-full min-w-[760px] text-[13px]">
           <thead>
             <tr className="text-left text-[12px] text-trace">
               <th scope="col" className="py-2 pr-3 font-medium">
-                Membre
+                Member
               </th>
               {zones.map((z) => (
                 <th key={z.id} scope="col" className="px-2 py-2 text-center font-medium text-ink">
                   <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
                 </th>
               ))}
-              <th scope="col" className="px-2 py-2 text-center font-medium" title="Peut publier des skills de l'entreprise">
-                Publie des skills
+              <th scope="col" className="px-2 py-2 text-center font-medium" title="Can publish company skills">
+                Publishes skills
               </th>
               <th scope="col" className="px-2 py-2 font-medium">
-                Rôle
+                Role
               </th>
               <th scope="col" className="px-2 py-2">
                 <span className="sr-only">Actions</span>
@@ -440,7 +440,7 @@ function AccessTable(props: {
                         checked={on}
                         disabled={u.role === "admin" || saving === u.id}
                         onChange={() => props.onToggle(u, z.id)}
-                        aria-label={`${u.name} : accès à ${z.name}`}
+                        aria-label={`${u.name}: access to ${z.name}`}
                       />
                     </td>
                   )
@@ -452,28 +452,28 @@ function AccessTable(props: {
                     checked={u.role === "admin" || u.can_publish_skills === true}
                     disabled={u.role === "admin" || saving === u.id}
                     onChange={(e) => props.onPublishSkills(u, e.target.checked)}
-                    aria-label={`${u.name} : peut publier des skills`}
+                    aria-label={`${u.name}: can publish skills`}
                   />
                 </td>
                 <td className="px-2 py-2.5">
                   <select
                     className="input input-sm"
-                    aria-label={`Rôle de ${u.name}`}
+                    aria-label={`${u.name}'s role`}
                     value={u.role}
                     disabled={u.id === props.meId || saving === u.id}
                     onChange={(e) => props.onRole(u, e.target.value as "admin" | "member")}
                   >
-                    <option value="member">Membre</option>
+                    <option value="member">Member</option>
                     <option value="admin">Admin</option>
                   </select>
                 </td>
                 <td className="whitespace-nowrap px-2 py-2.5 text-right">
                   <div className="inline-flex gap-1.5">
                     <Link className="btn btn-sm" href={`/people/${u.id}`}>
-                      Passation
+                      Handover
                     </Link>
                     <button type="button" className="btn btn-sm" onClick={() => props.onPrompt(u)} disabled={saving === u.id}>
-                      Nouveau prompt
+                      New prompt
                     </button>
                   </div>
                 </td>
@@ -486,7 +486,7 @@ function AccessTable(props: {
   )
 }
 
-/** Fenêtre modale simple : Échap ou clic à l'extérieur pour fermer. */
+/** Simple modal window: Escape or a click outside to close. */
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
@@ -547,28 +547,28 @@ function InviteForm({
 
   return (
     <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
-      <h2 className="panel-title">Inviter quelqu&apos;un</h2>
-      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code ou Codex : une commande installe Screenpipe, le MCP et les hooks, puis ouvre le cerveau.</p>
+      <h2 className="panel-title">Invite someone</h2>
+      <p className="text-[13px] text-trace">The person gets a prompt to paste into Claude Code or Codex: one command installs Screenpipe, the MCP and the hooks, then opens the brain.</p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <input className="input" aria-label="Prénom et nom" placeholder="Prénom Nom" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
-        <input className="input" aria-label="Poste" placeholder="Poste, par exemple Comptable" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
-        <input className="input" type="email" aria-label="Email (optionnel)" placeholder="Email (optionnel)" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <select className="input" aria-label="Rôle" value={role} onChange={(e) => setRole(e.target.value as "member" | "admin")}>
-          <option value="member">Membre</option>
-          <option value="admin">Admin (voit tout)</option>
+        <input className="input" aria-label="First and last name" placeholder="First Last" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
+        <input className="input" aria-label="Role" placeholder="Role, for example Accountant" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
+        <input className="input" type="email" aria-label="Email (optional)" placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <select className="input" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value as "member" | "admin")}>
+          <option value="member">Member</option>
+          <option value="admin">Admin (sees everything)</option>
         </select>
-        <select className="input sm:col-span-2" aria-label="Rattaché à" value={manager} onChange={(e) => setManager(e.target.value)}>
-          <option value="">Rattaché à : personne (tête de l&apos;organigramme)</option>
+        <select className="input sm:col-span-2" aria-label="Reports to" value={manager} onChange={(e) => setManager(e.target.value)}>
+          <option value="">Reports to: nobody (head of the org chart)</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
-              Rattaché à : {u.name}
+              Reports to: {u.name}
               {u.title ? ` (${u.title})` : ""}
             </option>
           ))}
         </select>
       </div>
       {role === "member" && (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Zones accessibles">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Accessible zones">
           {zones.map((z) => {
             const on = selected.includes(z.id)
             return (
@@ -589,18 +589,18 @@ function InviteForm({
       {role === "member" && (
         <label className="flex items-center gap-2 text-[13px]">
           <input type="checkbox" className="size-4" checked={publishSkills} onChange={(e) => setPublishSkills(e.target.checked)} />
-          Peut publier des skills de l&apos;entreprise
+          Can publish company skills
         </label>
       )}
       {err && <ErrorText>{err}</ErrorText>}
       <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
-        Créer le compte et le prompt
+        Create the account and the prompt
       </button>
     </form>
   )
 }
 
-/** Zone existante qui porterait le même identifiant (slug) ou le même nom. */
+/** Existing zone that would carry the same id (slug) or the same name. */
 function conflictingZone(name: string, zones: Zone[]): Zone | undefined {
   const id = slugify(name)
   const lower = name.trim().toLowerCase()
@@ -633,17 +633,17 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
       ),
     ]
     if (words.length > ZONE_KEYWORDS_MAX) {
-      setErr(`${ZONE_KEYWORDS_MAX} mots-clés au maximum (${words.length} saisis).`)
+      setErr(`${ZONE_KEYWORDS_MAX} keywords at most (${words.length} entered).`)
       return
     }
     setBusy(true)
     try {
-      // Liste fraîche : un autre admin a pu créer la zone depuis l'ouverture de la page. L'API remplace une zone
-      // existante au même identifiant (mots-clés compris) : on refuse plutôt que d'écraser en silence.
+      // Fresh list: another admin may have created the zone since the page opened. The API replaces an existing zone
+      // with the same id (keywords included): we refuse rather than silently overwrite.
       const fresh = (await reload()) ?? zones
       const clash = conflictingZone(name, fresh)
       if (clash) {
-        setErr(`La zone « ${clash.name} » existe déjà (identifiant « ${clash.id} »). Choisissez un autre nom : ajouter cette zone écraserait sa description et ses mots-clés.`)
+        setErr(`The zone "${clash.name}" already exists (id "${clash.id}"). Choose another name: adding this zone would overwrite its description and keywords.`)
         nameRef.current?.focus()
         return
       }
@@ -651,10 +651,10 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
       setName("")
       setDescription("")
       setKeywords("")
-      setOk(`Zone « ${created.name ?? name.trim()} » ajoutée.`)
+      setOk(`Zone "${created.name ?? name.trim()}" added.`)
       await reload()
     } catch (e) {
-      setErr(`Ajout de la zone impossible : ${errorMessage(e)}`)
+      setErr(`Could not add the zone: ${errorMessage(e)}`)
     } finally {
       setBusy(false)
     }
@@ -662,7 +662,7 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
 
   return (
     <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
-      <h2 className="panel-title">Zones du cerveau</h2>
+      <h2 className="panel-title">Brain zones</h2>
       <div className="flex flex-wrap gap-1.5">
         {zones.map((z) => (
           <span key={z.id} className="chip" title={z.keywords.join(", ")}>
@@ -673,8 +673,8 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
       <input
         ref={nameRef}
         className="input"
-        aria-label="Nom de la nouvelle zone"
-        placeholder="Nouvelle zone, par exemple RH"
+        aria-label="Name of the new zone"
+        placeholder="New zone, for example HR"
         value={name}
         onChange={(e) => {
           setName(e.target.value)
@@ -688,14 +688,14 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
       />
       {existing && (
         <p id="zone-exists" className="text-[12px] text-trace">
-          « {existing.name} » existe déjà : choisissez un autre nom.
+          “{existing.name}” already exists: choose another name.
         </p>
       )}
       <input className="input" aria-label="Description" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} />
       <textarea
         className="input min-h-[70px]"
-        aria-label="Mots-clés"
-        placeholder="Mots-clés pour classer automatiquement les sessions, séparés par des virgules"
+        aria-label="Keywords"
+        placeholder="Keywords to classify sessions automatically, separated by commas"
         value={keywords}
         onChange={(e) => setKeywords(e.target.value)}
       />
@@ -707,9 +707,9 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button type="submit" className="btn btn-primary" disabled={busy || !name.trim() || Boolean(existing)}>
-          {busy ? "Ajout en cours" : "Ajouter la zone"}
+          {busy ? "Adding" : "Add the zone"}
         </button>
-        <span className="text-[12px] text-trace">Stockage : {storeKind === "postgres" ? "Postgres / Supabase" : "fichier local"}</span>
+        <span className="text-[12px] text-trace">Storage: {storeKind === "postgres" ? "Postgres / Supabase" : "local file"}</span>
       </div>
     </form>
   )
@@ -732,7 +732,7 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
     }
   }, [onClose])
 
-  /** Sélectionne le prompt : copie manuelle possible même sans presse-papiers. */
+  /** Selects the prompt: manual copy is possible even without a clipboard. */
   function selectPrompt(): boolean {
     const el = preRef.current
     const sel = typeof window !== "undefined" ? window.getSelection() : null
@@ -747,14 +747,14 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
   async function copy() {
     setCopyErr(null)
     try {
-      // navigator.clipboard n'existe qu'en contexte sécurisé (https ou localhost), pas sur http://<ip-du-réseau>.
+      // navigator.clipboard only exists in a secure context (https or localhost), not on http://<lan-ip>.
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(prompt)
-      else if (!(selectPrompt() && document.execCommand("copy"))) throw new Error("presse-papiers indisponible")
+      else if (!(selectPrompt() && document.execCommand("copy"))) throw new Error("clipboard unavailable")
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
       selectPrompt()
-      setCopyErr("Copie automatique impossible ici : le prompt est sélectionné, copiez-le avec Ctrl+C (⌘C sur Mac).")
+      setCopyErr("Automatic copy is not possible here: the prompt is selected, copy it with Ctrl+C (⌘C on a Mac).")
     }
   }
 
@@ -764,13 +764,13 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="prompt-modal-title" className="panel-title">
-              Prompt d&apos;installation pour {name}
+              Install prompt for {name}
             </h2>
             <p className="mt-1 text-[13px] text-trace">
-              À envoyer à {name.split(" ")[0]} par un canal privé : il contient son jeton, affiché une seule fois. Il suffit de le coller dans Claude Code ou Codex, sur son poste.
+              Send it to {name.split(" ")[0]} through a private channel: it contains their token, shown only once. They just paste it into Claude Code or Codex, on their computer.
             </p>
           </div>
-          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Fermer">
+          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Close">
             <CloseIcon />
           </button>
         </div>
@@ -782,11 +782,11 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
           <button ref={copyRef} type="button" className="btn btn-primary" onClick={copy}>
             {copied ? (
               <>
-                <CheckIcon size={14} /> Copié
+                <CheckIcon size={14} /> Copied
               </>
             ) : (
               <>
-                <AgentLogos /> Copier le prompt
+                <AgentLogos /> Copy the prompt
               </>
             )}
           </button>

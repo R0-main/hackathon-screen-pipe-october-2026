@@ -1,4 +1,4 @@
-// brain.mjs — client du cerveau d'entreprise sur le poste de l'employé.
+// brain.mjs — the company brain's client on the employee's computer.
 
 import { resolve } from "node:path"
 import { trustConfiguredCa } from "./ca"
@@ -30,79 +30,79 @@ export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string,
 
 function help(): string {
   const me = selfCommand()
-  return `NOS Brainer — client du poste (v${VERSION})
+  return `NOS Brainer — computer client (v${VERSION})
 
-Usage : ${me} <commande> [options]
+Usage: ${me} <command> [options]
 
-Commandes :
-  setup [--url <url> --token <jeton>] [--ca <pem>] [--audio oui|non] [--wait <secondes>] [--no-open] [--skip-screenpipe]
-                     Tout en une commande (c'est ce que lance le prompt d'installation) : config, Screenpipe (installé et lancé
-                     en service s'il ne tourne pas, micro coupé par défaut), autorisations macOS (réglages ouverts, reprise dès
-                     qu'elles sont accordées, --wait 300 s par défaut), MCP, hooks, synchro toutes les 15 min (activité à venir
-                     seulement), néon, puis le cerveau s'ouvre dans le navigateur. Relançable sans paramètres.
-                     Codes de sortie : 0 tout est branché ; 3 tout sauf l'autorisation d'enregistrer l'écran (relancer setup une
-                     fois cochée) ; 6 tout sauf Screenpipe (pas de version pour ce poste, ou il ne démarre pas : voir doctor).
-  join --url <url> --join <code d'équipe> [--name <prénom nom>] [--title <poste>] [--email <email>] [--wait-accept <secondes>]
-                     Demande à rejoindre une entreprise (c'est ce que lance le message d'équipe) : le jeton du poste est créé
-                     ici, seule son empreinte part avec la demande. Attend qu'un admin l'accepte (--wait-accept 480 s par
-                     défaut), puis enchaîne sur setup (mêmes options, mêmes codes). Code 7 : toujours en attente, \`join\` sans
-                     paramètres reprend la même demande. Code 8 : demande refusée.
-  doctor [--json]    Diagnostic du poste, sans rien modifier : Node.js, raccourci, cerveau (connexion, version du client),
-                     Screenpipe (capture, autorisations, jeton), Claude Code (MCP, hooks), synchro planifiée, distillation.
-                     Chaque point KO donne la commande qui répare. --json : le même rapport pour Claude Code (champ « safe »
-                     sur les commandes qui ne font que rebrancher le poste). Code de sortie 1 s'il reste un point KO.
-  init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
-       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non] [--ca <pem>]
-                     Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
-                     --ca : certificat (PEM) de l'autorité d'un cerveau auto-hébergé en HTTPS local ; le client lui fait
-                     confiance pour tous ses appels, en plus des certificats publics (« aucun » pour le retirer).
-                     Chaque option peut être donnée seule pour compléter une config existante.
-                     --claude-token : jeton longue durée créé par \`claude setup-token\` (abonnement Claude, sans clé API),
-                     passé à chaque \`claude -p\` du client, synchro planifiée comprise (« aucun » pour le retirer).
-                     --share-prompt-summaries non : le hook n'envoie plus aucun résumé de prompt (empreinte seule).
-                     --screenpipe-meetings non : les réunions transcrites par Screenpipe ne sont pas distillées.
-  hello              Test de bout en bout : vos zones s'allument sur le dashboard.
+Commands:
+  setup [--url <url> --token <token>] [--ca <pem>] [--audio yes|no] [--wait <seconds>] [--no-open] [--skip-screenpipe]
+                     Everything in one command (it is what the install prompt runs): config, Screenpipe (installed and started
+                     as a service if it is not running, microphone off by default), macOS permissions (settings opened, resumes as
+                     soon as they are granted, --wait 300 s by default), MCP, hooks, sync every 15 min (upcoming activity
+                     only), neon, then the brain opens in the browser. Can be run again without parameters.
+                     Exit codes: 0 everything is connected; 3 everything but the screen recording permission (run setup again
+                     once granted); 6 everything but Screenpipe (no version for this computer, or it does not start: see doctor).
+  join --url <url> --join <team code> [--name <first last>] [--title <job title>] [--email <email>] [--wait-accept <seconds>]
+                     Asks to join a company (it is what the team message runs): the computer's token is created
+                     here, only its fingerprint goes with the request. Waits for an admin to accept it (--wait-accept 480 s by
+                     default), then moves on to setup (same options, same codes). Code 7: still pending, \`join\` without
+                     parameters resumes the same request. Code 8: request rejected.
+  doctor [--json]    Diagnoses the computer, without changing anything: Node.js, shortcut, brain (connection, client version),
+                     Screenpipe (capture, permissions, token), Claude Code (MCP, hooks), scheduled sync, distillation.
+                     Each KO item gives the command that fixes it. --json: the same report for Claude Code ("safe" field
+                     on the commands that only reconnect the computer). Exit code 1 if a KO item remains.
+  init --url <url> --token <token> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
+       [--claude-token <token>] [--share-prompt-summaries yes|no] [--screenpipe-meetings yes|no] [--ca <pem>]
+                     Saves the config (~/.company-brain/config.json, mode 600) and tests the connection.
+                     --ca: certificate (PEM) of the authority of a self-hosted brain on local HTTPS; the client trusts
+                     it for all its calls, on top of the public certificates ("none" to remove it).
+                     Each option can be given alone to complete an existing config.
+                     --claude-token: long-lived token created by \`claude setup-token\` (Claude subscription, no API key),
+                     passed to every \`claude -p\` of the client, scheduled sync included ("none" to remove it).
+                     --share-prompt-summaries no: the hook no longer sends any prompt summary (fingerprint only).
+                     --screenpipe-meetings no: the meetings transcribed by Screenpipe are not distilled.
+  hello              End-to-end test: your zones light up on the dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
-                     Lit les sessions IA locales, filtre (secrets, perso), distille et envoie au cerveau.
-                     --dry-run montre ce qui partirait sans rien envoyer (--full : chaque connaissance en entier),
-                     et dit ce que l'aperçu ne contient pas (limite atteinte, captures non lues, tours en cours).
-                     Si Claude échoue, la conversation est retentée plus tard (jamais distillée sans LLM en secours),
-                     et abandonnée après 3 échecs dus à son contenu ; une panne, une limite d'abonnement ou un
-                     jeton expiré ne compte pas (si Claude ne répond plus du tout : abandon après 24 h d'échecs).
-                     À la fin (hors simulation), un compte rendu (compteurs seulement, jamais de contenu) part vers la page
-                     Supervision du dashboard : dernière synchro, durée, erreurs.
-  sync --confirm     Envoie exactement ce que la dernière simulation a montré (valable 24 h).
-                     Options avancées : --distiller heuristic|claude-cli|claude-api, --reset (ignore les checkpoints).
-  skills [sync|list] Installe dans ~/.claude/skills les skills de l'entreprise attribués à ce poste (toute l'entreprise, plus
-                     ceux des cortex que vous lisez) et retire ceux qui ne le sont plus. Fait aussi après chaque synchro.
-                     Un skill personnel du même nom n'est jamais touché. list : affiche sans rien installer.
-  skills push <dossier> [--cortex <zone>|entreprise] [--name <nom>] [--description <texte>]
-                     Publie le dossier (SKILL.md et les scripts qu'il utilise) dans le cerveau ; même nom : version suivante.
-                     Demande le droit de publier des skills (accordé par un admin). Sans --cortex : celui de la version
-                     précédente, ou toute l'entreprise pour un nouveau skill. Un fichier qui contient un secret est refusé.
+                     Reads the local AI sessions, filters (secrets, personal), distills and sends to the brain.
+                     --dry-run shows what would be sent without sending anything (--full: each knowledge item in full),
+                     and says what the preview does not contain (limit reached, captures not read, turns in progress).
+                     If Claude fails, the conversation is retried later (never distilled without an LLM as a fallback),
+                     and given up after 3 failures due to its content; an outage, a subscription limit or an
+                     expired token does not count (if Claude no longer answers at all: given up after 24 h of failures).
+                     At the end (outside dry runs), a report (counters only, never any content) goes to the dashboard's
+                     Monitoring page: last sync, duration, errors.
+  sync --confirm     Sends exactly what the last dry run showed (valid for 24 h).
+                     Advanced options: --distiller heuristic|claude-cli|claude-api, --reset (ignores the checkpoints).
+  skills [sync|list] Installs in ~/.claude/skills the company skills assigned to this computer (whole company, plus
+                     those of the cortices you read) and removes those no longer assigned. Also done after each sync.
+                     A personal skill with the same name is never touched. list: shows without installing anything.
+  skills push <folder> [--cortex <zone>|company] [--name <name>] [--description <text>]
+                     Publishes the folder (SKILL.md and the scripts it uses) to the brain; same name: next version.
+                     Requires the right to publish skills (granted by an admin). Without --cortex: the one of the previous
+                     version, or the whole company for a new skill. A file that contains a secret is refused.
   refresh-status [--dry-run]
-                     Admins : rédige « où en est la boîte » sur ce poste avec Claude (\`claude -p\`, votre abonnement ;
-                     sinon la clé API) et l'envoie au dashboard. --dry-run : affiche le résumé sans l'envoyer.
+                     Admins: writes "where the company stands" on this computer with Claude (\`claude -p\`, your subscription;
+                     otherwise the API key) and sends it to the dashboard. --dry-run: shows the summary without sending it.
   refresh-zones [--dry-run]
-                     Admins : passage « nouvelles zones » fait ici par Claude Code (\`claude -p\`, votre abonnement ;
-                     en CI, CLAUDE_CODE_OAUTH_TOKEN de \`claude setup-token\`). Le cerveau crée les zones qui manquent
-                     et y range leurs connaissances. --dry-run : affiche les propositions sans rien envoyer.
-  status             État du client en bref : connexion, dernière synchro, Screenpipe, hooks, planification (détail : doctor).
-  mcp                Serveur MCP stdio « company-brain » (branché par setup dans Claude Code, portée utilisateur).
-  hook               Gestionnaire des hooks Claude Code (lit le JSON du hook sur l'entrée standard).
-  install-hooks      Ajoute les hooks SessionStart, UserPromptSubmit et Stop à ~/.claude/settings.json.
-  install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows), à partir de maintenant pour
-                     toutes les sources (Screenpipe, Claude Code, Codex) : l'historique non relu n'est jamais envoyé
-                     automatiquement. À lancer après sync --confirm.
-  install-pipe       Écrit le pipe Screenpipe « brain-sync » (~/.screenpipe/pipes/brain-sync/pipe.md) : la synchro apparaît dans les tâches
-                     planifiées de Screenpipe et se relance à la fin de chaque réunion. Demande l'application Screenpipe (moteur de pipes).
-  uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP, skills de l'entreprise et le service Screenpipe installé par setup ;
-                     --purge supprime aussi ~/.company-brain.
+                     Admins: "new zones" run done here by Claude Code (\`claude -p\`, your subscription;
+                     in CI, CLAUDE_CODE_OAUTH_TOKEN from \`claude setup-token\`). The brain creates the missing zones
+                     and files their knowledge in them. --dry-run: shows the proposals without sending anything.
+  status             Client status in short: connection, last sync, Screenpipe, hooks, scheduling (details: doctor).
+  mcp                "company-brain" stdio MCP server (connected by setup in Claude Code, user scope).
+  hook               Claude Code hook handler (reads the hook's JSON on standard input).
+  install-hooks      Adds the SessionStart, UserPromptSubmit and Stop hooks to ~/.claude/settings.json.
+  install-schedule   Schedules "sync" every 15 min (launchd, crontab or Windows task), from now on for
+                     every source (Screenpipe, Claude Code, Codex): history not read is never sent
+                     automatically. Run after sync --confirm.
+  install-pipe       Writes the "brain-sync" Screenpipe pipe (~/.screenpipe/pipes/brain-sync/pipe.md): the sync shows in Screenpipe's
+                     scheduled tasks and runs again at the end of each meeting. Requires the Screenpipe app (pipe engine).
+  uninstall [--purge] Removes hooks, scheduling, Screenpipe pipe, MCP, company skills and the Screenpipe service installed by setup;
+                     --purge also deletes ~/.company-brain.
 
-Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
+Variables: COMPANY_BRAIN_HOME (default ~/.company-brain, or --home <folder>), CLAUDE_CONFIG_DIR (default ~/.claude), CODEX_HOME (default ~/.codex).`
 }
 
-/** Compte rendu de synchro envoyé au cerveau ; un échec de l'envoi n'est jamais bloquant. */
+/** Sync report sent to the brain; a failure to send is never blocking. */
 async function sendReport(input: { summary: SyncSummary | null; startedAt: number; error?: unknown }) {
   try {
     const { buildSyncReport } = await import("./report")
@@ -111,24 +111,24 @@ async function sendReport(input: { summary: SyncSummary | null; startedAt: numbe
     if (!cfg.url || !cfg.token) return
     await new BrainApi(cfg.url, cfg.token).report(buildSyncReport({ ...input, version: VERSION }))
   } catch (err) {
-    if (process.env.COMPANY_BRAIN_DEBUG) console.error(`Compte rendu non envoyé : ${(err as Error)?.message ?? err}`)
+    if (process.env.COMPANY_BRAIN_DEBUG) console.error(`Report not sent: ${(err as Error)?.message ?? err}`)
   }
 }
 
 async function main(argv: string[]): Promise<number> {
   const { cmd, flags, positional } = parseArgs(argv)
-  // --home : dossier du client (utilisé par la tâche planifiée Windows, qui n'hérite pas des variables du terminal).
+  // --home: client folder (used by the Windows scheduled task, which does not inherit the terminal's variables).
   if (typeof flags.home === "string" && flags.home.trim()) process.env.COMPANY_BRAIN_HOME = resolve(flags.home.trim())
-  // Cerveau auto-hébergé : confiance à son certificat avant tout appel (hook et MCP compris). Celui de la commande
-  // (setup/init/join --ca) compte dès maintenant : sur un Node ancien, c'est ici que le processus est relancé.
+  // Self-hosted brain: trust its certificate before any call (hook and MCP included). The one from the command
+  // (setup/init/join --ca) counts right away: on an old Node, this is where the process is restarted.
   const reexec = trustConfiguredCa(typeof flags.ca === "string" && flags.ca.trim() ? resolve(flags.ca.trim()) : loadPartialConfig().ca_file)
   if (reexec !== null) return reexec
-  // Le hook passe en premier : aucune sortie parasite, toujours code 0.
+  // The hook goes first: no stray output, always code 0.
   if (cmd === "hook") {
     const { runHook } = await import("./hook")
     return runHook()
   }
-  // Diagnostic (doctor) : quel Node.js et quel script ce raccourci, ce hook ou cette synchro planifiée lancent vraiment.
+  // Diagnosis (doctor): which Node.js and which script this shortcut, this hook or this scheduled sync really runs.
   if (cmd === "_probe") {
     console.log(JSON.stringify({ version: VERSION, node: process.execPath, script: selfScript(), home: brainHome() }))
     return 0
@@ -169,13 +169,13 @@ async function main(argv: string[]): Promise<number> {
     case "sync": {
       const { runSync } = await import("./sync")
       const source = typeof flags.source === "string" ? flags.source : "all"
-      if (source !== "all" && !(SOURCE_NAMES as readonly string[]).includes(source)) throw new UserError(`--source invalide : « ${source} » (claude, codex, screenpipe ou all).`)
+      if (source !== "all" && !(SOURCE_NAMES as readonly string[]).includes(source)) throw new UserError(`Invalid --source: "${source}" (claude, codex, screenpipe or all).`)
       const limit = typeof flags.limit === "string" ? Number.parseInt(flags.limit, 10) : undefined
-      if (limit !== undefined && !(limit > 0)) throw new UserError("--limit doit être un entier positif.")
+      if (limit !== undefined && !(limit > 0)) throw new UserError("--limit must be a positive integer.")
       const distiller = typeof flags.distiller === "string" ? flags.distiller : undefined
-      if (distiller && !["heuristic", "claude-cli", "claude-api"].includes(distiller)) throw new UserError("--distiller : heuristic, claude-cli ou claude-api.")
-      if (flags.confirm && flags["dry-run"]) throw new UserError("--confirm et --dry-run s'excluent : simulez d'abord, puis confirmez.")
-      // Synchro planifiée : PATH et dossiers relevés à l'installation (cron, launchd et Windows partent d'un environnement minimal).
+      if (distiller && !["heuristic", "claude-cli", "claude-api"].includes(distiller)) throw new UserError("--distiller: heuristic, claude-cli or claude-api.")
+      if (flags.confirm && flags["dry-run"]) throw new UserError("--confirm and --dry-run are mutually exclusive: do a dry run first, then confirm.")
+      // Scheduled sync: PATH and folders recorded at install time (cron, launchd and Windows start from a minimal environment).
       if (flags.scheduled) applyScheduleEnv(loadPartialConfig())
       const startedAt = Date.now()
       let summary: SyncSummary | null = null
@@ -192,13 +192,13 @@ async function main(argv: string[]): Promise<number> {
           confirm: Boolean(flags.confirm),
         })
       } catch (err) {
-        // Une synchro en échec est signalée au cerveau (page Supervision), puis l'erreur suit son cours.
+        // A failed sync is reported to the brain (Monitoring page), then the error goes on its way.
         if (!flags["dry-run"]) await sendReport({ summary: null, startedAt, error: err })
         throw err
       }
-      // Simulation et synchro sautée (verrou) : rien à rapporter.
+      // Dry run and skipped sync (lock): nothing to report.
       if (!flags["dry-run"] && !summary.skipped) await sendReport({ summary, startedAt })
-      // Les skills attribués au poste suivent la même cadence que la synchro (simulation exceptée).
+      // The skills assigned to the computer follow the same pace as the sync (dry runs excepted).
       if (!flags["dry-run"]) {
         const { refreshSkills } = await import("./skills")
         await refreshSkills(console.log, { quiet: true })
@@ -220,7 +220,7 @@ async function main(argv: string[]): Promise<number> {
     case "mcp": {
       const { runMcpServer } = await import("./mcp")
       await runMcpServer(VERSION)
-      return -1 // le serveur reste actif
+      return -1 // the server stays up
     }
     case "install-hooks": {
       const { installHooks } = await import("./install")
@@ -242,7 +242,7 @@ async function main(argv: string[]): Promise<number> {
       return 0
     }
     default:
-      console.error(`Commande inconnue : « ${cmd} ».\n`)
+      console.error(`Unknown command: "${cmd}".\n`)
       console.log(help())
       return 2
   }
@@ -254,7 +254,7 @@ main(process.argv.slice(2)).then(
   },
   (err) => {
     if (process.argv[2] === "hook") process.exit(0)
-    console.error(err instanceof UserError ? err.message : `Erreur : ${(err as Error)?.message ?? err}`)
+    console.error(err instanceof UserError ? err.message : `Error: ${(err as Error)?.message ?? err}`)
     if (process.env.COMPANY_BRAIN_DEBUG && err instanceof Error) console.error(err.stack)
     process.exitCode = 1
   },

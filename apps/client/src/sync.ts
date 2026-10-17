@@ -1,4 +1,4 @@
-// brain-sync : sources locales → filtre vie privée → distillation → POST /api/ingest (puis checkpoints).
+// brain-sync: local sources → privacy filter → distillation → POST /api/ingest (then checkpoints).
 
 import { createHash } from "node:crypto"
 import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from "node:fs"
@@ -50,16 +50,16 @@ export type SyncOptions = {
   verbose?: boolean
   distiller?: DistillerKind
   reset?: boolean
-  /** Simulation : affiche chaque connaissance en entier (titre et corps complets). */
+  /** Dry run: shows each knowledge item in full (complete title and body). */
   full?: boolean
-  /** Envoie exactement la dernière simulation (preview.json), sans relire ni redistiller. */
+  /** Sends exactly the last dry run (preview.json), without reading or distilling again. */
   confirm?: boolean
 }
 
 export type Io = { log: (s: string) => void; warn: (s: string) => void }
 const defaultIo: Io = { log: (s) => console.log(s), warn: (s) => console.error(s) }
 
-/** "24h", "7d", "30m", "2w" ou une date ISO. */
+/** "24h", "7d", "30m", "2w" or an ISO date. */
 export function parseSince(s: string | undefined, now = new Date()): Date {
   const v = (s ?? "24h").trim()
   const m = v.match(/^(\d+(?:\.\d+)?)\s*(m|min|h|d|j|w|s)$/i)
@@ -70,7 +70,7 @@ export function parseSince(s: string | undefined, now = new Date()): Date {
     return new Date(now.getTime() - n * ms)
   }
   const t = Date.parse(v)
-  if (!Number.isFinite(t)) throw new Error(`--since invalide : « ${v} » (exemples : 24h, 7d, 2026-10-16T09:00:00Z)`)
+  if (!Number.isFinite(t)) throw new Error(`Invalid --since: "${v}" (examples: 24h, 7d, 2026-10-16T09:00:00Z)`)
   return new Date(t)
 }
 
@@ -85,7 +85,7 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-/** Verrou fichier : une seule synchro à la fois ; un verrou de plus de 30 min (ou orphelin) est retiré. */
+/** File lock: one sync at a time; a lock older than 30 min (or orphaned) is removed. */
 export function acquireLock(file = paths.lock()): { release: () => void } | { busy: string } {
   ensureHome()
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -101,7 +101,7 @@ export function acquireLock(file = paths.lock()): { release: () => void } | { bu
           try {
             unlinkSync(file)
           } catch {
-            // déjà retiré
+            // already removed
           }
         },
       }
@@ -111,7 +111,7 @@ export function acquireLock(file = paths.lock()): { release: () => void } | { bu
       try {
         info = JSON.parse(readFileSync(file, "utf8"))
       } catch {
-        // verrou illisible
+        // unreadable lock
       }
       let age = 0
       try {
@@ -120,15 +120,15 @@ export function acquireLock(file = paths.lock()): { release: () => void } | { bu
         continue
       }
       const stale = age > LOCK_STALE_MS || (typeof info.pid === "number" && !pidAlive(info.pid))
-      if (!stale) return { busy: `pid ${info.pid ?? "?"}, depuis ${Math.round(age / 1000)} s` }
+      if (!stale) return { busy: `pid ${info.pid ?? "?"}, for ${Math.round(age / 1000)} s` }
       try {
         unlinkSync(file)
       } catch {
-        // course avec un autre processus
+        // race with another process
       }
     }
   }
-  return { busy: "verrou impossible à obtenir" }
+  return { busy: "cannot get the lock" }
 }
 
 async function mapPool<T, R>(items: T[], n: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
@@ -145,20 +145,20 @@ async function mapPool<T, R>(items: T[], n: number, fn: (item: T, i: number) => 
 }
 
 
-/** Conversation écartée par le filtre vie privée (raison, et pour le contenu perso : les indices trouvés). */
+/** Conversation dropped by the privacy filter (reason, and for personal content: the signals found). */
 export type DroppedConversation = {
   id: string
   reason: string
   ended_at?: string
-  /** Contenu personnel : indices trouvés par personalSignals (affichés en simulation et en --verbose). */
+  /** Personal content: signals found by personalSignals (shown in dry runs and with --verbose). */
   signals?: PersonalSignals
-  /** Contenu personnel sur indices faibles seulement : réexaminé tant que la conversation se poursuit. */
+  /** Personal content on weak signals only: examined again as long as the conversation goes on. */
   weakOnly?: boolean
 }
 
 /**
- * Masque secrets et données perso dans chaque message (y compris les secrets du poste, pris tels quels) ;
- * écarte les conversations perso, vides, internes, ou la session d'installation du cerveau.
+ * Redacts secrets and personal data in each message (including the computer's secrets, taken as is);
+ * drops personal, empty or internal conversations, or the brain's install session.
  */
 export function applyPrivacy(
   convs: Conversation[],
@@ -186,63 +186,63 @@ export function applyPrivacy(
       .filter((m) => m.text)
     const all = messages.map((m) => m.text).join("\n")
     const text = `${c.title ?? ""}\n${all}`
-    if (!messages.length || !all.trim()) dropped.push({ id: c.id, reason: "vide" })
-    else if (all.includes(DISTILL_MARKER)) dropped.push({ id: c.id, reason: "session interne de distillation" })
-    else if (setup) dropped.push({ id: c.id, reason: "session d'installation du cerveau" })
+    if (!messages.length || !all.trim()) dropped.push({ id: c.id, reason: "empty" })
+    else if (all.includes(DISTILL_MARKER)) dropped.push({ id: c.id, reason: "internal distillation session" })
+    else if (setup) dropped.push({ id: c.id, reason: "brain install session" })
     else if (looksPersonal(text)) {
       const signals = personalSignals(text)
-      dropped.push({ id: c.id, reason: "contenu personnel", ended_at: c.ended_at, signals, weakOnly: signals.strong.length === 0 })
+      dropped.push({ id: c.id, reason: "personal content", ended_at: c.ended_at, signals, weakOnly: signals.strong.length === 0 })
     } else kept.push({ ...c, title: c.title ? truncate(maskOwnSecrets(redactText(c.title, { literals: secrets }), secrets).text, 120) : undefined, messages })
   }
   return { kept, dropped, redactions }
 }
 
-/** « contenu personnel : divorce, médecin » ou « contenu personnel, indices faibles : whatsapp (vocabulaire pro : 1) ». */
+/** "personal content: divorce, doctor" or "personal content, weak signals: whatsapp (work vocabulary: 1)". */
 export function describeDrop(d: DroppedConversation): string {
   if (!d.signals) return d.reason
   const s = d.signals
-  if (s.strong.length) return `${d.reason} : ${s.strong.slice(0, 5).join(", ")}`
-  return `${d.reason}, indices faibles : ${s.weak.slice(0, 5).join(", ") || "?"} (vocabulaire pro : ${s.work})`
+  if (s.strong.length) return `${d.reason}: ${s.strong.slice(0, 5).join(", ")}`
+  return `${d.reason}, weak signals: ${s.weak.slice(0, 5).join(", ") || "?"} (work vocabulary: ${s.work})`
 }
 
-/** Une conversation écartée sur indices faibles est réexaminée tant qu'elle a bougé depuis moins de ce délai. */
+/** A conversation dropped on weak signals is examined again as long as it moved less than this long ago. */
 export const PERSONAL_RETRY_MS = 2 * 3_600_000
 /**
- * Panne : après ce nombre d'échecs de panne consécutifs (réseau, limite d'abonnement…), ou d'échecs identiques sans que
- * Claude ait répondu une seule fois (délai, même erreur), Claude n'est plus sollicité pendant la synchro. Une connexion
- * perdue (jeton expiré ou révoqué) arrête tout de suite.
+ * Outage: after this many consecutive outage failures (network, subscription limit…), or identical failures without
+ * Claude having answered even once (timeout, same error), Claude is no longer called during the sync. A lost
+ * sign-in (expired or revoked token) stops everything right away.
  */
 export const MAX_SYSTEMIC_FAILURES = 3
 /**
- * Une conversation que Claude n'arrive pas à distiller est abandonnée (rien n'est envoyé) au bout de N essais probants :
- * le modèle a répondu sans JSON exploitable (refus, sortie illisible), ou l'appel a échoué (délai, erreur inconnue)
- * pendant une synchro où Claude a répondu à un autre appel. Une panne reconnue (connexion perdue, réseau, limite
- * d'abonnement, surcharge) n'est jamais décomptée.
+ * A conversation Claude cannot distill is given up (nothing is sent) after N conclusive attempts:
+ * the model answered without usable JSON (refusal, unreadable output), or the call failed (timeout, unknown error)
+ * during a sync where Claude answered another call. A recognized outage (lost sign-in, network, subscription
+ * limit, overload) is never counted.
  */
 export const MAX_DISTILL_ATTEMPTS = 3
 /**
- * Garde-fou contre le blocage : un échec qui ne prouve rien (délai ou erreur inconnue, sans qu'aucun autre appel de la
- * synchro n'ait obtenu de réponse) ne fait abandonner une conversation que si ses échecs durent depuis au moins 24 h,
- * sur au moins 5 essais. Une limite d'abonnement (5 h) n'abandonne donc rien, et une conversation vraiment bloquée
- * libère le checkpoint (Screenpipe compris) en un jour.
+ * Safeguard against blocking: a failure that proves nothing (timeout or unknown error, without any other call of the
+ * sync getting an answer) only makes a conversation be given up if its failures have lasted at least 24 h,
+ * over at least 5 attempts. A subscription limit (5 h) therefore gives up nothing, and a truly stuck conversation
+ * frees the checkpoint (Screenpipe included) within a day.
  */
 export const STUCK_ABANDON_MS = 24 * 3_600_000
 export const STUCK_ABANDON_TRIES = 5
 const FAILURE_TTL_MS = 7 * 86_400_000
 
 const SOURCE_LABELS: Record<SourceName, string> = { claude: "Claude Code", codex: "Codex", screenpipe: "Screenpipe" }
-const KIND_LABELS: Record<string, string> = { fact: "fait", decision: "décision", task: "tâche", procedure: "procédure", question: "question" }
+const KIND_LABELS: Record<string, string> = { fact: "fact", decision: "decision", task: "task", procedure: "procedure", question: "question" }
 
 function kb(n: number): string {
-  return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} Mo` : `${(n / 1024).toFixed(1)} Ko`
+  return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${(n / 1024).toFixed(1)} KB`
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n > 1 ? many : one}`
+  return `${n} ${n === 1 ? one : many}`
 }
 
 function hhmm(iso: string): string {
-  return new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+  return new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
 }
 
 export type SyncSummary = {
@@ -250,24 +250,24 @@ export type SyncSummary = {
   conversations: Partial<Record<SourceName, number>>
   items: KnowledgeItemInput[]
   sent: number
-  /** Items que le cerveau avait déjà (dédoublonnage serveur). */
+  /** Items the brain already had (server deduplication). */
   duplicates?: number
-  /** Connaissances réellement insérées, par zone (d'après la réponse du cerveau). */
+  /** Knowledge actually inserted, per zone (according to the brain's response). */
   zones: Record<string, number>
   distiller: DistillerKind
   deferred: number
-  /** Conversations que le LLM n'a pas distillées : rien d'envoyé pour elles, retentées à la prochaine synchro. */
+  /** Conversations the LLM did not distill: nothing sent for them, retried on the next sync. */
   failed?: number
-  /** Ce que la simulation ne montre pas (et que --confirm n'enverra pas). */
+  /** What the dry run does not show (and that --confirm will not send). */
   gaps?: string[]
 }
 
-/** Ce que `sync --dry-run` a montré, pour que `sync --confirm` envoie exactement cela. */
+/** What `sync --dry-run` showed, so that `sync --confirm` sends exactly that. */
 export type Preview = {
   version: 1
   created_at: string
   url: string
-  /** Empreinte de state.json au moment de la simulation : une synchro entre-temps invalide l'aperçu. */
+  /** Fingerprint of state.json at dry-run time: a sync in between invalidates the preview. */
   state_hash: string
   distiller: DistillerKind
   conversations: Partial<Record<SourceName, number>>
@@ -284,7 +284,7 @@ function stateHash(): string {
   try {
     return createHash("sha256").update(readFileSync(paths.state())).digest("hex")
   } catch {
-    return "aucun"
+    return "none"
   }
 }
 
@@ -292,7 +292,7 @@ function removePreview() {
   try {
     unlinkSync(paths.preview())
   } catch {
-    // pas d'aperçu
+    // no preview
   }
 }
 
@@ -306,13 +306,13 @@ function zoneLineOf(perZone: Record<string, number>): string {
   return Object.entries(perZone)
     .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1])
-    .map(([z, n]) => `${z} : ${n}`)
+    .map(([z, n]) => `${z}: ${n}`)
     .join(", ")
 }
 
 /**
- * Répartition par zone des items réellement insérés d'un lot, d'après la réponse du cerveau : `per_zone` s'il le donne,
- * sinon déduite de `inserted` et des zones touchées (`zones`). Null si la réponse ne permet pas de trancher.
+ * Per-zone breakdown of a batch's items actually inserted, according to the brain's response: `per_zone` if it gives it,
+ * otherwise deduced from `inserted` and the zones touched (`zones`). Null if the response does not settle it.
  */
 export function insertedByZone(batch: { zone: string }[], res: Pick<IngestResult, "inserted" | "zones" | "per_zone">): Record<string, number> | null {
   if (res.per_zone && typeof res.per_zone === "object") return Object.fromEntries(Object.entries(res.per_zone).filter(([, n]) => typeof n === "number" && n > 0))
@@ -324,7 +324,7 @@ export function insertedByZone(batch: { zone: string }[], res: Pick<IngestResult
   return null
 }
 
-/** Cumul des insertions par zone sur plusieurs lots ; les lots ambigus sont comptés à part (« compta ou dev : 2 »). */
+/** Total insertions per zone over several batches; ambiguous batches are counted separately ("finance or dev: 2"). */
 export class ZoneTally {
   exact: Record<string, number> = {}
   unsure = new Map<string, number>()
@@ -335,22 +335,22 @@ export class ZoneTally {
       return
     }
     const zones = [...new Set(res.zones?.length ? res.zones : batch.map((i) => i.zone))].sort()
-    const key = zones.join(" ou ")
+    const key = zones.join(" or ")
     this.unsure.set(key, (this.unsure.get(key) ?? 0) + res.inserted)
   }
-  /** Pour last_sync.zones. */
+  /** For last_sync.zones. */
   record(): Record<string, number> {
     return { ...this.exact, ...Object.fromEntries(this.unsure) }
   }
   line(): string {
-    return [zoneLineOf(this.exact), ...[...this.unsure].map(([k, n]) => `${k} : ${n}`)].filter(Boolean).join(", ")
+    return [zoneLineOf(this.exact), ...[...this.unsure].map(([k, n]) => `${k}: ${n}`)].filter(Boolean).join(", ")
   }
 }
 
 function sentLine(sent: number, duplicates: number, zoneLine: string): string {
   return (
-    `Envoyé : ${plural(sent, "connaissance")} au cerveau${zoneLine ? ` (${zoneLine})` : ""}` +
-    (duplicates ? `, ${plural(duplicates, "déjà connue ignorée", "déjà connues ignorées")} par le cerveau` : "") +
+    `Sent: ${plural(sent, "knowledge item")} to the brain${zoneLine ? ` (${zoneLine})` : ""}` +
+    (duplicates ? `, ${plural(duplicates, "already known item skipped", "already known items skipped")} by the brain` : "") +
     "."
   )
 }
@@ -358,7 +358,7 @@ function sentLine(sent: number, duplicates: number, zoneLine: string): string {
 function withLock<T>(io: Io, busy: () => T, fn: () => Promise<T>): Promise<T> {
   const lock = acquireLock()
   if ("busy" in lock) {
-    io.log(`Une synchronisation est déjà en cours (${lock.busy}) : on passe.`)
+    io.log(`A sync is already in progress (${lock.busy}): skipping.`)
     return Promise.resolve(busy())
   }
   const onSignal = () => {
@@ -377,24 +377,24 @@ function withLock<T>(io: Io, busy: () => T, fn: () => Promise<T>): Promise<T> {
 export async function runSync(opts: SyncOptions = {}, io: Io = defaultIo): Promise<SyncSummary> {
   const cfg = requireConfig()
   const skippedSummary = (busy: string): SyncSummary => ({ skipped: busy, conversations: {}, items: [], sent: 0, zones: {}, distiller: "heuristic", deferred: 0 })
-  if (opts.confirm) return withLock(io, () => skippedSummary("verrou"), () => confirmPreview(cfg, io))
+  if (opts.confirm) return withLock(io, () => skippedSummary("lock"), () => confirmPreview(cfg, io))
   if (opts.dryRun) return collectAndSend(cfg, opts, io)
-  return withLock(io, () => skippedSummary("verrou"), () => collectAndSend(cfg, opts, io))
+  return withLock(io, () => skippedSummary("lock"), () => collectAndSend(cfg, opts, io))
 }
 
-/** `sync --confirm` : envoie les connaissances de la dernière simulation, telles qu'affichées, puis ses checkpoints. */
+/** `sync --confirm`: sends the knowledge of the last dry run, as shown, then its checkpoints. */
 async function confirmPreview(cfg: Config, io: Io): Promise<SyncSummary> {
   const preview = readJson<Preview>(paths.preview())
   if (!preview || preview.version !== 1 || !Array.isArray(preview.items)) {
-    throw new UserError("Aucune simulation à confirmer : lancez d'abord `sync --dry-run --full`, relisez, puis `sync --confirm`.")
+    throw new UserError("No dry run to confirm: first run `sync --dry-run --full`, review it, then `sync --confirm`.")
   }
-  if (preview.url !== cfg.url) throw new UserError("Cette simulation a été faite pour un autre cerveau : relancez `sync --dry-run --full`.")
-  if (!(Date.now() - Date.parse(preview.created_at) < PREVIEW_TTL_MS)) throw new UserError("Simulation de plus de 24 h : relancez `sync --dry-run --full`.")
+  if (preview.url !== cfg.url) throw new UserError("This dry run was made for another brain: run `sync --dry-run --full` again.")
+  if (!(Date.now() - Date.parse(preview.created_at) < PREVIEW_TTL_MS)) throw new UserError("Dry run older than 24 h: run `sync --dry-run --full` again.")
   if (stateHash() !== preview.state_hash) {
-    throw new UserError("Une synchronisation a eu lieu depuis la simulation : relancez `sync --dry-run --full` pour voir ce qui reste à envoyer.")
+    throw new UserError("A sync happened since the dry run: run `sync --dry-run --full` again to see what is left to send.")
   }
   const api = new BrainApi(cfg.url, cfg.token)
-  io.log(`brain-sync — envoi de la simulation du ${new Date(preview.created_at).toLocaleString("fr-FR")} (${plural(preview.items.length, "connaissance")}, à l'identique).`)
+  io.log(`brain-sync — sending the dry run of ${new Date(preview.created_at).toLocaleString("en-GB")} (${plural(preview.items.length, "knowledge item")}, unchanged).`)
   let sent = 0
   let duplicates = 0
   const tally = new ZoneTally()
@@ -407,15 +407,15 @@ async function confirmPreview(cfg: Config, io: Io): Promise<SyncSummary> {
       tally.add(batch, res)
     }
   } catch (err) {
-    io.warn(`Envoi interrompu après ${plural(sent, "connaissance")} : relancez \`sync --confirm\` (ce que le cerveau a déjà reçu sera ignoré).`)
+    io.warn(`Sending interrupted after ${plural(sent, "knowledge item")}: run \`sync --confirm\` again (what the brain already received will be skipped).`)
     throw err
   }
   if (preview.workflows?.length) {
     try {
       const r = await api.automations(preview.workflows)
-      io.log(`Automatisations : ${plural(r.saved, "workflow Screenpipe remonté", "workflows Screenpipe remontés")}.`)
+      io.log(`Automations: ${plural(r.saved, "Screenpipe workflow sent up", "Screenpipe workflows sent up")}.`)
     } catch (err) {
-      io.warn(`Automatisations non remontées : ${(err as Error).message}`)
+      io.warn(`Automations not sent up: ${(err as Error).message}`)
     }
   }
   const zones = tally.record()
@@ -436,22 +436,22 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   const wanted: SourceName[] = !opts.source || opts.source === "all" ? cfg.sources : [opts.source]
   const secrets = ownSecrets(cfg)
   const baseState = loadState()
-  // Après install-schedule, rien d'antérieur à la mise en place qui n'ait déjà été relu (sauf --since explicite),
-  // pour toutes les sources : fichiers déjà suivis compris, et Screenpipe même avec un ancien checkpoint.
+  // After install-schedule, nothing earlier than the setup that has not already been read (except an explicit --since),
+  // for every source: files already followed included, and Screenpipe even with an old checkpoint.
   const baseline = !explicitSince && baseState.baseline_at && Number.isFinite(Date.parse(baseState.baseline_at)) ? new Date(baseState.baseline_at) : undefined
   let since = parseSince(opts.since)
   if (baseline && baseline.getTime() > since.getTime()) since = baseline
 
-  io.log(`brain-sync — ${new Date().toLocaleString("fr-FR")}${opts.dryRun ? " (simulation : rien ne sera envoyé)" : ""}`)
+  io.log(`brain-sync — ${new Date().toLocaleString("en-GB")}${opts.dryRun ? " (dry run: nothing will be sent)" : ""}`)
 
-  // 1. Zones (toutes, avec mots-clés) — repli sur le cache.
+  // 1. Zones (all of them, with keywords) — falls back on the cache.
   const { cache, errors } = await refreshCache(api)
-  if (errors.length) io.warn(`Attention : ${errors[0]} — zones lues depuis le cache local.`)
+  if (errors.length) io.warn(`Warning: ${errors[0]} — zones read from the local cache.`)
   const zones: ZoneHint[] = zoneHints(cache.zones ? cache : loadCache())
   const defaultZone = cache.whoami?.writable[0] ?? zones[0]?.id ?? "general"
 
   const distiller = await createDistiller(cfg, opts.distiller)
-  io.log(`Distillation : ${DISTILLER_LABELS[distiller.kind]} — ${distiller.reason}`)
+  io.log(`Distillation: ${DISTILLER_LABELS[distiller.kind]} — ${distiller.reason}`)
 
   // 2. Sources.
   const state = baseState
@@ -485,38 +485,38 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   io.log("Sources :")
   for (const r of results) {
     const label = SOURCE_LABELS[r.source]
-    if (!r.available) io.log(`  - ${label} : ${r.source === "screenpipe" ? "indisponible, ignoré" : "aucun log trouvé"}`)
+    if (!r.available) io.log(`  - ${label}: ${r.source === "screenpipe" ? "unavailable, skipped" : "no log found"}`)
     else {
       const extra =
         r.source === "screenpipe"
-          ? `${r.stats.items ?? 0} captures, type « ${r.stats.content_type ?? "?"} »` + (r.stats.meetings !== undefined ? `, ${plural(Number(r.stats.meetings), "réunion")}` : "")
-          : `${plural(Number(r.stats.files ?? 0), "fichier")} lu${Number(r.stats.files) > 1 ? "s" : ""}, ${kb(Number(r.stats.bytes ?? 0))}` +
-            (Number(r.stats.internal) ? `, ${r.stats.internal} session(s) interne(s) ignorée(s)` : "") +
-            (Number(r.stats.pending) ? `, ${plural(Number(r.stats.pending), "tour en cours", "tours en cours")} lu(s) au prochain passage` : "")
+          ? `${r.stats.items ?? 0} captures, type "${r.stats.content_type ?? "?"}"` + (r.stats.meetings !== undefined ? `, ${plural(Number(r.stats.meetings), "meeting")}` : "")
+          : `${plural(Number(r.stats.files ?? 0), "file")} read, ${kb(Number(r.stats.bytes ?? 0))}` +
+            (Number(r.stats.internal) ? `, ${r.stats.internal} internal session(s) skipped` : "") +
+            (Number(r.stats.pending) ? `, ${plural(Number(r.stats.pending), "turn in progress", "turns in progress")} read on the next pass` : "")
       const nothing = r.source !== "screenpipe" && !Number(r.stats.files) && r.conversations.length === 0
-      io.log(`  - ${label} : ${nothing ? "rien de nouveau depuis la dernière synchro" : `${plural(r.conversations.length, "conversation")} (${extra})`}`)
+      io.log(`  - ${label}: ${nothing ? "nothing new since the last sync" : `${plural(r.conversations.length, "conversation")} (${extra})`}`)
     }
     for (const w of r.warnings) io.warn(`    ${w}`)
   }
 
-  // 3. Vie privée.
+  // 3. Privacy.
   const now = Date.now()
   const all = results.flatMap((r) => r.conversations)
   const privacy = applyPrivacy(all, secrets)
   const totalRedactions = Object.values(privacy.redactions).reduce((a, b) => a + b, 0)
-  const personalDrops = privacy.dropped.filter((d) => d.reason === "contenu personnel")
-  // Indices faibles seulement, conversation encore active : pas marquée comme traitée, elle sera réexaminée en entier.
+  const personalDrops = privacy.dropped.filter((d) => d.reason === "personal content")
+  // Weak signals only, conversation still active: not marked as processed, it will be examined again in full.
   const retry = new Set(personalDrops.filter((d) => d.weakOnly && d.ended_at && now - Date.parse(d.ended_at) < PERSONAL_RETRY_MS).map((d) => d.id))
   io.log(
-    `Vie privée : ${plural(totalRedactions, "élément masqué", "éléments masqués")}` +
+    `Privacy: ${plural(totalRedactions, "item redacted", "items redacted")}` +
       (verbose && totalRedactions ? ` (${Object.entries(privacy.redactions).map(([k, v]) => `${k} : ${v}`).join(", ")})` : "") +
-      `, ${plural(personalDrops.length, "conversation perso écartée", "conversations perso écartées")}`,
+      `, ${plural(personalDrops.length, "personal conversation dropped", "personal conversations dropped")}`,
   )
   const shownDrops = verbose ? privacy.dropped : opts.dryRun ? personalDrops.slice(0, 20) : []
-  for (const d of shownDrops) io.log(`    écartée : ${d.id} (${describeDrop(d)}${retry.has(d.id) ? " ; réexaminée à la prochaine synchro tant qu'elle se poursuit" : ""})`)
-  if (!verbose && opts.dryRun && personalDrops.length > shownDrops.length) io.log(`    … et ${personalDrops.length - shownDrops.length} autre(s) (--verbose pour tout voir)`)
+  for (const d of shownDrops) io.log(`    dropped: ${d.id} (${describeDrop(d)}${retry.has(d.id) ? "; examined again on the next sync as long as it goes on" : ""})`)
+  if (!verbose && opts.dryRun && personalDrops.length > shownDrops.length) io.log(`    … and ${personalDrops.length - shownDrops.length} more (--verbose to see everything)`)
 
-  // 4. Distillation, des plus anciennes aux plus récentes, dans la limite de --limit segments.
+  // 4. Distillation, from the oldest to the most recent, within the --limit of segments.
   const processed = new Set(privacy.dropped.filter((d) => !retry.has(d.id)).map((d) => d.id))
   const queue = [...privacy.kept].sort((a, b) => a.ended_at.localeCompare(b.ended_at))
   const jobs: { conv: Conversation; chunk: Conversation }[] = []
@@ -541,19 +541,19 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       break
     }
   }
-  if (deferred > 0 && !opts.dryRun) io.log(`Limite de ${limit} segments atteinte : ${plural(deferred, "conversation")} reportée(s) à la prochaine synchro.`)
+  if (deferred > 0 && !opts.dryRun) io.log(`Limit of ${limit} segments reached: ${plural(deferred, "conversation")} postponed to the next sync.`)
 
-  // Un échec du LLM ne retombe jamais sur l'heuristique : la conversation n'est pas traitée et sera redistillée plus tard.
-  // Les conversations qui ont déjà échoué passent après les autres : une réussite montre d'abord que Claude fonctionne.
+  // An LLM failure never falls back on the heuristic: the conversation is not processed and will be distilled again later.
+  // The conversations that already failed go after the others: a success first shows that Claude works.
   const prevFailures = baseState.distill_failures ?? {}
   const order = jobs.map((_, i) => i).sort((a, b) => Number(Boolean(prevFailures[jobs[a].conv.id])) - Number(Boolean(prevFailures[jobs[b].conv.id])) || a - b)
   const distilled: KnowledgeItemInput[][] = jobs.map(() => [])
   const failedConvs = new Map<string, Failure>()
   const untried = new Set<string>()
-  /** Appels où Claude a répondu (réussite, ou refus / sortie illisible) : la CLI et la connexion fonctionnent. */
+  /** Calls where Claude answered (success, or refusal / unreadable output): the CLI and the sign-in work. */
   let alive = 0
   let outageStreak = 0
-  /** Échecs sans réponse du modèle (délai, erreur inconnue), par conversation : tous identiques et rien d'autre = panne. */
+  /** Failures without an answer from the model (timeout, unknown error), per conversation: all identical and nothing else = outage. */
   const blind = new Map<string, string>()
   let stop: "auth" | "outage" | "same" | null = null
   const sameWay = () => alive === 0 && blind.size >= MAX_SYSTEMIC_FAILURES && new Set(blind.values()).size === 1
@@ -568,7 +568,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     const fallbackZone = classifyZones(text, zones, 1)[0] ?? defaultZone
     const res = await distiller.distill(chunk, zones, fallbackZone)
     if (res.failed) {
-      const f: Failure = { error: maskOwnSecrets(res.error ?? "échec", secrets).text, failure: res.failure ?? "conversation", signature: res.signature }
+      const f: Failure = { error: maskOwnSecrets(res.error ?? "failure", secrets).text, failure: res.failure ?? "conversation", signature: res.signature }
       failedConvs.set(conv.id, f)
       if (f.failure === "auth") stop = "auth"
       else if (f.failure === "outage") {
@@ -582,20 +582,20 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       outageStreak = 0
       distilled[i] = res.items
     }
-    if (verbose) io.log(`    ${conv.tool} ${truncate(conv.title ?? conv.id, 60)} → ${res.failed ? `échec (${truncate(res.error ?? "?", 120)})` : plural(res.items.length, "item")} (${DISTILLER_LABELS[res.used]})`)
+    if (verbose) io.log(`    ${conv.tool} ${truncate(conv.title ?? conv.id, 60)} → ${res.failed ? `failed (${truncate(res.error ?? "?", 120)})` : plural(res.items.length, "item")} (${DISTILLER_LABELS[res.used]})`)
   })
   for (const id of untried) if (failedConvs.has(id)) untried.delete(id)
   const notDistilled = new Set([...failedConvs.keys(), ...untried])
 
-  // Échecs propres à une conversation : décomptés (n) quand ils sont probants, c'est-à-dire quand le modèle a répondu
-  // (refus, sortie illisible) ou quand Claude a répondu à un autre appel de cette synchro ; abandon à MAX_DISTILL_ATTEMPTS,
-  // pour ne jamais bloquer la file ni le checkpoint Screenpipe. Sans aucune réponse de Claude (délai, erreur inconnue),
-  // l'échec ne prouve rien : seul le garde-fou des 24 h s'applique. Une panne reconnue (connexion perdue, CLI absente,
-  // réseau, limite d'abonnement, surcharge) n'est pas décomptée du tout.
+  // Failures specific to a conversation: counted (n) when they are conclusive, that is when the model answered
+  // (refusal, unreadable output) or when Claude answered another call of this sync; given up at MAX_DISTILL_ATTEMPTS,
+  // so as never to block the queue or the Screenpipe checkpoint. Without any answer from Claude (timeout, unknown error),
+  // the failure proves nothing: only the 24 h safeguard applies. A recognized outage (lost sign-in, missing CLI,
+  // network, subscription limit, overload) is not counted at all.
   const failures = [...failedConvs.values()]
   const authFailure = failures.find((f) => f.failure === "auth")
   const outageCount = failures.filter((f) => f.failure === "outage").length
-  /** Claude a répondu à au moins un appel de la synchro : la CLI, la connexion et l'abonnement fonctionnent. */
+  /** Claude answered at least one call of the sync: the CLI, the sign-in and the subscription work. */
   const witnessed = alive > 0
   const nowIso = new Date(now).toISOString()
   const failuresNext: NonNullable<State["distill_failures"]> = {}
@@ -605,7 +605,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   const counted: { id: string; n: number }[] = []
   let unproven = 0
   for (const [id, f] of failedConvs) {
-    if (f.failure !== "conversation") continue // panne reconnue : l'historique éventuel est gardé tel quel
+    if (f.failure !== "conversation") continue // recognized outage: any history is kept as is
     const prev = prevFailures[id]
     const proven = !f.signature || witnessed
     const n = (prev?.n ?? 0) + (proven ? 1 : 0)
@@ -627,53 +627,53 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   for (const id of processed) delete failuresNext[id]
 
   const retried = notDistilled.size - (opts.dryRun ? 0 : abandoned.length)
-  const them = (n: number, one: string, many: string) => (n > 1 ? many : one)
+  const them = (n: number, one: string, many: string) => (n === 1 ? one : many)
   if (authFailure) {
     io.warn(`  ${distiller.kind === "claude-api" ? apiAuthHelp(authFailure.error) : claudeAuthHelp(authFailure.error)}`)
     io.warn(
-      `  Distillation interrompue : ${plural(notDistilled.size, "conversation non distillée", "conversations non distillées")}. ` +
-        `Rien n'est envoyé pour ${them(notDistilled.size, "elle", "elles")} et l'heuristique n'est pas utilisée à la place : ` +
-        `${them(notDistilled.size, "elle sera distillée", "elles seront distillées")} à la prochaine synchro, une fois Claude reconnecté (aucun essai décompté).`,
+      `  Distillation interrupted: ${plural(notDistilled.size, "conversation not distilled", "conversations not distilled")}. ` +
+        `Nothing is sent for ${them(notDistilled.size, "it", "them")} and the heuristic is not used instead: ` +
+        `${them(notDistilled.size, "it will be distilled", "they will be distilled")} on the next sync, once Claude is signed in again (no attempt counted).`,
     )
   } else if (notDistilled.size) {
     const first = (failures.find((f) => f.failure !== "conversation") ?? failures[0])?.error ?? "?"
     let why = ""
     if (counted.length)
       why +=
-        ` Échec lié au contenu de ${plural(counted.length, "conversation")} (essai ${Math.max(...counted.map((c) => c.n))}/${MAX_DISTILL_ATTEMPTS}) :` +
-        ` au bout de ${MAX_DISTILL_ATTEMPTS} essais, ${them(counted.length, "elle sera abandonnée", "elles seront abandonnées")} sans rien envoyer, pour ne pas bloquer la synchro.`
+        ` Failure due to the content of ${plural(counted.length, "conversation")} (attempt ${Math.max(...counted.map((c) => c.n))}/${MAX_DISTILL_ATTEMPTS}):` +
+        ` after ${MAX_DISTILL_ATTEMPTS} attempts, ${them(counted.length, "it will be given up", "they will be given up")} without sending anything, so as not to block the sync.`
     if (outageCount || unproven) {
-      const label = outageCount ? "Claude injoignable ou saturé" : sameWay() ? "tous les appels échouent de la même façon" : "Claude n'a répondu à aucun appel"
+      const label = outageCount ? "Claude unreachable or overloaded" : sameWay() ? "every call fails the same way" : "Claude answered no call"
       why +=
-        ` Panne${witnessed ? "" : " générale"} (${label}) : ` +
-        (counted.length ? `aucun essai décompté pour ${plural(outageCount + unproven, "autre conversation", "autres conversations")}.` : "aucun essai n'est décompté.") +
+        ` ${witnessed ? "Outage" : "General outage"} (${label}): ` +
+        (counted.length ? `no attempt counted for ${plural(outageCount + unproven, "other conversation", "other conversations")}.` : "no attempt is counted.") +
         (unproven
-          ? ` Une conversation qui échoue ainsi depuis plus de 24 h (au moins ${STUCK_ABANDON_TRIES} essais) sera abandonnée, pour ne pas bloquer la synchro.`
+          ? ` A conversation that has been failing this way for more than 24 h (at least ${STUCK_ABANDON_TRIES} attempts) will be given up, so as not to block the sync.`
           : "") +
-        (witnessed ? "" : " Vérifiez que `claude -p` fonctionne (connexion, quotas ; `init --claude-token`) ou distillez sans LLM avec --distiller heuristic.")
+        (witnessed ? "" : " Check that `claude -p` works (sign-in, quotas; `init --claude-token`) or distill without an LLM with --distiller heuristic.")
     }
     io.warn(
-      `  Distillation : ${plural(notDistilled.size, "conversation non distillée", "conversations non distillées")} par ${DISTILLER_LABELS[distiller.kind]}` +
-        ` (${truncate(first, 160)})${untried.size ? `, dont ${untried.size} non tentée(s) (Claude indisponible)` : ""}.` +
+      `  Distillation: ${plural(notDistilled.size, "conversation not distilled", "conversations not distilled")} by ${DISTILLER_LABELS[distiller.kind]}` +
+        ` (${truncate(first, 160)})${untried.size ? `, of which ${untried.size} not attempted (Claude unavailable)` : ""}.` +
         (retried > 0
-          ? ` Rien n'est envoyé pour ${them(retried, "elle", "elles")} et l'heuristique n'est pas utilisée à la place : ${them(retried, "elle sera retentée", "elles seront retentées")} à la prochaine synchro.`
+          ? ` Nothing is sent for ${them(retried, "it", "them")} and the heuristic is not used instead: ${them(retried, "it will be retried", "they will be retried")} on the next sync.`
           : "") +
         why,
     )
   }
-  if (verbose) for (const [id, f] of failedConvs) io.log(`    non distillée : ${id} (${truncate(f.error, 160)})`)
+  if (verbose) for (const [id, f] of failedConvs) io.log(`    not distilled: ${id} (${truncate(f.error, 160)})`)
   if (givenUp.length && !opts.dryRun)
     io.warn(
-      `  ${plural(givenUp.length, "conversation abandonnée", "conversations abandonnées")} après ${MAX_DISTILL_ATTEMPTS} essais infructueux : ` +
-        `rien n'a été envoyé pour ${them(givenUp.length, "elle", "elles")}, la synchro continue sans ${them(givenUp.length, "elle", "elles")} (checkpoints avancés).`,
+      `  ${plural(givenUp.length, "conversation given up", "conversations given up")} after ${MAX_DISTILL_ATTEMPTS} unsuccessful attempts: ` +
+        `nothing was sent for ${them(givenUp.length, "it", "them")}, the sync goes on without ${them(givenUp.length, "it", "them")} (checkpoints moved forward).`,
     )
   if (stuck.length && !opts.dryRun)
     io.warn(
-      `  ${plural(stuck.length, "conversation abandonnée", "conversations abandonnées")} après plus de 24 h d'échecs (${STUCK_ABANDON_TRIES} essais au moins) : ` +
-        `rien n'a été envoyé pour ${them(stuck.length, "elle", "elles")}, la synchro continue sans ${them(stuck.length, "elle", "elles")} (checkpoints avancés).`,
+      `  ${plural(stuck.length, "conversation given up", "conversations given up")} after more than 24 h of failures (at least ${STUCK_ABANDON_TRIES} attempts): ` +
+        `nothing was sent for ${them(stuck.length, "it", "them")}, the sync goes on without ${them(stuck.length, "it", "them")} (checkpoints moved forward).`,
     )
 
-  // Items rangés par conversation (dans l'ordre de traitement) : une conversation est « faite » quand tous ses items sont partis.
+  // Items grouped by conversation (in processing order): a conversation is "done" when all its items have gone.
   const byConv = new Map<string, KnowledgeItemInput[]>()
   jobs.forEach((j, n) => {
     if (notDistilled.has(j.conv.id)) return
@@ -692,26 +692,26 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
 
   const commits = results.flatMap((r) => r.commits)
 
-  // Ce que l'aperçu ne contient pas : dit clairement (rien de tout cela ne partira avec --confirm).
+  // What the preview does not contain: said clearly (none of it will go with --confirm).
   const gaps: string[] = []
-  if (deferred > 0) gaps.push(`${plural(deferred, "conversation reportée", "conversations reportées")} : limite de ${limit} segments atteinte (--limit N pour en voir plus)`)
-  if (cutChunks > 0) gaps.push(`${plural(cutChunks, "segment ancien", "segments anciens")} d'une très longue conversation, ignoré${cutChunks > 1 ? "s" : ""} (seuls les ${limit} derniers sont lus)`)
+  if (deferred > 0) gaps.push(`${plural(deferred, "conversation postponed", "conversations postponed")}: limit of ${limit} segments reached (--limit N to see more)`)
+  if (cutChunks > 0) gaps.push(`${plural(cutChunks, "old segment", "old segments")} of a very long conversation, skipped (only the last ${limit} are read)`)
   for (const r of results) {
-    if (r.source === "screenpipe" && r.available && r.stats.truncated_until) gaps.push(`Screenpipe : captures lues jusqu'au ${hhmm(String(r.stats.truncated_until))} seulement (la suite n'a pas été lue)`)
-    if (Number(r.stats.pending)) gaps.push(`${SOURCE_LABELS[r.source]} : ${plural(Number(r.stats.pending), "tour de conversation en cours", "tours de conversation en cours")} (réponse pas encore écrite)`)
+    if (r.source === "screenpipe" && r.available && r.stats.truncated_until) gaps.push(`Screenpipe: captures read only up to ${hhmm(String(r.stats.truncated_until))} (the rest was not read)`)
+    if (Number(r.stats.pending)) gaps.push(`${SOURCE_LABELS[r.source]}: ${plural(Number(r.stats.pending), "conversation turn in progress", "conversation turns in progress")} (answer not written yet)`)
   }
-  if (notDistilled.size) gaps.push(`${plural(notDistilled.size, "conversation que Claude n'a pas distillée", "conversations que Claude n'a pas distillées")}`)
+  if (notDistilled.size) gaps.push(`${plural(notDistilled.size, "conversation Claude did not distill", "conversations Claude did not distill")}`)
   if (retry.size)
     gaps.push(
       retry.size > 1
-        ? `${retry.size} conversations écartées pour l'instant (indices personnels faibles), réexaminées si elles se poursuivent`
-        : "1 conversation écartée pour l'instant (indices personnels faibles), réexaminée si elle se poursuit",
+        ? `${retry.size} conversations dropped for now (weak personal signals), examined again if they go on`
+        : "1 conversation dropped for now (weak personal signals), examined again if it goes on",
     )
 
-  // 5. Simulation : on montre tout ce qui partirait, on n'envoie rien, on n'avance pas les checkpoints.
+  // 5. Dry run: we show everything that would go, we send nothing, we do not move the checkpoints.
   if (opts.dryRun) {
     io.log("")
-    io.log(`[simulation] ${plural(items.length, "connaissance")} serai${items.length > 1 ? "en" : ""}t envoyée${items.length > 1 ? "s" : ""}${zoneLine ? ` (${zoneLine})` : ""} :`)
+    io.log(`[dry run] ${plural(items.length, "knowledge item")} would be sent${zoneLine ? ` (${zoneLine})` : ""}:`)
     let abridged = false
     items.forEach((i, n) => {
       io.log(`  ${n + 1}. [${i.zone}] ${KIND_LABELS[i.kind] ?? i.kind} — ${i.title}`)
@@ -723,23 +723,23 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       }
     })
     if (workflows.length) {
-      io.log(`[simulation] ${plural(workflows.length, "workflow répétitif", "workflows répétitifs")} Screenpipe serai${workflows.length > 1 ? "en" : ""}t remonté(s) :`)
+      io.log(`[dry run] ${plural(workflows.length, "repetitive Screenpipe workflow", "repetitive Screenpipe workflows")} would be sent up:`)
       workflows.forEach((w, n) => {
-        io.log(`  W${n + 1}. ${w.title}${w.zone ? ` [${w.zone}]` : ""} — ${w.occurrences} fois sur ${plural(w.days, "jour")}${w.schedule ? `, vers ${w.schedule}` : ""}`)
+        io.log(`  W${n + 1}. ${w.title}${w.zone ? ` [${w.zone}]` : ""} — ${w.occurrences} times over ${plural(w.days, "day")}${w.schedule ? `, around ${w.schedule}` : ""}`)
         if (w.description) io.log(`     ${w.description}`)
       })
     }
-    if (workflowsDropped) io.log(`  ${plural(workflowsDropped, "workflow Screenpipe écarté", "workflows Screenpipe écartés")} (app hors liste blanche ou contenu personnel).`)
-    if (abridged) io.log("Textes abrégés : ajoutez --full pour voir chaque connaissance en entier.")
+    if (workflowsDropped) io.log(`  ${plural(workflowsDropped, "Screenpipe workflow dropped", "Screenpipe workflows dropped")} (app outside the allowlist or personal content).`)
+    if (abridged) io.log("Abridged texts: add --full to see each knowledge item in full.")
     if (gaps.length) {
       io.log("")
-      io.log("Attention, aperçu partiel : ceci n'y figure pas, et ne partira pas avec sync --confirm :")
+      io.log("Warning, partial preview: this is not in it, and will not go with sync --confirm:")
       for (const g of gaps) io.log(`  - ${g}`)
       io.log(
-        "Pour le relire : sync --confirm, puis relancez sync --dry-run --full. Après install-schedule, ce qui n'a pas été relu n'est jamais envoyé.",
+        "To review it: sync --confirm, then run sync --dry-run --full again. After install-schedule, what was not reviewed is never sent.",
       )
     }
-    // L'aperçu exact, pour `sync --confirm` (mêmes items, mêmes checkpoints).
+    // The exact preview, for `sync --confirm` (same items, same checkpoints).
     const next = structuredClone(loadState())
     for (const c of commits) if (c.covers.every((id) => processed.has(id))) c.apply(next)
     delete next.last_sync
@@ -757,11 +757,11 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     }
     ensureHome()
     writeJson(paths.preview(), preview, 0o600)
-    io.log("Rien n'a été envoyé (simulation). Pour envoyer exactement ce qui est affiché : sync --confirm (valable 24 h).")
+    io.log("Nothing was sent (dry run). To send exactly what is shown: sync --confirm (valid for 24 h).")
     return { conversations: convCounts, items, sent: 0, zones: perZone, distiller: distiller.kind, deferred, failed: notDistilled.size, gaps }
   }
 
-  // 6. Envoi par lots de 50 ; après chaque lot, les checkpoints des conversations entièrement envoyées sont enregistrés.
+  // 6. Sending in batches of 50; after each batch, the checkpoints of the conversations fully sent are saved.
   const withItems = new Set(flat.map((f) => f.conv))
   const done = new Set([...processed].filter((id) => !withItems.has(id)))
   const applied = new Set<CheckpointCommit>()
@@ -790,15 +790,15 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       saveState(checkpoint())
     }
   } catch (err) {
-    if (sent || duplicates) io.warn(`Envoi interrompu : ${plural(sent, "connaissance")} déjà envoyée(s) et enregistrée(s) ; la prochaine synchro reprendra la suite.`)
+    if (sent || duplicates) io.warn(`Sending interrupted: ${plural(sent, "knowledge item")} already sent and saved; the next sync will pick up the rest.`)
     throw err
   }
   if (workflows.length) {
     try {
       const r = await api.automations(workflows)
-      io.log(`Automatisations : ${plural(r.saved, "workflow Screenpipe remonté", "workflows Screenpipe remontés")}.`)
+      io.log(`Automations: ${plural(r.saved, "Screenpipe workflow sent up", "Screenpipe workflows sent up")}.`)
     } catch (err) {
-      io.warn(`Automatisations non remontées : ${(err as Error).message}`)
+      io.warn(`Automations not sent up: ${(err as Error).message}`)
     }
   }
   const sentZones = tally.record()

@@ -28,7 +28,7 @@ export function ZoneDrawer({ zone, onClose }: { zone: ZoneView; onClose: () => v
       .catch((e) => setError(e.message))
   }, [zone.id, zone.locked])
 
-  // Dialogue : focus initial sur « Fermer », Échap pour fermer, retour du focus à l'élément déclencheur.
+  // Dialog: initial focus on "Close", Escape to close, focus back to the triggering element.
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     closeRef.current?.focus()
@@ -59,7 +59,7 @@ export function ZoneDrawer({ zone, onClose }: { zone: ZoneView; onClose: () => v
             </h2>
             <p className="mt-1 text-[13px] text-trace">{zone.description}</p>
           </div>
-          <button ref={closeRef} type="button" className="btn btn-icon" onClick={onClose} aria-label="Fermer">
+          <button ref={closeRef} type="button" className="btn btn-icon" onClick={onClose} aria-label="Close">
             <CloseIcon />
           </button>
         </div>
@@ -68,25 +68,25 @@ export function ZoneDrawer({ zone, onClose }: { zone: ZoneView; onClose: () => v
           <div className="inset mt-6 flex gap-3 p-4 text-[13px] text-trace">
             <LockIcon className="mt-0.5 shrink-0 text-ink" />
             <p>
-              Vous n&apos;avez pas accès à cette zone. Ses connaissances restent invisibles pour vous et pour vos agents ; seule son activité est visible.
-              Demandez l&apos;accès à un admin si votre poste en a besoin.
+              You don&apos;t have access to this zone. Its knowledge stays invisible to you and to your agents; only its activity is visible.
+              Ask an admin for access if your work needs it.
             </p>
           </div>
         ) : error ? (
           <ErrorText className="mt-6">{error}</ErrorText>
         ) : !detail ? (
           <p className="mt-6 text-[13px] text-trace" aria-live="polite">
-            Chargement
+            Loading
           </p>
         ) : (
           <div className="mt-5 space-y-5">
             <div className="flex flex-wrap gap-2 text-[12px]">
-              <span className="chip tabular-nums">{zone.count} connaissances</span>
-              <span className="chip tabular-nums">{zone.contributors} contributeurs</span>
+              <span className="chip tabular-nums">{zone.count} knowledge items</span>
+              <span className="chip tabular-nums">{zone.contributors} contributors</span>
             </div>
             {detail.status && (
               <div className="inset p-4">
-                <h3 className="panel-title">État</h3>
+                <h3 className="panel-title">State</h3>
                 <p className="mt-2 text-[13px] leading-relaxed">{detail.status.summary}</p>
                 {detail.status.next_steps.length > 0 && (
                   <ul className="mt-2 list-disc pl-5 text-[13px] text-trace marker:text-line-strong">
@@ -99,7 +99,7 @@ export function ZoneDrawer({ zone, onClose }: { zone: ZoneView; onClose: () => v
             )}
             {detail.entities.length > 0 && (
               <div>
-                <h3 className="panel-title">Entités les plus citées</h3>
+                <h3 className="panel-title">Most cited entities</h3>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {detail.entities.map((e) => (
                     <span key={`${e.type}:${e.name}`} className="chip">
@@ -110,12 +110,12 @@ export function ZoneDrawer({ zone, onClose }: { zone: ZoneView; onClose: () => v
               </div>
             )}
             <div>
-              <h3 className="panel-title">Connaissances</h3>
+              <h3 className="panel-title">Knowledge</h3>
               <div className="mt-2 space-y-2">
                 {detail.items.map((i) => (
                   <KnowledgeCard key={i.id} item={i} author={i.author} zone={zone} />
                 ))}
-                {detail.items.length === 0 && <p className="text-[13px] text-trace">Aucune connaissance dans cette zone pour l&apos;instant.</p>}
+                {detail.items.length === 0 && <p className="text-[13px] text-trace">No knowledge in this zone yet.</p>}
               </div>
             </div>
           </div>

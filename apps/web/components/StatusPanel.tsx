@@ -7,7 +7,7 @@ import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 import { ErrorText, ZoneTag, zoneColor } from "./ui"
 
-/** Commande du client installé (voir lib/install-prompt.ts) qui fait rédiger l'état par Claude sur le poste, puis l'envoie. */
+/** Command of the installed client (see lib/install-prompt.ts) that has Claude write the state on the workstation, then sends it. */
 const REFRESH_COMMAND = "~/.company-brain/brain refresh-status"
 
 export function StatusPanel({
@@ -26,7 +26,7 @@ export function StatusPanel({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const zone = (id: string) => zones.find((z) => z.id === id)
-  // Spectateur qui ne lit pas toutes les zones : le titre est recalculé sur ses zones par le serveur (pas par Claude).
+  // A viewer who doesn't read all zones: the headline is recomputed on their zones by the server (not by Claude).
   const headlineScoped = zones.some((z) => z.locked)
 
   async function refresh() {
@@ -46,29 +46,29 @@ export function StatusPanel({
     <section className="panel p-4 sm:p-5" aria-busy={busy}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="panel-title">Où en est l&apos;entreprise</h2>
-          <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">{status?.headline ?? "Pas encore de résumé. Lancez une première génération pour que le cerveau fasse le point."}</p>
+          <h2 className="panel-title">Where the company stands</h2>
+          <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">{status?.headline ?? "No summary yet. Run a first generation so the brain can take stock."}</p>
           {status && (
             <p className="mt-1 text-[12px] text-trace">
-              Généré <RelTime iso={status.generated_at} now={now} />{" "}
+              Generated <RelTime iso={status.generated_at} now={now} />{" "}
               {status.generator !== "claude"
-                ? "par l'heuristique locale, sans Claude"
+                ? "by the local heuristic, without Claude"
                 : headlineScoped
-                  ? "à partir des résumés des zones rédigés par Claude"
-                  : "par Claude"}
+                  ? "from the zone summaries written by Claude"
+                  : "by Claude"}
             </p>
           )}
-          {/* Admins : sans clé API sur le serveur, Claude peut rédiger le résumé depuis un poste (abonnement de l'employé). */}
+          {/* Admins: without an API key on the server, Claude can write the summary from a workstation (the employee's subscription). */}
           {canRefresh && status?.generator !== "claude" && (
             <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-trace">
-              Pour un résumé rédigé par Claude avec votre abonnement (sans clé API), lancez sur votre poste :{" "}
+              For a summary written by Claude with your subscription (no API key), run on your computer:{" "}
               <code className="mono select-all rounded-[4px] bg-bone px-1.5 py-0.5 text-ink [overflow-wrap:anywhere]">{REFRESH_COMMAND}</code>
             </p>
           )}
         </div>
         {canRefresh && (
           <button type="button" className="btn btn-primary" onClick={refresh} disabled={busy}>
-            {busy ? "Génération en cours" : "Rafraîchir l'état"}
+            {busy ? "Generating" : "Refresh the state"}
           </button>
         )}
       </div>
@@ -87,24 +87,24 @@ export function StatusPanel({
               </div>
               <p className="mt-2 text-[13px] leading-relaxed">{zs.summary}</p>
               {zs.objectives.length > 0 && (
-                <Section title="Objectifs">
+                <Section title="Goals">
                   {zs.objectives.map((o, i) => (
                     <li key={i}>{o}</li>
                   ))}
                 </Section>
               )}
               {zs.next_steps.length > 0 && (
-                <Section title="Prochaines étapes">
+                <Section title="Next steps">
                   {zs.next_steps.map((o, i) => (
                     <li key={i}>{o}</li>
                   ))}
                 </Section>
               )}
               {zs.who_did_what.length > 0 && (
-                <Section title="Qui a fait quoi">
+                <Section title="Who did what">
                   {zs.who_did_what.map((w, i) => (
                     <li key={i}>
-                      <b className="font-medium text-ink">{w.person}</b> : {w.did}
+                      <b className="font-medium text-ink">{w.person}</b>: {w.did}
                     </li>
                   ))}
                 </Section>

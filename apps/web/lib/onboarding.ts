@@ -1,4 +1,4 @@
-// Onboarding de l'entreprise : interview guidée + liens → première version du cerveau.
+// Company onboarding: guided interview + links → first version of the brain.
 
 import {
   DEFAULT_ZONES,
@@ -17,13 +17,13 @@ import { getClaude } from "./ai"
 import { scrapeUrl, type ScrapedPage } from "./scrape"
 
 export const ONBOARDING_QUESTIONS = [
-  { id: "activite", question: "Que fait l'entreprise, pour qui, et quel est son modèle économique ?" },
-  { id: "equipes", question: "Quelles sont les équipes ou les grands domaines (ex. dev, produit, sales, compta) et qui y travaille ?" },
-  { id: "clients", question: "Qui sont vos clients ou partenaires clés en ce moment ?" },
-  { id: "outils", question: "Quels outils utilisez-vous au quotidien (code, compta, CRM, docs, to-do…) ?" },
-  { id: "objectifs", question: "Quels sont les objectifs des 3 prochains mois ?" },
-  { id: "process", question: "Quelles procédures ou habitudes un nouvel arrivant doit-il connaître absolument ?" },
-  { id: "liens", question: "Des liens utiles à lire (site, documentation publique, page Notion publique…) ? Un par ligne." },
+  { id: "activity", question: "What does the company do, for whom, and what is its business model?" },
+  { id: "teams", question: "What are the teams or main areas (e.g. dev, product, sales, finance) and who works in them?" },
+  { id: "clients", question: "Who are your key customers or partners right now?" },
+  { id: "tools", question: "Which tools do you use every day (code, accounting, CRM, docs, to-do…)?" },
+  { id: "goals", question: "What are the goals for the next 3 months?" },
+  { id: "process", question: "Which procedures or habits must a newcomer absolutely know?" },
+  { id: "links", question: "Useful links to read (website, public documentation, public Notion page…)? One per line." },
 ] as const
 
 export type OnboardingAnswers = Partial<Record<(typeof ONBOARDING_QUESTIONS)[number]["id"], string>>
@@ -41,12 +41,12 @@ function splitList(text: string): string[] {
     .filter((s) => s.length > 3)
 }
 
-/** Repli sans Claude : zones par mots-clés, une connaissance par réponse / par objectif / par page. */
+/** Fallback without Claude: zones by keywords, one item per answer / per goal / per page. */
 function heuristicDraft(answers: OnboardingAnswers, pages: ScrapedPage[], existing: Zone[]): OnboardingDraft {
   const zonesById = new Map<string, Omit<Zone, "position" | "color">>()
-  // « dev (Hugo, Inès), compta (Jean-Marc) » : les noms entre parenthèses ne sont pas des équipes.
-  const teamText = (answers.equipes ?? "").replace(/\([^)]*\)/g, " ")
-  for (const part of teamText.split(/[,;\n]| et /)) {
+  // "dev (Hugo, Inès), finance (Jean-Marc)": the names in parentheses are not teams.
+  const teamText = (answers.teams ?? "").replace(/\([^)]*\)/g, " ")
+  for (const part of teamText.split(/[,;\n]| and /)) {
     const p = part.trim()
     if (p.length < 2) continue
     const match = classifyZones(p, existing.length ? existing : DEFAULT_ZONES, 1)[0]
@@ -55,10 +55,10 @@ function heuristicDraft(answers: OnboardingAnswers, pages: ScrapedPage[], existi
     else {
       const name = firstSentence(p, 30)
       const id = slugify(name)
-      zonesById.set(id, { id, name, description: `Connaissances de l'équipe ${name}.`, keywords: tokenize(p).slice(0, 15) })
+      zonesById.set(id, { id, name, description: `Knowledge of the ${name} team.`, keywords: tokenize(p).slice(0, 15) })
     }
   }
-  if (!zonesById.has("direction")) zonesById.set("direction", DEFAULT_ZONES.find((z) => z.id === "direction")!)
+  if (!zonesById.has("leadership")) zonesById.set("leadership", DEFAULT_ZONES.find((z) => z.id === "leadership")!)
   if (zonesById.size < 3) for (const z of DEFAULT_ZONES.slice(0, 4)) zonesById.set(z.id, z)
   const zones = [...zonesById.values()]
   const hints = zones.map((z) => ({ ...z }))
@@ -67,29 +67,29 @@ function heuristicDraft(answers: OnboardingAnswers, pages: ScrapedPage[], existi
   const source = { app: "dashboard", tool: "onboarding" as const, at }
   const items: KnowledgeItemInput[] = []
   const add = (zone: string | undefined, kind: KnowledgeItemInput["kind"], title: string, body: string) => {
-    const z = zone && zones.some((x) => x.id === zone) ? zone : (classifyZones(`${title} ${body}`, hints, 1)[0] ?? "direction")
+    const z = zone && zones.some((x) => x.id === zone) ? zone : (classifyZones(`${title} ${body}`, hints, 1)[0] ?? "leadership")
     items.push({ zone: z, kind, title: truncate(title, 140), body: truncate(body, 1500), entities: extractEntities(body), source, confidence: 0.7 })
   }
-  if (answers.activite) add("direction", "fact", firstSentence(answers.activite, 120), answers.activite)
-  if (answers.clients) for (const c of splitList(answers.clients).slice(0, 6)) add("sales", "fact", `Client / partenaire clé : ${firstSentence(c, 90)}`, c)
-  if (answers.outils) add(undefined, "fact", "Outils utilisés au quotidien", answers.outils)
-  if (answers.objectifs)
-    for (const o of splitList(answers.objectifs).slice(0, 6)) add(classifyZones(o, hints, 1)[0] ?? "direction", "fact", `Objectif : ${firstSentence(o, 110)}`, o)
+  if (answers.activity) add("leadership", "fact", firstSentence(answers.activity, 120), answers.activity)
+  if (answers.clients) for (const c of splitList(answers.clients).slice(0, 6)) add("sales", "fact", `Key customer / partner: ${firstSentence(c, 90)}`, c)
+  if (answers.tools) add(undefined, "fact", "Tools used every day", answers.tools)
+  if (answers.goals)
+    for (const o of splitList(answers.goals).slice(0, 6)) add(classifyZones(o, hints, 1)[0] ?? "leadership", "fact", `Goal: ${firstSentence(o, 110)}`, o)
   if (answers.process) for (const p of splitList(answers.process).slice(0, 6)) add(undefined, "procedure", firstSentence(p, 120), p)
   for (const page of pages.filter((p) => p.text)) {
-    add(undefined, "fact", `${page.title || page.url} — ce qu'il faut en retenir`, `${truncate(page.text, 900)}\n\nSource : ${page.url}`)
+    add(undefined, "fact", `${page.title || page.url} — what to remember`, `${truncate(page.text, 900)}\n\nSource: ${page.url}`)
   }
 
   return {
-    company_name: firstSentence(answers.activite ?? "Mon entreprise", 40).split(/\s(est|fait|propose|édite|développe)\s/)[0] || "Mon entreprise",
-    description: truncate(answers.activite ?? "", 400),
+    company_name: firstSentence(answers.activity ?? "My company", 40).split(/\s(is|does|makes|offers|builds|develops|sells)\s/)[0] || "My company",
+    description: truncate(answers.activity ?? "", 400),
     zones: zones.map((z) => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords })),
     items,
   }
 }
 
 export async function draftOnboarding(answers: OnboardingAnswers, existing: Zone[]): Promise<OnboardingResult> {
-  const links = extractLinks(`${answers.liens ?? ""}\n${answers.activite ?? ""}`)
+  const links = extractLinks(`${answers.links ?? ""}\n${answers.activity ?? ""}`)
   const pages = await Promise.all(links.map((u) => scrapeUrl(u)))
   const claude = await getClaude()
   const qa = ONBOARDING_QUESTIONS.filter((q) => answers[q.id]?.trim()).map((q) => ({ question: q.question, answer: answers[q.id]!.trim() }))
@@ -106,7 +106,7 @@ export async function draftOnboarding(answers: OnboardingAnswers, existing: Zone
   return { ...heuristicDraft(answers, pages, existing), generator: "heuristic", pages: pagesMeta }
 }
 
-/** Palette des zones, dans l'ordre de zoneColor() (qui boucle dessus). */
+/** Zone palette, in zoneColor() order (which loops over it). */
 function zonePalette(): string[] {
   const out: string[] = []
   for (let i = 0; i < 64; i++) {
@@ -118,10 +118,10 @@ function zonePalette(): string[] {
 }
 
 /**
- * Zones à enregistrer pour un brouillon validé. Une zone déjà présente garde sa couleur et sa position ; une nouvelle
- * zone prend une position après toutes les existantes et la première couleur de la palette encore libre (sinon,
- * deux néons identiques et deux zones à la même position, ordonnées différemment selon le stockage).
- * Les zones en double dans le brouillon (même identifiant) ne comptent qu'une fois.
+ * Zones to save for a validated draft. An existing zone keeps its color and position; a new
+ * zone takes a position after all existing ones and the first palette color still free (otherwise,
+ * two identical neons and two zones at the same position, ordered differently depending on the store).
+ * Duplicate zones in the draft (same id) only count once.
  */
 export function zonesFromDraft(draft: Pick<OnboardingDraft, "zones">, existing: Zone[]): Zone[] {
   const palette = zonePalette()

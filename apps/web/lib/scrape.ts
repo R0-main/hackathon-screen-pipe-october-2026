@@ -1,8 +1,8 @@
-// Récupère le texte lisible des liens fournis à l'onboarding (site, docs publiques…).
+// Fetches the readable text of the links given at onboarding (website, public docs…).
 //
-// Protection SSRF : l'adresse est vérifiée AU MOMENT DE LA CONNEXION (lookup personnalisé de node:http/https),
-// pas par une résolution DNS séparée que fetch referait ensuite (rebinding DNS). Les adresses sont analysées octet
-// par octet (IPv4, IPv6, IPv4 mappée, NAT64, 6to4…) ; chaque redirection est revérifiée ; taille et durée bornées.
+// SSRF protection: the address is checked AT CONNECTION TIME (custom lookup of node:http/https),
+// not by a separate DNS resolution that fetch would redo afterwards (DNS rebinding). Addresses are parsed byte
+// by byte (IPv4, IPv6, mapped IPv4, NAT64, 6to4…); each redirect is re-checked; size and duration are bounded.
 
 import http from "node:http"
 import https from "node:https"
@@ -24,7 +24,7 @@ function parseIPv4(ip: string): number[] | null {
   return bytes.every((n) => n <= 255) ? bytes : null
 }
 
-/** IPv6 → 16 octets (formes compressées, IPv4 finale en notation pointée, zone %eth0 ignorée). */
+/** IPv6 → 16 bytes (compressed forms, trailing dotted IPv4, %eth0 zone ignored). */
 function parseIPv6(input: string): number[] | null {
   let s = input.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0]
   const dotted = s.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/)
@@ -51,40 +51,40 @@ function parseIPv6(input: string): number[] | null {
 
 function isBlockedIPv4([a, b, c]: number[]): boolean {
   return (
-    a === 0 || // « ce réseau »
+    a === 0 || // "this network"
     a === 10 ||
     a === 127 ||
     (a === 100 && b >= 64 && b <= 127) || // CGNAT
-    (a === 169 && b === 254) || // lien local (métadonnées cloud)
+    (a === 169 && b === 254) || // link-local (cloud metadata)
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 0 && (c === 0 || c === 2)) ||
     (a === 192 && b === 88 && c === 99) || // relais 6to4
     (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) || // bancs de test
+    (a === 198 && (b === 18 || b === 19)) || // benchmarking
     (a === 198 && b === 51 && c === 100) ||
     (a === 203 && b === 0 && c === 113) ||
-    a >= 224 // multicast, réservé, diffusion
+    a >= 224 // multicast, reserved, broadcast
   )
 }
 
 function isBlockedIPv6(x: number[]): boolean {
   const zero = (from: number, to: number) => x.slice(from, to).every((n) => n === 0)
-  if (zero(0, 12)) return true // ::, ::1, IPv4 compatible (obsolète)
-  if (zero(0, 10) && x[10] === 0xff && x[11] === 0xff) return isBlockedIPv4(x.slice(12)) // IPv4 mappée ::ffff:a.b.c.d
+  if (zero(0, 12)) return true // ::, ::1, IPv4-compatible (obsolete)
+  if (zero(0, 10) && x[10] === 0xff && x[11] === 0xff) return isBlockedIPv4(x.slice(12)) // mapped IPv4 ::ffff:a.b.c.d
   if (zero(0, 8) && x[8] === 0xff && x[9] === 0xff && zero(10, 12)) return true // IPv4 traduite ::ffff:0:a.b.c.d
   if (x[0] === 0 && x[1] === 0x64 && x[2] === 0xff && x[3] === 0x9b) {
     if (zero(4, 12)) return isBlockedIPv4(x.slice(12)) // NAT64 64:ff9b::/96
     return true // NAT64 local 64:ff9b:1::/48 et voisins
   }
-  if (x[0] === 0x20 && x[1] === 0x02) return isBlockedIPv4(x.slice(2, 6)) // 6to4 2002::/16 : IPv4 embarquée
-  if ((x[0] & 0xe0) !== 0x20) return true // hors unicast global 2000::/3 : ULA fc00::/7, lien local fe80::/10, site fec0::/10, multicast…
-  if (x[0] === 0x20 && x[1] === 0x01 && x[2] === 0x00 && x[3] < 0x02) return true // 2001::/23 (Teredo, ORCHID, bancs de test)
+  if (x[0] === 0x20 && x[1] === 0x02) return isBlockedIPv4(x.slice(2, 6)) // 6to4 2002::/16: embedded IPv4
+  if ((x[0] & 0xe0) !== 0x20) return true // outside global unicast 2000::/3: ULA fc00::/7, link-local fe80::/10, site fec0::/10, multicast…
+  if (x[0] === 0x20 && x[1] === 0x01 && x[2] === 0x00 && x[3] < 0x02) return true // 2001::/23 (Teredo, ORCHID, benchmarking)
   if (x[0] === 0x20 && x[1] === 0x01 && x[2] === 0x0d && x[3] === 0xb8) return true // documentation 2001:db8::/32
   if (x[0] === 0x3f && x[1] === 0xff && x[2] < 0x10) return true // documentation 3fff::/20
   return false
 }
 
-/** Vrai si l'adresse IP n'est pas une adresse publique joignable (ou illisible). */
+/** True if the IP address is not a reachable public address (or is unreadable). */
 export function isBlockedAddress(ip: string): boolean {
   const v4 = parseIPv4(ip)
   if (v4) return isBlockedIPv4(v4)
@@ -94,9 +94,9 @@ export function isBlockedAddress(ip: string): boolean {
 
 export type Resolved = { address: string; family: number }
 export type ScrapeDeps = {
-  /** Résolution DNS (par défaut : dns.lookup du système, toutes les adresses). */
+  /** DNS resolution (default: the system's dns.lookup, all addresses). */
   resolve: (host: string) => Promise<Resolved[]>
-  /** Adresses refusées (par défaut : isBlockedAddress). */
+  /** Refused addresses (default: isBlockedAddress). */
   isBlocked: (ip: string) => boolean
 }
 
@@ -109,23 +109,23 @@ const DEFAULT_DEPS: ScrapeDeps = { resolve: systemResolve, isBlocked: isBlockedA
 
 class BlockedError extends Error {
   constructor() {
-    super("adresse interne refusée")
+    super("internal address refused")
   }
 }
 
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void
 
-/** Lookup utilisé par le socket lui-même : l'adresse vérifiée est celle à laquelle on se connecte. */
+/** Lookup used by the socket itself: the checked address is the one we connect to. */
 function guardedLookup(deps: ScrapeDeps) {
   return (hostname: string, options: { family?: number | string; all?: boolean }, callback: LookupCallback) => {
     deps.resolve(hostname).then(
       (addrs) => {
-        if (addrs.length === 0) return callback(Object.assign(new Error(`aucune adresse pour ${hostname}`), { code: "ENOTFOUND" }), "", 0)
-        // Une seule adresse interne suffit à refuser (un attaquant peut mélanger public et privé).
+        if (addrs.length === 0) return callback(Object.assign(new Error(`no address for ${hostname}`), { code: "ENOTFOUND" }), "", 0)
+        // A single internal address is enough to refuse (an attacker can mix public and private).
         if (addrs.some((a) => deps.isBlocked(a.address))) return callback(new BlockedError(), "", 0)
         const family = options.family === 4 || options.family === "IPv4" ? 4 : options.family === 6 || options.family === "IPv6" ? 6 : 0
         const wanted = family ? addrs.filter((a) => a.family === family) : addrs
-        if (wanted.length === 0) return callback(Object.assign(new Error(`aucune adresse IPv${family} pour ${hostname}`), { code: "ENOTFOUND" }), "", 0)
+        if (wanted.length === 0) return callback(Object.assign(new Error(`no IPv${family} address for ${hostname}`), { code: "ENOTFOUND" }), "", 0)
         if (options.all) callback(null, wanted.map((a) => ({ address: a.address, family: a.family })))
         else callback(null, wanted[0].address, wanted[0].family)
       },
@@ -134,14 +134,14 @@ function guardedLookup(deps: ScrapeDeps) {
   }
 }
 
-/** Refuse les URL non http(s) et les noms ou IP littérales internes (les noms DNS sont revérifiés à la connexion). */
+/** Refuses non-http(s) URLs and internal names or literal IPs (DNS names are re-checked at connection). */
 function checkUrl(raw: string, deps: ScrapeDeps): URL {
   const url = new URL(raw)
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("seuls http et https sont acceptés")
-  if (url.username || url.password) throw new Error("identifiants dans l'URL refusés")
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("only http and https are accepted")
+  if (url.username || url.password) throw new Error("credentials in the URL refused")
   const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase()
   if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) throw new BlockedError()
-  // Une IP littérale ne passe pas par le lookup : on la vérifie ici.
+  // A literal IP does not go through the lookup: it is checked here.
   if (isIP(host) && deps.isBlocked(host)) throw new BlockedError()
   return url
 }
@@ -205,7 +205,7 @@ function requestOnce(url: URL, deps: ScrapeDeps, deadline: number): Promise<Hop>
           const room = MAX_BYTES - size
           chunks.push(chunk.length > room ? chunk.subarray(0, room) : chunk)
           size += Math.min(chunk.length, room)
-          // Taille bornée (après décompression) : on coupe la connexion.
+          // Bounded size (after decompression): the connection is cut.
           if (size >= MAX_BYTES) {
             finish(true)
             req.destroy()
@@ -215,8 +215,8 @@ function requestOnce(url: URL, deps: ScrapeDeps, deadline: number): Promise<Hop>
         body.on("error", (err: Error) => done(err))
       },
     )
-    const timer = setTimeout(() => req.destroy(new Error("délai dépassé")), Math.max(1, Math.min(deadline - Date.now(), HOP_TIMEOUT_MS)))
-    req.on("timeout", () => req.destroy(new Error("délai dépassé")))
+    const timer = setTimeout(() => req.destroy(new Error("timed out")), Math.max(1, Math.min(deadline - Date.now(), HOP_TIMEOUT_MS)))
+    req.on("timeout", () => req.destroy(new Error("timed out")))
     req.on("error", (err) => done(err))
     req.end()
   })
@@ -226,21 +226,21 @@ const TEXT_TYPES = /html|text\/|xml|json|calendar/i
 
 export type ScrapedPage = { url: string; title: string; text: string; truncated: boolean; error?: string }
 
-/** Comme scrapeUrl, avec une résolution DNS et une liste d'adresses refusées injectables (tests). */
+/** Like scrapeUrl, with an injectable DNS resolution and list of refused addresses (tests). */
 export async function scrapeUrlWith(raw: string, deps: ScrapeDeps, opts: { maxChars?: number } = {}): Promise<ScrapedPage> {
   const maxChars = opts.maxChars ?? MAX_PAGE_CHARS
   try {
     const deadline = Date.now() + TOTAL_TIMEOUT_MS
-    // Redirections suivies à la main pour revérifier chaque destination.
+    // Redirects followed by hand to re-check each destination.
     let url = checkUrl(raw, deps)
     let hop = await requestOnce(url, deps, deadline)
     for (let n = 0; hop.status >= 300 && hop.status < 400 && hop.location; n++) {
-      if (n >= MAX_REDIRECTS) return { url: raw, title: "", text: "", truncated: false, error: "trop de redirections" }
+      if (n >= MAX_REDIRECTS) return { url: raw, title: "", text: "", truncated: false, error: "too many redirects" }
       url = checkUrl(new URL(hop.location, url).toString(), deps)
       hop = await requestOnce(url, deps, deadline)
     }
     if (hop.status < 200 || hop.status >= 300 || hop.body === undefined) return { url: raw, title: "", text: "", truncated: false, error: `HTTP ${hop.status || "?"}` }
-    if (hop.contentType && !TEXT_TYPES.test(hop.contentType)) return { url: raw, title: "", text: "", truncated: false, error: `type de contenu non pris en charge (${hop.contentType.split(";")[0]})` }
+    if (hop.contentType && !TEXT_TYPES.test(hop.contentType)) return { url: raw, title: "", text: "", truncated: false, error: `unsupported content type (${hop.contentType.split(";")[0]})` }
     const parsed = /html/i.test(hop.contentType) ? htmlToText(hop.body) : { title: url.hostname, description: "", text: hop.body }
     const full = [parsed.description, parsed.text].filter(Boolean).join("\n")
     return { url: raw, title: parsed.title || url.hostname, text: full.slice(0, maxChars), truncated: hop.truncated || full.length > maxChars }

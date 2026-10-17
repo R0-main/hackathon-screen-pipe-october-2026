@@ -5,25 +5,25 @@ primary_target: "apps/web/app/page.tsx"
 related_targets: ["apps/web/components/landing"]
 ---
 
-# Frontpage publique
+# Public front page
 
-Scope : `/` pour un visiteur non connecté (le dashboard reste sur `/` une fois connecté). Mode : Persuade.
+Scope: `/` for a signed-out visitor (the dashboard stays on `/` once signed in). Mode: Persuade.
 
-- Audience : dirigeants de PME et startups, jury du hackathon Screenpipe.
-- Action : « Ouvrir la démo » (vers `/login`, connexion en un clic en mode démo ; « Se connecter » sinon).
-- Preuve : le cerveau de Fournil (entreprise fictive, 34 connaissances, 6 zones), le prompt d'installation réel, la suggestion d'automatisation réelle de la démo. Aucun client ni chiffre inventé.
-- Contraintes : DESIGN.md (bone, encre, phosphore seulement quand un agent touche une zone, billes et traits, Space Grotesk). Concept imposé par le brief : le cerveau, qui passe en plein écran et tourne dès qu'on scrolle, puis la page passe à la suite.
+- Audience: leaders of SMBs and startups, the Screenpipe hackathon jury.
+- Action: "Open the demo" (to `/login`, one-click sign-in in demo mode; "Sign in" otherwise).
+- Proof: Fournil's brain (fictional company, 34 knowledge items, 6 zones), the real install prompt, the demo's real automation suggestion. No made-up customers or numbers.
+- Constraints: DESIGN.md (bone, ink, phosphor only when an agent touches a zone, beads and lines, Space Grotesk). Concept set by the brief: the brain, which goes full screen and rotates as soon as you scroll, then the page moves on.
 
 ## Direction contract
 
-THESIS: La page est le cerveau ; scroller, c'est le lire. Elle refuse le gabarit SaaS (titre, capture, trois cartes de fonctionnalités, logos).
+THESIS: The page is the brain; scrolling is reading it. It refuses the SaaS template (title, screenshot, three feature cards, logos).
 
-OWN-WORLD: Fond bone, texte encre, traits de 1 px, billes d'encre reliées par des fils, pastilles de zone de ZONE_PALETTE, phosphore uniquement quand un agent interroge une zone. Grands titres en Space Grotesk serrés, mono seulement pour le prompt d'installation.
+OWN-WORLD: Bone background, ink text, 1 px lines, ink beads linked by threads, zone dots from ZONE_PALETTE, phosphor only when an agent queries a zone. Large tight Space Grotesk titles, mono only for the install prompt.
 
-STORY: Le visiteur voit un cerveau vivant. Au scroll, il prend tout l'écran et tourne : les connaissances arrivent des postes et s'y posent, les zones apparaissent, des agents viennent y chercher du contexte et les zones s'allument. Puis le cerveau se retire : ce que voit la dirigeante, l'installation en un message, la vie privée, et on ouvre la démo.
+STORY: The visitor sees a living brain. On scroll, it takes the whole screen and rotates: knowledge arrives from the computers and settles on it, the zones appear, agents come to it for context and the zones light up. Then the brain steps back: what the CEO sees, the install in one message, privacy, hosting and pricing, and you open the demo.
 
-FIRST VIEWPORT: Canvas plein cadre. Cerveau à droite, environ 70 % de la hauteur. Barre fine en haut : nom à gauche, « Se connecter » et « Ouvrir la démo » à droite. Titre en bas à gauche sur trois lignes, de 44 à 104 px, une phrase de sous-titre, bouton principal « Ouvrir la démo » et lien « Voir comment ça marche ».
+FIRST VIEWPORT: Full-frame canvas. Brain on the right, about 70% of the height. Thin bar at the top: name on the left, "Pricing", "Sign in" and the primary button on the right. Title at the bottom left on three lines, from 44 to 104 px, a one-sentence subtitle, the primary button and a "See how it works" link.
 
-FORM: Scène épinglée en trois chapitres pilotée par le scroll (forme imposée par le brief, 1re sur la liste). Interaction signature : le cerveau avance jusqu'à remplir l'écran en faisant un demi-tour, les billes dispersées convergent sur la coque, puis les zones s'allument une à une. seed: none (direction imposée par le brief, pas de tirage)
+FORM: Pinned scene in three chapters driven by the scroll (form set by the brief, 1st on the list). Signature interaction: the brain moves forward until it fills the screen while making a half turn, the scattered beads converge on the shell, then the zones light up one by one. seed: none (direction set by the brief, no draw)
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

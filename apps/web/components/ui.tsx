@@ -1,10 +1,10 @@
 import type { SVGProps } from "react"
 
 /**
- * Couleurs de zone : palette catégorielle à ordre fixe, validée pour le daltonisme et le contraste
- * sur fond bone (#f6f6f3). Elle ne colore jamais du texte : seulement la pastille d'une zone et
- * ses billes dans le cerveau. Les anciennes couleurs néon encore stockées en base sont remappées
- * pour que le rendu reste cohérent sans re-seed.
+ * Zone colors: fixed-order categorical palette, validated for color blindness and contrast
+ * on the bone background (#f6f6f3). It never colors text: only a zone's dot and
+ * its beads in the brain. The old neon colors still stored in the database are remapped
+ * so that rendering stays consistent without a reseed.
  */
 export const ZONE_PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948", "#0e9aa7", "#9c4dcc"] as const
 
@@ -26,12 +26,12 @@ export function zoneColor(color: string | null | undefined, index = 0): string {
   return LEGACY_NEON[color.toLowerCase()] ?? color
 }
 
-/** Pastille d'identité d'une zone (8 px). Toujours accompagnée du nom en texte. */
+/** A zone's identity dot (8 px). Always accompanied by the name in text. */
 export function Dot({ color, size = 8, className = "" }: { color: string; size?: number; className?: string }) {
   return <span aria-hidden className={`inline-block shrink-0 rounded-full ${className}`} style={{ background: color, width: size, height: size }} />
 }
 
-/** Nom de zone avec sa pastille : la seule façon d'afficher une zone dans l'interface. */
+/** Zone name with its dot: the only way to show a zone in the interface. */
 export function ZoneTag({ name, color, className = "" }: { name: string; color: string; className?: string }) {
   return (
     <span className={`inline-flex items-center gap-1.5 ${className}`}>
@@ -109,7 +109,7 @@ export function MenuIcon(props: IconProps) {
   )
 }
 
-/** Icônes de la barre latérale : un trait, rien de décoratif. */
+/** Sidebar icons: a single stroke, nothing decorative. */
 export function NavBrainIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -156,7 +156,7 @@ export function BoltIcon(props: IconProps) {
   )
 }
 
-/** Skill : un savoir-faire outillé (chevrons de code). */
+/** Skill: tooled know-how (code chevrons). */
 export function SkillIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -183,7 +183,7 @@ export function ChatIcon(props: IconProps) {
   )
 }
 
-/** Chaîne (connecteurs). */
+/** Chain (connectors). */
 export function LinkIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -193,7 +193,7 @@ export function LinkIcon(props: IconProps) {
   )
 }
 
-/** Cadran (supervision). */
+/** Dial (monitoring). */
 export function WatchIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -203,7 +203,7 @@ export function WatchIcon(props: IconProps) {
   )
 }
 
-/** Étiquette (entités). */
+/** Tag (entities). */
 export function TagIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -221,7 +221,7 @@ export function LogoutIcon(props: IconProps) {
   )
 }
 
-/** Pictogramme du cerveau : un trait d'encre, deux points. Jamais de couleur. */
+/** Brain pictogram: an ink stroke, two dots. Never any color. */
 export function BrainIcon({ size = 30, className = "" }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className={className}>
@@ -238,7 +238,7 @@ export function BrainIcon({ size = 30, className = "" }: { size?: number; classN
   )
 }
 
-/** Message d'erreur affiché à côté de l'action, annoncé aux lecteurs d'écran. */
+/** Error message shown next to the action, announced to screen readers. */
 export function ErrorText({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <p role="alert" className={`text-[13px] text-danger ${className}`}>

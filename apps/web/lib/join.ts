@@ -1,16 +1,16 @@
-// Le message d'équipe (rejoindre une entreprise sur demande) : règles partagées par les routes /api/join et /api/admin/join.
+// The team message (joining a company on request): rules shared by the /api/join and /api/admin/join routes.
 
 import { z } from "zod"
 import type { BrainStore } from "./store"
 import { caFingerprint } from "./ca"
 import { buildJoinPrompt } from "./install-prompt"
 
-/** Demandes en attente au-delà desquelles une entreprise n'en reçoit plus (un code diffusé trop largement). */
+/** Pending requests beyond which a company receives no more (a code shared too widely). */
 export const MAX_PENDING_JOINS = 30
 
 /**
- * Champ prérempli par le Claude du demandeur : vide, ou resté sous la forme « <poste> » du message, il est ignoré
- * plutôt que refusé (un admin le complétera).
+ * Field pre-filled by the requester's Claude: empty, or left as the message's "<role>" placeholder, it is ignored
+ * rather than rejected (an admin will fill it in).
  */
 export const prefilled = (max: number) =>
   z

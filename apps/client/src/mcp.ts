@@ -1,5 +1,5 @@
-// Serveur MCP stdio « company-brain » : les agents de l'employé lisent (et enrichissent) le cerveau.
-// Rien ne doit être écrit sur stdout en dehors du transport : les journaux vont sur stderr.
+// "company-brain" stdio MCP server: the employee's agents read (and enrich) the brain.
+// Nothing must be written to stdout outside the transport: logs go to stderr.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
@@ -22,11 +22,11 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
 
   const api = (): BrainApi => {
     const cfg = loadConfig()
-    if (!cfg) throw new Error(`Client du cerveau non configuré : lancez \`${selfCommand()} init --url <url> --token <jeton>\`.`)
+    if (!cfg) throw new Error(`Brain client not configured: run \`${selfCommand()} init --url <url> --token <token>\`.`)
     return new BrainApi(cfg.url, cfg.token, 20000)
   }
   const name = (id: string) => zoneName(cache, id)
-  /** Accepte un identifiant de zone ou son nom (« Compta », « compta »…). */
+  /** Accepts a zone id or its name ("Finance", "finance"…). */
   const resolveZone = (z: string): string => {
     const n = normalize(z.trim())
     const found = cache?.zones?.find((x) => x.id === z || normalize(x.id) === n || normalize(x.name) === n)
@@ -36,33 +36,33 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
     try {
       return ok(await fn())
     } catch (err) {
-      return fail(`Erreur du cerveau d'entreprise : ${(err as Error).message}`)
+      return fail(`Company brain error: ${(err as Error).message}`)
     }
   }
-  // Rafraîchit le cache des zones au premier appel si besoin (noms lisibles, classification).
+  // Refreshes the zone cache on the first call if needed (readable names, classification).
   const ensureZones = async (a: BrainApi) => {
     if (cache?.zones?.length) return
     try {
       const zones = await a.zones()
       cache = { ...(cache ?? { updated_at: new Date().toISOString() }), zones: zones.map((z) => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords, readable: z.readable })) }
     } catch {
-      // pas grave : on affichera les identifiants
+      // no big deal: the ids will be shown
     }
   }
 
   server.registerTool(
     "search_brain",
     {
-      title: "Chercher dans le cerveau d'entreprise",
+      title: "Search the company brain",
       description:
-        "Cherche dans le cerveau partagé de l'entreprise : décisions, procédures (déploiement, clôture, support…), faits sur les clients, " +
-        "projets et outils, tâches et questions ouvertes, alimentés par les sessions IA de toute l'équipe. À utiliser AVANT de deviner " +
-        "dès qu'une question touche au contexte de l'entreprise (« comment on déploie ? », « qu'a-t-on décidé pour X ? », « qui gère le client Y ? »). " +
-        "Seules les zones auxquelles l'utilisateur a accès sont consultées.",
+        "Searches the company's shared brain: decisions, procedures (deployment, closing, support…), facts about customers, " +
+        "projects and tools, open tasks and questions, fed by the whole team's AI sessions. Use it BEFORE guessing " +
+        "whenever a question touches the company's context (\"how do we deploy?\", \"what did we decide for X?\", \"who handles customer Y?\"). " +
+        "Only the zones the user has access to are searched.",
       inputSchema: {
-        query: z.string().min(1).max(500).describe("La question ou les mots-clés, en langage naturel (ex. « déployer en production »)."),
-        zones: z.array(z.string()).max(20).optional().describe("Optionnel : limiter à certaines zones (identifiants de list_zones, ex. [\"dev\"])."),
-        limit: z.number().int().min(1).max(50).optional().describe("Nombre maximum de résultats (8 par défaut)."),
+        query: z.string().min(1).max(500).describe("The question or the keywords, in natural language (e.g. \"deploy to production\")."),
+        zones: z.array(z.string()).max(20).optional().describe("Optional: limit to some zones (ids from list_zones, e.g. [\"dev\"])."),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum number of results (8 by default)."),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -78,11 +78,11 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
   server.registerTool(
     "get_zone_summary",
     {
-      title: "Résumé d'une zone",
+      title: "Zone summary",
       description:
-        "Donne l'état d'une zone de connaissance de l'entreprise (dev, produit, sales, compta…) : résumé, objectifs, prochaines étapes, " +
-        "qui a fait quoi, connaissances récentes, tâches ouvertes et entités clés. Utile pour se mettre à jour sur un domaine.",
-      inputSchema: { zone: z.string().min(1).max(64).describe("Identifiant ou nom de la zone (voir list_zones), ex. « dev »." ) },
+        "Gives the state of one of the company's knowledge zones (dev, product, sales, finance…): summary, goals, next steps, " +
+        "who did what, recent knowledge, open tasks and key entities. Useful to catch up on an area.",
+      inputSchema: { zone: z.string().min(1).max(64).describe("Id or name of the zone (see list_zones), e.g. \"dev\"." ) },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ zone }) =>
@@ -96,8 +96,8 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
   server.registerTool(
     "list_zones",
     {
-      title: "Lister les zones",
-      description: "Liste les zones de connaissance de l'entreprise (identifiant, description, nombre de connaissances) et indique celles auxquelles l'utilisateur a accès.",
+      title: "List the zones",
+      description: "Lists the company's knowledge zones (id, description, number of knowledge items) and shows those the user has access to.",
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () =>
@@ -111,10 +111,10 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
   server.registerTool(
     "whoami_context",
     {
-      title: "Contexte de mon poste",
+      title: "My computer's context",
       description:
-        "Décrit le poste de l'utilisateur connecté : rôle, zones accessibles, zones et entités qu'il utilise le plus, prompts fréquents, " +
-        "décisions et procédures récentes. Utile pour une passation de poste, un remplacement, ou pour adapter une réponse au rôle de l'utilisateur.",
+        "Describes the signed-in user's role: role, accessible zones, the zones and entities they use the most, frequent prompts, " +
+        "recent decisions and procedures. Useful for a handover, a replacement, or to adapt an answer to the user's role.",
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () =>
@@ -128,8 +128,8 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
   server.registerTool(
     "company_status",
     {
-      title: "Où en est l'entreprise ?",
-      description: "Résumé de l'état de l'entreprise par zone : objectifs, avancement, prochaines étapes et qui a fait quoi (limité aux zones accessibles).",
+      title: "Where does the company stand?",
+      description: "Summary of the company's state per zone: goals, progress, next steps and who did what (limited to accessible zones).",
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () =>
@@ -143,16 +143,16 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
   server.registerTool(
     "remember",
     {
-      title: "Enregistrer dans le cerveau",
+      title: "Save to the brain",
       description:
-        "Enregistre une connaissance réutilisable dans le cerveau de l'entreprise : une décision prise (et pourquoi), une procédure qui marche, " +
-        "un fait durable sur un client/projet/outil, une tâche à faire ou une question ouverte. À utiliser quand l'utilisateur le demande " +
-        "ou quand une décision importante vient d'être prise. Jamais de secrets ni de données personnelles (ils sont masqués de toute façon).",
+        "Saves a reusable knowledge item to the company brain: a decision made (and why), a procedure that works, " +
+        "a lasting fact about a customer/project/tool, a task to do or an open question. Use it when the user asks for it " +
+        "or when an important decision has just been made. Never secrets or personal data (they are redacted anyway).",
       inputSchema: {
-        title: z.string().min(3).max(200).describe("Titre court et précis (≤ 120 caractères)."),
-        body: z.string().min(1).max(4000).describe("1 à 5 phrases compréhensibles par un collègue, avec le pourquoi."),
+        title: z.string().min(3).max(200).describe("Short, precise title (≤ 120 characters)."),
+        body: z.string().min(1).max(4000).describe("1 to 5 sentences a colleague can understand, with the why."),
         kind: z.enum(KNOWLEDGE_KINDS).describe("fact | decision | task | procedure | question"),
-        zone: z.string().max(64).optional().describe("Optionnel : identifiant de zone ; sinon classée automatiquement (la réponse indique la zone retenue)."),
+        zone: z.string().max(64).optional().describe("Optional: zone id; otherwise classified automatically (the answer gives the zone chosen)."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
@@ -167,9 +167,9 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         const chosen = (asked && known.has(asked) ? asked : undefined) ?? classified ?? cache?.whoami?.writable[0] ?? hints[0]?.id ?? "general"
         const how =
           asked && chosen === asked
-            ? "zone demandée"
-            : `zone choisie automatiquement d'après le contenu${asked ? ` (« ${zone} » n'existe pas)` : ""} ; précisez \`zone\` pour en choisir une autre`
-        // Secrets du poste (jeton du cerveau, jetons Screenpipe / Claude Code, clé API) masqués tels quels.
+            ? "zone requested"
+            : `zone chosen automatically from the content${asked ? ` ("${zone}" does not exist)` : ""}; give \`zone\` to choose another one`
+        // The computer's secrets (brain token, Screenpipe / Claude Code tokens, API key) redacted as is.
         const secrets = ownSecrets(loadConfig())
         const clean = (t: string) => maskOwnSecrets(redactText(t, { literals: secrets }), secrets).text.trim()
         const cleanTitle = truncate(clean(title), 140)
@@ -187,18 +187,18 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         const where = r.zones[0] ?? chosen
         const label = `${name(where)} (\`${where}\`)`
         if (!r.inserted && r.skipped) {
-          return `Déjà dans le cerveau : une connaissance avec le même titre et le même contenu existe déjà dans la zone ${label} (« ${cleanTitle} »). Rien de nouveau n'a été enregistré.`
+          return `Already in the brain: a knowledge item with the same title and the same content already exists in the ${label} zone ("${cleanTitle}"). Nothing new was saved.`
         }
         const readable = cache?.zones?.find((z) => z.id === where)?.readable ?? cache?.whoami?.readable.includes(where)
         const readableIds = cache?.zones?.length ? cache.zones.filter((z) => z.readable).map((z) => z.id) : (cache?.whoami?.readable ?? [])
         const mine = readableIds.map(name).join(", ")
         const visibility =
           readable === false
-            ? "Attention : cette zone ne fait pas partie de vos zones en lecture. Seules les personnes qui y ont accès la verront ; " +
-              "comme c'est vous qui l'avez enregistrée, vous la retrouvez dans vos propres recherches et dans « Mon contexte » (où vous pouvez la supprimer). " +
-              `Pour la ranger ailleurs, rappelez remember avec \`zone\`${mine ? ` (vos zones : ${mine})` : ""}.`
-            : "Elle est maintenant trouvable par search_brain pour les personnes ayant accès à cette zone."
-        return `Connaissance enregistrée dans la zone ${label} — ${how}${where !== chosen ? ` ; le cerveau l'a rangée ici plutôt que dans « ${name(chosen)} »` : ""}.\n« ${cleanTitle} » (${kind}). ${visibility}`
+            ? "Note: this zone is not one of your readable zones. Only the people who have access to it will see it; " +
+              "since you saved it, you find it in your own searches and in \"My context\" (where you can delete it). " +
+              `To file it elsewhere, call remember again with \`zone\`${mine ? ` (your zones: ${mine})` : ""}.`
+            : "It can now be found by search_brain for the people who have access to this zone."
+        return `Knowledge saved in the ${label} zone — ${how}${where !== chosen ? `; the brain filed it here rather than in "${name(chosen)}"` : ""}.\n"${cleanTitle}" (${kind}). ${visibility}`
       }),
   )
 
@@ -206,9 +206,9 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
 }
 
 export async function runMcpServer(version?: string) {
-  // Garde-fou : tout console.log accidentel part sur stderr pour ne pas corrompre le protocole.
+  // Safeguard: any accidental console.log goes to stderr so as not to corrupt the protocol.
   console.log = (...args: unknown[]) => console.error(...args)
   const server = createBrainMcpServer(version)
   await server.connect(new StdioServerTransport())
-  console.error("[company-brain] serveur MCP prêt (stdio)")
+  console.error("[company-brain] MCP server ready (stdio)")
 }

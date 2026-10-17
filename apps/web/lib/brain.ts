@@ -1,4 +1,4 @@
-// Logique métier du cerveau : ingestion, requêtes des agents, événements (néons), état, automatisations.
+// The brain's business logic: ingestion, agent queries, events (neons), state, automations.
 
 import {
   DEFAULT_TIMEZONE,
@@ -55,45 +55,45 @@ function resolveZone(zone: string, text: string, zones: Zone[]): string {
   return classifyZones(text, zones, 1)[0] ?? zones[0]?.id ?? zone
 }
 
-/** Fenêtre de déduplication à l'ingestion (même auteur, même zone, même titre et même contenu normalisés). */
+/** Deduplication window at ingestion (same author, same zone, same normalized title and content). */
 const DEDUPE_DAYS = 30
-/** Fenêtre de rapprochement avec les connaissances déjà en place (quasi-doublons, remplacements), toutes personnes confondues. */
+/** Window for matching against knowledge already in place (near-duplicates, replacements), all people included. */
 const LIKENESS_DAYS = 90
 const LIKENESS_MAX_ITEMS = 400
 
 const dedupeText = (s: string) => normalize(s).replace(/\s+/g, " ").trim()
 
 /**
- * Un titre identique ne suffit pas : une même fenêtre (titre de conversation) produit plusieurs faits successifs.
- * Seul un item identique (titre ET contenu, après masquage) est un doublon.
+ * An identical title is not enough: the same window (conversation title) produces several successive facts.
+ * Only an identical item (title AND content, after redaction) is a duplicate.
  */
 function dedupeKey(zone: string, title: string, body: string): string {
   return JSON.stringify([zone, dedupeText(title), dedupeText(body)])
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
 /**
- * POST /api/ingest — les connaissances distillées sur le poste entrent dans le cerveau.
- * Tout le monde nourrit le cerveau : n'importe quelle zone existante est acceptée (seule la lecture est restreinte),
- * l'auteur garde toujours la main sur ses items (getPersonContext, queryBrain, suppression).
- * Idempotent : un item déjà reçu de ce même auteur, dans la même zone, avec le même titre et le même contenu
- * (normalisés) depuis 30 jours est ignoré.
+ * POST /api/ingest — the knowledge distilled on the workstation enters the brain.
+ * Everyone feeds the brain: any existing zone is accepted (only reading is restricted),
+ * the author always keeps control over their items (getPersonContext, queryBrain, deletion).
+ * Idempotent: an item already received from this same author, in the same zone, with the same title and the same content
+ * (normalized) within 30 days is ignored.
  */
 export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], agent: AgentName = "brain-sync") {
   const zones = await store().listZones()
   const authorId = viewer.real.id
   const since = new Date(Date.now() - DEDUPE_DAYS * 86400_000).toISOString()
   const seen = new Set((await store().listItems({ authorId, sinceIso: since, limit: 100_000 })).map((i) => dedupeKey(i.zone, i.title, i.body)))
-  // Connaissances récentes de la zone (toutes personnes) : un quasi-doublon est écarté, une version plus récente du
-  // même sujet (décision revue, procédure mise à jour) remplace l'ancienne.
+  // Recent knowledge in the zone (all people): a near-duplicate is dropped, a more recent version of the
+  // same subject (revised decision, updated procedure) replaces the old one.
   const recent = await store().listItems({ sinceIso: new Date(Date.now() - LIKENESS_DAYS * 86400_000).toISOString(), limit: LIKENESS_MAX_ITEMS, excludeSuperseded: true })
   const prepared: NewItem[] = []
   const supersedes: { index: number; oldId: string }[] = []
   let skipped = 0
   let replaced = 0
   for (const i of items) {
-    // Défense en profondeur : on re-masque côté serveur même si le poste l'a déjà fait.
+    // Defense in depth: redact again on the server even if the workstation already did it.
     const title = redactText(i.title)
     const body = redactText(i.body)
     const zone = resolveZone(i.zone, `${title} ${body}`, zones)
@@ -122,7 +122,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     if (old) supersedes.push({ index: prepared.length, oldId: old })
     prepared.push({ ...i, title, body, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
   }
-  // Vecteurs sémantiques (si un fournisseur est configuré) : une panne du fournisseur n'empêche jamais l'ingestion.
+  // Semantic vectors (if a provider is configured): a provider outage never prevents ingestion.
   const provider = getEmbeddings()
   if (provider && prepared.length) {
     try {
@@ -143,7 +143,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     .filter((i) => i.kind === "task")
     .map((i) => ({ title: i.title, zone: i.zone, status: "open" as const, assignee_id: authorId, source_item_id: i.id }))
   if (tasks.length) await store().createTasks(tasks)
-  // Un événement d'écriture PAR zone, dont le résumé ne cite que des items de cette zone.
+  // One write event PER zone, whose summary only cites items of that zone.
   const touched = [...new Set(inserted.map((i) => i.zone))]
   const at = new Date().toISOString()
   if (touched.length)
@@ -155,7 +155,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
           agent,
           type: "write" as const,
           zones: [zone],
-          summary: `${plural(list.length, "connaissance")} ${list.length > 1 ? "ajoutées" : "ajoutée"} : ${truncate(list[0].title, 80)}`,
+          summary: `${plural(list.length, "item")} added: ${truncate(list[0].title, 80)}`,
           at,
         }
       }),
@@ -163,7 +163,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
   return { inserted: inserted.length, skipped, replaced, ids: inserted.map((i) => i.id), zones: touched }
 }
 
-/** Agents qui envoient les prompts saisis par l'employé (hooks UserPromptSubmit). */
+/** Agents that send the prompts typed by the employee (UserPromptSubmit hooks). */
 const PROMPT_AGENTS = new Set<AgentName>(["claude-code", "codex"])
 
 /** POST /api/events — hooks Claude Code, MCP, brain-sync. */
@@ -174,7 +174,7 @@ export async function recordEvents(viewer: Viewer, inputs: AgentEventInput[]) {
     let summary = e.summary ? truncate(redactText(e.summary), 200) : undefined
     let eventZones = [...new Set((e.zones ?? []).filter((z) => known.has(z)))]
     if (eventZones.length === 0 && summary && e.type !== "started" && e.type !== "stopped") eventZones = classifyZones(summary, zones, 2)
-    // Prompt saisi : son résumé n'est conservé que s'il se rattache à une zone et n'a rien de personnel (sinon l'empreinte seule).
+    // Typed prompt: its summary is only kept if it relates to a zone and has nothing personal (otherwise the fingerprint alone).
     if (summary && e.type === "query" && PROMPT_AGENTS.has(e.agent) && (eventZones.length === 0 || looksPersonal(summary))) summary = undefined
     return {
       user_id: viewer.real.id,
@@ -191,8 +191,8 @@ export async function recordEvents(viewer: Viewer, inputs: AgentEventInput[]) {
 }
 
 /**
- * Zones dont parle un texte : son classement (toutes les zones retenues, pas seulement les 2 premières), plus toute
- * zone dont un mot-clé est cité tel quel.
+ * Zones a text talks about: its classification (all retained zones, not only the first 2), plus any
+ * zone one of whose keywords is quoted as is.
  */
 function zonesMentioned(text: string, zones: Zone[]): string[] {
   const out = new Set(classifyZones(text, zones, zones.length))
@@ -200,26 +200,26 @@ function zonesMentioned(text: string, zones: Zone[]): string[] {
   return [...out]
 }
 
-/** POST /api/query — un agent cherche du contexte. La zone trouvée s'allume. */
+/** POST /api/query — an agent looks for context. The zone found lights up. */
 export async function queryBrain(viewer: Viewer, input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
   const allZones = await store().listZones()
   const readable = viewer.access.readable
   const filter = input.zones?.length ? input.zones : null
   const searched = filter ? filter.filter((z) => readable.includes(z)) : readable
-  // Zones lisibles + les propres items de l'utilisateur, même rangés dans une zone qu'il ne lit pas (droit de regard).
+  // Readable zones + the user's own items, even filed in a zone they don't read (right of review).
   const results = (await hybridSearch(input.query, searched, input.limit ?? 8, viewer.profile.id)).filter((r) => !filter || filter.includes(r.zone))
-  // Seules les zones lisibles s'allument : une recherche n'est jamais diffusée dans une zone que l'on ne lit pas.
+  // Only readable zones light up: a search is never broadcast into a zone you don't read.
   let hit = [...new Set(results.filter((r) => readable.includes(r.zone)).slice(0, 3).map((r) => r.zone))]
   if (hit.length === 0) hit = classifyZones(input.query, allZones, 2).filter((z) => readable.includes(z))
   const restricted = classifyZones(input.query, allZones, 2).filter((z) => !readable.includes(z) && !hit.includes(z))
-  // Le texte de la recherche n'est conservé (et montré aux lecteurs des zones allumées) que s'il ne touche aucune zone
-  // que l'utilisateur ne lit pas (classement, filtre demandé, ses propres items trouvés) et n'a rien de personnel.
+  // The search text is only kept (and shown to readers of the lit zones) if it touches no zone
+  // the user doesn't read (classification, requested filter, their own items found) and has nothing personal.
   const asked = (input.zones ?? []).filter((z) => allZones.some((x) => x.id === z))
   const touched = [...zonesMentioned(input.query, allZones), ...asked, ...results.map((r) => r.zone)]
   const touchesUnreadable = touched.some((z) => !canRead(viewer.access, z))
   const keepSummary = !touchesUnreadable && !looksPersonal(input.query)
-  // Avec son texte, l'événement porte toutes les zones que la recherche touche (pas seulement celles des résultats) :
-  // D2 ne montre alors le texte qu'aux lecteurs de TOUTES ces zones.
+  // With its text, the event carries all the zones the search touches (not only the results'):
+  // D2 then only shows the text to readers of ALL those zones.
   const eventZones = keepSummary ? [...new Set([...hit, ...touched])] : hit
   await store().insertEvents([
     {
@@ -236,19 +236,19 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
     query: input.query,
     zones_searched: searched,
     zones_hit: hit,
-    /** Zones qui auraient pu répondre mais que l'utilisateur ne peut pas lire (on ne dit rien de leur contenu). */
+    /** Zones that could have answered but that the user cannot read (nothing is said about their content). */
     zones_restricted: restricted,
     items: results.map((r) => ({ ...r, author: names.get(r.author_id) ?? "?" })),
   }
 }
 
-/** Candidats lexicaux et sémantiques relus avant fusion, par rapport à la limite demandée. */
+/** Lexical and semantic candidates re-read before fusion, relative to the requested limit. */
 const HYBRID_FACTOR = 4
 
 /**
- * Recherche hybride : la requête est étendue à ses synonymes (lexical), puis, si un fournisseur d'embeddings est
- * configuré, les connaissances les plus proches sémantiquement sont ajoutées ; les deux classements sont fusionnés
- * (RRF). Sans fournisseur : lexical avec synonymes. Le score renvoyé est celui de la fusion (ou lexical seul).
+ * Hybrid search: the query is expanded to its synonyms (lexical), then, if an embeddings provider is
+ * configured, the semantically closest items are added; the two rankings are fused
+ * (RRF). Without a provider: lexical with synonyms. The score returned is the fusion's (or lexical alone).
  */
 export async function hybridSearch(query: string, zones: string[], limit: number, authorId?: string): Promise<ScoredItem[]> {
   const s = store()
@@ -260,8 +260,8 @@ export async function hybridSearch(query: string, zones: string[], limit: number
     added.length ? s.searchItems(all.join(" "), zones, want, { authorId }) : Promise.resolve([] as ScoredItem[]),
     embedQuery(query),
   ])
-  // Un résultat que seuls les synonymes ramènent doit tenir à plus d'un mot isolé du corps (« prod » ≠ « produit ») :
-  // la compta ne doit rien voir remonter sur « déployer en production ».
+  // A result only synonyms bring back must rest on more than one isolated word of the body ("prod" ≠ "product"):
+  // finance must see nothing come up for "deploy to production".
   const lexicalIds = new Set(lexical.map((r) => r.id))
   const expanded = expandedRaw.filter((r) => lexicalIds.has(r.id) || strongEnough(matchStrength(all, r)))
   const byId = new Map<string, ScoredItem>()
@@ -287,12 +287,12 @@ export async function hybridSearch(query: string, zones: string[], limit: number
     .slice(0, limit)
 }
 
-/** Entités (clients, projets, outils…) les plus citées dans les zones lisibles du spectateur. */
+/** Entities (clients, projects, tools…) most cited in the viewer's readable zones. */
 export async function listEntitiesFor(viewer: Viewer, limit = 200) {
   return store().topEntities({ zones: viewer.access.readable, limit })
 }
 
-/** Tout ce qui concerne une entité : les connaissances lisibles qui la citent, et les entités citées avec elle. */
+/** Everything about an entity: the readable knowledge that cites it, and the entities cited with it. */
 export async function getEntityContext(viewer: Viewer, type: string, name: string) {
   const s = store()
   const normName = normalize(name)
@@ -328,8 +328,8 @@ export type ZoneView = Zone & {
 }
 
 /**
- * Zone où une personne travaille le plus : ses connaissances, puis ses événements récents (qui comptent double, c'est
- * ce qu'elle fait en ce moment). Sans aucune trace, son intitulé de poste la rattache à une zone ; sinon null.
+ * Zone where a person works the most: their knowledge, then their recent events (which count double, it is
+ * what they are doing right now). Without any trace, their job title attaches them to a zone; otherwise null.
  */
 function homeZone(p: Profile, zones: Zone[], authorStats: AuthorZoneStat[], events: AgentEvent[]): string | null {
   const known = new Set(zones.map((z) => z.id))
@@ -342,7 +342,7 @@ function homeZone(p: Profile, zones: Zone[], authorStats: AuthorZoneStat[], even
   return p.title ? (classifyZones(p.title, zones, 1)[0] ?? null) : null
 }
 
-/** GET /api/state — instantané du dashboard, filtré selon les droits du spectateur. */
+/** GET /api/state — dashboard snapshot, filtered by the viewer's permissions. */
 export async function getState(viewer: Viewer) {
   const s = store()
   const [org, zones, stats, authorStats, profiles, events, status, automations, entities, skills] = await Promise.all([
@@ -355,7 +355,7 @@ export async function getState(viewer: Viewer) {
     s.getStatus(),
     s.listAutomations(),
     s.topEntities({ limit: 250 }),
-    // Base pas encore migrée (table skills absente) : le cerveau reste utilisable, sans skills.
+    // Database not migrated yet (skills table missing): the brain stays usable, without skills.
     s.listSkills().catch((err) => {
       if (!isStoreSetupError(err)) throw err
       console.error("[skills]", err.message)
@@ -385,7 +385,7 @@ export async function getState(viewer: Viewer) {
     }
   })
 
-  // Synapses : deux zones partagent des entités (même client, même outil, même projet…).
+  // Synapses: two zones share entities (same customer, same tool, same project…).
   const pairs = new Map<string, { a: string; b: string; weight: number; via: string[] }>()
   for (const e of entities) {
     const zs = [...e.zones].sort()
@@ -435,9 +435,9 @@ export async function getState(viewer: Viewer) {
 export type DashboardState = Awaited<ReturnType<typeof getState>>
 
 /**
- * « Où en est la boîte » vu par un membre : seulement les zones qu'il lit. Le titre généré (Claude ou heuristique)
- * résume toutes les zones : il n'est donné qu'à qui les lit toutes ; les autres reçoivent un titre recalculé
- * sur leurs seules zones.
+ * "Where the company stands" as seen by a member: only the zones they read. The generated headline (Claude or heuristic)
+ * summarizes all zones: it is only given to whoever reads them all; the others get a headline recomputed
+ * on their own zones only.
  */
 export async function statusForViewer(viewer: Viewer, status?: CompanyStatus | null, zoneList?: Zone[]): Promise<CompanyStatus | null> {
   const s = store()
@@ -451,17 +451,17 @@ export async function statusForViewer(viewer: Viewer, status?: CompanyStatus | n
 }
 
 async function scopedHeadline(zones: Zone[]): Promise<string> {
-  if (zones.length === 0) return "Aucune zone accessible pour l'instant : demandez un accès à un admin."
+  if (zones.length === 0) return "No accessible zone yet: ask an admin for access."
   const s = store()
   const ids = zones.map((z) => z.id)
   const since = new Date(Date.now() - 30 * 86400_000).toISOString()
   const [items, tasks, profiles] = await Promise.all([s.listItems({ zones: ids, sinceIso: since, limit: 600, excludeSuperseded: true }), s.listTasks({ zones: ids }), s.listProfiles()])
   let headline = heuristicStatus({ zones, items, tasks, profiles }).headline
-  if (zones.length === 1) headline = headline.replace(/\s*Zone la plus active : [^.]*\.$/, "")
-  return `${zones.length > 1 ? "Dans vos zones" : "Dans votre zone"} (${zones.map((z) => z.name).join(", ")}) : ${headline}`
+  if (zones.length === 1) headline = headline.replace(/\s*Most active zone: [^.]*\.$/, "")
+  return `${zones.length > 1 ? "In your zones" : "In your zone"} (${zones.map((z) => z.name).join(", ")}): ${headline}`
 }
 
-/** Néon « mise à jour de l'état » : toutes les zones s'allument pendant la génération. */
+/** "State update" neon: all zones light up during generation. */
 async function emitStatusEvent(viewer: Viewer, zones: Zone[]) {
   await store().insertEvents([
     {
@@ -469,13 +469,13 @@ async function emitStatusEvent(viewer: Viewer, zones: Zone[]) {
       agent: "job",
       type: "query",
       zones: zones.map((z) => z.id),
-      summary: "Mise à jour de l'état de l'entreprise",
+      summary: "Updating the state of the company",
       at: new Date().toISOString(),
     },
   ])
 }
 
-/** Régénère l'écran « où en est la boîte » (Claude si dispo, sinon heuristique). */
+/** Regenerates the "where the company stands" screen (Claude if available, otherwise heuristic). */
 export async function refreshStatus(viewer: Viewer) {
   const s = store()
   const since = new Date(Date.now() - 30 * 86400_000).toISOString()
@@ -495,14 +495,14 @@ export async function refreshStatus(viewer: Viewer) {
   return status
 }
 
-/** Jour (AAAA-MM-JJ) dans le fuseau de l'entreprise. */
+/** Day (YYYY-MM-DD) in the company's time zone. */
 function today(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE }).format(new Date())
 }
 
 /**
- * GET /api/status/input (admins) : les connaissances des 30 derniers jours (400 au plus, les plus récentes d'abord,
- * auteur = nom du membre) et les tâches, pour générer le résumé sur un poste avec `claude -p`.
+ * GET /api/status/input (admins): knowledge from the last 30 days (400 at most, most recent first,
+ * author = the member's name) and the tasks, to generate the summary on a workstation with `claude -p`.
  */
 export async function getStatusInput(): Promise<StatusInput> {
   const s = store()
@@ -517,12 +517,12 @@ export async function getStatusInput(): Promise<StatusInput> {
   return buildStatusInput({ companyName: org.name, zones, items, tasks, profiles, generatedFor: today() })
 }
 
-/** Résumé produit hors du serveur (poste d'un admin), déjà validé par la route. */
+/** Summary produced outside the server (an admin's workstation), already validated by the route. */
 export type ExternalStatus = { headline: string; zones: ZoneStatus[] }
 
 /**
- * POST /api/status avec un résumé : re-masqué (défense en profondeur), zones inconnues ou en double écartées,
- * enregistré comme généré par Claude maintenant. Null si aucune zone connue.
+ * POST /api/status with a summary: redacted again (defense in depth), unknown or duplicate zones dropped,
+ * saved as generated by Claude now. Null if no zone is known.
  */
 export async function saveExternalStatus(viewer: Viewer, input: ExternalStatus): Promise<CompanyStatus | null> {
   const s = store()
@@ -554,7 +554,7 @@ export async function saveExternalStatus(viewer: Viewer, input: ExternalStatus):
   return status
 }
 
-/** Détecte les tâches répétitives et met à jour les suggestions d'automatisation. */
+/** Detects repetitive tasks and updates the automation suggestions. */
 export async function runAutomationDetection() {
   const s = store()
   const since = new Date(Date.now() - 21 * 86400_000).toISOString()
@@ -563,14 +563,14 @@ export async function runAutomationDetection() {
   return candidates.length ? s.upsertAutomations(candidates) : []
 }
 
-/** Contexte d'un poste (passation) : zones, entités et sujets les plus utilisés par une personne. */
+/** A workstation's context (handover): zones, entities and topics a person uses the most. */
 export async function getPersonContext(viewer: Viewer, personId: string) {
   const s = store()
   const person = await s.getProfile(personId)
   if (!person) return null
   const readable = viewer.access.readable
-  // Droit de regard : sur son propre contexte, on voit TOUTES ses connaissances, y compris celles rangées
-  // dans une zone qu'on ne lit pas (pour pouvoir les relire et les supprimer).
+  // Right of review: on one's own context, one sees ALL one's knowledge, including items filed
+  // in a zone one doesn't read (to be able to review and delete them).
   const own = personId === viewer.profile.id
   const scope = own ? undefined : readable
   const [items, entities, events] = await Promise.all([
@@ -583,7 +583,7 @@ export async function getPersonContext(viewer: Viewer, personId: string) {
   for (const e of events) for (const z of e.zones) if (own || readable.includes(z)) zoneCounts.set(z, (zoneCounts.get(z) ?? 0) + 0.5)
   const prompts = new Map<string, { summary: string; count: number; last: string }>()
   for (const e of events) {
-    // Les prompts saisis par la personne (hooks), pas les recherches faites par ses agents.
+    // The prompts typed by the person (hooks), not the searches made by their agents.
     if (e.type !== "query" || (e.agent !== "claude-code" && e.agent !== "codex")) continue
     if (!e.summary || !canSeeEventContent(e, viewer.access, viewer.profile.id)) continue
     const key = e.fingerprint || promptFingerprint(e.summary)
@@ -597,21 +597,21 @@ export async function getPersonContext(viewer: Viewer, personId: string) {
     zones: [...zoneCounts.entries()].sort((a, b) => b[1] - a[1]).map(([zone, weight]) => ({ zone, weight: Math.round(weight) })),
     entities,
     frequent_prompts: [...prompts.values()].sort((a, b) => b.count - a.count).slice(0, 8),
-    // Sur son propre contexte : toutes ses connaissances récentes (jusqu'à 200), pour pouvoir les supprimer.
+    // On one's own context: all one's recent knowledge (up to 200), to be able to delete it.
     items: own ? items : items.slice(0, 40),
-    /** Zones de ses propres items que la personne ne lit pas (affichées avec un badge « zone non lisible »). */
+    /** Zones of the person's own items that they don't read (shown with a "zone not readable" badge). */
     unreadable_zones: own ? [...new Set(items.map((i) => i.zone))].filter((z) => !canRead(viewer.access, z)) : [],
     decisions: items.filter((i) => i.kind === "decision").slice(0, 10),
     procedures: items.filter((i) => i.kind === "procedure").slice(0, 10),
   }
 }
 
-/** Rattrapage maximal à l'ouverture du flux temps réel (curseur trop ancien). */
+/** Maximum catch-up when opening the real-time stream (cursor too old). */
 const STREAM_MAX_BACKLOG = 200
 
 /**
- * Point de départ du flux temps réel : l'identifiant demandé (Last-Event-ID ou ?after=), borné. Plus grand que le
- * dernier événement (cerveau réinitialisé) → on repart du dernier ; trop ancien → rattrapage limité.
+ * Starting point of the real-time stream: the requested id (Last-Event-ID or ?after=), bounded. Greater than the
+ * last event (brain reset) → restart from the last one; too old → limited catch-up.
  */
 export async function streamStartId(requested: number | null): Promise<number> {
   const latest = (await store().listEvents({ limit: 1 }))[0]?.id ?? 0
@@ -620,9 +620,9 @@ export async function streamStartId(requested: number | null): Promise<number> {
 }
 
 /**
- * Lecture incrémentale de agent_events pour le flux temps réel.
- * En Postgres, un identifiant peut devenir visible APRÈS un identifiant plus grand (ordre des commits) : les trous
- * sont relus pendant `gapMs` (transaction encore ouverte) sans jamais renvoyer un événement déjà livré.
+ * Incremental read of agent_events for the real-time stream.
+ * In Postgres, an id can become visible AFTER a larger id (commit order): the gaps
+ * are re-read for `gapMs` (transaction still open) without ever returning an event already delivered.
  */
 export function createEventPoller(startId: number, opts: { gapMs?: number; maxGaps?: number } = {}) {
   const gapMs = opts.gapMs ?? 10_000

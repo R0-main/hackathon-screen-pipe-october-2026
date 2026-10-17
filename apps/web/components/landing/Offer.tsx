@@ -5,18 +5,18 @@ import { useState } from "react"
 import { CheckIcon } from "../ui"
 
 /*
-  Deux façons d'avoir son cerveau : sur ses propres serveurs (le code est ouvert) ou sur notre cloud, puis les
-  tarifs. Front seulement : les prix sont indicatifs et le paiement n'est branché nulle part. Les boutons cloud
-  mènent à la création d'une entreprise (ou à la démo quand la création est fermée).
+  Two ways to get your brain: on your own servers (the code is open) or on our cloud, then the
+  pricing. Front end only: prices are indicative and payment is wired nowhere. The cloud buttons
+  lead to company creation (or to the demo when creation is closed).
 */
 
 const REPO = "https://github.com/R0-main/hackathon-screen-pipe-october-2026"
-const GUIDE = `${REPO}#déployer-le-cerveau-partagé-vercel--neon-offres-gratuites`
+const GUIDE = `${REPO}#deploy-the-shared-brain-vercel--neon-free-tiers`
 
 const COMMANDS = [
   `git clone ${REPO} nos-brainer`,
   "cd nos-brainer && npm ci && npm run build",
-  "export DATABASE_URL=postgres://… BRAIN_PUBLIC_URL=https://cerveau.exemple.fr",
+  "export DATABASE_URL=postgres://… BRAIN_PUBLIC_URL=https://brain.example.com",
   "npm run db:migrate && npm start",
 ]
 
@@ -35,57 +35,55 @@ function Features({ items }: { items: string[] }) {
   )
 }
 
-/** Chez vous ou chez nous : le même cerveau, deux hébergements. */
+/** Your place or ours: the same brain, two ways to host it. */
 export function Hosting({ onAnchor }: { onAnchor?: (e: React.MouseEvent<HTMLAnchorElement>) => void }) {
   return (
-    <section data-hold="1" className="landing-section relative border-t border-line" aria-labelledby="heberger">
+    <section data-hold="1" className="landing-section relative border-t border-line" aria-labelledby="hosting">
       <span data-bead className="landing-bead" aria-hidden>
         <span data-bead-fill />
       </span>
       <div className="landing-wrap">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-end lg:gap-20">
-          <h2 id="heberger" data-reveal="title" className="landing-h2 max-w-[11em]">
-            Chez vous, ou chez nous.
+          <h2 id="hosting" data-reveal="title" className="landing-h2 max-w-[11em]">
+            Your place, or ours.
           </h2>
           <div data-reveal="text" className="max-w-[34em]">
             <p className="text-[16px] leading-relaxed sm:text-[17px]">
-              C'est le même cerveau dans les deux cas. Le code est ouvert : installez-le sur votre infrastructure, ou laissez-nous l'héberger en Europe et ne pensez plus au serveur.
+              It is the same brain either way. The code is open: install it on your own infrastructure, or let us host it in Europe and stop thinking about the server.
             </p>
-            <p className="mt-3 text-[15px] leading-relaxed text-trace">Où qu'il tourne, le brut reste sur les postes, et Claude Code ou Codex passent par l'abonnement de chacun.</p>
+            <p className="mt-3 text-[15px] leading-relaxed text-trace">Wherever it runs, the raw data stays on the computers, and Claude Code or Codex go through each person&apos;s own subscription.</p>
           </div>
         </div>
 
         <ul data-reveal="cards" className="mt-12 grid gap-4 lg:mt-16 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
           <li className="panel flex flex-col px-5 py-6 sm:px-6">
-            <p className="panel-title">Sur vos serveurs</p>
-            <p className="mt-1 text-[13px] text-trace">Gratuit, sans limite de postes.</p>
-            <pre className="inset mono mt-4 overflow-x-auto px-3.5 py-3 text-[12px] leading-relaxed" aria-label="Installer le cerveau sur son serveur">
+            <p className="panel-title">On your servers</p>
+            <p className="mt-1 text-[13px] text-trace">Free, no limit on seats.</p>
+            <pre className="inset mono mt-4 overflow-x-auto px-3.5 py-3 text-[12px] leading-relaxed" aria-label="Install the brain on your server">
               {COMMANDS.join("\n")}
             </pre>
             <div className="mt-5">
-              <Features items={["N'importe quel Postgres : Neon, Supabase ou le vôtre.", "Les connaissances ne quittent pas votre réseau.", "Les postes se branchent sur votre adresse."]} />
+              <Features items={["Any Postgres: Neon, Supabase or your own.", "Knowledge never leaves your network.", "Computers connect to your own address."]} />
             </div>
             <a href={GUIDE} target="_blank" rel="noreferrer" className="landing-link mt-auto pt-6 text-[14px]">
-              Lire le guide d'installation
+              Read the install guide
             </a>
           </li>
           <li className="panel flex flex-col px-5 py-6 sm:px-6">
-            <p className="panel-title">Sur notre cloud</p>
-            <p className="mt-1 text-[13px] text-trace">
-              À partir de 8{" "}€ par poste et par mois.
-            </p>
+            <p className="panel-title">On our cloud</p>
+            <p className="mt-1 text-[13px] text-trace">From €8 per seat per month.</p>
             <div className="mt-5">
               <Features
                 items={[
-                  "Hébergé en Europe, à Francfort.",
-                  "Sauvegardes, mises à jour et certificats gérés pour vous.",
-                  "Votre cerveau est prêt en quatre questions.",
-                  "Un prompt à coller par poste, rien à installer côté serveur.",
+                  "Hosted in Europe, in Frankfurt.",
+                  "Backups, updates and certificates handled for you.",
+                  "Your brain is ready after four questions.",
+                  "One prompt to paste per computer, nothing to install on a server.",
                 ]}
               />
             </div>
-            <a href="#tarifs" onClick={onAnchor} className="landing-link mt-auto pt-6 text-[14px]">
-              Voir les tarifs
+            <a href="#pricing" onClick={onAnchor} className="landing-link mt-auto pt-6 text-[14px]">
+              See pricing
             </a>
           </li>
         </ul>
@@ -106,57 +104,57 @@ type Plan = {
   primary?: boolean
 }
 
-/** Les offres. `cloud` : où mènent les boutons cloud (création d'entreprise ou démo). */
+/** The plans. `cloud`: where the cloud buttons lead (company creation or demo). */
 export function Pricing({ cloud }: { cloud: string }) {
   const [billing, setBilling] = useState<Billing>("year")
   const plans: Plan[] = [
     {
-      name: "Auto-hébergé",
-      where: "Sur vos serveurs",
-      price: () => "0 €",
-      unit: () => "pour toujours",
-      features: ["Postes illimités", "Tout le cerveau : zones, agents, automatisations", "Votre Postgres, votre infrastructure", "Entraide sur GitHub"],
-      cta: { href: GUIDE, label: "Lire le guide", external: true },
+      name: "Self-hosted",
+      where: "On your servers",
+      price: () => "€0",
+      unit: () => "forever",
+      features: ["Unlimited seats", "The whole brain: zones, agents, automations", "Your Postgres, your infrastructure", "Community help on GitHub"],
+      cta: { href: GUIDE, label: "Read the guide", external: true },
     },
     {
-      name: "Équipe",
-      where: "Sur notre cloud",
-      price: (b) => (b === "year" ? "8 €" : "10 €"),
-      unit: (b) => (b === "year" ? "par poste et par mois, facturé à l'année" : "par poste et par mois"),
-      features: ["Jusqu'à 50 postes", "Hébergé en Europe", "Sauvegardes chaque nuit", "Support par e-mail sous un jour ouvré"],
-      cta: { href: cloud, label: "Créer mon entreprise" },
+      name: "Team",
+      where: "On our cloud",
+      price: (b) => (b === "year" ? "€8" : "€10"),
+      unit: (b) => (b === "year" ? "per seat per month, billed yearly" : "per seat per month"),
+      features: ["Up to 50 seats", "Hosted in Europe", "Nightly backups", "Email support within one business day"],
+      cta: { href: cloud, label: "Create my company" },
       primary: true,
     },
     {
-      name: "Entreprise",
-      where: "Sur notre cloud ou chez vous",
-      price: () => "Sur devis",
-      unit: () => "à partir de 50 postes",
-      features: ["Postes illimités", "SSO et journal des accès", "Région et durée de conservation au choix", "Accompagnement au déploiement et à l'information du CSE"],
-      cta: { href: cloud, label: "Démarrer un pilote" },
+      name: "Enterprise",
+      where: "On our cloud or yours",
+      price: () => "Custom",
+      unit: () => "from 50 seats",
+      features: ["Unlimited seats", "SSO and access log", "Region and retention of your choice", "Help with rollout and with informing employee representatives"],
+      cta: { href: cloud, label: "Start a pilot" },
     },
   ]
 
   return (
-    <section id="tarifs" data-hold="1" className="landing-section relative border-t border-line" aria-labelledby="tarifs-titre">
+    <section id="pricing" data-hold="1" className="landing-section relative border-t border-line" aria-labelledby="pricing-title">
       <span data-bead className="landing-bead" aria-hidden>
         <span data-bead-fill />
       </span>
       <div className="landing-wrap">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 id="tarifs-titre" data-reveal="title" className="landing-h2 max-w-[12em]">
-              Un prix par poste, sans surprise.
+            <h2 id="pricing-title" data-reveal="title" className="landing-h2 max-w-[12em]">
+              One price per seat, no surprises.
             </h2>
             <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-              Vous ne payez que les postes branchés au cerveau. Les connaissances, les zones et les agents ne sont pas comptés.
+              You only pay for the computers connected to the brain. Knowledge, zones and agents are not counted.
             </p>
           </div>
-          <div data-reveal="text" className="inline-flex self-start rounded-[6px] border border-line-strong bg-surface p-0.5 lg:self-auto" role="group" aria-label="Facturation">
+          <div data-reveal="text" className="inline-flex self-start rounded-[6px] border border-line-strong bg-surface p-0.5 lg:self-auto" role="group" aria-label="Billing">
             {(
               [
-                ["month", "Mensuel"],
-                ["year", "Annuel, −20 %"],
+                ["month", "Monthly"],
+                ["year", "Yearly, −20%"],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -177,7 +175,7 @@ export function Pricing({ cloud }: { cloud: string }) {
             <li key={p.name} className={`panel flex flex-col px-5 py-6 sm:px-6 ${p.primary ? "!border-ink" : ""}`}>
               <div className="flex items-center justify-between gap-3">
                 <p className="panel-title">{p.name}</p>
-                {p.primary && <span className="chip">Le plus simple</span>}
+                {p.primary && <span className="chip">The simplest</span>}
               </div>
               <p className="mt-1 text-[13px] text-trace">{p.where}</p>
               <p className="mt-6 text-[40px] font-medium leading-none tracking-[-0.03em] tabular-nums" aria-live="polite">
@@ -203,7 +201,7 @@ export function Pricing({ cloud }: { cloud: string }) {
         </ul>
 
         <p data-reveal="text" className="mt-6 text-[13px] text-trace">
-          Tarifs indicatifs, hors taxes. Le paiement n'est pas encore ouvert.
+          Indicative prices, excluding tax. Payment is not open yet.
         </p>
       </div>
     </section>

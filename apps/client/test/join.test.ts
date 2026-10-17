@@ -19,7 +19,7 @@ function fakeBrain() {
     }
     if (path === "/api/join/status") {
       const ok = body.id === "req-1" && createHash("sha256").update(body.token).digest("hex") === brain.hash
-      return ok ? reply(200, { status: brain.status, org: "Atelier Lumen" }) : reply(404, { error: "Demande introuvable." })
+      return ok ? reply(200, { status: brain.status, org: "Atelier Lumen" }) : reply(404, { error: "Request not found." })
     }
     return reply(404, {})
   }) as unknown as typeof fetch

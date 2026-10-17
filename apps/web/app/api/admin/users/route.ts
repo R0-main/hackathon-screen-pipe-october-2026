@@ -30,13 +30,13 @@ const Schema = z.object({
   can_publish_skills: z.boolean().default(false),
 })
 
-/** Invite un membre : crée son compte, ses accès, et renvoie son prompt d'installation (jeton affiché une seule fois). */
+/** Invites a member: creates their account and access, and returns their install prompt (token shown only once). */
 export const POST = withViewer(
   async (req) => {
     const body = await parseBody(req, Schema)
     if ("response" in body) return body.response
     const store = getStore()
-    if (body.data.manager_id && !(await store.getProfile(body.data.manager_id))) return error(400, "La personne de rattachement n'existe pas.")
+    if (body.data.manager_id && !(await store.getProfile(body.data.manager_id))) return error(400, "The manager does not exist.")
     const known = new Set((await store.listZones()).map((z) => z.id))
     const zones = body.data.zones.filter((z) => known.has(z))
     const token = newToken()

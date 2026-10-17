@@ -7,10 +7,10 @@ export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
   title: "NOS Brainer",
-  description: "Tout ce que votre équipe apprend avec l'IA, dans un seul cerveau. Screenpipe capte les sessions de chaque poste, le cerveau en garde l'essentiel.",
+  description: "Everything your team learns with AI, in a single brain. Screenpipe captures each workstation's sessions, the brain keeps what matters.",
 }
 
-/** Page d'accueil publique, pour tout le monde. Le dashboard est sur /dashboard, la démo sur /demo. */
+/** Public home page, for everyone. The dashboard is on /dashboard, the demo on /demo. */
 export default async function HomePage() {
   const signedIn = Boolean(await getPageViewer())
   return <Landing demo={isDemoMode()} signup={signupOpen()} signedIn={signedIn} />

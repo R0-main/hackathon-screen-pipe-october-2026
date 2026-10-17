@@ -1,4 +1,4 @@
-// Hook Claude Code (SessionStart, UserPromptSubmit, Stop) : rapide, silencieux, ne casse jamais Claude Code.
+// Claude Code hook (SessionStart, UserPromptSubmit, Stop): fast, silent, never breaks Claude Code.
 
 import { appendFileSync } from "node:fs"
 import { classifyZones, looksPersonal, promptFingerprint, redactText, truncate, type AgentEventInput } from "@brain/core"
@@ -21,9 +21,9 @@ export type HookInput = {
 
 function logHookError(err: unknown) {
   try {
-    appendFileSync(paths.log(), `[${new Date().toISOString()}] hook : ${(err as Error)?.message ?? String(err)}\n`)
+    appendFileSync(paths.log(), `[${new Date().toISOString()}] hook: ${(err as Error)?.message ?? String(err)}\n`)
   } catch {
-    // tant pis
+    // never mind
   }
 }
 
@@ -45,30 +45,30 @@ function readStdin(timeoutMs: number): Promise<string> {
   })
 }
 
-/** La ligne de contexte injectée par SessionStart dans la session Claude Code. */
+/** The context line injected by SessionStart into the Claude Code session. */
 export function sessionStartLine(cache: Cache | null): string {
   const who = cache?.whoami
-  const zones = who?.readable?.length ? who.readable.map((z) => zoneName(cache, z)).join(", ") : "aucune pour l'instant"
-  const org = who?.org ? ` de ${who.org}` : ""
-  const access = who ? ` (${firstName(who.name)} peut lire les zones : ${zones})` : ""
+  const zones = who?.readable?.length ? who.readable.map((z) => zoneName(cache, z)).join(", ") : "none for now"
+  const org = who?.org ? ` for ${who.org}` : ""
+  const access = who ? ` (${firstName(who.name)} can read the zones: ${zones})` : ""
   return (
-    `Cerveau d'entreprise${org} connecté${access}. ` +
-    `Pour tout contexte d'entreprise (décisions, procédures, clients, projets, outils, qui fait quoi), ` +
-    `utilise l'outil MCP search_brain du serveur company-brain avant de deviner ; remember pour y enregistrer une décision ou une procédure importante.`
+    `Company brain${org} connected${access}. ` +
+    `For any company context (decisions, procedures, customers, projects, tools, who does what), ` +
+    `use the search_brain MCP tool of the company-brain server before guessing; remember to record an important decision or procedure in it.`
   )
 }
 
 export type HookOptions = {
-  /** `share_prompt_summaries` de la config : false → jamais de résumé de prompt. */
+  /** `share_prompt_summaries` from the config: false → never a prompt summary. */
   shareSummaries?: boolean
-  /** Secrets du poste (jeton du cerveau…), masqués et signe d'une session d'installation. */
+  /** The computer's secrets (brain token…), redacted and a sign of an install session. */
   secrets?: string[]
 }
 
 /**
- * Construit l'événement à envoyer, ou null si l'événement est ignoré.
- * UserPromptSubmit : le résumé (160 caractères masqués) ne part que si le prompt se rattache à au moins une zone
- * et n'a rien de personnel ; sinon l'événement part sans résumé (empreinte seule, ou rien pour un prompt perso).
+ * Builds the event to send, or null if the event is ignored.
+ * UserPromptSubmit: the summary (160 redacted characters) is only sent if the prompt relates to at least one zone
+ * and has nothing personal; otherwise the event goes without a summary (fingerprint only, or nothing for a personal prompt).
  */
 export function eventForHook(input: HookInput, cache: Cache | null, opts: HookOptions = {}): AgentEventInput | null {
   const session_id = input.session_id ? String(input.session_id).slice(0, 200) : undefined
@@ -81,9 +81,9 @@ export function eventForHook(input: HookInput, cache: Cache | null, opts: HookOp
       const prompt = (input.prompt ?? "").trim()
       if (!prompt) return null
       const secrets = opts.secrets ?? []
-      // Prompt d'installation ou jeton collé : on signale juste l'activité.
+      // Install prompt or pasted token: we only report the activity.
       if (isBrainSetupText(prompt, secrets) || maskOwnSecrets(prompt, secrets).count > 0) return { agent: "claude-code", type: "query", zones: [], session_id }
-      // Contenu perso : ni zone, ni empreinte, ni résumé.
+      // Personal content: no zone, no fingerprint, no summary.
       if (looksPersonal(prompt)) return { agent: "claude-code", type: "query", zones: [], session_id }
       const zones = cache?.zones?.length ? classifyZones(prompt, cache.zones, 2) : []
       const event: AgentEventInput = { agent: "claude-code", type: "query", zones, fingerprint: promptFingerprint(prompt), session_id }
@@ -105,7 +105,7 @@ async function hookMain(): Promise<void> {
   }
   const cfg = loadConfig()
   const cache = loadCache()
-  // SessionStart : le stdout est injecté dans le contexte de Claude Code → une seule ligne.
+  // SessionStart: stdout is injected into Claude Code's context → a single line.
   if (input.hook_event_name === "SessionStart" && cfg) process.stdout.write(sessionStartLine(cache) + "\n")
   const event = eventForHook(input, cache, { shareSummaries: cfg?.share_prompt_summaries !== false, secrets: ownSecrets(cfg) })
   if (!cfg || !event) return
@@ -119,7 +119,7 @@ function flushStdout(): Promise<void> {
   })
 }
 
-/** Point d'entrée `brain.mjs hook` : sort toujours avec le code 0. */
+/** `brain.mjs hook` entry point: always exits with code 0. */
 export async function runHook(): Promise<never> {
   if (process.env.COMPANY_BRAIN_INTERNAL === "1") process.exit(0)
   const hard = setTimeout(() => process.exit(0), HOOK_GLOBAL_TIMEOUT_MS)

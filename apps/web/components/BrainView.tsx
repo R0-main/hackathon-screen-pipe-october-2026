@@ -9,14 +9,14 @@ import { ZoneDrawer } from "./ZoneDrawer"
 import { WelcomeBanner } from "./WelcomeBanner"
 import { LiveFeed } from "./LiveFeed"
 
-/** Page d'accueil : le cerveau occupe tout l'espace à droite de la barre latérale. Rien ne défile, on zoome. */
+/** Home page: the brain takes all the space to the right of the sidebar. Nothing scrolls, you zoom. */
 export function BrainView({ welcome }: { welcome?: boolean }) {
   const { state, feed, activity, ripples, now } = useBrainLive()
   const [selected, setSelected] = useState<string | null>(null)
   const [feedOpen, setFeedOpen] = useState<boolean | null>(null)
   const selectedZone = state.zones.find((z) => z.id === selected) ?? null
   const isAdmin = state.real.role === "admin"
-  // Un dot par personne : il respire si son agent a travaillé ces 15 dernières minutes, sautille s'il touche le cerveau à l'instant.
+  // One dot per person: it breathes if their agent worked in the last 15 minutes, bounces if it touches the brain right now.
   const working = new Set(feed.filter((e) => e.type !== "stopped" && Date.parse(e.at) > now - 15 * 60_000).map((e) => e.user_id))
   const live = new Set(feed.filter((e) => (e.type === "query" || e.type === "write") && Date.parse(e.at) > now - 8000).map((e) => e.user_id))
   const people = state.people.map((p) => ({ ...p, working: working.has(p.id), live: live.has(p.id), me: p.id === state.me.id }))
@@ -26,16 +26,16 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
       {state.zones.length === 0 ? (
         <div className="grid h-full place-items-center p-6">
           <div className="inset max-w-md p-8 text-center">
-            <p className="text-[13px] text-trace">Le cerveau n&apos;a pas encore de zones.</p>
+            <p className="text-[13px] text-trace">The brain has no zones yet.</p>
             {isAdmin && (
               <Link href="/onboarding" className="btn btn-primary mt-3">
-                Lancer l&apos;onboarding
+                Start onboarding
               </Link>
             )}
           </div>
         </div>
       ) : (
-        // Grand écran, fil ouvert : le cerveau se centre dans la place laissée à gauche de la colonne du fil.
+        // Wide screen, feed open: the brain centers itself in the space left of the feed column.
         <div className={`absolute inset-0 ${feedOpen === false ? "" : "xl:right-[372px]"}`}>
           <Brain3D
             zones={state.zones}
@@ -57,11 +57,11 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
         {isAdmin && state.totals.items === 0 && !state.impersonating && (
           <div className="panel pointer-events-auto flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
             <p className="min-w-0 flex-1 text-[13px] leading-snug">
-              <span className="font-medium">Le cerveau est vide.</span>{" "}
-              <span className="text-trace">Donnez-lui le contexte de vos comptes : Claude Code ou Codex relit vos anciennes conversations.</span>
+              <span className="font-medium">The brain is empty.</span>{" "}
+              <span className="text-trace">Give it your accounts' context: Claude Code or Codex re-reads your past conversations.</span>
             </p>
             <Link href="/onboarding" className="btn btn-primary shrink-0">
-              Remplir le cerveau
+              Fill the brain
             </Link>
           </div>
         )}
@@ -73,9 +73,9 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
       </div>
 
       <div className="pointer-events-none absolute right-4 top-4 z-10 hidden gap-1.5 text-[12px] lg:flex">
-        <span className="chip tabular-nums">{state.totals.items} connaissances</span>
+        <span className="chip tabular-nums">{state.totals.items} knowledge items</span>
         <span className="chip tabular-nums">{state.zones.length} zones</span>
-        <span className="chip tabular-nums">{state.people.length} personnes</span>
+        <span className="chip tabular-nums">{state.people.length} people</span>
       </div>
 
       {state.zones.length > 0 && (

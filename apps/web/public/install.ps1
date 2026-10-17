@@ -1,40 +1,40 @@
-# NOS Brainer : branche ce poste Windows au cerveau d'entreprise en une commande.
+# NOS Brainer: connects this Windows computer to the company brain in one command.
 #
-#   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://cerveau.example.com --token cb_...
-#   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://cerveau.example.com --join cj_... --name ...
-#   ... --ca %USERPROFILE%\.company-brain\ca.crt   (cerveau auto-heberge en HTTPS local : certificat de son autorite, deja
-#                                              verifie par son empreinte dans le prompt ; ajoute au magasin de l'utilisateur)
+#   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://brain.example.com --token cb_...
+#   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://brain.example.com --join cj_... --name ...
+#   ... --ca %USERPROFILE%\.company-brain\ca.crt   (self-hosted brain on local HTTPS: certificate of its authority, already
+#                                              checked by its fingerprint in the prompt; added to the user's store)
 #
-# Equivalent Windows de install.sh (memes options, memes codes de sortie) ; install.sh lui passe la main dans Git Bash.
-# Fichier en ASCII pur : Windows PowerShell 5.1 lit un .ps1 sans BOM dans la page de code ANSI. Les messages detailles
-# (avec accents) viennent du client du cerveau.
-# 1. Node.js : la copie privee %USERPROFILE%\.company-brain\node si elle est a la version figee ci-dessous ; sinon un
-#    Node.js >= 20 x64 installe a demeure ; sinon installe la copie privee (zip officiel, empreinte SHA-256 verifiee).
-# 2. Telecharge le client du cerveau (<url>/brain.mjs), verifie que c'est bien du JavaScript, puis ecrit les raccourcis
-#    brain.cmd (PowerShell, cmd, Git Bash) et brain (Git Bash).
-# 3. Lance `brain setup` avec les memes options et rend son code de sortie. Avec --join (message d'equipe), lance
-#    `brain join` : la demande attend qu'un admin l'accepte, puis enchaine sur setup.
+# Windows equivalent of install.sh (same options, same exit codes); install.sh hands over to it in Git Bash.
+# Pure ASCII file: Windows PowerShell 5.1 reads a .ps1 without a BOM in the ANSI code page. The detailed messages
+# come from the brain client.
+# 1. Node.js: the private copy %USERPROFILE%\.company-brain\node if it is at the version pinned below; otherwise a
+#    permanently installed Node.js >= 20 x64; otherwise installs the private copy (official zip, SHA-256 fingerprint checked).
+# 2. Downloads the brain client (<url>/brain.mjs), checks that it really is JavaScript, then writes the shortcuts
+#    brain.cmd (PowerShell, cmd, Git Bash) and brain (Git Bash).
+# 3. Runs `brain setup` with the same options and returns its exit code. With --join (team message), runs
+#    `brain join`: the request waits for an admin to accept it, then moves on to setup.
 #
-# Codes de sortie (les memes que install.sh) :
-#   0, 1, 3, 6, 7, 8  ceux de `brain setup` ou `brain join`, rendus tels quels : 0 = tout est branche ; 1 = echec
-#                 (lancer `brain.cmd doctor`) ; 3 = autorisation en attente ; 6 = branche, mais sans Screenpipe ;
-#                 7 = demande pas encore acceptee (relancer `brain.cmd join`) ; 8 = demande refusee.
-#   2             mauvais appel : --url absent ou pas en http(s).
-#   4             systeme non gere, ou Node.js impossible a installer ou a lancer ici (le message dit quoi installer).
-#   5             telechargement impossible (reseau, proxy, mauvaise adresse, page d'erreur au lieu du client) :
-#                 relancer la meme commande. Le client et Node.js deja installes restent intacts.
-#   9             (commande du prompt seulement) certificat du cerveau inattendu : empreinte differente de celle du prompt.
-# Le jeton n'est jamais affiche.
-# Tests seulement : COMPANY_BRAIN_FORCE_PRIVATE_NODE=1 ignore le Node.js du systeme (la CI teste le telechargement).
+# Exit codes (the same as install.sh):
+#   0, 1, 3, 6, 7, 8  those of `brain setup` or `brain join`, passed through: 0 = everything is connected; 1 = failure
+#                 (run `brain.cmd doctor`); 3 = permission pending; 6 = connected, but without Screenpipe;
+#                 7 = request not accepted yet (run `brain.cmd join` again); 8 = request rejected.
+#   2             bad call: --url missing or not http(s).
+#   4             unsupported system, or Node.js cannot be installed or run here (the message says what to install).
+#   5             download impossible (network, proxy, wrong address, error page instead of the client):
+#                 run the same command again. The client and Node.js already installed stay intact.
+#   9             (prompt command only) unexpected brain certificate: fingerprint different from the prompt's.
+# The token is never displayed.
+# Tests only: COMPANY_BRAIN_FORCE_PRIVATE_NODE=1 ignores the system's Node.js (CI tests the download).
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-# PowerShell 7.3+ : un code de sortie non nul d'un programme ne doit pas devenir une exception.
+# PowerShell 7.3+: a non-zero exit code from a program must not become an exception.
 $PSNativeCommandUseErrorActionPreference = $false
 
 $NodeVersion = '22.23.3'
-# Toujours la version x64, meme sur Windows ARM64 : Screenpipe n'est publie qu'en win32-x64, et Windows 11 sur ARM
-# emule le x64. Empreinte officielle (https://nodejs.org/dist/v22.23.3/SHASUMS256.txt), figee ici avec la version.
+# Always the x64 version, even on Windows ARM64: Screenpipe is only published for win32-x64, and Windows 11 on ARM
+# emulates x64. Official fingerprint (https://nodejs.org/dist/v22.23.3/SHASUMS256.txt), pinned here with the version.
 $NodeDist = "node-v$NodeVersion-win-x64"
 $NodeZipSha256 = '2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71'
 $OnWindows = [IO.Path]::DirectorySeparatorChar -eq '\'
@@ -47,8 +47,8 @@ function Fail([int]$Code, [string]$Message) {
   exit $Code
 }
 
-# powershell -File coupe un argument "-nom:valeur" en deux (PowerShell 7 perd meme les deux-points) : "--url=https://x"
-# arrive en "--url=https" puis "//x". On recolle, pour lire --url= et pour passer a setup exactement ce qui a ete tape.
+# powershell -File splits a "-name:value" argument in two (PowerShell 7 even loses the colon): "--url=https://x"
+# arrives as "--url=https" then "//x". We glue them back, to read --url= and to pass setup exactly what was typed.
 function Repair-Arguments([object[]]$Items) {
   $out = New-Object System.Collections.Generic.List[string]
   for ($i = 0; $i -lt $Items.Count; $i++) {
@@ -63,8 +63,8 @@ function Repair-Arguments([object[]]$Items) {
   return $out.ToArray()
 }
 
-# Lance un programme et rend son code de sortie et sa sortie, sans que Windows PowerShell 5.1 change sa sortie
-# d'erreur en exception.
+# Runs a program and returns its exit code and output, without Windows PowerShell 5.1 turning its error
+# output into an exception.
 function Invoke-Tool([string]$Exe, [string[]]$Arguments) {
   $saved = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
@@ -79,8 +79,8 @@ function Invoke-Tool([string]$Exe, [string[]]$Arguments) {
   }
 }
 
-# Sonde un node : version, architecture et vrai chemin (process.execPath). Ecrits dans un fichier et relus en UTF-8 :
-# un chemin accentue arrive intact quelle que soit la page de code de la console. Rend $null s'il ne demarre pas.
+# Probes a node: version, architecture and real path (process.execPath). Written to a file and read back as UTF-8:
+# a path with accents arrives intact whatever the console's code page. Returns $null if it does not start.
 function Get-NodeInfo([string]$Exe) {
   if (-not $Exe -or -not (Test-Path -LiteralPath $Exe -PathType Leaf)) { return $null }
   $file = Join-Path $BrainHome "node-info.$PID.txt"
@@ -97,8 +97,8 @@ function Get-NodeInfo([string]$Exe) {
   return [pscustomobject]@{ Version = $parts[0]; Major = $major; Arch = $parts[1]; Path = $parts[2] }
 }
 
-# Hooks, MCP et synchro planifiee enregistrent le vrai chemin de Node.js : celui d'un gestionnaire de versions disparait
-# a la prochaine mise a jour, et tout casserait sans bruit. On prend alors la copie privee.
+# Hooks, MCP and scheduled sync record Node.js's real path: that of a version manager disappears
+# on the next update, and everything would break silently. The private copy is used instead.
 function Test-VersionedPath([string]$Path) {
   $p = $Path.Replace('/', '\').ToLowerInvariant()
   foreach ($m in @('\nvm\', '\fnm\', '\fnm_multishells\', '\volta\', '\.volta\', '\scoop\', '\mise\')) {
@@ -107,7 +107,7 @@ function Test-VersionedPath([string]$Path) {
   return $false
 }
 
-# Telechargement : 3 essais, sauf erreur definitive (4xx : adresse fausse). Rend $false, raison dans $script:DownloadError.
+# Download: 3 attempts, except on a definitive error (4xx: wrong address). Returns $false, reason in $script:DownloadError.
 function Save-Url([string]$Url, [string]$OutFile) {
   for ($try = 1; $try -le 3; $try++) {
     try {
@@ -126,9 +126,9 @@ function Save-Url([string]$Url, [string]$OutFile) {
   return $false
 }
 
-# Empreinte SHA-256 par .NET, pas par Get-FileHash : cette fonction vient d'un module que Windows PowerShell 5.1 ne
-# charge pas quand il est lance depuis PowerShell 7 (PSModulePath pointe alors vers les modules de PowerShell 7), cas
-# de l'outil PowerShell de Claude Code qui lance `powershell`.
+# SHA-256 fingerprint through .NET, not Get-FileHash: that function comes from a module Windows PowerShell 5.1 does not
+# load when started from PowerShell 7 (PSModulePath then points to PowerShell 7's modules), which is the case
+# of Claude Code's PowerShell tool, which runs `powershell`.
 function Get-Sha256([string]$Path) {
   $stream = [IO.File]::OpenRead($Path)
   try {
@@ -139,7 +139,7 @@ function Get-Sha256([string]$Path) {
   }
 }
 
-# Deplace un dossier, en reessayant : l'antivirus garde parfois quelques instants un fichier tout juste extrait.
+# Moves a folder, retrying: the antivirus sometimes holds a freshly extracted file for a few moments.
 function Move-Directory([string]$From, [string]$To) {
   for ($try = 1; $try -le 5; $try++) {
     try {
@@ -152,10 +152,10 @@ function Move-Directory([string]$From, [string]$To) {
   return $false
 }
 
-# Installe la copie privee de Node.js. Rend $null si elle est en place, sinon @{ Code; Message } : rien n'a ete remplace.
+# Installs the private copy of Node.js. Returns $null if it is in place, otherwise @{ Code; Message }: nothing was replaced.
 function Install-PrivateNode {
   if (-not $OnWindows) {
-    return @{ Code = 4; Message = 'install.ps1 installe Node.js pour Windows seulement : ailleurs, utilise install.sh.' }
+    return @{ Code = 4; Message = 'install.ps1 only installs Node.js for Windows: elsewhere, use install.sh.' }
   }
   $zipUrl = "https://nodejs.org/dist/v$NodeVersion/$NodeDist.zip"
   $work = Join-Path $BrainHome "node.download.$PID"
@@ -164,14 +164,14 @@ function Install-PrivateNode {
   try {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
     [void][IO.Directory]::CreateDirectory($out)
-    Say "Installation de Node.js v$NodeVersion dans $PrivateDir (copie privee, sans droits administrateur)..."
+    Say "Installing Node.js v$NodeVersion in $PrivateDir (private copy, no admin rights)..."
     if (-not (Save-Url $zipUrl $zip)) {
-      return @{ Code = 5; Message = "Telechargement impossible : $zipUrl ($script:DownloadError). Relance la meme commande." }
+      return @{ Code = 5; Message = "Download failed: $zipUrl ($script:DownloadError). Run the same command again." }
     }
     if ((Get-Sha256 $zip) -ne $NodeZipSha256) {
-      return @{ Code = 5; Message = 'Le telechargement de Node.js ne correspond pas a son empreinte officielle (coupe, ou modifie par un proxy ?) : relance la meme commande.' }
+      return @{ Code = 5; Message = 'The Node.js download does not match its official fingerprint (cut off, or modified by a proxy?): run the same command again.' }
     }
-    # tar.exe de Windows (bsdtar) lit les zip et va vite ; jamais le tar de Git, qui ne les lit pas. Sinon .NET.
+    # Windows tar.exe (bsdtar) reads zips and is fast; never Git's tar, which does not read them. Otherwise .NET.
     $extracted = $false
     $tar = "$env:SystemRoot\System32\tar.exe"
     if (Test-Path -LiteralPath $tar) { $extracted = (Invoke-Tool $tar @('-xf', $zip, '-C', $out)).Code -eq 0 }
@@ -192,25 +192,25 @@ function Install-PrivateNode {
     }
     $newDir = Join-Path $out $NodeDist
     if (-not $extracted -or -not (Test-Path -LiteralPath (Join-Path $newDir 'node.exe'))) {
-      return @{ Code = 4; Message = "Impossible d'extraire Node.js : verifie l'espace disque, puis relance la meme commande." }
+      return @{ Code = 4; Message = "Cannot extract Node.js: check the disk space, then run the same command again." }
     }
-    # Essai avant de remplacer quoi que ce soit : une copie qui ne demarre pas ici ne prend pas la place de l'ancienne.
+    # Trial before replacing anything: a copy that does not start here does not take the place of the old one.
     $info = Get-NodeInfo (Join-Path $newDir 'node.exe')
     if (-not $info -or $info.Version -ne $NodeVersion) {
       $why = (Invoke-Tool (Join-Path $newDir 'node.exe') @('-v')).Out | Select-Object -First 1
-      return @{ Code = 4; Message = "Node.js v$NodeVersion ne demarre pas sur ce poste ($why) : Windows 10 ou 11 x64 (ou Windows 11 ARM) requis. Installe Node.js 20 ou plus (https://nodejs.org), puis relance la meme commande." }
+      return @{ Code = 4; Message = "Node.js v$NodeVersion does not start on this computer ($why): Windows 10 or 11 x64 (or Windows 11 ARM) required. Install Node.js 20 or later (https://nodejs.org), then run the same command again." }
     }
-    # Echange sans jamais perdre Node.js : l'ancienne copie est mise de cote, la nouvelle prend sa place, puis
-    # l'ancienne est effacee. Une copie en cours d'utilisation (MCP, synchro) ne se deplace pas : on la garde.
+    # Swap without ever losing Node.js: the old copy is set aside, the new one takes its place, then
+    # the old one is deleted. A copy in use (MCP, sync) cannot be moved: it is kept.
     $old = Join-Path $BrainHome "node.old.$PID"
     if (Test-Path -LiteralPath $PrivateDir) {
       if (-not (Move-Directory $PrivateDir $old)) {
-        return @{ Code = 4; Message = "Impossible de remplacer $PrivateDir (Node.js en cours d'utilisation ?) : relance la meme commande plus tard." }
+        return @{ Code = 4; Message = "Cannot replace $PrivateDir (Node.js in use?): run the same command again later." }
       }
     }
     if (-not (Move-Directory $newDir $PrivateDir)) {
       if (Test-Path -LiteralPath $old) { [void](Move-Directory $old $PrivateDir) }
-      return @{ Code = 4; Message = "Impossible d'installer Node.js dans $PrivateDir : verifie l'espace disque, puis relance la meme commande." }
+      return @{ Code = 4; Message = "Cannot install Node.js in $PrivateDir: check the disk space, then run the same command again." }
     }
     Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
     return $null
@@ -219,7 +219,7 @@ function Install-PrivateNode {
   }
 }
 
-# cmd lit un .cmd dans la page de code OEM du systeme (850 en France) : c'est celle qu'il faut pour un chemin accentue.
+# cmd reads a .cmd in the system's OEM code page (850 in France): that is the one a path with accents needs.
 function Get-OemEncoding {
   $cp = 0
   try { $cp = [int](Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name OEMCP).OEMCP } catch { }
@@ -232,23 +232,23 @@ function Get-OemEncoding {
   return [Text.Encoding]::ASCII
 }
 
-# Ecrit a cote puis remplace d'un bloc : un raccourci n'est jamais a moitie ecrit.
+# Written alongside then replaced in one go: a shortcut is never half written.
 function Write-FileAtomic([string]$Path, [byte[]]$Bytes) {
   $tmp = "$Path.$PID.tmp"
   [IO.File]::WriteAllBytes($tmp, $Bytes)
   Move-Item -LiteralPath $tmp -Destination $Path -Force
 }
 
-# C:\Users\x -> /c/Users/x (Git Bash) ; \\serveur\partage -> //serveur/partage.
+# C:\Users\x -> /c/Users/x (Git Bash); \\server\share -> //server/share.
 function ConvertTo-PosixPath([string]$Path) {
   if ($Path -match '^([A-Za-z]):[\\/](.*)$') { return '/' + $Matches[1].ToLowerInvariant() + '/' + ($Matches[2] -replace '\\', '/') }
   return ($Path -replace '\\', '/')
 }
 
-# Entre apostrophes pour sh : espaces, $, ` ou " dans un chemin ne sont jamais interpretes.
+# Between single quotes for sh: spaces, $, ` or " in a path are never interpreted.
 function ConvertTo-ShQuoted([string]$Value) { return "'" + $Value.Replace("'", "'\''") + "'" }
 
-# --- Appel ---------------------------------------------------------------------------------------------------------
+# --- Call ---------------------------------------------------------------------------------------------------------
 
 $ScriptArgs = @(Repair-Arguments $RawArgs)
 $Url = ''
@@ -259,42 +259,42 @@ for ($i = 0; $i -lt $ScriptArgs.Count; $i++) {
   elseif ($ScriptArgs[$i] -like '--url=*') { $Url = $ScriptArgs[$i].Substring(6) }
   if ($ScriptArgs[$i] -eq '--ca' -and $i + 1 -lt $ScriptArgs.Count) { $Ca = $ScriptArgs[$i + 1] }
   elseif ($ScriptArgs[$i] -like '--ca=*') { $Ca = $ScriptArgs[$i].Substring(5) }
-  # Message d'equipe : demande a rejoindre (brain join), qui enchaine sur setup une fois acceptee.
+  # Team message: asks to join (brain join), which moves on to setup once accepted.
   if ($ScriptArgs[$i] -eq '--join' -or $ScriptArgs[$i] -like '--join=*') { $Command = 'join' }
 }
-if (-not $Url) { Fail 2 'Usage : install.ps1 --url <adresse du cerveau> --token <jeton personnel>  (ou --join <code d''equipe>)' }
+if (-not $Url) { Fail 2 'Usage: install.ps1 --url <brain address> --token <personal token>  (or --join <team code>)' }
 $Url = $Url.TrimEnd('/')
-# Le client telecharge ici s'execute sur le poste et recoit le jeton : HTTPS obligatoire, sauf sur ce poste meme.
-# La valeur recue n'est pas reaffichee : ce pourrait etre le jeton passe au mauvais endroit.
+# The client downloaded here runs on the computer and receives the token: HTTPS required, except on this very computer.
+# The received value is not echoed back: it could be the token passed in the wrong place.
 if ($Url -cmatch '^https://.') { }
 elseif ($Url -cmatch '^http://(localhost|127\.0\.0\.1|\[::1\])([:/].*)?$') { }
-elseif ($Url -cmatch '^http://.') { Warn "Attention : $Url n'est pas en HTTPS, le client et ton jeton passeront en clair sur le reseau." }
-else { Fail 2 "--url doit etre l'adresse du cerveau, en https:// (par exemple --url https://cerveau.example.com)." }
+elseif ($Url -cmatch '^http://.') { Warn "Warning: $Url is not HTTPS, the client and your token will travel in clear text over the network." }
+else { Fail 2 "--url must be the brain's address, with https:// (for example --url https://brain.example.com)." }
 
-# Cerveau auto-heberge en HTTPS local (--ca) : le certificat de son autorite, deja verifie par son empreinte dans le
-# prompt. Ajoute aux certificats de confiance de l'utilisateur Windows (navigateurs, et les telechargements ci-dessous) ;
-# le client recoit l'option telle quelle et lui fait confiance de son cote.
+# Self-hosted brain on local HTTPS (--ca): the certificate of its authority, already checked by its fingerprint in the
+# prompt. Added to the Windows user's trusted certificates (browsers, and the downloads below);
+# the client receives the option as is and trusts it on its side.
 if ($Ca) {
-  if (-not (Test-Path -LiteralPath $Ca -PathType Leaf)) { Fail 2 "Certificat introuvable : $Ca (option --ca)." }
+  if (-not (Test-Path -LiteralPath $Ca -PathType Leaf)) { Fail 2 "Certificate not found: $Ca (--ca option)." }
   if ($OnWindows) {
     try {
       $caCert = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $Ca
       $present = Get-ChildItem Cert:\CurrentUser\Root -ErrorAction Stop | Where-Object { $_.Thumbprint -eq $caCert.Thumbprint }
       if (-not $present) {
-        Say "Certificat du cerveau ajoute aux certificats de confiance de l'utilisateur (Windows demande une confirmation)."
+        Say "Brain certificate added to the user's trusted certificates (Windows asks for confirmation)."
         & certutil -user -addstore Root $Ca | Out-Null
       }
     } catch {
-      Warn "Certificat du cerveau non ajoute au magasin Windows ($($_.Exception.Message)) : a faire a la main : certutil -user -addstore Root `"$Ca`""
+      Warn "Brain certificate not added to the Windows store ($($_.Exception.Message)): do it by hand: certutil -user -addstore Root `"$Ca`""
     }
   }
 }
 
-# Windows PowerShell 5.1 : TLS 1.2 (pas toujours actif par defaut) et proxy d'entreprise avec le compte Windows.
+# Windows PowerShell 5.1: TLS 1.2 (not always on by default) and corporate proxy with the Windows account.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials } catch { }
 
-# Dossier du client : celui de l'utilisateur Windows (%USERPROFILE%, celui que lit Node.js).
+# Client folder: the Windows user's (%USERPROFILE%, the one Node.js reads).
 $CustomHome = [bool]$env:COMPANY_BRAIN_HOME
 if ($CustomHome) {
   $BrainHome = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:COMPANY_BRAIN_HOME)
@@ -302,24 +302,24 @@ if ($CustomHome) {
 } elseif ($env:USERPROFILE) {
   $BrainHome = Join-Path $env:USERPROFILE '.company-brain'
 } else {
-  Fail 4 "USERPROFILE n'est pas defini : impossible de trouver le dossier de l'utilisateur Windows."
+  Fail 4 "USERPROFILE is not set: cannot find the Windows user's folder."
 }
 try { [void][IO.Directory]::CreateDirectory($BrainHome) }
-catch { Fail 4 "Impossible de creer $BrainHome ($($_.Exception.Message)) : verifie ses droits, puis relance la meme commande." }
+catch { Fail 4 "Cannot create $BrainHome ($($_.Exception.Message)): check its permissions, then run the same command again." }
 $PrivateDir = Join-Path $BrainHome 'node'
 $PrivateNode = Join-Path $PrivateDir 'node.exe'
 $NewMjs = Join-Path $BrainHome "brain.new.$PID.mjs"
 $Mjs = Join-Path $BrainHome 'brain.mjs'
 
 try {
-  # Client du cerveau, telecharge d'abord (une adresse fausse echoue tout de suite), verifie une fois Node.js trouve.
-  # Le nom temporaire doit finir en .mjs : sinon node --check le lit comme du CommonJS et refuse le vrai client.
-  Say "Telechargement du client du cerveau : $Url/brain.mjs"
+  # Brain client, downloaded first (a wrong address fails right away), checked once Node.js is found.
+  # The temporary name must end in .mjs: otherwise node --check reads it as CommonJS and refuses the real client.
+  Say "Downloading the brain client: $Url/brain.mjs"
   if (-not (Save-Url "$Url/brain.mjs" $NewMjs)) {
-    Fail 5 "Telechargement impossible : $Url/brain.mjs ($script:DownloadError). Verifie le reseau, le proxy ou l'adresse du cerveau, puis relance la meme commande."
+    Fail 5 "Download failed: $Url/brain.mjs ($script:DownloadError). Check the network, the proxy or the brain address, then run the same command again."
   }
 
-  # 1. La copie privee, si elle est a la version figee.
+  # 1. The private copy, if it is at the pinned version.
   $Node = $null
   $NodeVer = $null
   $Private = Get-NodeInfo $PrivateNode
@@ -328,17 +328,17 @@ try {
   } else {
     $Private = $null
   }
-  # 2. Sinon un Node.js >= 20 x64 du systeme, installe a demeure : on enregistre son vrai chemin, pas celui du shim.
+  # 2. Otherwise a system Node.js >= 20 x64, permanently installed: its real path is recorded, not the shim's.
   $Fallback = $null
   if (-not $Node -and $env:COMPANY_BRAIN_FORCE_PRIVATE_NODE -ne '1') {
     $cmd = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     $sys = $null
     if ($cmd) { $sys = Get-NodeInfo $cmd.Path }
     if ($sys) {
-      if ($sys.Major -lt 20) { Say "Node.js v$($sys.Version) ($($sys.Path)) est trop ancien : il faut la version 20 ou plus." }
-      elseif ($OnWindows -and $sys.Arch -ne 'x64') { Say "Node.js $($sys.Path) est en $($sys.Arch) : Screenpipe n'existe qu'en x64 sous Windows." }
+      if ($sys.Major -lt 20) { Say "Node.js v$($sys.Version) ($($sys.Path)) is too old: version 20 or later is required." }
+      elseif ($OnWindows -and $sys.Arch -ne 'x64') { Say "Node.js $($sys.Path) is $($sys.Arch): Screenpipe only exists as x64 on Windows." }
       elseif (Test-VersionedPath $sys.Path) {
-        Say "Node.js $($sys.Path) vient d'un gestionnaire de versions : il peut disparaitre a sa prochaine mise a jour."
+        Say "Node.js $($sys.Path) comes from a version manager: it may disappear on its next update."
         $Fallback = $sys
       } else {
         $Node = $sys.Path
@@ -346,7 +346,7 @@ try {
       }
     }
   }
-  # 3. Sinon la copie privee, telechargee et verifiee. Si elle ne peut pas s'installer, on garde ce qui marche deja.
+  # 3. Otherwise the private copy, downloaded and checked. If it cannot be installed, keep what already works.
   if (-not $Node) {
     $problem = Install-PrivateNode
     if (-not ($problem -is [hashtable])) {
@@ -354,12 +354,12 @@ try {
       $NodeVer = $NodeVersion
     } elseif ($Private) {
       Warn $problem.Message
-      Warn "On continue avec la copie privee deja installee (Node.js v$($Private.Version))."
+      Warn "Continuing with the private copy already installed (Node.js v$($Private.Version))."
       $Node = $PrivateNode
       $NodeVer = $Private.Version
     } elseif ($Fallback) {
       Warn $problem.Message
-      Warn "On continue avec $($Fallback.Path) : si une mise a jour de Node.js le supprime, relance la meme commande."
+      Warn "Continuing with $($Fallback.Path): if a Node.js update removes it, run the same command again."
       $Node = $Fallback.Path
       $NodeVer = $Fallback.Version
     } else {
@@ -367,15 +367,15 @@ try {
     }
   }
 
-  # Le client telecharge doit etre du JavaScript valide : une page HTML (portail Wi-Fi, proxy, connexion SSO, erreur
-  # servie en 200) ne passe pas. L'ancien client reste intact jusqu'au remplacement.
+  # The downloaded client must be valid JavaScript: an HTML page (Wi-Fi portal, proxy, SSO sign-in, error
+  # served with 200) does not pass. The old client stays intact until the replacement.
   if ((Invoke-Tool $Node @('--check', $NewMjs)).Code -ne 0) {
-    Fail 5 "$Url/brain.mjs n'est pas le client du cerveau (page d'erreur, portail Wi-Fi, proxy ?) : verifie l'adresse puis relance la meme commande."
+    Fail 5 "$Url/brain.mjs is not the brain client (error page, Wi-Fi portal, proxy?): check the address, then run the same command again."
   }
   Move-Item -LiteralPath $NewMjs -Destination $Mjs -Force
 
-  # Raccourcis : brain.cmd (PowerShell, cmd, Git Bash ; %~dp0 = son dossier) et brain (Git Bash). Ils marchent meme
-  # quand node n'est pas dans le PATH (copie privee). Dans un .cmd, % s'ecrit %%.
+  # Shortcuts: brain.cmd (PowerShell, cmd, Git Bash; %~dp0 = its folder) and brain (Git Bash). They work even
+  # when node is not in the PATH (private copy). In a .cmd, % is written %%.
   $cmdLines = @()
   if ($CustomHome) { $cmdLines += '@setlocal'; $cmdLines += '@set "COMPANY_BRAIN_HOME=' + $BrainHome.Replace('%', '%%') + '"' }
   if ($Node -eq $PrivateNode) { $cmdLines += '@"%~dp0node\node.exe" "%~dp0brain.mjs" %*' }
@@ -387,13 +387,13 @@ try {
   $sh += 'exec ' + (ConvertTo-ShQuoted (ConvertTo-PosixPath $Node)) + ' ' + (ConvertTo-ShQuoted ((ConvertTo-PosixPath $BrainHome) + '/brain.mjs')) + ' "$@"' + "`n"
   Write-FileAtomic (Join-Path $BrainHome 'brain') (New-Object Text.UTF8Encoding $false).GetBytes($sh)
 } catch {
-  Fail 4 "Erreur inattendue pendant l'installation : $($_.Exception.Message)"
+  Fail 4 "Unexpected error during the install: $($_.Exception.Message)"
 } finally {
   Remove-Item -LiteralPath $NewMjs -Force -ErrorAction SilentlyContinue
 }
 
-Say "Client du cerveau installe : $(Join-Path $BrainHome 'brain.cmd') (Node.js v$NodeVer : $Node)."
-# Sortie de setup en UTF-8 si PowerShell la relaie (sinon elle va directement a la console).
+Say "Brain client installed: $(Join-Path $BrainHome 'brain.cmd') (Node.js v$NodeVer: $Node)."
+# setup output in UTF-8 if PowerShell relays it (otherwise it goes straight to the console).
 $ErrorActionPreference = 'Continue'
 $savedEncoding = $null
 try { $savedEncoding = [Console]::OutputEncoding; [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false } catch { }
@@ -402,7 +402,7 @@ try {
   $code = $LASTEXITCODE
 } catch {
   $code = 4
-  Warn "Node.js ne demarre pas ($Node) : $($_.Exception.Message)"
+  Warn "Node.js does not start ($Node): $($_.Exception.Message)"
 } finally {
   if ($savedEncoding) { try { [Console]::OutputEncoding = $savedEncoding } catch { } }
 }

@@ -1,4 +1,4 @@
-// Compte rendu de synchro envoyé au cerveau (POST /api/sync/report) : compteurs seulement, jamais de contenu.
+// Sync report sent to the brain (POST /api/sync/report): counters only, never any content.
 
 import type { SyncReport } from "@brain/core"
 import { redactText } from "@brain/core"
@@ -7,13 +7,13 @@ import type { SyncSummary } from "./sync"
 export type ReportInput = {
   summary: SyncSummary | null
   startedAt: number
-  /** Erreur qui a interrompu la synchro, le cas échéant. */
+  /** Error that interrupted the sync, if any. */
   error?: unknown
   version: string
   now?: number
 }
 
-/** Message d'erreur court et masqué (un jeton ou une URL avec mot de passe ne doit jamais remonter). */
+/** Short, redacted error message (a token or a URL with a password must never go up). */
 export function reportError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err)
   return redactText(raw.replace(/\s+/g, " ").trim()).slice(0, 500)

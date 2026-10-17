@@ -1,7 +1,7 @@
-// Job quotidien « nouvelles zones » (cron Vercel, cf. app/api/cron/new-zones) : pour une entreprise, Claude relit les
-// connaissances récentes, et les zones qu'il repère sont créées tout de suite, sans validation. Les connaissances
-// concernées y sont déplacées et les droits de lecture suivent (readersOfNewZone) : personne ne perd ni ne gagne en vue.
-// Tout s'exécute dans le contexte d'une entreprise (runInOrg), avec la clé API du serveur : rien ne tourne sur les postes.
+// Daily "new zones" job (Vercel cron, see app/api/cron/new-zones): for a company, Claude re-reads the
+// recent knowledge, and the zones it spots are created right away, without approval. The knowledge
+// concerned is moved there and read access follows (readersOfNewZone): nobody loses or gains sight of anything.
+// Everything runs in a company's context (runInOrg), with the server's API key: nothing runs on the workstations.
 
 import {
   DEFAULT_TIMEZONE,
@@ -26,15 +26,15 @@ export type NewZonesOutcome =
   | { status: "unchanged" }
   | { status: "skipped"; reason: "no_claude" | "max_zones" | "too_few_items" | "claude_error" }
 
-/** `server` : Claude appelé par le serveur (clé API) ; `claude-code` : proposition faite par le Claude Code de l'entreprise (abonnement). */
+/** `server`: Claude called by the server (API key); `claude-code`: proposal made by the company's Claude Code (subscription). */
 export type NewZonesVia = "server" | "claude-code"
 
 export type NewZonesRun = NewZonesOutcome & { at: string; via?: NewZonesVia }
 
-/** Ce que propose le Claude Code de l'entreprise (`brain refresh-zones`) : les connaissances par identifiant, pas par numéro. */
+/** What the company's Claude Code proposes (`brain refresh-zones`): items by id, not by number. */
 export type AgentZoneProposal = { name: string; description: string; keywords: string[]; item_ids: string[] }
 
-/** Heure locale (fuseau de l'entreprise) du passage quotidien. vercel.json déclenche le job à 8 h et 9 h UTC : l'un des deux tombe à 10 h à Paris, été comme hiver. */
+/** Local time (company time zone) of the daily run. vercel.json triggers the job at 8am and 9am UTC: one of the two falls at 10am in Paris, summer and winter. */
 export const NEW_ZONES_HOUR = 10
 
 const LOG_SETTING = "new-zones-log"
@@ -52,19 +52,19 @@ export function localDay(at = new Date()): string {
 type Propose = (input: NewZonesInput) => Promise<NewZoneProposal[] | null>
 
 /**
- * Un passage pour l'entreprise courante. `propose` remplace l'appel à Claude (tests). Sans clé API côté serveur, rien
- * n'est créé : une zone inventée par une heuristique, sans relecture, ferait plus de mal que de bien.
+ * One run for the current company. `propose` replaces the Claude call (tests). Without a server-side API key, nothing
+ * is created: a zone invented by a heuristic, without review, would do more harm than good.
  */
 export async function runNewZones(opts: { propose?: Propose; via?: NewZonesVia } = {}): Promise<NewZonesRun> {
   const outcome = await evolve(opts.propose)
   const run: NewZonesRun = { ...outcome, at: new Date().toISOString(), via: opts.via ?? "server" }
-  // Sans clé, le cron du serveur passe chaque jour pour rien (l'entreprise passe peut-être par son abonnement, en CI) :
-  // l'historique ne garde que les vrais passages.
+  // Without a key, the server's cron runs every day for nothing (the company may go through its subscription, in CI):
+  // the history only keeps real runs.
   if (!(outcome.status === "skipped" && outcome.reason === "no_claude")) await appendLog(run)
   return run
 }
 
-/** Matière envoyée au Claude Code de l'entreprise (GET /api/admin/zones/auto/input), ou la raison de ne rien faire. */
+/** Material sent to the company's Claude Code (GET /api/admin/zones/auto/input), or the reason to do nothing. */
 export async function newZonesInput(): Promise<{ input: NewZonesInput } | { skipped: "max_zones" | "too_few_items" }> {
   const s = getStore()
   const zones = await s.listZones()
@@ -76,9 +76,9 @@ export async function newZonesInput(): Promise<{ input: NewZonesInput } | { skip
 }
 
 /**
- * Applique ce que le Claude Code de l'entreprise a proposé, avec exactement les garde-fous d'un passage du serveur.
- * La matière est relue ici : une connaissance arrivée, supprimée ou sortie de la fenêtre entre-temps est simplement
- * ignorée, et un identifiant inventé ne désigne rien.
+ * Applies what the company's Claude Code proposed, with exactly the safeguards of a server run.
+ * The material is re-read here: an item that arrived, was deleted or left the window in the meantime is simply
+ * ignored, and an invented id points to nothing.
  */
 export function applyAgentProposals(zones: AgentZoneProposal[]): Promise<NewZonesRun> {
   return runNewZones({
@@ -99,7 +99,7 @@ async function evolve(propose?: Propose): Promise<NewZonesOutcome> {
   const input = material.input
   const proposals = propose ? await propose(input) : await proposeNewZones(claude!, input)
   if (!proposals) return { status: "skipped", reason: "claude_error" }
-  // Relu juste avant d'écrire : une zone créée entre-temps dans l'admin n'est pas doublée.
+  // Re-read right before writing: a zone created in the admin in the meantime is not duplicated.
   const current = await s.listZones()
   const plans = planNewZones(proposals, input, current)
   if (plans.length === 0) return { status: "unchanged" }
@@ -119,7 +119,7 @@ async function evolve(propose?: Propose): Promise<NewZonesOutcome> {
   const result: { id: string; name: string; items: number; readers: number }[] = []
   for (const [k, plan] of plans.entries()) {
     const zone = created[k]
-    // Droits calculés AVANT le déplacement, sur les zones d'origine : l'ordre des plans ne change rien.
+    // Permissions computed BEFORE the move, on the original zones: the order of the plans changes nothing.
     const readers = readersOfNewZone(plan, members.map((m) => ({ id: m.id, readable: (rows.get(m.id) ?? []).map((r) => r.zone_id) })))
     for (const id of readers) {
       rows.get(id)!.push({ zone_id: zone.id, can_write: true })
@@ -130,7 +130,7 @@ async function evolve(propose?: Propose): Promise<NewZonesOutcome> {
   }
   for (const id of granted) await s.setZoneAccess(id, rows.get(id)!)
 
-  // Le néon de la nouvelle zone s'allume, et le fil d'activité dit pourquoi. Il faut un compte : un admin de préférence.
+  // The new zone's neon lights up, and the activity feed says why. It takes an account: an admin preferably.
   const actor = profiles.find((p) => p.role === "admin") ?? profiles[0]
   if (actor) {
     await s.insertEvents(
@@ -139,7 +139,7 @@ async function evolve(propose?: Propose): Promise<NewZonesOutcome> {
         agent: "job" as const,
         type: "write" as const,
         zones: [z.id],
-        summary: `Nouvelle zone créée automatiquement : ${z.name} (${z.items} connaissance${z.items > 1 ? "s" : ""} rangée${z.items > 1 ? "s" : ""} ici)`,
+        summary: `New zone created automatically: ${z.name} (${z.items} item${z.items === 1 ? "" : "s"} filed here)`,
         at: new Date().toISOString(),
       })),
     )
@@ -147,7 +147,7 @@ async function evolve(propose?: Propose): Promise<NewZonesOutcome> {
   return { status: "created", zones: result }
 }
 
-/** Historique des passages (les 30 derniers), lisible par les admins : GET /api/admin/zones/auto. */
+/** History of runs (the last 30), readable by admins: GET /api/admin/zones/auto. */
 export async function loadNewZonesLog(): Promise<NewZonesRun[]> {
   const raw = await getStore().getOrgSetting(LOG_SETTING)
   if (!raw) return []

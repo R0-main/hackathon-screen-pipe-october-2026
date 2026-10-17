@@ -5,9 +5,9 @@ import { isDemoMode, signupOpen } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
-export const metadata: Metadata = { title: "Démo du cerveau d'entreprise" }
+export const metadata: Metadata = { title: "Company brain demo" }
 
-/** Démo : on entre dans le cerveau de Fournil en choisissant un compte. Hors mode démo, la connexion classique. */
+/** Demo: you enter Fournil's brain by choosing an account. Outside demo mode, the usual sign-in. */
 export default function DemoPage() {
   if (!isDemoMode()) redirect("/login")
   return <DemoPicker signup={signupOpen()} />

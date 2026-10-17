@@ -5,8 +5,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * GET /api/health — sonde pour un superviseur externe (Uptime Kuma, Better Stack, cron…). 200 si le stockage répond,
- * 503 sinon ; aucune donnée d'entreprise. `stream` : comment le flux temps réel est prévenu (local, notify, poll).
+ * GET /api/health — probe for an external monitor (Uptime Kuma, Better Stack, cron…). 200 if storage answers,
+ * 503 otherwise; no company data. `stream`: how the real-time stream is notified (local, notify, poll).
  */
 export async function GET() {
   const store = getRootStore()

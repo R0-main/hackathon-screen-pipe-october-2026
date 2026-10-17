@@ -1,4 +1,4 @@
-// Cache local (qui je suis + zones avec mots-clés) : permet aux hooks de classer un prompt sans appel réseau.
+// Local cache (who I am + zones with keywords): lets the hooks classify a prompt without a network call.
 
 import { DEFAULT_ZONES, type ZoneHint } from "@brain/core"
 import type { ApiZone, BrainApi, WhoAmI } from "./api"
@@ -23,7 +23,7 @@ export function cacheFrom(who: WhoAmI | null, zones: ApiZone[] | null, prev: Cac
   }
 }
 
-/** Rafraîchit whoami + zones ; garde l'ancien cache pour ce qui échoue. */
+/** Refreshes whoami + zones; keeps the old cache for whatever fails. */
 export async function refreshCache(api: BrainApi): Promise<{ cache: Cache; errors: string[] }> {
   const [who, zones] = await Promise.allSettled([api.whoami(), api.zones()])
   const errors = [who, zones].filter((r): r is PromiseRejectedResult => r.status === "rejected").map((r) => (r.reason as Error).message)
@@ -42,5 +42,5 @@ export function zoneName(cache: Cache | null, id: string): string {
 }
 
 export function firstName(name: string | undefined): string {
-  return (name ?? "").trim().split(/\s+/)[0] || "vous"
+  return (name ?? "").trim().split(/\s+/)[0] || "you"
 }

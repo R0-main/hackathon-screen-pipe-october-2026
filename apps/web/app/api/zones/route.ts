@@ -4,7 +4,7 @@ import { json, withViewer } from "@/lib/http"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Zones de l'entreprise (avec mots-clés, utilisés par les hooks pour classer un prompt) et droits de l'utilisateur. */
+/** The company's zones (with keywords, used by the hooks to classify a prompt) and the user's permissions. */
 export const GET = withViewer(async (_req, viewer) => {
   const store = getStore()
   const [zones, stats] = await Promise.all([store.listZones(), store.zoneStats()])

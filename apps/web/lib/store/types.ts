@@ -36,11 +36,11 @@ export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: str
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">
 export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created_at?: string }
 
-/** Nouvelle entreprise créée depuis la page d'accueil (/creer) : un cerveau à part, à côté de celui de la base. */
+/** New company created from the home page (/create): a separate brain, next to the base's. */
 export type NewTenantOrg = { name: string; description: string; zones: Zone[] }
 
 export type JoinStatus = "pending" | "accepted" | "rejected"
-/** Demande pour rejoindre l'entreprise, envoyée par le message d'équipe. Les champs que le Claude du demandeur ne connaissait pas restent null. */
+/** Request to join the company, sent through the team message. Fields the requester's Claude didn't know stay null. */
 export type JoinRequest = {
   id: string
   org_id: string
@@ -55,46 +55,46 @@ export type JoinRequest = {
 }
 export type NewJoinRequest = { name?: string; title?: string; email?: string; hostname?: string; token_hash: string }
 
-/** Publication d'un skill : nouveau nom → version 1, nom existant → version suivante (l'auteur d'origine est gardé). */
+/** Publishing a skill: new name → version 1, existing name → next version (the original author is kept). */
 export type NewSkill = { name: string; description: string; zone: string | null; files: SkillFile[]; publisher_id: string }
 
-/** Comptes rendus de synchro conservés par poste. */
+/** Sync reports kept per workstation. */
 export const SYNC_REPORTS_KEEP = 30
 
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
-/** Volume de connaissances d'un auteur dans une zone : situe chaque personne dans le cerveau. */
+/** Volume of an author's knowledge in a zone: places each person in the brain. */
 export type AuthorZoneStat = { author_id: string; zone: string; count: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
 
-/** Contrat de stockage du cerveau : implémenté en fichier JSON (démo) et en Postgres (Supabase). */
+/** Storage contract of the brain: implemented as a JSON file (demo) and in Postgres (Supabase). */
 export interface BrainStore {
   readonly kind: "file" | "postgres"
 
   /**
-   * Multi-entreprise. Le stockage racine sert l'organisation « de la base » (la démo, le cerveau déployé) ; chaque
-   * entreprise créée depuis /creer est une organisation « tenant », servie par `forOrg`. Les méthodes ci-dessous
-   * n'ont de sens que sur le stockage racine.
+   * Multi-company. The root store serves the "base" organization (the demo, the deployed brain); each
+   * company created from /create is a "tenant" organization, served by `forOrg`. The methods below
+   * only make sense on the root store.
    */
   forOrg(orgId: string): BrainStore
   createTenantOrg(o: NewTenantOrg): Promise<Org>
   countTenantOrgs(): Promise<number>
-  /** Toutes les entreprises : celle de la base d'abord, puis les entreprises créées (jobs planifiés). */
+  /** All companies: the base's first, then the created companies (scheduled jobs). */
   listOrgIds(): Promise<string[]>
-  /** Organisation d'un compte, toutes entreprises confondues (connexion par jeton ou par session). */
+  /** An account's organization, across all companies (sign-in by token or by session). */
   findUserOrg(by: { id: string } | { tokenHash: string }): Promise<string | null>
-  /** Entreprise d'un code d'équipe, ou d'une demande pour la rejoindre (stockage racine). */
+  /** Company of a team code, or of a request to join it (root store). */
   findOrgByJoinCode(code: string): Promise<string | null>
   findJoinRequestOrg(id: string): Promise<string | null>
 
-  /** Petit réglage de cette entreprise (texte, JSON compris), par exemple l'onboarding proposé par un agent ; null l'efface. */
+  /** Small setting of this company (text, JSON included), for example the onboarding proposed by an agent; null erases it. */
   getOrgSetting(name: string): Promise<string | null>
   setOrgSetting(name: string, value: string | null): Promise<void>
 
-  /** Code du message d'équipe de cette entreprise (créé au premier appel) ; `rotateJoinCode` invalide l'ancien message. */
+  /** Code of this company's team message (created on first call); `rotateJoinCode` invalidates the old message. */
   getJoinCode(): Promise<string>
   rotateJoinCode(): Promise<string>
   createJoinRequest(r: NewJoinRequest): Promise<JoinRequest>
-  /** Les plus récentes d'abord. */
+  /** Most recent first. */
   listJoinRequests(f?: { status?: JoinStatus; limit?: number }): Promise<JoinRequest[]>
   getJoinRequest(id: string): Promise<(JoinRequest & { token_hash: string }) | null>
   decideJoinRequest(id: string, d: { status: Exclude<JoinStatus, "pending">; profile_id?: string }): Promise<JoinRequest | null>
@@ -104,7 +104,7 @@ export interface BrainStore {
 
   getProfileByTokenHash(hash: string): Promise<Profile | null>
   getProfile(id: string): Promise<Profile | null>
-  /** Empreinte du jeton courant d'un membre : les sessions du dashboard y sont liées (régénérer le jeton les invalide). */
+  /** Fingerprint of a member's current token: dashboard sessions are tied to it (regenerating the token invalidates them). */
   getTokenHash(userId: string): Promise<string | null>
   listProfiles(): Promise<Profile[]>
   createProfile(p: NewProfile): Promise<Profile>
@@ -112,50 +112,50 @@ export interface BrainStore {
 
   listZones(): Promise<Zone[]>
   upsertZone(z: Zone): Promise<Zone>
-  /** `can_write` est conservé mais réservé : l'écriture n'est pas restreinte (tout le monde nourrit le cerveau). */
+  /** `can_write` is kept but reserved: writing is not restricted (everyone feeds the brain). */
   listZoneAccess(userId?: string): Promise<ZoneAccess[]>
   setZoneAccess(userId: string, access: { zone_id: string; can_write: boolean }[]): Promise<void>
 
   insertItems(items: NewItem[]): Promise<KnowledgeItem[]>
   /**
-   * `authorId` : inclut aussi les items de cet auteur, quelle que soit leur zone (droit de regard).
-   * Les connaissances remplacées (superseded_by) ne sont jamais renvoyées.
+   * `authorId`: also includes this author's items, whatever their zone (right of review).
+   * Superseded knowledge (superseded_by) is never returned.
    */
   searchItems(query: string, zones: string[], limit: number, opts?: { authorId?: string }): Promise<ScoredItem[]>
-  /** `excludeSuperseded` : sans les connaissances remplacées (listes du dashboard, résumé d'état). */
+  /** `excludeSuperseded`: without superseded knowledge (dashboard lists, status summary). */
   listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
   deleteItem(id: string): Promise<boolean>
-  /** Range ces connaissances dans `zone`, avec les tâches qui en sont issues ; renvoie le nombre de connaissances déplacées. */
+  /** Files these items into `zone`, with the tasks derived from them; returns the number of items moved. */
   moveItems(ids: string[], zone: string): Promise<number>
-  /** Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). */
+  /** Marks `oldId` as superseded by `newId` (a more recent item on the same subject). */
   markSuperseded(oldId: string, newId: string): Promise<void>
-  /** Connaissances (non remplacées) qui citent une entité, dans les zones données (ou de cet auteur). */
+  /** Items (not superseded) citing an entity, in the given zones (or by this author). */
   listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }): Promise<KnowledgeItem[]>
-  /** Vecteurs sémantiques des connaissances non remplacées des zones données (les plus récentes d'abord), pour le classement. */
+  /** Semantic vectors of the non-superseded items of the given zones (most recent first), for ranking. */
   listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }): Promise<{ id: string; embedding: number[] }[]>
   setEmbeddings(rows: { id: string; embedding: number[]; model: string }[]): Promise<void>
-  /** Connaissances sans vecteur (ou d'un autre modèle), pour le rattrapage (scripts/embed-backfill.ts). */
+  /** Items without a vector (or from another model), for the catch-up (scripts/embed-backfill.ts). */
   listItemsWithoutEmbedding(model: string, limit: number): Promise<KnowledgeItem[]>
   zoneStats(): Promise<ZoneStat[]>
   authorZoneStats(): Promise<AuthorZoneStat[]>
   topEntities(f: { zones?: string[]; authorId?: string; limit: number }): Promise<EntityStat[]>
 
   insertEvents(events: NewEvent[]): Promise<AgentEvent[]>
-  /** `afterId` : ordre croissant (flux temps réel). Sinon : les plus récents d'abord. */
+  /** `afterId`: ascending order (real-time stream). Otherwise: most recent first. */
   listEvents(f: { afterId?: number; sinceIso?: string; limit?: number; type?: AgentEventType; userId?: string }): Promise<AgentEvent[]>
   /**
-   * Flux temps réel : `listener` est appelé dès que des événements sont insérés pour l'entreprise `orgId` (par cette
-   * instance, ou par une autre en Postgres via LISTEN/NOTIFY). Renvoie la fonction de désabonnement. Le flux garde
-   * une relecture périodique de sécurité : une notification perdue retarde un événement, elle ne le fait jamais disparaître.
+   * Real-time stream: `listener` is called as soon as events are inserted for the company `orgId` (by this
+   * instance, or by another one in Postgres through LISTEN/NOTIFY). Returns the unsubscribe function. The stream keeps
+   * a periodic safety re-read: a lost notification delays an event, it never makes it disappear.
    */
   onEvents(orgId: string, listener: () => void): () => void
-  /** Comment le flux est prévenu : `local` (même processus), `notify` (Postgres LISTEN), `poll` (relecture seule). */
+  /** How the stream is notified: `local` (same process), `notify` (Postgres LISTEN), `poll` (re-read only). */
   eventNotifyMode(): "local" | "notify" | "poll"
 
-  /** Compte rendu de synchro d'un poste (supervision) ; l'historique est borné à SYNC_REPORTS_KEEP par poste. */
+  /** A workstation's sync report (monitoring); the history is bounded to SYNC_REPORTS_KEEP per workstation. */
   saveSyncReport(userId: string, report: SyncReport): Promise<SyncReportRow>
-  /** Le dernier compte rendu de chaque poste (les plus récents d'abord). */
+  /** The last report of each workstation (most recent first). */
   latestSyncReports(): Promise<SyncReportRow[]>
   listSyncReports(f: { userId?: string; limit?: number }): Promise<SyncReportRow[]>
 
@@ -163,14 +163,14 @@ export interface BrainStore {
   createTasks(tasks: NewTask[]): Promise<Task[]>
   updateTask(id: string, patch: { status?: TaskStatus; assignee_id?: string }): Promise<Task | null>
   /**
-   * Tâches d'un connecteur : insérées ou mises à jour par (source, identifiant externe) ; titre, zone, statut et lien
-   * suivent l'outil. Une tâche de cette source absente de `tasks` (fermée ou supprimée chez l'outil) passe « done ».
-   * Renvoie les tâches touchées.
+   * A connector's tasks: inserted or updated by (source, external id); title, zone, status and link
+   * follow the tool. A task of this source missing from `tasks` (closed or deleted in the tool) becomes "done".
+   * Returns the tasks touched.
    */
   upsertExternalTasks(source: string, tasks: NewTask[]): Promise<Task[]>
 
   listAutomations(): Promise<AutomationSuggestion[]>
-  /** Insère ou met à jour par `key`, en conservant le statut (accepté / écarté) déjà choisi. */
+  /** Inserts or updates by `key`, keeping the status (accepted / dismissed) already chosen. */
   upsertAutomations(c: AutomationCandidate[]): Promise<AutomationSuggestion[]>
   updateAutomation(id: string, patch: { status: AutomationStatus }): Promise<AutomationSuggestion | null>
 
@@ -184,21 +184,21 @@ export interface BrainStore {
   getStatus(): Promise<CompanyStatus | null>
   setStatus(s: CompanyStatus): Promise<void>
 
-  /** Secret de signature des sessions, généré aléatoirement une seule fois puis conservé (fichier 600 ou table brain_settings). */
+  /** Session signing secret, generated randomly once then kept (600 file or brain_settings table). */
   getSessionSecret(): Promise<string>
 
   /**
-   * Verrou « une seule fois », partagé entre toutes les instances (plusieurs fonctions Vercel en parallèle) :
-   * vrai pour le premier appelant uniquement. `releaseClaim` le rend (si la tâche protégée a échoué).
+   * "Only once" lock, shared across all instances (several Vercel functions in parallel):
+   * true for the first caller only. `releaseClaim` releases it (if the protected task failed).
    */
-  /** Vrai si le cerveau ne contient encore aucun compte (sans rien créer, contrairement aux autres lectures). */
+  /** True if the brain does not contain any account yet (without creating anything, unlike the other reads). */
   isEmpty(): Promise<boolean>
   claimOnce(key: string): Promise<boolean>
   releaseClaim(key: string): Promise<void>
-  /** Marque la tâche protégée comme terminée ; `isClaimDone` permet aux autres instances de l'attendre. */
+  /** Marks the protected task as done; `isClaimDone` lets the other instances wait for it. */
   finishClaim(key: string): Promise<void>
   isClaimDone(key: string): Promise<boolean>
 
-  /** Vide tout (utilisé par le seed). */
+  /** Empties everything (used by the seed). */
   reset(org: { name: string; description: string }): Promise<void>
 }

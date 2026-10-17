@@ -5,7 +5,7 @@ import { error, json, withViewer } from "@/lib/http"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** État de l'entreprise, limité aux zones lisibles (le titre global n'est donné qu'à qui lit toutes les zones). */
+/** State of the company, limited to readable zones (the overall headline is only given to whoever reads all zones). */
 export const GET = withViewer(async (_req, viewer) => json(await statusForViewer(viewer)))
 
 const MAX_BODY = 1_000_000
@@ -24,29 +24,29 @@ const Schema = z.object({
 })
 
 /**
- * Admins. Sans corps : régénère l'état côté serveur (Claude si ANTHROPIC_API_KEY, sinon heuristique).
- * Avec `{status: {headline, zones}}` : enregistre un résumé produit sur un poste (`brain refresh-status`, Claude via
- * l'abonnement de l'employé), après validation et masquage, et le renvoie.
+ * Admins. Without a body: regenerates the state on the server (Claude if ANTHROPIC_API_KEY, otherwise heuristic).
+ * With `{status: {headline, zones}}`: saves a summary produced on a workstation (`brain refresh-status`, Claude through
+ * the employee's subscription), after validation and redaction, and returns it.
  */
 export const POST = withViewer(
   async (req, viewer) => {
     const raw = await req.text()
-    if (raw.length > MAX_BODY) return error(413, "Résumé trop volumineux.")
+    if (raw.length > MAX_BODY) return error(413, "Summary too large.")
     if (!raw.trim()) return json(await refreshStatus(viewer))
     let data: unknown
     try {
       data = JSON.parse(raw)
     } catch {
-      return error(400, "Corps JSON invalide.")
+      return error(400, "Invalid JSON body.")
     }
-    // Seul un corps vide (ou {}) relance le calcul côté serveur : un résumé mal emballé ne doit pas écraser celui de Claude.
+    // Only an empty body (or {}) reruns the computation on the server: a badly wrapped summary must not overwrite Claude's.
     if (data && typeof data === "object" && !Array.isArray(data) && Object.keys(data).length === 0) return json(await refreshStatus(viewer))
     if (data === null || typeof data !== "object" || Array.isArray(data) || !("status" in data))
-      return error(400, "Résumé d'état invalide : envoyez { \"status\": { \"headline\": …, \"zones\": […] } }, ou un corps vide pour recalculer.")
+      return error(400, "Invalid status summary: send { \"status\": { \"headline\": …, \"zones\": […] } }, or an empty body to recompute.")
     const parsed = Schema.safeParse(data)
-    if (!parsed.success) return error(400, "Résumé d'état invalide.", parsed.error.issues.slice(0, 5))
+    if (!parsed.success) return error(400, "Invalid status summary.", parsed.error.issues.slice(0, 5))
     const saved = await saveExternalStatus(viewer, parsed.data.status)
-    if (!saved) return error(400, "Résumé d'état invalide : aucune zone connue de l'entreprise.")
+    if (!saved) return error(400, "Invalid status summary: no zone known to the company.")
     return json(saved)
   },
   { admin: true },

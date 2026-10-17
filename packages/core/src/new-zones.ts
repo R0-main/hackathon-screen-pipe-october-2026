@@ -1,6 +1,6 @@
-// Nouvelles zones créées automatiquement : chaque jour, Claude relit les connaissances récentes et repère un domaine de
-// travail qui n'a pas de zone à lui (du juridique rangé faute de mieux dans « Direction »…). Rien n'attend de validation :
-// les garde-fous ci-dessous décident seuls de ce qui est créé, et l'ordre des zones existantes n'est jamais touché.
+// New zones created automatically: every day, Claude re-reads recent knowledge and spots an area of work
+// that has no zone of its own (legal filed for lack of a better place in "Leadership"…). Nothing waits for approval:
+// the safeguards below alone decide what gets created, and the order of existing zones is never touched.
 
 import { z } from "zod"
 import type { KnowledgeItem, KnowledgeKind, Zone } from "./types"
@@ -9,30 +9,30 @@ import { jsonObjects } from "./status"
 import { normalize, truncate } from "./text"
 import { slugify } from "./zones"
 
-/** Matière relue : les connaissances des 30 derniers jours, 300 au plus (les plus récentes). */
+/** Material re-read: knowledge from the last 30 days, 300 at most (the most recent). */
 export const NEW_ZONES_WINDOW_DAYS = 30
 export const NEW_ZONES_MAX_ITEMS = 300
-/** En dessous, il n'y a pas de quoi voir émerger un domaine : Claude n'est pas appelé. */
+/** Below this, there is not enough for an area to emerge: Claude is not called. */
 export const NEW_ZONES_MIN_CORPUS = 12
-/** Une nouvelle zone doit rassembler au moins ce nombre de connaissances déjà dans le cerveau. */
+/** A new zone must gather at least this many items already in the brain. */
 export const NEW_ZONE_MIN_ITEMS = 4
 export const NEW_ZONES_PER_RUN = 2
-/** Au-delà, le cerveau devient illisible : plus aucune zone n'est créée automatiquement. */
+/** Beyond this, the brain becomes unreadable: no more zones are created automatically. */
 export const MAX_ZONES = 12
 
 export type NewZonesInput = {
   company_name: string
   zones: ZoneHint[]
-  /** `ref` : numéro court que Claude cite (moins de jetons qu'un UUID, et pas d'identifiant inventé). */
+  /** `ref`: short number Claude cites (fewer tokens than a UUID, and no invented id). */
   items: { ref: number; id: string; author_id: string; zone: string; kind: KnowledgeKind; title: string; body: string }[]
 }
 
-/** Ce que Claude propose : `items` = numéros (`ref`) des connaissances à ranger dans la nouvelle zone. */
+/** What Claude proposes: `items` = numbers (`ref`) of the items to file in the new zone. */
 export type NewZoneProposal = { name: string; description: string; keywords: string[]; items: number[] }
 
 export type NewZonePlan = {
   zone: { id: string; name: string; description: string; keywords: string[] }
-  /** Connaissances déplacées, avec leur zone d'origine (pour reporter les droits de lecture). */
+  /** Moved items, with their original zone (to carry read access over). */
   items: { id: string; author_id: string; from: string }[]
 }
 
@@ -53,11 +53,11 @@ export function buildNewZonesInput(input: { companyName: string; zones: Zone[]; 
 }
 
 /**
- * Garde-fous appliqués à la proposition de Claude, puisque personne ne la relit :
- * - jamais plus de NEW_ZONES_PER_RUN zones par passage, ni plus de MAX_ZONES au total ;
- * - jamais de doublon d'une zone existante (même identifiant, même nom, ou nom qui donne le même identifiant) ;
- * - au moins NEW_ZONE_MIN_ITEMS connaissances réellement fournies, chacune déplacée une seule fois ;
- * - noms, descriptions et mots-clés bornés comme dans l'admin.
+ * Safeguards applied to Claude's proposal, since nobody reviews it:
+ * - never more than NEW_ZONES_PER_RUN zones per run, nor more than MAX_ZONES in total;
+ * - never a duplicate of an existing zone (same id, same name, or a name that yields the same id);
+ * - at least NEW_ZONE_MIN_ITEMS items actually provided, each moved only once;
+ * - names, descriptions and keywords bounded as in the admin.
  */
 export function planNewZones(proposals: NewZoneProposal[], input: NewZonesInput, existing: Pick<Zone, "id" | "name">[]): NewZonePlan[] {
   const room = Math.min(NEW_ZONES_PER_RUN, MAX_ZONES - existing.length)
@@ -91,9 +91,9 @@ export function planNewZones(proposals: NewZoneProposal[], input: NewZonesInput,
 }
 
 /**
- * Qui lit la nouvelle zone : ses auteurs, et chaque membre qui lisait TOUTES les zones d'où viennent ses connaissances.
- * Personne ne perd donc de vue une connaissance qu'il lisait, et personne n'en découvre une qu'il ne pouvait pas lire.
- * Les admins lisent tout de toute façon : seuls les membres sont concernés.
+ * Who reads the new zone: its authors, and every member who read ALL the zones its items come from.
+ * Nobody loses sight of an item they could read, and nobody discovers one they could not read.
+ * Admins read everything anyway: only members are concerned.
  */
 export function readersOfNewZone(plan: NewZonePlan, members: { id: string; readable: string[] }[]): string[] {
   const sources = [...new Set(plan.items.map((i) => i.from))]
@@ -109,8 +109,8 @@ const LooseProposalSchema = z.object({
 })
 
 /**
- * Réponse de `claude -p` (abonnement Claude Code, sur un poste ou en CI) : tolère le texte autour, un bloc de code,
- * l'enveloppe JSON de la CLI, et des numéros écrits « #12 » ou « 12 ». `[]` si Claude ne propose rien, null si illisible.
+ * `claude -p` answer (Claude Code subscription, on a workstation or in CI): tolerates text around it, a code block,
+ * the CLI's JSON envelope, and numbers written "#12" or "12". `[]` if Claude proposes nothing, null if unreadable.
  */
 export function parseNewZonesJson(text: string): NewZoneProposal[] | null {
   if (typeof text !== "string" || !text.trim()) return null

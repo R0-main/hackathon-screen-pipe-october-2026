@@ -5,7 +5,7 @@ import { json, parseBody, withViewer } from "@/lib/http"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Hooks Claude Code, MCP, brain-sync : ce qui fait s'allumer le cerveau. */
+/** Claude Code hooks, MCP, brain-sync: what makes the brain light up. */
 export const POST = withViewer(async (req, viewer) => {
   const body = await parseBody(req, EventsPayloadSchema)
   if ("response" in body) return body.response

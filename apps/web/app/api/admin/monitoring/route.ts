@@ -1,4 +1,4 @@
-import { HEALTH_ORDER, posteHealth, type PosteHealthResult, type Profile, type SyncReportRow } from "@brain/core"
+import { HEALTH_ORDER, workstationHealth, type WorkstationHealthResult, type Profile, type SyncReportRow } from "@brain/core"
 import { getStore } from "@/lib/store"
 import { listIncidents, serverInfo } from "@/lib/monitoring"
 import { json, withViewer } from "@/lib/http"
@@ -6,12 +6,12 @@ import { json, withViewer } from "@/lib/http"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-export type PosteStatus = {
+export type WorkstationStatus = {
   profile: Pick<Profile, "id" | "name" | "title" | "role">
-  health: PosteHealthResult
+  health: WorkstationHealthResult
   report: SyncReportRow | null
   last_event_at: string | null
-  /** Connaissances envoyées par ce poste sur les 7 derniers jours (d'après ses comptes rendus). */
+  /** Knowledge sent by this workstation over the last 7 days (according to its reports). */
   items_7d: number
   syncs_7d: number
   errors_7d: number
@@ -34,12 +34,12 @@ async function buildMonitoring() {
   const lastEvent = new Map<string, string>()
   for (const e of events) if (!lastEvent.has(e.user_id)) lastEvent.set(e.user_id, e.at)
   const latestBy = new Map(latest.map((r) => [r.user_id, r]))
-  const postes: PosteStatus[] = profiles.map((p) => {
+  const workstations: WorkstationStatus[] = profiles.map((p) => {
     const report = latestBy.get(p.id) ?? null
     const recent = history.filter((r) => r.user_id === p.id && r.at >= since7d)
     return {
       profile: { id: p.id, name: p.name, title: p.title, role: p.role },
-      health: posteHealth({ report, lastEventAt: lastEvent.get(p.id) ?? null, now }),
+      health: workstationHealth({ report, lastEventAt: lastEvent.get(p.id) ?? null, now }),
       report,
       last_event_at: lastEvent.get(p.id) ?? null,
       items_7d: recent.reduce((n, r) => n + r.items_sent, 0),
@@ -47,17 +47,17 @@ async function buildMonitoring() {
       errors_7d: recent.filter((r) => !r.ok).length,
     }
   })
-  postes.sort((a, b) => HEALTH_ORDER[a.health.status] - HEALTH_ORDER[b.health.status] || a.profile.name.localeCompare(b.profile.name))
+  workstations.sort((a, b) => HEALTH_ORDER[a.health.status] - HEALTH_ORDER[b.health.status] || a.profile.name.localeCompare(b.profile.name))
   const counts = { ok: 0, late: 0, error: 0, never: 0 }
-  for (const p of postes) counts[p.health.status]++
+  for (const p of workstations) counts[p.health.status]++
   return {
     generated_at: new Date(now).toISOString(),
-    postes,
+    workstations,
     counts,
     incidents: listIncidents(30),
     server: { ...serverInfo(), store: s.kind, stream: s.eventNotifyMode() },
   }
 }
 
-/** GET /api/admin/monitoring — l'état de chaque poste (dernière synchro, retard, erreur), les incidents serveur récents. */
+/** GET /api/admin/monitoring — the state of each workstation (last sync, delay, error), the recent server incidents. */
 export const GET = withViewer(async () => json(await buildMonitoring()), { admin: true })

@@ -8,11 +8,11 @@ export const maxDuration = 60
 
 type Ctx = { params: Promise<{ id: string }> }
 
-/** POST /api/connectors/:id/sync — synchronise maintenant ; répond 200 avec le résultat, réussi ou non. */
+/** POST /api/connectors/:id/sync — syncs now; answers 200 with the result, successful or not. */
 export const POST = withViewer<Ctx>(
   async (_req, viewer, { params }) => {
     const { id } = await params
-    if (!isConnectorId(id)) return error(404, "Connecteur inconnu.")
+    if (!isConnectorId(id)) return error(404, "Unknown connector.")
     return json(await runConnector(viewer, id))
   },
   { admin: true },

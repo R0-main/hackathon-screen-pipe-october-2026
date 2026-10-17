@@ -7,17 +7,17 @@ import { PostgresStore } from "./postgres"
 export type { BrainStore } from "./types"
 export { StoreSetupError, isStoreSetupError } from "./errors"
 
-// À incrémenter quand l'interface ou le comportement des stockages change : en `next dev`, le singleton survit au
-// rechargement à chaud et garderait sinon une instance de l'ancienne classe (méthodes manquantes).
+// Bump when the stores' interface or behavior changes: in `next dev`, the singleton survives
+// hot reload and would otherwise keep an instance of the old class (missing methods).
 const STORE_VERSION = 6
 
 const g = globalThis as unknown as { __brainStore?: BrainStore; __brainStoreVersion?: number; __brainOrgContext?: AsyncLocalStorage<string> }
 
-// Entreprise de la requête en cours : posée par withViewer (routes API) et runInOrg (pages), d'après le compte connecté.
-// Partagée par globalThis : en `next dev`, deux copies de ce module peuvent coexister.
+// Company of the current request: set by withViewer (API routes) and runInOrg (pages), from the signed-in account.
+// Shared through globalThis: in `next dev`, two copies of this module may coexist.
 const orgContext = (g.__brainOrgContext ??= new AsyncLocalStorage<string>())
 
-/** Stockage racine : l'organisation de la base (la démo, le cerveau déployé), et l'annuaire des entreprises créées. */
+/** Root store: the base organization (the demo, the deployed brain), and the directory of created companies. */
 export function getRootStore(): BrainStore {
   if (!g.__brainStore || g.__brainStoreVersion !== STORE_VERSION) {
     const previous = g.__brainStore as (BrainStore & { end?: () => Promise<void> }) | undefined
@@ -29,21 +29,21 @@ export function getRootStore(): BrainStore {
   return g.__brainStore
 }
 
-/** Le stockage d'une entreprise donnée (celle d'un compte : `profile.org_id`). */
+/** The store of a given company (an account's: `profile.org_id`). */
 export function storeForOrg(orgId: string): BrainStore {
   return getRootStore().forOrg(orgId)
 }
 
 /**
- * Le stockage de l'entreprise de la requête en cours ; hors requête authentifiée (scripts, démo, connexion), celui de
- * la base. Postgres si DATABASE_URL est défini, sinon fichier local (BRAIN_DATA_DIR, par défaut .brain/).
+ * The store of the current request's company; outside an authenticated request (scripts, demo, sign-in), the
+ * base's. Postgres if DATABASE_URL is set, otherwise a local file (BRAIN_DATA_DIR, .brain/ by default).
  */
 export function getStore(): BrainStore {
   const orgId = orgContext.getStore()
   return orgId ? storeForOrg(orgId) : getRootStore()
 }
 
-/** Exécute `fn` dans le contexte d'une entreprise : tous les `getStore()` qu'elle déclenche visent cette entreprise. */
+/** Runs `fn` in the context of a company: every `getStore()` it triggers targets that company. */
 export function runInOrg<T>(orgId: string, fn: () => T): T {
   return orgContext.run(orgId, fn)
 }

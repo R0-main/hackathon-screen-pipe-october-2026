@@ -6,7 +6,7 @@ import { useEffect, useState, type ComponentType, type ReactNode } from "react"
 import { fmt, plural } from "@/lib/i18n"
 import { useBrainLive } from "./BrainLive"
 import { api, errorMessage, initials } from "./format"
-import { LanguageSwitch, useT } from "./I18n"
+import { useT } from "./I18n"
 import { usePendingJoins } from "./TeamJoin"
 import { ADMIN_VIEWS } from "./admin-views"
 import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LinkIcon, LogoutIcon, MenuIcon, NavBrainIcon, SkillIcon, StackIcon, TagIcon, TaskIcon, UsersIcon, WatchIcon } from "./ui"
@@ -15,8 +15,8 @@ type SubItem = { href: string; label: string; count?: number }
 type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number; children?: SubItem[] }
 
 /**
- * Gabarit de l'application : la barre latérale à gauche, la page à droite. La fenêtre ne défile jamais :
- * le cerveau occupe toute la hauteur, les autres pages défilent dans leur propre colonne.
+ * The app layout: the sidebar on the left, the page on the right. The window never scrolls:
+ * the brain takes the full height, the other pages scroll in their own column.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
 }
 
-/** Colonne défilante d'une page secondaire (tout sauf le cerveau). */
+/** Scrolling column of a secondary page (everything but the brain). */
 export function PageScroll({ children, width = "max-w-[1100px]" }: { children: ReactNode; width?: string }) {
   return (
     <div className="scroll-thin h-full overflow-y-auto">
@@ -71,12 +71,12 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const proposed = state.automations.filter((a) => a.status === "proposed").length
   const main: NavItem[] = [
     { href: "/dashboard", label: t.nav.brain, icon: NavBrainIcon },
-    { href: "/etat", label: t.nav.status, icon: DocIcon },
-    { href: "/connaissances", label: t.nav.knowledge, icon: StackIcon, count: state.totals.items },
-    { href: "/entites", label: t.nav.entities, icon: TagIcon },
+    { href: "/status", label: t.nav.status, icon: DocIcon },
+    { href: "/knowledge", label: t.nav.knowledge, icon: StackIcon, count: state.totals.items },
+    { href: "/entities", label: t.nav.entities, icon: TagIcon },
     { href: "/skills", label: t.nav.skills, icon: SkillIcon, count: state.totals.skills },
-    { href: "/taches", label: t.nav.tasks, icon: TaskIcon, count: openTasks },
-    { href: "/automatisations", label: t.nav.automations, icon: BoltIcon, count: proposed },
+    { href: "/tasks", label: t.nav.tasks, icon: TaskIcon, count: openTasks },
+    { href: "/automations", label: t.nav.automations, icon: BoltIcon, count: proposed },
   ]
   const config: NavItem[] = isAdmin
     ? [
@@ -88,8 +88,8 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           children: ADMIN_VIEWS.map((v) => ({ href: v.href, label: t.adminViews[v.id], count: v.id === "requests" ? pendingJoins : undefined })),
         },
         { href: "/onboarding", label: t.nav.onboarding, icon: ChatIcon },
-        { href: "/connecteurs", label: t.nav.connectors, icon: LinkIcon },
-        { href: "/supervision", label: t.nav.monitoring, icon: WatchIcon },
+        { href: "/connectors", label: t.nav.connectors, icon: LinkIcon },
+        { href: "/monitoring", label: t.nav.monitoring, icon: WatchIcon },
       ]
     : []
 
@@ -115,8 +115,8 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       setBusy(false)
       return
     }
-    // Navigation complète (pas router.push) : le cache du routeur client, qui contient encore le cerveau de la
-    // personne connectée, est jeté, et l'entrée « / » est remplacée dans l'historique.
+    // Full navigation (not router.push): the client router cache, which still holds the signed-in person's
+    // brain, is thrown away, and the "/" entry is replaced in the history.
     window.location.replace("/login")
   }
 
@@ -202,7 +202,6 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             <LogoutIcon />
           </button>
         </div>
-        <LanguageSwitch className="justify-end" />
       </div>
     </aside>
   )
@@ -214,7 +213,7 @@ function NavList({ items, isActive, pathname }: { items: NavItem[]; isActive: (h
       {items.map((it) => {
         const active = isActive(it.href)
         const Icon = it.icon
-        // Rubrique à sous-pages : ouverte quand on y est ; la page courante est marquée dans le sous-menu, pas sur la rubrique.
+        // Section with sub-pages: open while on it; the current page is marked in the sub-menu, not on the section.
         const open = Boolean(it.children) && active
         return (
           <li key={it.href}>
@@ -241,8 +240,8 @@ function NavList({ items, isActive, pathname }: { items: NavItem[]; isActive: (h
 }
 
 /**
- * Sous-menu d'une rubrique : un fil vertical aligné sur l'icône, et une barre d'encre qui glisse le long du fil
- * jusqu'à la page courante. S'ouvre en hauteur (grille 0fr → 1fr), sans chevron ; fermé, il est inerte.
+ * A section's sub-menu: a vertical thread aligned with the icon, and an ink bar that slides along the thread
+ * to the current page. Opens in height (grid 0fr → 1fr), without a chevron; closed, it is inert.
  */
 function SubNav({ items, open, current }: { items: SubItem[]; open: boolean; current: string }) {
   const { t } = useT()

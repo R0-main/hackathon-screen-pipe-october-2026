@@ -165,7 +165,7 @@ function ConnectorCard({ connector: c, zones, onChange, onSynced }: { connector:
         <span className="ml-auto text-[12px] text-trace">
           {c.last_run ? (
             <>
-              {k.lastRun} : <RelTime iso={c.last_run.at} />
+              {k.lastRun}: <RelTime iso={c.last_run.at} />
               {c.last_run.ok ? ` (${fmt(k.imported, { n: c.last_run.imported })})` : ` (${fmt(k.runFailed, { error: c.last_run.error ?? "?" })})`}
             </>
           ) : (

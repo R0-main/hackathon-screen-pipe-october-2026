@@ -6,7 +6,7 @@ import { json, parseBody, publicBaseUrl, withViewer } from "@/lib/http"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Admins : le message d'équipe de l'entreprise et les demandes en attente. `?count=1` : le nombre seulement (barre latérale). */
+/** Admins: the company's team message and the pending requests. `?count=1`: the count only (sidebar). */
 export const GET = withViewer(
   async (req) => {
     const store = getStore()
@@ -19,7 +19,7 @@ export const GET = withViewer(
 
 const Schema = z.object({ rotate: z.literal(true) })
 
-/** Admins : change le code. L'ancien message cesse de marcher ; les demandes déjà faites restent. */
+/** Admins: changes the code. The old message stops working; requests already made stay. */
 export const POST = withViewer(
   async (req) => {
     const body = await parseBody(req, Schema)

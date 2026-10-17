@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 /*
-  Direction artistique : monochrome « bone » (celle de screenpipe), encore plus épurée.
-  - Une seule surface claire (bone) et des panneaux blancs séparés par un trait de 1 px.
-  - Le texte est toujours encre (ink) ou trace (secondaire) : jamais coloré.
-  - La couleur n'apparaît que pour une information : la pastille d'une zone, ou le phosphore
-    quand un agent interroge / nourrit une zone en direct.
-  - Pas de dégradé, pas d'ombre au repos, pas de flou, pas de majuscules espacées.
+  Art direction: "bone" monochrome (screenpipe's), pared down even further.
+  - A single light surface (bone) and white panels separated by a 1 px line.
+  - Text is always ink or trace (secondary): never colored.
+  - Color only appears to carry information: a zone's dot, or phosphor
+    when an agent queries / feeds a zone live.
+  - No gradient, no shadow at rest, no blur, no letter-spaced capitals.
 */
 @theme {
   --color-bone: #f6f6f3;
@@ -29,7 +29,7 @@
 
 :root {
   color-scheme: light;
-  /* Alias lisibles pour les composants. */
+  /* Readable aliases for the components. */
   --bg: var(--color-bone);
   --panel: var(--color-surface);
   --text: var(--color-ink);
@@ -81,7 +81,7 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
-/* Classes maison dans la couche components : un utilitaire Tailwind (justify-between, text-trace…) les surcharge. */
+/* In-house classes in the components layer: a Tailwind utility (justify-between, text-trace…) overrides them. */
 @layer components {
 /* --- Surfaces --- */
 .panel {
@@ -90,7 +90,7 @@ p {
   border-radius: var(--radius-card);
 }
 
-/* Titre de section : phrase, encre, sans majuscules espacées. */
+/* Section title: sentence case, ink, no letter-spaced capitals. */
 .panel-title {
   font-size: 15px;
   font-weight: 500;
@@ -98,13 +98,13 @@ p {
   color: var(--text);
 }
 
-/* Bloc secondaire à l'intérieur d'un panneau : un pas de ton, pas de trait. */
+/* Secondary block inside a panel: one step of tone, no line. */
 .inset {
   background: var(--bg);
   border-radius: var(--radius-control);
 }
 
-/* --- Contrôles --- */
+/* --- Controls --- */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -208,7 +208,7 @@ select.input {
   background-position: right 10px center;
 }
 
-/* Étiquette compacte : un pas de ton, coins 4 px, jamais de pastille colorée dans le texte. */
+/* Compact label: one step of tone, 4 px corners, never a colored dot in the text. */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -238,7 +238,7 @@ button.chip:hover:not(.chip-on) {
   border-color: var(--text);
 }
 
-/* Témoin « en direct » : phosphore seulement quand le flux est connecté. */
+/* "Live" indicator: phosphor only when the stream is connected. */
 .live-dot {
   display: inline-block;
   width: 8px;
@@ -257,7 +257,7 @@ button.chip:hover:not(.chip-on) {
   overscroll-behavior: contain;
 }
 
-/* --- Cerveau (secours 2D et éléments communs) --- */
+/* --- Brain (2D fallback and shared elements) --- */
 .ripple {
   transform-box: fill-box;
   transform-origin: center;
@@ -321,8 +321,8 @@ button.chip:hover:not(.chip-on) {
   }
 }
 
-/* Libellés du cerveau 3D : positionnés image par image, invisibles tant qu'ils n'ont pas de position.
-   Près du bord droit, ils basculent à gauche de leur zone (.is-flip). */
+/* 3D brain labels: positioned frame by frame, invisible until they have a position.
+   Near the right edge, they flip to the left of their zone (.is-flip). */
 .brain-label {
   visibility: hidden;
   display: flex;
@@ -337,8 +337,8 @@ button.chip:hover:not(.chip-on) {
   flex-direction: row-reverse;
 }
 
-/* Dots des personnes autour du cerveau 3D : les modèles sont dans la scène ; ici, leur zone cliquable et leur prénom,
-   posés par le JS au même endroit. Le prénom n'apparaît qu'au survol, sauf le vôtre et ceux qui travaillent à l'instant. */
+/* People dots around the 3D brain: the models are in the scene; here, their clickable area and their first name,
+   placed by the JS at the same spot. The first name only shows on hover, except yours and those working right now. */
 .brain-dot {
   visibility: hidden;
   transform-origin: 0 0;
@@ -377,10 +377,10 @@ button.chip:hover:not(.chip-on) {
 }
 }
 
-/* --- Page d'accueil publique (components/landing) ---
-   Même monde que le dashboard, à l'échelle d'une page : grands titres, beaucoup de vide, le cerveau en plein cadre.
-   La scène du cerveau est épinglée et pilotée par le scroll (.is-scroll, posée par le JS) ; sans JS ou sous
-   prefers-reduced-motion, les chapitres se lisent à la suite. */
+/* --- Public home page (components/landing) ---
+   Same world as the dashboard, at page scale: big headings, lots of white space, the brain full frame.
+   The brain scene is pinned and driven by scrolling (.is-scroll, set by the JS); without JS or under
+   prefers-reduced-motion, the chapters read one after the other. */
 html {
   scrollbar-color: var(--border-strong) var(--bg);
 }
@@ -465,7 +465,7 @@ html.lenis body {
   max-width: 30rem;
 }
 
-/* Scène épinglée : le cerveau en plein cadre, les chapitres passent par-dessus. */
+/* Pinned scene: the brain full frame, the chapters pass over it. */
 .landing-stage.is-scroll {
   height: 100svh;
   overflow: hidden;
@@ -514,8 +514,8 @@ html.lenis body {
   transform-origin: left center;
 }
 
-/* Chaque section occupe un écran, contenu centré verticalement ; elle s'arrête alignée sur l'écran pendant une
-   partie du scroll (components/landing/motion/setup.ts). */
+/* Each section fills one screen, content vertically centered; it holds aligned with the screen for part of
+   the scroll (components/landing/motion/setup.ts). */
 .landing-section {
   min-height: 100svh;
   display: flex;
@@ -527,7 +527,7 @@ html.lenis body {
   width: 100%;
 }
 
-/* Fil de billes qui relie les sections. */
+/* Thread of beads linking the sections. */
 .landing-thread {
   position: absolute;
   top: clamp(56px, 9vh, 112px);
@@ -555,8 +555,8 @@ html.lenis body {
   background: var(--text);
 }
 
-/* « Le brut reste sur le poste » (components/landing/PrivacyFlow.tsx). L'état décrit ici est l'état final :
-   captures perso écartées, secret masqué, connaissances arrivées. Large écran : poste, rail du filtre, cerveau. */
+/* "The raw data stays on the workstation" (components/landing/PrivacyFlow.tsx). The state described here is the final one:
+   personal captures dropped, secret redacted, knowledge arrived. Wide screen: workstation, filter rail, brain. */
 .privacy-flow {
   display: grid;
   gap: 16px;
@@ -587,7 +587,7 @@ html.lenis body {
   background: var(--text);
   transform-origin: 0% 50%;
 }
-/* Rail vertical : entre les deux panneaux sur grand écran, entre le poste et le cerveau quand ils s'empilent. */
+/* Vertical rail: between the two panels on a wide screen, between the workstation and the brain when they stack. */
 .privacy-rail {
   position: relative;
   display: flex;
@@ -627,20 +627,20 @@ html.lenis body {
   background: var(--text);
 }
 
-/* Boutons magnétiques : GSAP pilote leur transform, la transition CSS ne doit pas s'en mêler. */
+/* Magnetic buttons: GSAP drives their transform, the CSS transition must stay out of it. */
 .landing [data-magnetic] {
   transition-property: background-color, border-color;
 }
 }
 
-/* Premier écran : masqué jusqu'à son entrée animée, sauf sous mouvement réduit (rien ne s'anime alors). */
+/* First screen: hidden until its animated entrance, except under reduced motion (nothing animates then). */
 @media (prefers-reduced-motion: no-preference) {
   .landing [data-hero] {
     visibility: hidden;
   }
 }
 
-/* --- Créer son entreprise (/creer) : une question par écran, beaucoup de vide, le cerveau qui se construit à droite. --- */
+/* --- Create your company (/create): one question per screen, lots of white space, the brain building itself on the right. --- */
 @layer components {
 .create-wrap {
   width: 100%;
@@ -676,7 +676,7 @@ html.lenis body {
     font-size: 17px;
   }
 }
-/* Champ « page blanche » : pas de cadre, un trait qui s'épaissit au focus. */
+/* "Blank page" field: no frame, a line that thickens on focus. */
 .create-input {
   display: block;
   width: 100%;
@@ -781,12 +781,12 @@ html.lenis body {
 }
 }
 
-/* Hors couche : la règle globale :focus-visible (non layérisée) l'emporterait. Le trait épaissi suffit comme focus. */
+/* Outside the layer: the global :focus-visible rule (unlayered) would win. The thickened line is enough as focus. */
 .create-input:focus-visible {
   outline: none;
 }
 
-/* --- Sous-menu de la barre latérale (Équipe et accès) --- */
+/* --- Sidebar sub-menu (Team and access) --- */
 @layer components {
 .nav-sub {
   display: grid;
@@ -800,7 +800,7 @@ html.lenis body {
   grid-template-rows: 1fr;
   opacity: 1;
 }
-/* La page courante : une barre d'encre posée sur le fil, qui glisse d'une sous-page à l'autre. */
+/* The current page: an ink bar on the thread, sliding from one sub-page to the next. */
 .nav-sub-mark {
   position: absolute;
   left: -1.5px;

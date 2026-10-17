@@ -1,16 +1,16 @@
-// Supervision côté serveur : incidents récents (erreurs des routes), alertes par webhook, informations d'instance.
+// Server-side monitoring: recent incidents (route errors), webhook alerts, instance information.
 //
-// Les incidents vivent en mémoire (tampon circulaire par processus) : assez pour « que s'est-il passé ces dernières
-// heures » sur la page Supervision, sans table ni dépendance. BRAIN_ALERT_WEBHOOK (URL, JSON `{ text }` compatible
-// Slack, Discord via /slack, Mattermost, n8n…) reçoit une alerte par clé au plus une fois par ALERT_TTL_MS.
+// Incidents live in memory (a circular buffer per process): enough for "what happened over the last
+// hours" on the Monitoring page, with no table or dependency. BRAIN_ALERT_WEBHOOK (URL, JSON `{ text }` compatible with
+// Slack, Discord via /slack, Mattermost, n8n…) receives an alert per key at most once per ALERT_TTL_MS.
 
 export type Incident = {
   id: number
   at: string
-  /** Route ou tâche concernée (chemin sans paramètres de requête). */
+  /** Route or job concerned (path without query parameters). */
   where: string
   message: string
-  /** Répétitions du même incident (même route, même message) depuis la première occurrence. */
+  /** Repetitions of the same incident (same route, same message) since the first occurrence. */
   count: number
   last_at: string
 }
@@ -36,7 +36,7 @@ function describe(err: unknown): string {
   return String(err).slice(0, 500)
 }
 
-/** Enregistre une erreur inattendue d'une route (déjà journalisée par l'appelant) et prévient par webhook. */
+/** Records an unexpected route error (already logged by the caller) and notifies by webhook. */
 export function recordIncident(where: string, err: unknown): Incident {
   const message = describe(err)
   const now = new Date().toISOString()
@@ -44,13 +44,13 @@ export function recordIncident(where: string, err: unknown): Incident {
   if (same) {
     same.count++
     same.last_at = now
-    void sendAlert(`incident:${where}:${message}`, `Erreur répétée sur ${where} (${same.count} fois) : ${message}`)
+    void sendAlert(`incident:${where}:${message}`, `Repeated error on ${where} (${same.count} times): ${message}`)
     return same
   }
   const incident: Incident = { id: ++state.seq, at: now, where, message, count: 1, last_at: now }
   state.incidents.unshift(incident)
   if (state.incidents.length > INCIDENTS_MAX) state.incidents.length = INCIDENTS_MAX
-  void sendAlert(`incident:${where}:${message}`, `Erreur sur ${where} : ${message}`)
+  void sendAlert(`incident:${where}:${message}`, `Error on ${where}: ${message}`)
   return incident
 }
 
@@ -58,7 +58,7 @@ export function listIncidents(limit = 30): Incident[] {
   return state.incidents.slice(0, limit)
 }
 
-/** Chemin d'une requête sans ses paramètres (jamais de jeton ni de recherche dans un incident). */
+/** Path of a request without its parameters (never a token or a search in an incident). */
 export function routeOf(req: Request): string {
   try {
     const u = new URL(req.url)
@@ -69,8 +69,8 @@ export function routeOf(req: Request): string {
 }
 
 /**
- * Alerte par webhook, au plus une fois par `key` et par heure. Ne lève jamais : une alerte perdue ne doit pas casser
- * la route qui l'a déclenchée. Sans BRAIN_ALERT_WEBHOOK : rien n'est envoyé (renvoie false).
+ * Webhook alert, at most once per `key` and per hour. Never throws: a lost alert must not break
+ * the route that triggered it. Without BRAIN_ALERT_WEBHOOK: nothing is sent (returns false).
  */
 export async function sendAlert(key: string, text: string): Promise<boolean> {
   const url = process.env.BRAIN_ALERT_WEBHOOK
@@ -104,7 +104,7 @@ export function serverInfo() {
   }
 }
 
-/** Réservé aux tests : vide incidents et alertes. */
+/** For tests only: clears incidents and alerts. */
 export function resetMonitoring() {
   state.incidents = []
   state.alerted.clear()

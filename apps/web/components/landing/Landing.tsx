@@ -16,10 +16,10 @@ import { setupLandingMotion } from "./motion/setup"
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
-/** Longueur de la scène épinglée, en hauteurs d'écran : chaque chapitre a le temps d'être lu. */
+/** Length of the pinned scene, in screen heights: each chapter has time to be read. */
 const PIN_SCREENS = 7
 
-/** Entrée et sortie de chaque chapitre, en fraction de la scène. */
+/** Entry and exit of each chapter, as a fraction of the scene. */
 const CHAPTERS = [
   { in: 0.11, out: 0.35 },
   { in: 0.39, out: 0.555 },
@@ -31,9 +31,9 @@ type Mode = "flow" | "scroll" | "still"
 const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!
 
 /**
- * Page d'accueil publique. Le cerveau occupe le premier écran ; au scroll, la scène est épinglée :
- * il passe en plein écran et tourne pendant trois chapitres, puis la page reprend son cours.
- * Sans JavaScript ou sous `prefers-reduced-motion`, les chapitres se lisent à la suite, cerveau immobile.
+ * Public home page. The brain fills the first screen; on scroll, the scene is pinned:
+ * it goes full screen and rotates through three chapters, then the page resumes.
+ * Without JavaScript or under `prefers-reduced-motion`, the chapters read one after the other, brain still.
  */
 export function Landing({ demo, signup, signedIn = false }: { demo: boolean; signup: boolean; signedIn?: boolean }) {
   const rootRef = useRef<HTMLElement>(null)
@@ -92,7 +92,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
       })
       tl.fromTo(barRef.current, { scaleX: 0 }, { scaleX: 1, duration: 1 }, 0)
 
-      // Le reste de la page (arrêts, calage, sections au scroll). Créé après la scène épinglée, pour l'ordre des déclencheurs.
+      // The rest of the page (holds, snapping, sections on scroll). Created after the pinned scene, for the trigger order.
       const scene = tl.scrollTrigger
       const stops = CHAPTERS.map((c) => (c.in + 0.045 + c.out) / 2)
       const offMotion = rootRef.current && scene ? setupLandingMotion(rootRef.current, { lenis, scene, stops }) : () => {}
@@ -108,7 +108,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
     { dependencies: [mode], scope: stageRef, revertOnUpdate: true },
   )
 
-  // « Voir comment ça marche » : au début du premier chapitre, en douceur quand la scène est épinglée.
+  // "See how it works": to the start of the first chapter, smoothly when the scene is pinned.
   const toChapters = (e: React.MouseEvent<HTMLAnchorElement>) => {
     const st = triggerRef.current
     const lenis = lenisRef.current
@@ -117,7 +117,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
     lenis.scrollTo(st.start + (st.end - st.start) * 0.2, { duration: 1.6 })
   }
 
-  // Lien vers une section de la page (« Tarifs ») : en douceur avec Lenis, saut normal sinon.
+  // Link to a section of the page ("Pricing"): smoothly with Lenis, a normal jump otherwise.
   const toSection = (e: React.MouseEvent<HTMLAnchorElement>) => {
     const lenis = lenisRef.current
     const target = document.getElementById(e.currentTarget.hash.slice(1))
@@ -126,10 +126,10 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
     lenis.scrollTo(target, { duration: 2 })
   }
 
-  // Déjà connecté : droit au dashboard. Sinon créer son entreprise, et à côté la démo (mode démo) ou la connexion par jeton.
-  const visit = demo ? { href: "/demo", label: "Ouvrir la démo" } : { href: "/login", label: "Se connecter" }
-  const create = { href: "/creer", label: "Créer mon entreprise" }
-  const cta = signedIn ? { href: "/dashboard", label: "Ouvrir le dashboard" } : signup ? create : visit
+  // Already signed in: straight to the dashboard. Otherwise create your company, and next to it the demo (demo mode) or token sign-in.
+  const visit = demo ? { href: "/demo", label: "Open the demo" } : { href: "/login", label: "Sign in" }
+  const create = { href: "/create", label: "Create my company" }
+  const cta = signedIn ? { href: "/dashboard", label: "Open the dashboard" } : signup ? create : visit
   const second = !signedIn && signup ? visit : null
   const primary = cta.label
 
@@ -140,18 +140,18 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
           <ScrollBrain zones={LANDING_ZONES} synapses={LANDING_SYNAPSES} agents={LANDING_AGENTS} progress={progress} still={mode !== "scroll"} />
 
           <header className="absolute inset-x-0 top-0 z-10">
-            <nav data-hero="nav" className="landing-wrap flex items-center justify-between py-4" aria-label="Principal">
+            <nav data-hero="nav" className="landing-wrap flex items-center justify-between py-4" aria-label="Main">
               <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
                 <BrainIcon size={26} />
                 <span className="text-[15px] font-medium">NOS Brainer</span>
               </Link>
               <div className="flex items-center gap-2">
-                <a href="#tarifs" onClick={toSection} className="btn btn-ghost hidden sm:inline-flex">
-                  Tarifs
+                <a href="#pricing" onClick={toSection} className="btn btn-ghost hidden sm:inline-flex">
+                  Pricing
                 </a>
                 {demo && !signedIn && (
                   <Link href="/login" className="btn btn-ghost hidden sm:inline-flex">
-                    Se connecter
+                    Sign in
                   </Link>
                 )}
                 {second && demo && (
@@ -169,10 +169,10 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
           <div ref={heroRef} className="landing-hero">
             <div className="landing-wrap">
               <h1 id="landing-title" data-hero="title" className="landing-display max-w-[9.5em]">
-                Tout ce que votre équipe apprend avec l'IA, dans un seul cerveau.
+                Everything your team learns with AI, in a single brain.
               </h1>
               <p data-hero="sub" className="mt-5 max-w-[34em] text-[16px] leading-relaxed sm:text-[18px]">
-                Chaque employé travaille déjà avec Claude Code ou Codex. Screenpipe capte ces sessions sur son poste, et le cerveau en garde l'essentiel pour tous les agents de l'entreprise.
+                Every employee already works with Claude Code or Codex. Screenpipe captures those sessions on their computer, and the brain keeps what matters for every agent in the company.
               </p>
               <div data-hero="cta" className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
                 <Link href={cta.href} className="btn btn-primary btn-lg">
@@ -183,12 +183,12 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                     {second.label}
                   </Link>
                 )}
-                <a href="#chapitres" onClick={toChapters} className="landing-link text-[15px]">
-                  Voir comment ça marche
+                <a href="#chapters" onClick={toChapters} className="landing-link text-[15px]">
+                  See how it works
                 </a>
               </div>
               <p data-hero="note" className="mt-8 text-[13px] text-trace">
-                Le cerveau de Fournil, l'entreprise fictive de la démo.
+                The brain of Fournil, the demo's fictional company.
               </p>
             </div>
           </div>
@@ -198,24 +198,24 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
           </div>
         </div>
 
-        <div id="chapitres" className="landing-chapters">
-          <Chapter refFn={(el) => (chapterRefs.current[0] = el)} title="Il se remplit pendant que vous travaillez.">
+        <div id="chapters" className="landing-chapters">
+          <Chapter refFn={(el) => (chapterRefs.current[0] = el)} title="It fills up while you work.">
             <p>
-              Screenpipe capte les sessions Claude Code et Codex de chaque poste. brain-sync en retient les décisions, les procédures et les faits. Seul ce distillé monte au cerveau.
+              Screenpipe captures every computer's Claude Code and Codex sessions. brain-sync keeps the decisions, procedures and facts. Only this distillate goes up to the brain.
             </p>
             <p className="mt-5 text-[15px] text-trace">
               <span ref={counterRef} className="text-[15px] font-medium tabular-nums text-ink">
                 {mode === "scroll" ? 0 : LANDING_TOTAL}
               </span>{" "}
-              connaissances en dix jours chez Fournil.
+              knowledge items in ten days at Fournil.
             </p>
           </Chapter>
 
-          <Chapter refFn={(el) => (chapterRefs.current[1] = el)} title="Une zone par métier, des accès par personne.">
+          <Chapter refFn={(el) => (chapterRefs.current[1] = el)} title="One zone per function, access per person.">
             <p>
-              L'admin choisit qui voit quoi. Jean-Marc, à la compta, n'a pas besoin du code : ni lui ni ses agents n'ont accès à la zone Dev.
+              The admin chooses who sees what. Jean-Marc, in finance, doesn't need the code: neither he nor his agents have access to the Dev zone.
             </p>
-            <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[14px]" aria-label="Zones du cerveau de Fournil">
+            <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[14px]" aria-label="Zones of Fournil's brain">
               {LANDING_ZONES.map((z) => (
                 <li key={z.id}>
                   <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
@@ -224,9 +224,9 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
             </ul>
           </Chapter>
 
-          <Chapter refFn={(el) => (chapterRefs.current[2] = el)} title="Les agents viennent y chercher du contexte.">
+          <Chapter refFn={(el) => (chapterRefs.current[2] = el)} title="Agents come to it for context.">
             <p>
-              Quand Claude Code doit savoir comment on déploie, ou Codex comment on rapproche la banque, il interroge le cerveau par le MCP company-brain. La zone touchée s'allume en direct sur le dashboard.
+              When Claude Code needs to know how we deploy, or Codex how we reconcile the bank, it queries the brain through the company-brain MCP. The zone it touches lights up live on the dashboard.
             </p>
           </Chapter>
         </div>
@@ -245,7 +245,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
   )
 }
 
-/** Bille du fil qui relie les sections : elle se remplit quand on arrive sur la section. */
+/** Bead of the thread linking the sections: it fills when you reach the section. */
 function Bead() {
   return (
     <span data-bead className="landing-bead" aria-hidden>
@@ -263,31 +263,31 @@ function Chapter({ title, children, refFn }: { title: string; children: React.Re
   )
 }
 
-/** Ce que voit la dirigeante : un extrait du dashboard de la démo, dans ses propres composants. */
+/** What the CEO sees: an excerpt of the demo dashboard, in its own components. */
 function Dashboard() {
   const status = [
-    { zone: "direction", text: "Objectif T4 : 120 boulangeries clientes et 25\u00a0k€ de MRR." },
-    { zone: "produit", text: "Priorité du trimestre : le module de précommandes en ligne." },
-    { zone: "sales", text: "La Mie Dorée (12 boutiques) est prête à signer si l'export comptable arrive en novembre." },
-    { zone: "compta", text: "TVA de septembre à déclarer avant le 19\u00a0octobre." },
+    { zone: "leadership", text: "Q4 goal: 120 bakery customers and €25k MRR." },
+    { zone: "product", text: "Priority of the quarter: the online preorder module." },
+    { zone: "sales", text: "La Mie Dorée (12 shops) is ready to sign if the accounting export ships in November." },
+    { zone: "finance", text: "September VAT to file before October 19." },
   ]
   return (
-    <section className="landing-section relative" aria-labelledby="dirigeant">
+    <section className="landing-section relative" aria-labelledby="ceo">
       <Bead />
       <div className="landing-wrap grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
         <div className="lg:pt-6">
-          <h2 id="dirigeant" data-reveal="title" className="landing-h2 max-w-[13em]">
-            Claire, la CEO, voit où en est la boîte.
+          <h2 id="ceo" data-reveal="title" className="landing-h2 max-w-[13em]">
+            Claire, the CEO, sees where the company stands.
           </h2>
           <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-            Le résumé part de ce que l'équipe a vraiment fait : objectifs, tâches en cours et qui a fait quoi. Et quand quelqu'un lance le même prompt chaque matin, le cerveau propose de le faire à sa place.
+            The summary starts from what the team actually did: goals, tasks in progress and who did what. And when someone runs the same prompt every morning, the brain offers to do it for them.
           </p>
         </div>
 
         <figure data-reveal="panel" className="panel overflow-hidden">
           <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-            <span className="panel-title">Où en est Fournil</span>
-            <span className="text-[12px] text-trace">Cette semaine</span>
+            <span className="panel-title">Where Fournil stands</span>
+            <span className="text-[12px] text-trace">This week</span>
           </div>
           <ul data-rows className="divide-y divide-line">
             {status.map((s) => (
@@ -298,13 +298,13 @@ function Dashboard() {
             ))}
           </ul>
           <div className="border-t border-line px-5 py-4">
-            <p className="text-[13px] text-trace">Automatisation proposée</p>
+            <p className="text-[13px] text-trace">Suggested automation</p>
             <div className="inset mt-2 px-3.5 py-3">
-              <p className="text-[14px]">Jean-Marc lance ce prompt tous les jours vers 9{"\u00a0"}h :</p>
-              <p data-type className="mono mt-1.5 text-[13px] leading-relaxed">Rapproche les relevés Qonto d'hier avec les factures Pennylane et liste les écarts</p>
+              <p className="text-[14px]">Jean-Marc runs this prompt every day around 9am:</p>
+              <p data-type className="mono mt-1.5 text-[13px] leading-relaxed">Reconcile yesterday&apos;s Qonto statements with the Pennylane invoices and list the variances</p>
             </div>
           </div>
-          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Extrait du dashboard de la démo. Fournil est une entreprise fictive.</figcaption>
+          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Excerpt of the demo dashboard. Fournil is a fictional company.</figcaption>
         </figure>
       </div>
     </section>
@@ -313,19 +313,19 @@ function Dashboard() {
 
 function Install({ demo, signup }: { demo: boolean; signup: boolean }) {
   return (
-    <section className="landing-section relative border-t border-line" aria-labelledby="installer">
+    <section className="landing-section relative border-t border-line" aria-labelledby="install">
       <Bead />
       <div className="landing-wrap">
-        <h2 id="installer" data-reveal="title" className="landing-display max-w-[12em]">
-          Un message à coller dans Claude Code ou Codex.
+        <h2 id="install" data-reveal="title" className="landing-display max-w-[12em]">
+          One message to paste into Claude Code or Codex.
         </h2>
         <div className="mt-12 grid gap-10 lg:mt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
           <div data-reveal="text" className="max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
             <p>
-              Le prompt contient votre jeton personnel. Claude Code ou Codex lance une seule commande : elle installe Screenpipe, branche le MCP et les hooks, puis ouvre le
-              cerveau déjà connecté.
+              The prompt contains your personal token. Claude Code or Codex runs a single command: it installs Screenpipe, connects the MCP and the hooks, then opens the
+              brain already signed in.
             </p>
-            <p className="mt-4">Aucun historique n'est envoyé : le cerveau apprend à partir de l'installation. Ensuite, il n'y a plus rien à faire.</p>
+            <p className="mt-4">No history is sent: the brain learns from the install onward. After that, there is nothing left to do.</p>
           </div>
           <div data-reveal="panel">
             <InstallActions demo={demo} signup={signup} />
@@ -336,24 +336,24 @@ function Install({ demo, signup }: { demo: boolean; signup: boolean }) {
   )
 }
 
-/** Le brut reste sur le poste : le parcours des captures, du poste au cerveau (PrivacyFlow). */
+/** The raw data stays on the computer: the path of the captures, from the computer to the brain (PrivacyFlow). */
 function Privacy() {
   const facts = [
-    { term: "Liste blanche d'applications", def: "brain-sync ne lit que les applications de travail autorisées." },
-    { term: "Secrets et données perso masqués", def: "Avant l'envoi sur le poste, puis une seconde fois côté serveur." },
-    { term: "Droit de regard", def: "Chacun voit ce qu'il a apporté au cerveau et peut le supprimer." },
+    { term: "App allowlist", def: "brain-sync only reads the allowed work applications." },
+    { term: "Secrets and personal data redacted", def: "Before upload on the computer, then a second time on the server." },
+    { term: "Right of review", def: "Everyone sees what they brought to the brain and can delete it." },
   ]
   return (
-    <section data-hold="1.4" className="landing-section relative border-t border-line" aria-labelledby="vie-privee">
+    <section data-hold="1.4" className="landing-section relative border-t border-line" aria-labelledby="privacy">
       <Bead />
       <div className="landing-wrap">
         <div className="grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
           <div>
-            <h2 id="vie-privee" data-reveal="title" className="landing-h2 max-w-[11em]">
-              Le brut reste sur le poste.
+            <h2 id="privacy" data-reveal="title" className="landing-h2 max-w-[11em]">
+              The raw data stays on the computer.
             </h2>
             <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-              Screenpipe enregistre environ 19{"\u00a0"}Go en deux semaines sur un poste. Rien de cela ne quitte le PC : seules les connaissances distillées montent au cerveau.
+              Screenpipe records about 19{"\u00a0"}GB in two weeks on a computer. None of it leaves the machine: only the distilled knowledge goes up to the brain.
             </p>
           </div>
           <PrivacyFlow />
@@ -376,18 +376,18 @@ type Cta = { href: string; label: string }
 
 function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; demo: boolean; signup: boolean }) {
   return (
-    <section data-close className="landing-section relative !pb-10 border-t border-line" aria-labelledby="fin">
+    <section data-close className="landing-section relative !pb-10 border-t border-line" aria-labelledby="end">
       <Bead />
       <div className="landing-wrap">
-        <h2 id="fin" data-reveal="title" className="landing-display max-w-[10em]">
-          {signup ? "Donnez un cerveau à votre entreprise." : "Ouvrez le cerveau de Fournil."}
+        <h2 id="end" data-reveal="title" className="landing-display max-w-[10em]">
+          {signup ? "Give your company a brain." : "Open Fournil's brain."}
         </h2>
         <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
           {signup
-            ? "Quatre questions pour créer votre dashboard, un prompt à coller dans Claude Code ou Codex pour brancher votre poste, puis un prompt par collègue pour les inviter."
+            ? "Four questions to create your dashboard, a prompt to paste into Claude Code or Codex to connect your computer, then one prompt per colleague to invite them."
             : demo
-              ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta."
-              : "Connectez-vous avec le jeton que votre admin vous a remis."}
+              ? "One-click sign-in with one of the demo's six accounts, from the CEO to finance."
+              : "Sign in with the token your admin gave you."}
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href={cta.href} className="btn btn-primary btn-lg">
@@ -402,7 +402,7 @@ function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; de
       </div>
       <footer className="landing-wrap mt-[clamp(96px,12vw,160px)] flex flex-col gap-2 border-t border-line pt-6 text-[13px] text-trace sm:flex-row sm:justify-between">
         <span>NOS Brainer</span>
-        <span>Fait à 42 Paris pendant le hackathon Screenpipe, octobre 2026.</span>
+        <span>Made at 42 Paris during the Screenpipe hackathon, October 2026.</span>
       </footer>
     </section>
   )

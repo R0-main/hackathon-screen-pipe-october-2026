@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { api } from "./format"
-import { LanguageSwitch, useT } from "./I18n"
+import { useT } from "./I18n"
 import { BrainIcon, ErrorText } from "./ui"
 
 export function LoginForm({ demo }: { demo: boolean }) {
@@ -69,7 +69,6 @@ export function LoginForm({ demo }: { demo: boolean }) {
               </Link>
             </p>
           )}
-          <LanguageSwitch />
         </div>
       </div>
     </main>

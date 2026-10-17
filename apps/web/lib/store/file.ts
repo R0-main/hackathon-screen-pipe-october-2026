@@ -1,4 +1,4 @@
-// Stockage fichier : tout le cerveau dans un JSON. Zéro configuration, idéal pour la démo sur un laptop.
+// File store: the whole brain in one JSON file. Zero configuration, ideal for the demo on a laptop.
 
 import fs from "node:fs"
 import path from "node:path"
@@ -25,7 +25,7 @@ import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, 
 import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
-/** Une connaissance en fichier porte aussi son vecteur sémantique (jamais renvoyé aux appelants). */
+/** An item in the file also carries its semantic vector (never returned to callers). */
 type StoredItem = KnowledgeItem & { embedding?: number[]; embedding_model?: string }
 
 function publicItem({ embedding: _e, embedding_model: _m, ...i }: StoredItem): KnowledgeItem {
@@ -43,15 +43,15 @@ type Data = {
   events: AgentEvent[]
   tasks: Task[]
   automations: AutomationSuggestion[]
-  /** Absent des fichiers écrits avant les skills. */
+  /** Missing from files written before skills. */
   skills?: Skill[]
   status: CompanyStatus | null
   seq: { event: number }
-  /** Ajoutés avec le message d'équipe : absents des fichiers plus anciens. */
+  /** Added with the team message: missing from older files. */
   join_code?: string
   join_requests?: StoredJoinRequest[]
   settings?: Record<string, string>
-  /** Comptes rendus de synchro des postes (supervision), les plus récents à la fin. */
+  /** Workstation sync reports (monitoring), most recent at the end. */
   sync_reports?: SyncReportRow[]
 }
 
@@ -59,21 +59,21 @@ const MAX_EVENTS = 20000
 const ORG_ID_RE = /^[0-9a-f-]{36}$/i
 
 /**
- * Abonnés au flux temps réel, par entreprise, partagés par globalThis : en `next dev`, deux copies de ce module (et deux
- * instances du stockage) peuvent coexister ; l'insertion de l'une doit réveiller les flux ouverts par l'autre.
+ * Real-time stream subscribers, per company, shared through globalThis: in `next dev`, two copies of this module (and two
+ * store instances) may coexist; an insertion by one must wake up the streams opened by the other.
  */
 const listeners = ((globalThis as unknown as { __brainFileListeners?: Map<string, Set<() => void>> }).__brainFileListeners ??= new Map())
 
 function notifyOrg(orgId: string) {
   const set = listeners.get(orgId)
   if (!set) return
-  // Après l'écriture du fichier, hors de la section verrouillée : un abonné qui relit tout de suite voit les événements.
+  // After writing the file, outside the locked section: a subscriber re-reading right away sees the events.
   queueMicrotask(() => {
     for (const fn of [...set]) {
       try {
         fn()
       } catch (err) {
-        console.error("[store] abonné du flux :", err)
+        console.error("[store] stream subscriber:", err)
       }
     }
   })
@@ -81,12 +81,12 @@ function notifyOrg(orgId: string) {
 const LOCK_STALE_MS = 15_000
 const LOCK_WAIT_MS = 10_000
 
-/** Pause synchrone : le verrou entoure du code synchrone (lecture, modification, écriture). */
+/** Synchronous pause: the lock wraps synchronous code (read, change, write). */
 function sleepSync(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
-/** Identité d'une version du fichier : chaque écriture fait un rename, donc un nouvel inode. */
+/** Identity of a version of the file: each write does a rename, hence a new inode. */
 function versionKey(st: fs.Stats): string {
   return `${st.ino}:${st.size}:${st.mtimeMs}`
 }
@@ -94,7 +94,7 @@ function versionKey(st: fs.Stats): string {
 function emptyData(org?: { name: string; description: string }): Data {
   return {
     version: 1,
-    org: { id: randomUUID(), name: org?.name ?? "Mon entreprise", description: org?.description ?? "", created_at: new Date().toISOString() },
+    org: { id: randomUUID(), name: org?.name ?? "My company", description: org?.description ?? "", created_at: new Date().toISOString() },
     profiles: [],
     zones: DEFAULT_ZONES,
     zone_access: [],
@@ -121,7 +121,7 @@ export class FileStore implements BrainStore {
   private version = ""
   private locked = false
   private secret: string | null = null
-  /** Entreprises créées depuis /creer : un dossier chacune, sous <dir>/orgs/<id>/ (stockage racine seulement). */
+  /** Companies created from /create: one folder each, under <dir>/orgs/<id>/ (root store only). */
   private tenants = new Map<string, FileStore>()
 
   constructor(dir: string) {
@@ -150,7 +150,7 @@ export class FileStore implements BrainStore {
     }
   }
 
-  /** Dernière version du fichier (relu s'il a été remplacé par un autre processus : seed, simulateur, smoke). */
+  /** Latest version of the file (re-read if another process replaced it: seed, simulator, smoke). */
   private load(): Data {
     const st = this.stat()
     if (st) {
@@ -168,8 +168,8 @@ export class FileStore implements BrainStore {
   }
 
   /**
-   * Verrou inter-processus (fichier créé en O_EXCL) : le serveur, le simulateur et les scripts écrivent le même JSON
-   * sans perdre les écritures des autres ni réutiliser des identifiants d'événements.
+   * Inter-process lock (file created with O_EXCL): the server, the simulator and the scripts write the same JSON
+   * without losing each other's writes or reusing event ids.
    */
   private withLock<T>(fn: () => T): T {
     if (this.locked) return fn()
@@ -183,7 +183,7 @@ export class FileStore implements BrainStore {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
       }
       try {
-        // Verrou abandonné (processus tué en pleine écriture) : on le retire.
+        // Abandoned lock (process killed mid-write): remove it.
         if (Date.now() - fs.statSync(this.lockFile).mtimeMs > LOCK_STALE_MS) {
           fs.rmSync(this.lockFile, { force: true })
           continue
@@ -191,7 +191,7 @@ export class FileStore implements BrainStore {
       } catch {
         continue
       }
-      if (Date.now() - started > LOCK_WAIT_MS) throw new Error(`Cerveau verrouillé par un autre processus (${this.lockFile}).`)
+      if (Date.now() - started > LOCK_WAIT_MS) throw new Error(`Brain locked by another process (${this.lockFile}).`)
       sleepSync(4 + Math.random() * 12)
     }
     this.locked = true
@@ -211,11 +211,11 @@ export class FileStore implements BrainStore {
     const tmp = `${this.file}.${process.pid}.tmp`
     fs.writeFileSync(tmp, JSON.stringify(this.data))
     fs.renameSync(tmp, this.file)
-    // Sous verrou : le fichier est forcément celui qu'on vient d'écrire.
+    // Under lock: the file is necessarily the one just written.
     this.version = versionKey(fs.statSync(this.file))
   }
 
-  /** Lecture de la dernière version, modification et écriture, le tout sous verrou. */
+  /** Read the latest version, change and write, all under lock. */
   private mutate<T>(fn: (d: Data) => T): T {
     return this.withLock(() => {
       try {
@@ -223,7 +223,7 @@ export class FileStore implements BrainStore {
         this.save()
         return out
       } catch (err) {
-        // Mémoire possiblement modifiée à moitié : on relira le fichier.
+        // Memory possibly half-changed: the file will be re-read.
         this.data = null
         this.version = ""
         throw err
@@ -247,8 +247,8 @@ export class FileStore implements BrainStore {
     if (orgId === this.load().org.id) return this
     let t = this.tenants.get(orgId)
     if (!t) {
-      // Jamais de dossier créé pour un identifiant inconnu : seul createTenantOrg en crée.
-      if (!ORG_ID_RE.test(orgId) || !fs.existsSync(path.join(this.tenantsDir, orgId, "brain.json"))) throw new Error("Entreprise introuvable.")
+      // Never a folder created for an unknown id: only createTenantOrg creates one.
+      if (!ORG_ID_RE.test(orgId) || !fs.existsSync(path.join(this.tenantsDir, orgId, "brain.json"))) throw new Error("Company not found.")
       t = new FileStore(path.join(this.tenantsDir, orgId))
       this.tenants.set(orgId, t)
     }
@@ -625,7 +625,7 @@ export class FileStore implements BrainStore {
     return this.mutate((d) => {
       const row: SyncReportRow = { ...report, id: randomUUID(), org_id: d.org.id, user_id: userId }
       const all = (d.sync_reports ?? []).concat(row)
-      // Historique borné par poste.
+      // History bounded per workstation.
       const mine = all.filter((r) => r.user_id === userId)
       const drop = new Set(mine.slice(0, Math.max(0, mine.length - SYNC_REPORTS_KEEP)).map((r) => r.id))
       d.sync_reports = drop.size ? all.filter((r) => !drop.has(r.id)) : all
@@ -808,7 +808,7 @@ export class FileStore implements BrainStore {
   }
 
   async claimOnce(key: string) {
-    // Création exclusive (O_EXCL) : un seul processus gagne, même avec plusieurs serveurs sur le même dossier.
+    // Exclusive creation (O_EXCL): only one process wins, even with several servers on the same folder.
     try {
       fs.closeSync(fs.openSync(path.join(this.dir, `claim-${key.replace(/[^a-z0-9_-]/gi, "_")}`), "wx"))
       return true
@@ -848,7 +848,7 @@ export class FileStore implements BrainStore {
     }
     let secret = read()
     if (!secret) {
-      // Créé une seule fois, atomiquement (lien dur : jamais de fichier à moitié écrit), lisible du seul propriétaire.
+      // Created only once, atomically (hard link: never a half-written file), readable by the owner only.
       const candidate = randomBytes(32).toString("hex")
       const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`
       fs.writeFileSync(tmp, candidate, { mode: 0o600 })
@@ -859,7 +859,7 @@ export class FileStore implements BrainStore {
         const code = (err as NodeJS.ErrnoException).code
         if (code === "EEXIST") secret = read()
         if (!secret) {
-          // Fichier invalide (vide, tronqué) ou liens durs non pris en charge : on le remplace.
+          // Invalid file (empty, truncated) or hard links not supported: replace it.
           fs.renameSync(tmp, file)
           secret = candidate
         }

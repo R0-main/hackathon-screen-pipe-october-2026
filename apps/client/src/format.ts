@@ -1,70 +1,70 @@
-// Mise en forme (markdown, en français) des réponses du cerveau pour les outils MCP.
+// Formatting (markdown) of the brain's answers for the MCP tools.
 
 import type { ApiItem, ApiZone, CompanyStatusResult, QueryResult, WhoAmI, ZoneSummary } from "./api"
 
-const KIND_LABELS: Record<string, string> = { fact: "fait", decision: "décision", task: "tâche", procedure: "procédure", question: "question" }
+const KIND_LABELS: Record<string, string> = { fact: "fact", decision: "decision", task: "task", procedure: "procedure", question: "question" }
 
 export type ZoneNamer = (id: string) => string
 
-export function frDate(iso: string | undefined): string {
+export function shortDate(iso: string | undefined): string {
   if (!iso) return "?"
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Paris" })
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Europe/Paris" })
 }
 
 function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
   const meta = [
-    `Zone : ${zoneName(i.zone)}`,
-    `Type : ${KIND_LABELS[i.kind] ?? i.kind}`,
-    `Par : ${i.author ?? "?"}`,
-    `Date : ${frDate(i.source?.at ?? i.created_at)}`,
-    i.source?.tool ? `Source : ${i.source.tool}` : "",
+    `Zone: ${zoneName(i.zone)}`,
+    `Type: ${KIND_LABELS[i.kind] ?? i.kind}`,
+    `By: ${i.author ?? "?"}`,
+    `Date: ${shortDate(i.source?.at ?? i.created_at)}`,
+    i.source?.tool ? `Source: ${i.source.tool}` : "",
   ]
     .filter(Boolean)
     .join(" · ")
-  const ents = i.entities?.length ? `\nEntités : ${i.entities.map((e) => e.name).join(", ")}` : ""
+  const ents = i.entities?.length ? `\nEntities: ${i.entities.map((e) => e.name).join(", ")}` : ""
   return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}`
 }
 
 export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
-  const searched = r.zones_searched.length ? r.zones_searched.map(zoneName).join(", ") : "aucune"
+  const searched = r.zones_searched.length ? r.zones_searched.map(zoneName).join(", ") : "none"
   const restricted = r.zones_restricted?.length
-    ? "\n\nNote : des zones auxquelles vous n'avez pas accès pourraient en savoir plus (demandez à un admin ou à la personne concernée)."
+    ? "\n\nNote: zones you do not have access to might know more (ask an admin or the person concerned)."
     : ""
   if (!r.items.length) {
     return (
-      `Aucune connaissance trouvée dans le cerveau pour « ${r.query} » (zones consultées : ${searched}).\n` +
-      `Essayez d'autres mots-clés (nom de client, d'outil, de projet) ou list_zones pour voir les domaines disponibles.${restricted}`
+      `No knowledge found in the brain for "${r.query}" (zones searched: ${searched}).\n` +
+      `Try other keywords (customer, tool or project name) or list_zones to see the available areas.${restricted}`
     )
   }
-  const head = `## Cerveau d'entreprise — « ${r.query} »\n${r.items.length} résultat${r.items.length > 1 ? "s" : ""} (zones consultées : ${searched})`
+  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched})`
   return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${restricted}`
 }
 
 export function formatZones(zones: ApiZone[]): string {
   const lines = zones
     .sort((a, b) => a.position - b.position)
-    .map((z) => `- **${z.name}** (\`${z.id}\`) : ${z.description}${z.readable ? ` — accessible, ${z.count ?? 0} connaissance${(z.count ?? 0) > 1 ? "s" : ""}` : " — non accessible"}`)
-  return `## Zones du cerveau\n${lines.join("\n")}\n\nUtilisez l'identifiant entre backticks avec get_zone_summary ou dans le filtre zones de search_brain.`
+    .map((z) => `- **${z.name}** (\`${z.id}\`): ${z.description}${z.readable ? ` — accessible, ${z.count ?? 0} knowledge item${(z.count ?? 0) === 1 ? "" : "s"}` : " — not accessible"}`)
+  return `## Brain zones\n${lines.join("\n")}\n\nUse the id between backticks with get_zone_summary or in the zones filter of search_brain.`
 }
 
 export function formatZoneSummary(s: ZoneSummary): string {
   const parts = [`## Zone ${s.zone.name} (\`${s.zone.id}\`)`, s.zone.description]
   if (s.status) {
-    parts.push(`### État\n${s.status.summary}\nAvancement : ${s.status.progress}`)
-    if (s.status.objectives.length) parts.push(`Objectifs :\n${s.status.objectives.map((o) => `- ${o}`).join("\n")}`)
-    if (s.status.next_steps.length) parts.push(`Prochaines étapes :\n${s.status.next_steps.map((o) => `- ${o}`).join("\n")}`)
-    if (s.status.who_did_what.length) parts.push(`Qui a fait quoi :\n${s.status.who_did_what.map((w) => `- ${w.person} : ${w.did}`).join("\n")}`)
+    parts.push(`### Status\n${s.status.summary}\nProgress: ${s.status.progress}`)
+    if (s.status.objectives.length) parts.push(`Goals:\n${s.status.objectives.map((o) => `- ${o}`).join("\n")}`)
+    if (s.status.next_steps.length) parts.push(`Next steps:\n${s.status.next_steps.map((o) => `- ${o}`).join("\n")}`)
+    if (s.status.who_did_what.length) parts.push(`Who did what:\n${s.status.who_did_what.map((w) => `- ${w.person}: ${w.did}`).join("\n")}`)
   }
   const recent = s.items.slice(0, 12)
   parts.push(
     recent.length
-      ? `### Connaissances récentes\n${recent.map((i) => `- [${KIND_LABELS[i.kind] ?? i.kind}] ${i.title} — ${i.author ?? "?"}, ${frDate(i.source?.at ?? i.created_at)}`).join("\n")}`
-      : "### Connaissances récentes\n(aucune pour l'instant)",
+      ? `### Recent knowledge\n${recent.map((i) => `- [${KIND_LABELS[i.kind] ?? i.kind}] ${i.title} — ${i.author ?? "?"}, ${shortDate(i.source?.at ?? i.created_at)}`).join("\n")}`
+      : "### Recent knowledge\n(none for now)",
   )
   const open = s.tasks.filter((t) => t.status !== "done").slice(0, 10)
-  if (open.length) parts.push(`### Tâches ouvertes\n${open.map((t) => `- ${t.title}${t.assignee ? ` (${t.assignee})` : ""}`).join("\n")}`)
-  if (s.entities.length) parts.push(`### Entités les plus citées\n${s.entities.slice(0, 12).map((e) => `${e.name} (${e.type}, ${e.count})`).join(", ")}`)
+  if (open.length) parts.push(`### Open tasks\n${open.map((t) => `- ${t.title}${t.assignee ? ` (${t.assignee})` : ""}`).join("\n")}`)
+  if (s.entities.length) parts.push(`### Most cited entities\n${s.entities.slice(0, 12).map((e) => `${e.name} (${e.type}, ${e.count})`).join(", ")}`)
   return parts.join("\n\n")
 }
 
@@ -72,17 +72,17 @@ export function formatWhoami(w: WhoAmI, zoneName: ZoneNamer): string {
   const p = w.profile
   const parts = [
     `## ${p.name}${p.title ? ` — ${p.title}` : ""} (${w.org.name})`,
-    `Rôle : ${p.role === "admin" ? "admin" : "membre"} · Zones lisibles : ${w.access.readable.map(zoneName).join(", ") || "aucune"} · Zones en écriture : ${w.access.writable.map(zoneName).join(", ") || "aucune"}`,
+    `Role: ${p.role === "admin" ? "admin" : "member"} · Readable zones: ${w.access.readable.map(zoneName).join(", ") || "none"} · Writable zones: ${w.access.writable.map(zoneName).join(", ") || "none"}`,
   ]
   const c = w.context
   if (c) {
-    if (c.zones.length) parts.push(`### Zones les plus utilisées par ce poste\n${c.zones.slice(0, 6).map((z) => `- ${zoneName(z.zone)} (poids ${z.weight})`).join("\n")}`)
-    if (c.entities.length) parts.push(`### Entités principales\n${c.entities.slice(0, 12).map((e) => `${e.name} (${e.type}, ${e.count})`).join(", ")}`)
+    if (c.zones.length) parts.push(`### Zones most used by this computer\n${c.zones.slice(0, 6).map((z) => `- ${zoneName(z.zone)} (weight ${z.weight})`).join("\n")}`)
+    if (c.entities.length) parts.push(`### Main entities\n${c.entities.slice(0, 12).map((e) => `${e.name} (${e.type}, ${e.count})`).join(", ")}`)
     const prompts = dedupePrompts(c.frequent_prompts)
-    if (prompts.length) parts.push(`### Prompts fréquents\n${prompts.map((f) => `- « ${f.summary} » (${f.count} fois, dernier le ${frDate(f.last)})`).join("\n")}`)
-    if (c.decisions.length) parts.push(`### Décisions récentes\n${c.decisions.slice(0, 8).map((i) => `- ${i.title} (${zoneName(i.zone)}, ${frDate(i.created_at)})`).join("\n")}`)
-    if (c.procedures.length) parts.push(`### Procédures\n${c.procedures.slice(0, 8).map((i) => `- ${i.title} (${zoneName(i.zone)})`).join("\n")}`)
-    parts.push("Utile pour une passation : search_brain permet ensuite d'ouvrir le détail de chaque sujet.")
+    if (prompts.length) parts.push(`### Frequent prompts\n${prompts.map((f) => `- "${f.summary}" (${f.count} time${f.count === 1 ? "" : "s"}, last on ${shortDate(f.last)})`).join("\n")}`)
+    if (c.decisions.length) parts.push(`### Recent decisions\n${c.decisions.slice(0, 8).map((i) => `- ${i.title} (${zoneName(i.zone)}, ${shortDate(i.created_at)})`).join("\n")}`)
+    if (c.procedures.length) parts.push(`### Procedures\n${c.procedures.slice(0, 8).map((i) => `- ${i.title} (${zoneName(i.zone)})`).join("\n")}`)
+    parts.push("Useful for a handover: search_brain then opens the details of each subject.")
   }
   return parts.join("\n\n")
 }
@@ -102,13 +102,13 @@ function dedupePrompts(list: { summary: string; count: number; last: string }[])
 }
 
 export function formatStatus(s: CompanyStatusResult, zoneName: ZoneNamer): string {
-  if (!s || !s.headline) return "L'état de l'entreprise n'a pas encore été généré (un admin peut le rafraîchir depuis le dashboard, ou avec `brain.mjs refresh-status`)."
+  if (!s || !s.headline) return "The company status has not been generated yet (an admin can refresh it from the dashboard, or with `brain.mjs refresh-status`)."
   const zones = (s.zones ?? []).map((z) => {
-    const lines = [`### ${zoneName(z.zone)}`, z.summary, `Avancement : ${z.progress}`]
-    if (z.objectives.length) lines.push(`Objectifs : ${z.objectives.join(" ; ")}`)
-    if (z.next_steps.length) lines.push(`Prochaines étapes : ${z.next_steps.join(" ; ")}`)
-    if (z.who_did_what.length) lines.push(`Qui a fait quoi : ${z.who_did_what.map((w) => `${w.person} — ${w.did}`).join(" ; ")}`)
+    const lines = [`### ${zoneName(z.zone)}`, z.summary, `Progress: ${z.progress}`]
+    if (z.objectives.length) lines.push(`Goals: ${z.objectives.join("; ")}`)
+    if (z.next_steps.length) lines.push(`Next steps: ${z.next_steps.join("; ")}`)
+    if (z.who_did_what.length) lines.push(`Who did what: ${z.who_did_what.map((w) => `${w.person} — ${w.did}`).join("; ")}`)
     return lines.join("\n")
   })
-  return `## Où en est la boîte ?\n${s.headline}\n\n${zones.join("\n\n")}\n\n(généré le ${frDate(s.generated_at)}, ${s.generator === "claude" ? "par Claude" : "automatiquement"})`
+  return `## Where does the company stand?\n${s.headline}\n\n${zones.join("\n\n")}\n\n(generated on ${shortDate(s.generated_at)}, ${s.generator === "claude" ? "by Claude" : "automatically"})`
 }
