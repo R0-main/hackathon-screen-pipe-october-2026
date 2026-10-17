@@ -44,7 +44,7 @@ demo/                 Script de démo
 
 | Brique | Où | Rôle |
 |---|---|---|
-| **Dashboard** | `apps/web` | Cerveau découpé en zones qui s'allument en néon (flux SSE), agents en direct, « où en est la boîte », automatisations proposées, tâches, connaissances, recherche « en tant que ». |
+| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »). Pages séparées : agents en direct (`/activite`), « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
 | **Équipe & accès** | `/admin` | Matrice membres × zones, invitation → prompt d'installation avec jeton personnel, rôles. |
 | **Onboarding** | `/onboarding` | Interview guidée de 7 questions + lecture des liens → zones et premières connaissances, validées avant application. |
 | **Passation** | `/people/:id` | Zones, sujets, prompts fréquents et connaissances d'un poste (et droit de regard : l'employé supprime ses items). |

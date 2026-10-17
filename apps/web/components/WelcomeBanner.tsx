@@ -16,7 +16,7 @@ export function WelcomeBanner({ name, meId }: { name: string; meId: string }) {
   }
 
   return (
-    <section role="status" className="panel mb-4 flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5">
+    <section role="status" className="panel flex flex-wrap items-start justify-between gap-3 p-4">
       <div className="min-w-0 max-w-3xl">
         <h2 className="panel-title">Ton poste est branché, {name.split(" ")[0]}</h2>
         <p className="mt-1 text-[13px] text-trace">

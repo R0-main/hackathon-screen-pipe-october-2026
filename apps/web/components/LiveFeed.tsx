@@ -1,7 +1,7 @@
 "use client"
 
 import type { ZoneView } from "@/lib/brain"
-import type { FeedEvent } from "./Dashboard"
+import type { FeedEvent } from "./BrainLive"
 import { AGENT_LABEL, EVENT_VERB, initials } from "./format"
 import { RelTime } from "./RelTime"
 import { ZoneTag, zoneColor } from "./ui"
