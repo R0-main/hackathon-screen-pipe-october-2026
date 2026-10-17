@@ -103,7 +103,7 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   const cfg = requireConfig()
   const state = loadState()
   const cache = loadCache()
-  log("Cerveau d'entreprise — état du client")
+  log("NOS Brainer — état du client")
   log(`  Script        : ${selfScript()}`)
   log(`  Config        : ${paths.config()}`)
   log(`  Cerveau       : ${cfg.url} (jeton ${maskSecret(cfg.token)})`)

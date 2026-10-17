@@ -14,6 +14,7 @@ import { TasksPanel } from "./TasksPanel"
 import { KnowledgeList } from "./KnowledgeList"
 import { ZoneDrawer } from "./ZoneDrawer"
 import { AskBrain } from "./AskBrain"
+import { WelcomeBanner } from "./WelcomeBanner"
 import { EVENT_VERB, api, firstName, uniqueZones } from "./format"
 
 export type FeedEvent = AgentEvent & { restricted?: boolean; fresh?: boolean }
@@ -40,7 +41,7 @@ function maxEventTime(events: { at: string }[]): number {
  * `now` : horodatage du rendu serveur. Le premier rendu client réutilise exactement la même valeur, sinon les dates
  * relatives (« il y a 44 minutes » / « il y a 45 minutes ») diffèrent et l'hydratation échoue.
  */
-export function Dashboard({ initial, now: serverNow }: { initial: DashboardState; now?: number }) {
+export function Dashboard({ initial, now: serverNow, welcome }: { initial: DashboardState; now?: number; welcome?: boolean }) {
   const [state, setState] = useState(initial)
   const [feed, setFeed] = useState<FeedEvent[]>(() => initial.events.map(uniqueZones))
   const [activity, setActivity] = useState<Record<string, ZoneActivity>>({})
@@ -127,6 +128,7 @@ export function Dashboard({ initial, now: serverNow }: { initial: DashboardState
     <div className="min-h-dvh">
       <TopBar state={state} live={live} activeAgents={activeAgents} />
       <main className="mx-auto max-w-[1600px] px-4 pb-16 pt-4 sm:px-6">
+        {welcome && <WelcomeBanner name={state.me.name} meId={state.me.id} />}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="panel relative min-w-0 overflow-hidden p-4 sm:p-5">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">

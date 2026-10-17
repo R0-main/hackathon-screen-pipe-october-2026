@@ -5,7 +5,7 @@ import { SOURCE_NAMES, UserError, applyScheduleEnv, loadPartialConfig, selfScrip
 import type { DistillerKind } from "./distill"
 
 const VERSION = "0.1.0"
-const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled"])
+const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe"])
 
 export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string | boolean>; positional: string[] } {
   const flags: Record<string, string | boolean> = {}
@@ -28,11 +28,17 @@ export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string,
 
 function help(): string {
   const me = `node ${selfScript()}`
-  return `Cerveau d'entreprise — client du poste (v${VERSION})
+  return `NOS Brainer — client du poste (v${VERSION})
 
 Usage : ${me} <commande> [options]
 
 Commandes :
+  setup [--url <url> --token <jeton>] [--audio oui|non] [--wait <secondes>] [--no-open] [--skip-screenpipe]
+                     Tout en une commande (c'est ce que lance le prompt d'installation) : config, Screenpipe (installé et lancé
+                     en service s'il ne tourne pas, micro coupé par défaut), autorisations macOS (réglages ouverts, reprise dès
+                     qu'elles sont accordées, --wait 300 s par défaut), MCP, hooks, synchro toutes les 15 min (activité à venir
+                     seulement), néon, puis le cerveau s'ouvre dans le navigateur. Relançable sans paramètres.
+                     Code de sortie 3 : tout est branché sauf l'autorisation d'enregistrer l'écran.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
        [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
@@ -53,7 +59,8 @@ Commandes :
                      l'historique non relu n'est jamais envoyé automatiquement. À lancer après sync --confirm.
   install-pipe       Écrit le pipe Screenpipe « brain-sync » (~/.screenpipe/pipes/brain-sync/pipe.md) : la synchro apparaît dans les tâches
                      planifiées de Screenpipe et se relance à la fin de chaque réunion. Demande l'application Screenpipe (moteur de pipes).
-  uninstall [--purge] Retire hooks, planification, pipe Screenpipe et MCP ; --purge supprime aussi ~/.company-brain.
+  uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP et le service Screenpipe installé par setup ;
+                     --purge supprime aussi ~/.company-brain.
 
 Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
 }
@@ -76,6 +83,10 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   switch (cmd) {
+    case "setup": {
+      const { cmdSetup } = await import("./setup")
+      return cmdSetup(flags)
+    }
     case "init": {
       const { cmdInit } = await import("./commands")
       return cmdInit(flags)

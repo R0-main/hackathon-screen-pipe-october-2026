@@ -10,25 +10,34 @@ const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Fournil", zones: ["compta"] }
 const prompt = buildInstallPrompt(EXAMPLE)
 
-test("prompt d'installation : init → hello → MCP / hooks → simulation complète + accord → envoi → seulement ensuite la planification", () => {
-  const order = ["brain.mjs init --url", "brain.mjs hello", "claude mcp add company-brain", "brain.mjs install-hooks", "brain.mjs sync --dry-run --full", "brain.mjs sync --confirm", "brain.mjs install-schedule"]
-  const at = order.map((s) => prompt.indexOf(s))
-  for (const [n, i] of at.entries()) assert.ok(i >= 0, `absent : ${order[n]}`)
-  assert.deepEqual([...at].sort((a, b) => a - b), at, "ordre des étapes")
-  assert.match(prompt, /demande-moi explicitement si j'accepte cet envoi et attends ma réponse/)
-  assert.match(prompt, /Si je refuse ou hésite : n'envoie rien et ne planifie rien/)
-  // Plus d'envoi « sync --since » direct : seul --confirm envoie, exactement l'aperçu.
-  assert.ok(!/brain\.mjs sync --since/.test(prompt))
+test("prompt d'installation : une seule commande (téléchargement + setup), une seule autorisation dans Claude Code", () => {
+  const command = `curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/brain.mjs -o ~/.company-brain/brain.mjs && node ~/.company-brain/brain.mjs setup --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
+  assert.ok(prompt.includes(command), "la commande unique")
+  assert.equal(prompt.split("setup --url").length, 2, "setup avec paramètres une seule fois ; ensuite, relance sans paramètres")
+  assert.match(prompt, /code 3 \(« EN ATTENTE »\)/)
+  assert.match(prompt, /délai de 10 minutes/)
+  // La synchro planifiée part de l'installation ; pas d'étapes séparées à enchaîner.
+  assert.ok(!/install-schedule|install-hooks|claude mcp add/.test(prompt))
 })
 
-test("prompt d'installation : reconnu par brain-sync (session ignorée)", () => {
+test("prompt d'installation : aucun historique ne part sans relecture complète et accord explicite", () => {
+  assert.match(prompt, /aucun historique n'est envoyé/)
+  const review = prompt.indexOf("brain.mjs sync --dry-run --full --since 24h")
+  const send = prompt.indexOf("brain.mjs sync --confirm")
+  assert.ok(review > 0 && send > review, "simulation relue avant l'envoi")
+  assert.match(prompt, /rien ne part\s+avant mon accord explicite/)
+  assert.ok(!/brain\.mjs sync --since/.test(prompt), "jamais d'envoi direct")
+})
+
+test("prompt d'installation : reconnu par brain-sync (session ignorée), ancienne formulation comprise", () => {
   assert.ok(INSTALL_PROMPT_RE.test(prompt))
+  assert.ok(INSTALL_PROMPT_RE.test("Tu vas connecter ce poste au cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois."))
 })
 
 test("prompt d'installation : chaque commande et option citée existe dans brain.mjs", () => {
   const help = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "help"], { cwd: clientDir, encoding: "utf8" }).stdout
-  const calls = [...prompt.matchAll(/brain\.mjs ([a-z-]+)((?: --[a-z-]+(?: [^\s`-][^\s`]*)?)*)/g)]
-  assert.ok(calls.length >= 8)
+  const calls = [...prompt.matchAll(/brain\.mjs ([a-z][a-z-]*)((?: --[a-z-]+(?: [^\s`-][^\s`]*)?)*)/g)]
+  assert.ok(calls.length >= 6)
   for (const [, cmd, rest] of calls) {
     assert.ok(new RegExp(`^  ${cmd}\\b`, "m").test(help), `commande inconnue : ${cmd}`)
     for (const [flag] of rest.matchAll(/--[a-z-]+/g)) assert.ok(help.includes(flag), `option inconnue : ${cmd} ${flag}`)

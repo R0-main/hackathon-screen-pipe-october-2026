@@ -7,6 +7,7 @@ import { homedir } from "node:os"
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import { brainHome, loadPartialConfig, loadState, paths, saveConfig, saveState, selfScript } from "./config"
 import { findOnPath } from "./distill"
+import { uninstallScreenpipeService } from "./screenpipe-cli"
 
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const
 export const HOOK_TIMEOUT_S = 5
@@ -450,6 +451,11 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
     uninstallSchedule(log)
   } catch (err) {
     log(`Planification : ${(err as Error).message}`)
+  }
+  try {
+    uninstallScreenpipeService(log)
+  } catch (err) {
+    log(`Screenpipe : ${(err as Error).message}`)
   }
   const r = spawnSync("claude", ["mcp", "remove", "company-brain", "--scope", "user"], {
     encoding: "utf8",

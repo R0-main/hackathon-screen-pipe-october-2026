@@ -157,6 +157,10 @@ export class BrainApi {
   automations(workflows: Workflow[]) {
     return this.request<{ saved: number }>("POST", "/api/automations", { workflows })
   }
+  /** Lien de connexion au dashboard, valable 2 minutes (ouvert par `setup` dans le navigateur). */
+  loginLink() {
+    return this.request<{ path: string; expires_in: number }>("POST", "/api/session/link")
+  }
 }
 
 function causeMessage(e: Error): string | undefined {

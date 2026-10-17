@@ -217,7 +217,7 @@ function InviteForm({ zones, onInvited }: { zones: Zone[]; onInvited: (name: str
   return (
     <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
       <h2 className="panel-title">Inviter quelqu&apos;un</h2>
-      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code : il installe Screenpipe, brain-sync, le MCP et les hooks.</p>
+      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code : une commande installe Screenpipe, le MCP et les hooks, puis ouvre le cerveau.</p>
       <div className="grid gap-2 sm:grid-cols-2">
         <input className="input" aria-label="Prénom et nom" placeholder="Prénom Nom" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
         <input className="input" aria-label="Poste" placeholder="Poste, par exemple Comptable" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
