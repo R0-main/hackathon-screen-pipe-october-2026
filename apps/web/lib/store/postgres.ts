@@ -229,6 +229,14 @@ export class PostgresStore implements BrainStore {
     return Number(r.n)
   }
 
+  async listOrgIds() {
+    const root = await this.orgId()
+    if (!(await this.hasSettings())) return [root]
+    const rows = await this.sql`select substr(key, ${TENANT_PREFIX.length + 1}) as id from brain_settings
+      where key like ${TENANT_PREFIX + "%"} order by value, key`
+    return [root, ...rows.map((r) => r.id as string).filter((id) => UUID_RE.test(id) && id !== root)]
+  }
+
   async findUserOrg(by: { id: string } | { tokenHash: string }) {
     if ("id" in by && !UUID_RE.test(by.id)) return null
     const [r] =
@@ -536,6 +544,16 @@ export class PostgresStore implements BrainStore {
     if (!UUID_RE.test(id)) return false
     const rows = await this.sql`delete from knowledge_items where id = ${id} and org_id = ${await this.orgId()} returning id`
     return rows.length > 0
+  }
+  async moveItems(ids: string[], zone: string) {
+    const valid = ids.filter((id) => UUID_RE.test(id))
+    if (valid.length === 0) return 0
+    const org = await this.orgId()
+    return this.sql.begin(async (tx: any) => {
+      const rows = await tx`update knowledge_items set zone = ${zone} where org_id = ${org} and id in ${tx(valid)} and zone <> ${zone} returning id`
+      await tx`update tasks set zone = ${zone}, updated_at = now() where org_id = ${org} and source_item_id in ${tx(valid)}`
+      return rows.length
+    }) as Promise<number>
   }
 
   async zoneStats(): Promise<ZoneStat[]> {

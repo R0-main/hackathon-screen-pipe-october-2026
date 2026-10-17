@@ -9,7 +9,7 @@ import { createHash, createHmac } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
-import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput } from "@brain/core"
+import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type NewZonesInput, type StatusInput } from "@brain/core"
 import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
@@ -31,6 +31,9 @@ import { createLoginCode, createOnboardingCode, createSessionValue, hashToken, n
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
+import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
+import * as cronNewZonesRoute from "../app/api/cron/new-zones/route"
+import { runNewZones } from "../lib/new-zones"
 import * as statusRoute from "../app/api/status/route"
 import * as statusInputRoute from "../app/api/status/input/route"
 import * as stateRoute from "../app/api/state/route"
@@ -835,6 +838,63 @@ async function main() {
       const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
       assert(applied.status === 200 && (await acmeStore.listZones()).some((z) => z.id === "design"), "validée : zones et connaissances appliquées")
       assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft === null, "et la proposition est écartée")
+
+      console.log("\n— Nouvelles zones créées automatiquement (job quotidien)")
+      {
+        const carolRow = await acmeStore.createProfile({ name: `Carol ${run}`, role: "member", manager_id: null, token_hash: hashToken(newToken()) })
+        const carol: Viewer = { profile: carolRow, real: carolRow, access: await getAccess(carolRow) }
+        const zonesBefore = await acmeStore.listZones()
+        const opsBefore = (await acmeStore.listItems({ zones: ["ops"] })).length
+        const legal = ["Modèle de contrat de prestation", "CGV : clause de résiliation", "Registre RGPD des traitements", "Mentions légales du site"]
+        await runInOrg(acme.id, async () => {
+          await ingestItems(alice!, Array.from({ length: 9 }, (_, n) => item("ops", `Astreinte Acme semaine ${n + 1} (${run})`)))
+          await ingestItems(alice!, legal.slice(0, 3).map((t) => item("ops", `${t} (${run})`)))
+          await ingestItems(carol, [item("ops", `${legal[3]} (${run})`, "task")])
+        })
+        const legalRefs = (input: NewZonesInput) => input.items.filter((i) => legal.some((t) => i.title.startsWith(t))).map((i) => i.ref)
+        let seen: NewZonesInput | null = null
+        const proposeLegal = async (input: NewZonesInput) => {
+          seen = input
+          return [{ name: "Juridique", description: "Contrats, CGV et conformité RGPD.", keywords: ["contrat", "cgv", "rgpd", "juridique"], items: legalRefs(input) }]
+        }
+        const first = await runInOrg(acme.id, () => runNewZones({ propose: proposeLegal }))
+        assert(legalRefs(seen!).length === 4 && seen!.zones.length === zonesBefore.length, "Claude relit les connaissances récentes et les zones existantes")
+        assert(first.status === "created" && first.zones[0].id === "juridique" && first.zones[0].items === 4, "la zone Juridique est créée, ses 4 connaissances y sont rangées")
+        const juridique = (await acmeStore.listZones()).find((z) => z.id === "juridique")
+        const lastPosition = Math.max(...zonesBefore.map((z) => z.position))
+        assert(juridique && juridique.keywords.includes("rgpd") && juridique.position === lastPosition + 1, "avec ses mots-clés, après les zones existantes")
+        assert((await acmeStore.listItems({ zones: ["juridique"] })).length === 4 && (await acmeStore.listItems({ zones: ["ops"] })).length === opsBefore + 9, "les autres connaissances restent dans Ops")
+        assert((await acmeStore.listTasks({ zones: ["juridique"] })).some((t) => t.title.startsWith(legal[3])), "la tâche issue d'une connaissance déplacée la suit")
+        const readable = async (id: string) => (await acmeStore.listZoneAccess(id)).map((a) => a.zone_id).sort().join()
+        assert((await readable(bob.id)).split(",").includes("juridique"), "Bob, qui lisait Ops, lit aussi Juridique")
+        assert((await readable(carolRow.id)) === "juridique", "Carol, autrice d'une des connaissances, la lit aussi")
+        const ev = (await acmeStore.listEvents({ limit: 5 })).find((e) => e.agent === "job" && e.type === "write")
+        assert(ev?.zones.join() === "juridique" && ev.summary?.includes("Juridique"), "la nouvelle zone s'allume dans le fil d'activité")
+        const again = await runInOrg(acme.id, () => runNewZones({ propose: proposeLegal }))
+        assert(again.status === "unchanged" && (await acmeStore.listZones()).length === zonesBefore.length + 1, "le lendemain, la même proposition ne double pas la zone")
+        const log = await call(adminNewZonesRoute.GET, "/api/admin/zones/auto", { session: cookie })
+        assert(log.status === 200 && log.data.runs.map((r: { status: string }) => r.status).join() === "unchanged,created", "les admins voient l'historique des passages")
+        const bobSession = await createSessionValue(bob.id)
+        assert((await call(adminNewZonesRoute.POST, "/api/admin/zones/auto", { method: "POST", session: bobSession })).status === 403, "lancer un passage est réservé aux admins")
+
+        const cron = (headers: Record<string, string> = {}, qs = "") => cronNewZonesRoute.GET(new Request(`http://smoke.test/api/cron/new-zones${qs}`, { headers }))
+        const prevSecret = process.env.CRON_SECRET
+        try {
+          delete process.env.CRON_SECRET
+          assert((await cron({ authorization: "Bearer x" })).status === 503, "cron : fermé tant que CRON_SECRET n'est pas défini")
+          process.env.CRON_SECRET = `secret-${run}`
+          assert((await cron({ authorization: "Bearer mauvais" })).status === 401, "cron : mauvais secret refusé")
+          if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+            const res = await cron({ authorization: `Bearer secret-${run}` }, "?force=1")
+            const body = (await res.json()) as { ran: boolean; orgs: { org_id: string; status: string; reason?: string }[] }
+            const acmeRun = body.orgs.find((o) => o.org_id === acme.id)
+            assert(res.status === 200 && body.orgs[0].org_id === fournil.id && acmeRun?.reason === "no_claude", "cron : toutes les entreprises sont passées en revue ; sans clé API, rien n'est créé")
+          }
+        } finally {
+          if (prevSecret === undefined) delete process.env.CRON_SECRET
+          else process.env.CRON_SECRET = prevSecret
+        }
+      }
 
       const demoList = await call(demoSessionRoute.GET, "/api/session/demo")
       assert(demoList.status === 404 || !demoList.data.users.some((u: { id: string }) => u.id === boss.id), "les comptes de l'entreprise ne sont pas proposés dans la démo")

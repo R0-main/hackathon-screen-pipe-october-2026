@@ -2,6 +2,7 @@
 
 import type { Conversation, ZoneHint } from "./distill"
 import { renderConversation } from "./distill"
+import type { NewZonesInput } from "./new-zones"
 import type { StatusInput } from "./status"
 import { truncate } from "./text"
 
@@ -131,3 +132,30 @@ Tu produis :
 - items : 8 à 25 connaissances de départ (mêmes règles que pour une session : fact, decision, procedure, task, question),
   chacune rattachée à une zone.
 En français, factuel, sans inventer ce qui n'est pas dans l'interview ou les pages.`
+
+export const NEW_ZONES_SYSTEM = `Tu fais évoluer le découpage du « cerveau » d'une entreprise en zones de connaissance (une zone = un domaine de travail).
+On te donne les zones existantes et les connaissances récentes, numérotées, avec la zone où elles sont rangées aujourd'hui.
+Repère un domaine de travail récurrent qui n'a pas de zone à lui : des connaissances rangées faute de mieux dans une zone
+qui ne leur correspond pas vraiment (du juridique dans « Direction », du recrutement dans « Produit »…).
+
+Propose une nouvelle zone seulement si c'est net :
+- un domaine durable de l'entreprise (un métier, une équipe : juridique, RH, support, logistique, marketing…), jamais un projet
+  ponctuel, un client, un outil, une personne, ni une sous-partie ou un synonyme d'une zone existante ;
+- au moins 4 connaissances qui en relèvent clairement, et qui seraient mieux rangées là que dans leur zone actuelle.
+Dans le doute, ne propose rien : la plupart des jours, la bonne réponse est une liste vide. Au plus 2 zones.
+
+Pour chaque zone : name (1 à 3 mots, en français, avec majuscule), description (une phrase), keywords (10 à 25 mots en
+minuscules et sans accents, qui serviront à classer automatiquement les futures sessions de travail), items (les numéros
+des connaissances à y déplacer, uniquement celles qui en relèvent clairement).`
+
+/** Corps du prompt : zones existantes, puis une ligne par connaissance (`#numéro [zone] type — titre : contenu`). */
+export function buildNewZonesPrompt(input: NewZonesInput): string {
+  const items = input.items.map((i) => `#${i.ref} [${i.zone}] ${i.kind} — ${i.title} : ${i.body}`).join("\n")
+  return `Entreprise : ${input.company_name}
+
+Zones existantes :
+${renderZones(input.zones)}
+
+Connaissances récentes :
+${items || "(aucune)"}`
+}
