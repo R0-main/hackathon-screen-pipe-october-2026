@@ -37,6 +37,8 @@ const DUST = 160
 const BONE = 0xf6f6f3
 /** Au repos, la couleur d'une zone est adoucie vers le blanc dans le réseau. */
 const SOFTEN = 0.5
+/** Chaque couche interne est un peu plus pâle et ses neurones un peu plus petits : la profondeur se lit. */
+const DEPTH_SOFTEN = 0.15
 /** Part de bone sur la face cachée du réseau : il n'en reste qu'un souffle, qui garde la silhouette. */
 const BACK = 0.86
 const NEURON_R = 0.007
@@ -205,7 +207,10 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const shellMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 })
   const neuronMat = new T.MeshBasicMaterial({ color: WHITE, transparent: true, opacity: 0 })
   const neurons = new T.InstancedMesh(new T.SphereGeometry(1, 8, 6), neuronMat, net.points.length)
-  net.points.forEach((p, i) => neurons.setMatrixAt(i, new T.Matrix4().makeScale(NEURON_R, NEURON_R, NEURON_R).setPosition(p[0], p[1], p[2])))
+  net.points.forEach((p, i) => {
+    const r = NEURON_R * (1 - 0.25 * net.depth[i])
+    neurons.setMatrixAt(i, new T.Matrix4().makeScale(r, r, r).setPosition(p[0], p[1], p[2]))
+  })
   group.add(new T.LineSegments(netGeo, shellMat), neurons)
   geometries.push(netGeo, neurons.geometry)
   materials.push(shellMat, neuronMat)
@@ -362,8 +367,9 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
         dotBase[i].copy(rawC)
         return
       }
-      netC.copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN), named).toArray(linkBase, i * 3)
-      dotBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN * 0.4), named)
+      const deeper = net.depth[i] * DEPTH_SOFTEN
+      netC.copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN + deeper), named).toArray(linkBase, i * 3)
+      dotBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN * 0.4 + deeper), named)
     })
   }
   /** La face cachée pâlit vers le fond : seule la face visible du réseau se lit. */

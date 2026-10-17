@@ -30,6 +30,8 @@ const PHOSPHOR = 0xc7ff3e
 const BARE = 0xc4c4bc
 /** Au repos, la couleur d'une zone est adoucie vers le blanc ; elle revient pleine quand la zone est active ou choisie. */
 const SOFTEN = 0.5
+/** Chaque couche interne est un peu plus pâle et ses neurones un peu plus petits : la profondeur se lit. */
+const DEPTH_SOFTEN = 0.15
 /** Part de blanc sur la face cachée : il n'en reste qu'un souffle, qui garde la silhouette. */
 const BACK = 0.86
 const NEURON_R = 0.008
@@ -294,7 +296,10 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const neuronMat = new T.MeshBasicMaterial({ color: WHITE })
   const neurons = new T.InstancedMesh(geoSphere, neuronMat, net.points.length)
   const mtx = new T.Matrix4()
-  net.points.forEach((p, i) => neurons.setMatrixAt(i, mtx.makeScale(NEURON_R, NEURON_R, NEURON_R).setPosition(p[0], p[1], p[2])))
+  net.points.forEach((p, i) => {
+    const r = NEURON_R * (1 - 0.25 * net.depth[i])
+    neurons.setMatrixAt(i, mtx.makeScale(r, r, r).setPosition(p[0], p[1], p[2]))
+  })
   group.add(new T.LineSegments(netGeo, netMat), neurons)
   geometries.push(netGeo)
   materials.push(netMat, neuronMat)
@@ -314,8 +319,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
   const paintNetwork = () => {
     net.points.forEach((_, i) => {
-      neuronColor(net.zone[i], SOFTEN, tone).toArray(linkBase, i * 3)
-      neuronColor(net.zone[i], SOFTEN * 0.4, dotBase[i])
+      const deeper = net.depth[i] * DEPTH_SOFTEN
+      neuronColor(net.zone[i], SOFTEN + deeper, tone).toArray(linkBase, i * 3)
+      neuronColor(net.zone[i], SOFTEN * 0.4 + deeper, dotBase[i])
     })
   }
   paintNetwork()

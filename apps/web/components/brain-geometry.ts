@@ -399,40 +399,82 @@ export function zoneNodes(anchors: number[], owner: number[], zone: number, coun
   return out
 }
 
-export type BrainNetwork = { points: V3[]; normals: V3[]; zone: number[]; edges: [number, number][] }
+export type BrainNetwork = { points: V3[]; normals: V3[]; zone: number[]; depth: number[]; edges: [number, number][] }
+
+/** Couches du réseau : la surface, puis deux couches internes, plus diffuses, qui donnent du volume. */
+const LAYERS = [
+  { k: 1, spacing: 0.15 },
+  { k: 0.72, spacing: 0.17 },
+  { k: 0.44, spacing: 0.18 },
+]
 
 /**
- * Le réseau qui dessine la silhouette : des neurones espacés sur toute la surface, chacun relié à ses
- * plus proches voisins. Aucune liaison ne traverse la scissure, pour que les deux hémisphères se lisent.
+ * Le réseau qui dessine le cerveau : des neurones espacés sur la surface et sur deux couches internes
+ * (la surface rétrécie vers le cœur de chaque partie), chacun relié à ses plus proches voisins de la même
+ * couche, et chaque neurone interne relié au plus proche de la couche au-dessus. Aucune liaison ne
+ * traverse la scissure, pour que les deux hémisphères se lisent.
  */
-export function brainNetwork(owner: number[], spacing = 0.15): BrainNetwork {
+export function brainNetwork(owner: number[]): BrainNetwork {
   const surface = brainSurface()
-  const picked: number[] = []
-  for (let i = 0; i < surface.length; i++) {
-    if (picked.some((j) => dist2(surface[i].p, surface[j].p) < spacing ** 2)) continue
-    picked.push(i)
+  // Cœur de chaque partie (chaque hémisphère, cervelet, tronc) : les couches internes s'y resserrent.
+  const keyOf = (s: SurfacePoint) => (s.part === "cortex" ? (s.p[2] < 0 ? "left" : "right") : s.part)
+  const sums = new Map<string, { c: V3; n: number }>()
+  for (const s of surface) {
+    const acc = sums.get(keyOf(s)) ?? { c: [0, 0, 0] as V3, n: 0 }
+    acc.c = [acc.c[0] + s.p[0], acc.c[1] + s.p[1], acc.c[2] + s.p[2]]
+    acc.n++
+    sums.set(keyOf(s), acc)
   }
-  const points = picked.map((i) => surface[i].p)
-  const normals = picked.map((i) => surface[i].n)
-  const zone = picked.map((i) => owner[i] ?? -1)
-  const part = picked.map((i) => surface[i].part)
+  const core = (s: SurfacePoint): V3 => {
+    const { c, n } = sums.get(keyOf(s))!
+    return [c[0] / n, c[1] / n, c[2] / n]
+  }
+
+  const points: V3[] = []
+  const normals: V3[] = []
+  const zone: number[] = []
+  const depth: number[] = []
+  const part: Part[] = []
+  const layerOf: number[][] = []
+  LAYERS.forEach(({ k, spacing }, d) => {
+    const mine: number[] = []
+    for (let i = 0; i < surface.length; i++) {
+      const s = surface[i]
+      const c = core(s)
+      const p: V3 = [c[0] + (s.p[0] - c[0]) * k, c[1] + (s.p[1] - c[1]) * k, c[2] + (s.p[2] - c[2]) * k]
+      if (mine.some((j) => dist2(p, points[j]) < spacing ** 2)) continue
+      mine.push(points.length)
+      points.push(p)
+      normals.push(s.n)
+      zone.push(owner[i] ?? -1)
+      depth.push(d)
+      part.push(s.part)
+    }
+    layerOf.push(mine)
+  })
+
   const seen = new Set<string>()
   const edges: [number, number][] = []
-  const reach = (spacing * 2.1) ** 2
-  for (let i = 0; i < points.length; i++) {
-    const near = points
-      .map((q, j) => [j, dist2(points[i], q)] as const)
-      .filter(([j, d]) => j !== i && d < reach && !(part[i] === "cortex" && part[j] === "cortex" && points[i][2] * points[j][2] < 0))
-      .sort((x, y) => x[1] - y[1])
-      .slice(0, 3)
-    for (const [j] of near) {
-      const key = i < j ? `${i}-${j}` : `${j}-${i}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      edges.push(i < j ? [i, j] : [j, i])
-    }
+  const link = (i: number, j: number) => {
+    const key = i < j ? `${i}-${j}` : `${j}-${i}`
+    if (seen.has(key)) return
+    seen.add(key)
+    edges.push(i < j ? [i, j] : [j, i])
   }
-  return { points, normals, zone, edges }
+  const crosses = (i: number, j: number) => part[i] === "cortex" && part[j] === "cortex" && points[i][2] * points[j][2] < 0
+  const nearest = (i: number, among: number[], reach: number, count: number) =>
+    among
+      .map((j) => [j, dist2(points[i], points[j])] as const)
+      .filter(([j, d]) => j !== i && d < reach && !crosses(i, j))
+      .sort((x, y) => x[1] - y[1])
+      .slice(0, count)
+  LAYERS.forEach(({ spacing }, d) => {
+    for (const i of layerOf[d]) {
+      for (const [j] of nearest(i, layerOf[d], (spacing * 2.1) ** 2, 3)) link(i, j)
+      if (d > 0) for (const [j] of nearest(i, layerOf[d - 1], (spacing * 3) ** 2, 1)) link(i, j)
+    }
+  })
+  return { points, normals, zone, depth, edges }
 }
 
 export type Curves = { positions: Float32Array; a: Uint32Array; b: Uint32Array; t: Float32Array }
