@@ -154,7 +154,7 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
 
           <div ref={heroRef} className="landing-hero">
             <div className="landing-wrap">
-              <h1 id="landing-title" data-hero="title" className="landing-display max-w-[11.5em]">
+              <h1 id="landing-title" data-hero="title" className="landing-display max-w-[9.5em]">
                 Tout ce que votre équipe apprend avec l'IA, dans un seul cerveau.
               </h1>
               <p data-hero="sub" className="mt-5 max-w-[34em] text-[16px] leading-relaxed sm:text-[18px]">

@@ -244,7 +244,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       const end = onShell(scatter(dir, rand, spread), 0.95 + rand() * 0.1)
       // Avant de se poser, la connaissance flotte loin de la coque, dans sa direction : elle vient d'un poste.
       const away = scatter(dir, rand, 1.2)
-      const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(2 + rand())
+      // Pas trop loin : la bille ne doit pas flotter sur le titre ni sur les chapitres.
+      const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(1.5 + rand() * 0.45)
       nodes.push({ zone: i, end, start, r: 0.014 + rand() * 0.012, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2 })
     }
     gfx.push({ id: z.id, color: new T.Color(zoneColor(z.color, z.position)), center, outline, pos, first, last: nodes.length })
@@ -273,7 +274,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const dustRand = seeded(7)
   const dust = Array.from({ length: DUST }, () => {
     const d = scatter([dustRand() - 0.5, dustRand() - 0.5, dustRand() - 0.5], dustRand, 2)
-    return { p: new T.Vector3(d[0], d[1] * 0.8, d[2]).multiplyScalar(1.8 + dustRand() * 1.2), r: 0.005 + dustRand() * 0.006, w: dustRand() * Math.PI * 2 }
+    return { p: new T.Vector3(d[0], d[1] * 0.8, d[2]).multiplyScalar(1.55 + dustRand() * 0.55), r: 0.005 + dustRand() * 0.006, w: dustRand() * Math.PI * 2 }
   })
   const dustMat = new T.MeshBasicMaterial({ color: RAW, transparent: true, opacity: 0, depthWrite: false })
   const dustMesh = new T.InstancedMesh(geoSphere, dustMat, DUST)
@@ -328,16 +329,17 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const halfW = (z: number) => tanH * z * aspect
     const halfH = (z: number) => tanH * z
     const wide = aspect >= 1.05
-    const heroZ = fit(wide ? 0.62 : 0.6)
-    const fullZ = fit(wide ? 0.98 : 1)
+    // Assez petit pour ne jamais passer sous le titre ni sous la colonne des chapitres.
+    const heroZ = fit(wide ? 0.5 : 0.5)
+    const fullZ = fit(wide ? 0.8 : 0.78)
     // Large écran : le cerveau à droite du titre, puis décalé pour laisser la colonne de texte à gauche.
     // Écran étroit : le cerveau au-dessus du texte.
     layout = {
       heroZ,
       fullZ,
-      endZ: fit(0.8),
-      hero: wide ? [0.47 * halfW(heroZ), 0.16 * halfH(heroZ)] : [0, 0.38 * halfH(heroZ)],
-      full: wide ? [0.3 * halfW(fullZ), 0.02 * halfH(fullZ)] : [0, 0.22 * halfH(fullZ)],
+      endZ: fit(0.72),
+      hero: wide ? [0.56 * halfW(heroZ), 0.2 * halfH(heroZ)] : [0, 0.42 * halfH(heroZ)],
+      full: wide ? [0.38 * halfW(fullZ), 0.02 * halfH(fullZ)] : [0, 0.3 * halfH(fullZ)],
     }
     invalidate()
   }

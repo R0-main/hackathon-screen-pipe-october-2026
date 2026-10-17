@@ -478,6 +478,19 @@ html.lenis body {
   transform-origin: left center;
 }
 
+/* Versions comparées : chaque section occupe un écran, contenu centré verticalement ; elle s'arrête alignée
+   sur l'écran pendant une partie du scroll (components/landing/motion/setup.ts). */
+.landing[data-motion]:not([data-motion="actuelle"]) .landing-section {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-block: clamp(56px, 9vh, 112px);
+}
+.landing[data-motion]:not([data-motion="actuelle"]) .landing-section > .landing-wrap {
+  width: 100%;
+}
+
 /* Fil de billes qui relie les sections (version Récit seulement, voir components/landing/motion). */
 .landing-thread,
 .landing-bead {
@@ -489,8 +502,8 @@ html.lenis body {
 }
 .landing-thread {
   position: absolute;
-  top: clamp(96px, 13vw, 184px);
-  bottom: clamp(160px, 20vw, 280px);
+  top: clamp(56px, 9vh, 112px);
+  bottom: clamp(160px, 30vh, 320px);
   left: max(calc(var(--gutter) / 2), calc((100vw - 1440px) / 2 + var(--gutter) / 2));
   width: 1px;
   background: var(--text);
@@ -498,7 +511,7 @@ html.lenis body {
 }
 .landing-bead {
   position: absolute;
-  top: clamp(96px, 13vw, 184px);
+  top: clamp(56px, 9vh, 112px);
   left: max(calc(var(--gutter) / 2), calc((100vw - 1440px) / 2 + var(--gutter) / 2));
   width: 11px;
   height: 11px;
