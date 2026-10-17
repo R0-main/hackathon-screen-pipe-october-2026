@@ -15,7 +15,7 @@ import { EXIT_NO_SCREENPIPE, EXIT_PERMISSIONS_PENDING } from "../src/setup"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const installSh = fileURLToPath(new URL("../../web/public/install.sh", import.meta.url))
-const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Fournil", zones: ["compta"] }
+const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Butine", zones: ["compta"] }
 const prompt = buildInstallPrompt(EXAMPLE)
 
 test("prompt d'installation : une seule commande par système (install.sh ou install.ps1, puis setup), une seule autorisation dans Claude Code", () => {

@@ -88,7 +88,7 @@ Deux modes, cumulables :
 | Mettre à jour | `sh deploy/local/brain-local.sh update` (git pull, reconstruction, redémarrage ; les données restent) |
 | Certificat racine | `sh deploy/local/brain-local.sh ca` (réexporte `deploy/local/ca.crt`, affiche l'empreinte) |
 | Arrêter | `sh deploy/local/brain-local.sh down` (les volumes restent ; `docker compose down -v` efface tout) |
-| Démo | `BRAIN_DEMO=1` dans `.env` puis `up` : l'entreprise fictive Fournil se charge au premier passage sur `/login` |
+| Démo | `BRAIN_DEMO=1` dans `.env` puis `up` : l'entreprise fictive Butine se charge au premier passage sur `/login` |
 
 Les conteneurs redémarrent avec Docker (`restart: unless-stopped`) : si la machine redémarre, le cerveau revient seul.
 

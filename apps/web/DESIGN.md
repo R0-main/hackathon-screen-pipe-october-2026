@@ -92,7 +92,7 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 ## Page d'accueil publique (`/`)
 
 Adresses : `/` la page d'accueil (pour tout le monde), `/creer` la création d'une entreprise, `/demo` l'entrée de la
-démo (choix d'un compte de Fournil, mode démo seulement), `/login` la connexion par jeton, `/dashboard` le cerveau et,
+démo (choix d'un compte de Butine, mode démo seulement), `/login` la connexion par jeton, `/dashboard` le cerveau et,
 à côté, les autres pages connectées. `/accueil` redirige vers `/`.
 
 Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accueil » de `globals.css`).
@@ -109,7 +109,7 @@ Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accu
     près d'un chapitre ou d'une section, le scroll s'y cale en douceur.
   - Toutes les animations des sections suivent le scroll : elles avancent quand on descend, s'arrêtent quand on
     s'arrête, se rejouent à l'envers quand on remonte. Les titres passent de pâle à encre mot par mot ; le panneau
-    « Où en est Fournil » se remplit et le prompt s'écrit pendant l'arrêt ; le schéma vie privée (`PrivacyFlow`)
+    « Où en est Butine » se remplit et le prompt s'écrit pendant l'arrêt ; le schéma vie privée (`PrivacyFlow`)
     attend que sa section soit calée pour se jouer.
   - Un fil encre descend le long des sections, avec une bille qui se remplit à chaque section.
   - Seule l'entrée du premier écran se joue au chargement (les mots du titre, puis le reste), et la lente rotation

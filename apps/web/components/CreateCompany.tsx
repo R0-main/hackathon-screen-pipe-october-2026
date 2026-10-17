@@ -242,7 +242,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     maxLength={80}
                     autoFocus
                     aria-label="Nom de l'entreprise"
-                    placeholder="Fournil"
+                    placeholder="Butine"
                     onChange={(e) => setCompany(e.target.value)}
                   />
                 </Question>
@@ -263,7 +263,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     rows={2}
                     autoFocus
                     aria-label="Activité de l'entreprise"
-                    placeholder="Un logiciel de caisse et de commandes pour les boulangeries indépendantes."
+                    placeholder="Des balances connectées pour ruches : l'apiculteur suit ses abeilles depuis son téléphone."
                     onChange={(e) => setDescription(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {

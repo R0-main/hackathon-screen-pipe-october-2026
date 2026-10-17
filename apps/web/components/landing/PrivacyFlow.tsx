@@ -2,7 +2,7 @@ import { Dot, zoneColor } from "../ui"
 import { LANDING_ZONES } from "./landing-data"
 
 /*
-  « Le brut reste sur le poste », montré avec de vraies captures de la démo Fournil : ce que Screenpipe enregistre
+  « Le brut reste sur le poste », montré avec de vraies captures de la démo Butine : ce que Screenpipe enregistre
   sur le poste, les trois étapes du filtre local, et les quelques connaissances qui montent au cerveau.
 
   Le balisage décrit l'état final (lisible sans JavaScript et sous prefers-reduced-motion) : captures perso
@@ -13,20 +13,20 @@ import { LANDING_ZONES } from "./landing-data"
 type Capture = { app: string; text: string; kind: "work" | "personal" | "secret" }
 
 const CAPTURES: Capture[] = [
-  { app: "Claude Code", text: "Comment on déploie Fournil en production ?", kind: "work" },
+  { app: "Claude Code", text: "Comment on déploie Butine en production ?", kind: "work" },
   { app: "WhatsApp", text: "Photos du week-end", kind: "personal" },
   { app: "Terminal", text: "export STRIPE_KEY=", kind: "secret" },
   { app: "Codex", text: "Rapproche les relevés Qonto d'hier", kind: "work" },
   { app: "Banque perso", text: "Relevé de compte d'octobre", kind: "personal" },
-  { app: "Slack", text: "#dev : la file SMS passe en prod", kind: "work" },
+  { app: "Slack", text: "#dev : la file des alertes passe en prod", kind: "work" },
 ]
 
 const STEPS = ["Apps de travail seulement", "Secrets masqués", "Distillé sur le poste"]
 
 const KNOWLEDGE = [
-  { zone: "dev", kind: "Procédure", title: "Déployer Fournil en production" },
+  { zone: "dev", kind: "Procédure", title: "Déployer Butine en production" },
   { zone: "compta", kind: "Procédure", title: "Rapprocher Qonto et Pennylane chaque matin" },
-  { zone: "dev", kind: "Décision", title: "Les SMS de précommande passent par une file" },
+  { zone: "dev", kind: "Décision", title: "Les alertes essaimage passent par une file" },
 ]
 
 const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!

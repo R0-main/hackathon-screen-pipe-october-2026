@@ -19,7 +19,7 @@ export function companyLabel(c: Company): string {
   }
 }
 
-/** Une ligne par entreprise, numérotées : « 1. Fournil (par défaut) : boulangerie… ». */
+/** Une ligne par entreprise, numérotées : « 1. Butine (par défaut) : balances connectées pour ruches… ». */
 export function describeCompanies(list: Company[]): string {
   return list.map((c, i) => `${i + 1}. ${companyLabel(c)}${i === 0 ? " (par défaut)" : ""}${c.description ? ` : ${truncate(c.description.trim(), 200)}` : ""}`).join("\n")
 }

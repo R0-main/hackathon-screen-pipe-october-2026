@@ -16,7 +16,7 @@ Prérequis : Node.js ≥ 20.
 
 ```bash
 npm install
-npm run seed                 # entreprise fictive « Fournil » : 6 comptes, 5 skills, 34 connaissances, 10 jours d'activité
+npm run seed                 # entreprise fictive « Butine » (balances connectées pour ruches) : 6 comptes, 5 skills, 34 connaissances, 10 jours d'activité
 BRAIN_DEMO=1 npm run dev     # http://localhost:3000/demo → connexion en un clic (mode démo)
 npm run simulate             # dans un 2e terminal : des agents travaillent, le cerveau s'allume
 ```
@@ -32,7 +32,7 @@ packages/core/        Contrats partagés (KnowledgeItem, AgentEvent), zones, fil
                       distillation (Claude + heuristique), détection d'automatisations, résumé d'état
 apps/web/             Le cerveau : dashboard Next.js + API (/api/ingest, /api/query, /api/events, /api/stream…)
   lib/store/          Stockage : fichier JSON (zéro config) ou Postgres/Supabase (DATABASE_URL)
-  scripts/            seed (Fournil), simulate (activité en direct), smoke (tests), migrate (SQL)
+  scripts/            seed (Butine), simulate (activité en direct), smoke (tests), migrate (SQL)
 apps/client/          Le client poste, livré en UN fichier (brain.mjs, servi par le dashboard sur /brain.mjs) :
                       brain-sync, serveur MCP company-brain, hooks Claude Code, installation
 supabase/migrations/  Schéma Postgres + politiques RLS par zone
@@ -76,7 +76,7 @@ demo/                 Script de démo
 - **Qualité du cerveau** : synonymes FR/EN dans la recherche, recherche sémantique optionnelle (`VOYAGE_API_KEY` ou un
   point de terminaison compatible OpenAI, Ollama compris : `npm run embed` pour l'existant), remplacement automatique
   d'une décision ou procédure revue (l'ancienne sort des recherches), pages Entités (`/entites`), et `npm run eval`
-  qui mesure la recherche sur la démo Fournil.
+  qui mesure la recherche sur la démo Butine.
 
 ## API du cerveau
 
@@ -128,7 +128,7 @@ vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en �
      demande) ; 8 : refusée. Les autres codes sont ceux de l'installation ([docs/CLI.md](docs/CLI.md)).
 
 Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
-Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
+Butine n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
 organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_settings`, sans migration ; fichier :
 `<BRAIN_DATA_DIR>/orgs/<id>/`). Un jeton ou une session désigne son entreprise, et chaque route lit la sienne.
 `BRAIN_SIGNUP=0` ferme la création, `BRAIN_MAX_ORGS` la plafonne (200 par défaut).
@@ -182,7 +182,7 @@ Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgr
    - Build Command : `npm run build` (construit aussi `brain.mjs`, servi sur `/brain.mjs`)
    - Région des fonctions : la même que la base (`fra1` pour Neon Francfort)
    - Désactivez « Vercel Authentication » : les postes appellent l'API avec leur jeton personnel.
-3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Fournil au premier passage sur `/login`. Le secret de session est généré tout seul et conservé dans la base.
+3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Butine au premier passage sur `/login` (une base restée sur l'ancienne démo, Fournil, est remplacée une fois par Butine, en gardant les comptes visiteurs et leurs jetons). Le secret de session est généré tout seul et conservé dans la base.
 
 4. **Job quotidien « nouvelles zones »** : définissez `CRON_SECRET` (une longue chaîne aléatoire, `openssl rand -hex 32`) et
    `BRAIN_SECRET_KEY` (idem, chiffre les clés Claude des entreprises). `apps/web/vercel.json` déclare le cron. La clé Claude,
@@ -250,5 +250,5 @@ de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisi
 npm test                 # tests unitaires (core + client)
 npm run typecheck
 npm run smoke            # bout en bout sur le stockage courant (fichier, ou Postgres si DATABASE_URL)
-npm run eval             # qualité de la recherche sur la démo Fournil (après npm run seed)
+npm run eval             # qualité de la recherche sur la démo Butine (après npm run seed)
 ```
