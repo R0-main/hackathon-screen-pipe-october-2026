@@ -19,25 +19,25 @@ const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]
 /** Questions qu'un agent pose au cerveau via le MCP (search_brain). */
 const AGENT_QUERIES: Record<string, string[]> = {
   dev: ["procédure de déploiement en production", "webhook Stripe invoice.paid", "isolation RLS Supabase", "restaurer une sauvegarde"],
-  produit: ["priorité du trimestre précommandes", "retours La Mie Dorée export Excel", "usage de l'app le matin"],
+  produit: ["priorité du trimestre alerte essaimage", "retours Miellerie Roussel export Excel", "usage de l'app au rucher"],
   sales: ["pipeline octobre négociations", "nouveau pricing annuel", "préparer une démo"],
   compta: ["rapprochement Qonto Pennylane", "clôture mensuelle cabinet Durand", "versements Stripe sur Qonto"],
-  support: ["réinitialiser l'imprimante de tickets", "top des tickets d'octobre"],
+  support: ["balance qui ne remonte plus", "top des tickets d'octobre"],
   direction: ["objectifs T4 MRR", "levée seed reportée", "board trimestriel KPIs"],
 }
 
 /** Connaissances fraîches que brain-sync « distille » pendant la démo. */
 const FRESH: (KnowledgeItemInput & { author: string })[] = [
   {
-    author: "hugo", zone: "dev", kind: "decision", title: "Les précommandes utilisent une file Supabase Queues pour les notifications SMS",
-    body: "Évite de bloquer la requête de commande ; les SMS partent en moins de 30 secondes via Brevo.",
-    entities: [{ type: "tool", name: "Supabase" }, { type: "tool", name: "Brevo" }, { type: "project", name: "Précommandes" }],
+    author: "hugo", zone: "dev", kind: "decision", title: "Les alertes essaimage passent par une file Supabase Queues",
+    body: "Évite de bloquer la réception des pesées ; le SMS part chez l'apiculteur en moins de 30 secondes via Brevo.",
+    entities: [{ type: "tool", name: "Supabase" }, { type: "tool", name: "Brevo" }, { type: "project", name: "Alerte essaimage" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.82,
   },
   {
-    author: "sarah", zone: "sales", kind: "fact", title: "Au Pain d'Antan demande une remise pour 3 boutiques",
-    body: "Ils signeraient à 44 €/boutique en annuel. À valider avec Claire avant vendredi.",
-    entities: [{ type: "client", name: "Au Pain d'Antan" }, { type: "person", name: "Claire Martin" }],
+    author: "sarah", zone: "sales", kind: "fact", title: "Coop'Apis Provence demande une remise pour ses 60 apiculteurs",
+    body: "Ils signeraient à 3,40 € par ruche en annuel. À valider avec Claire avant vendredi.",
+    entities: [{ type: "client", name: "Coop'Apis Provence" }, { type: "person", name: "Claire Martin" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.78,
   },
   {
@@ -47,15 +47,15 @@ const FRESH: (KnowledgeItemInput & { author: string })[] = [
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.85,
   },
   {
-    author: "leo", zone: "produit", kind: "decision", title: "Créneaux de retrait des précommandes par tranches de 30 minutes",
-    body: "Les boulangers veulent lisser l'affluence du samedi matin ; 30 minutes est le meilleur compromis d'après les interviews.",
-    entities: [{ type: "project", name: "Précommandes" }],
+    author: "leo", zone: "produit", kind: "decision", title: "L'alerte essaimage se coupe pendant une heure de visite",
+    body: "Ouvrir la ruche fait varier le poids de plusieurs kilos ; une heure couvre une visite d'après les interviews d'apiculteurs.",
+    entities: [{ type: "project", name: "Alerte essaimage" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.8,
   },
   {
-    author: "ines", zone: "dev", kind: "fact", title: "Le mode hors ligne de la caisse perd les tickets au-delà de 500 ventes",
-    body: "La file IndexedDB est plafonnée ; à corriger avant la PWA. Repro : script e2e caisse-offline.spec.ts.",
-    entities: [{ type: "project", name: "Caisse" }, { type: "tool", name: "Playwright" }],
+    author: "ines", zone: "dev", kind: "fact", title: "La mémoire tampon de la balance déborde au-delà de 2 000 pesées",
+    body: "La file en mémoire flash est plafonnée ; à corriger avant le nouveau firmware. Repro : script e2e balance-hors-reseau.spec.ts.",
+    entities: [{ type: "project", name: "Balance B2" }, { type: "tool", name: "Playwright" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.76,
   },
   {

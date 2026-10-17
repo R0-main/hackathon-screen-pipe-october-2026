@@ -188,7 +188,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                 </a>
               </div>
               <p data-hero="note" className="mt-8 text-[13px] text-trace">
-                Le cerveau de Fournil, l'entreprise fictive de la démo.
+                Le cerveau de Butine, l'entreprise fictive de la démo : des balances connectées qui disent aux apiculteurs, sans ouvrir la ruche, si leurs abeilles vont bien.
               </p>
             </div>
           </div>
@@ -207,7 +207,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
               <span ref={counterRef} className="text-[15px] font-medium tabular-nums text-ink">
                 {mode === "scroll" ? 0 : LANDING_TOTAL}
               </span>{" "}
-              connaissances en dix jours chez Fournil.
+              connaissances en dix jours chez Butine.
             </p>
           </Chapter>
 
@@ -215,7 +215,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
             <p>
               L'admin choisit qui voit quoi. Jean-Marc, à la compta, n'a pas besoin du code : ni lui ni ses agents n'ont accès à la zone Dev.
             </p>
-            <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[14px]" aria-label="Zones du cerveau de Fournil">
+            <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[14px]" aria-label="Zones du cerveau de Butine">
               {LANDING_ZONES.map((z) => (
                 <li key={z.id}>
                   <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
@@ -266,9 +266,9 @@ function Chapter({ title, children, refFn }: { title: string; children: React.Re
 /** Ce que voit la dirigeante : un extrait du dashboard de la démo, dans ses propres composants. */
 function Dashboard() {
   const status = [
-    { zone: "direction", text: "Objectif T4 : 120 boulangeries clientes et 25\u00a0k€ de MRR." },
-    { zone: "produit", text: "Priorité du trimestre : le module de précommandes en ligne." },
-    { zone: "sales", text: "La Mie Dorée (12 boutiques) est prête à signer si l'export comptable arrive en novembre." },
+    { zone: "direction", text: "Objectif T4 : 4\u00a0500 ruches équipées et 20\u00a0k€ de MRR." },
+    { zone: "produit", text: "Priorité du trimestre : l'alerte essaimage, dans l'heure, sur le téléphone de l'apiculteur." },
+    { zone: "sales", text: "Miellerie Roussel (900 ruches) est prête à signer si l'export des pesées arrive en novembre." },
     { zone: "compta", text: "TVA de septembre à déclarer avant le 19\u00a0octobre." },
   ]
   return (
@@ -286,7 +286,7 @@ function Dashboard() {
 
         <figure data-reveal="panel" className="panel overflow-hidden">
           <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-            <span className="panel-title">Où en est Fournil</span>
+            <span className="panel-title">Où en est Butine</span>
             <span className="text-[12px] text-trace">Cette semaine</span>
           </div>
           <ul data-rows className="divide-y divide-line">
@@ -304,7 +304,7 @@ function Dashboard() {
               <p data-type className="mono mt-1.5 text-[13px] leading-relaxed">Rapproche les relevés Qonto d'hier avec les factures Pennylane et liste les écarts</p>
             </div>
           </div>
-          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Extrait du dashboard de la démo. Fournil est une entreprise fictive.</figcaption>
+          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Extrait du dashboard de la démo. Butine est une entreprise fictive.</figcaption>
         </figure>
       </div>
     </section>
@@ -380,7 +380,7 @@ function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; de
       <Bead />
       <div className="landing-wrap">
         <h2 id="fin" data-reveal="title" className="landing-display max-w-[10em]">
-          {signup ? "Donnez un cerveau à votre entreprise." : "Ouvrez le cerveau de Fournil."}
+          {signup ? "Donnez un cerveau à votre entreprise." : "Ouvrez le cerveau de Butine."}
         </h2>
         <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
           {signup
