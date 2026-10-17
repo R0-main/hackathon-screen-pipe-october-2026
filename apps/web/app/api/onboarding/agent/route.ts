@@ -11,7 +11,7 @@ export const POST = withViewer(
   async (req, viewer) => {
     const store = getStore()
     const [org, zones, code] = await Promise.all([store.getOrg(), store.listZones(), createOnboardingCode(viewer.real.id)])
-    const prompt = buildOnboardingAgentPrompt({ baseUrl: publicBaseUrl(req), code, orgName: org.name, zones })
+    const prompt = buildOnboardingAgentPrompt({ baseUrl: publicBaseUrl(req), code, orgName: org.name, description: org.description, zones })
     return json({ prompt, expires_in: ONBOARDING_CODE_HOURS * 3600 })
   },
   { admin: true },
