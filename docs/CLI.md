@@ -43,7 +43,7 @@ prompt  →  curl …/install.sh  →  sh install.sh --url … --token …
                                          ├─ config (~/.company-brain/config.json, mode 600)
                                          ├─ Screenpipe installé et lancé en service, micro coupé
                                          ├─ autorisations macOS : bon panneau ouvert, reprise automatique
-                                         ├─ MCP company-brain + hooks Claude Code
+                                         ├─ MCP company-brain + hooks Claude Code + skills de l'entreprise (~/.claude/skills)
                                          ├─ synchro toutes les 15 min (activité à venir seulement)
                                          └─ néon, puis le cerveau s'ouvre dans le navigateur, déjà connecté
 ```

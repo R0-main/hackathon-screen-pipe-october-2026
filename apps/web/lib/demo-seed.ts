@@ -3,15 +3,17 @@
 
 import {
   DEFAULT_TIMEZONE,
+  SKILL_MAIN_FILE,
   detectAutomations,
   heuristicStatus,
   promptFingerprint,
+  withSkillFrontmatter,
   type AgentEvent,
 } from "@brain/core"
 import { hashToken, isDemoMode, newToken } from "./auth"
 import { getStore, type BrainStore } from "./store"
 import type { NewEvent } from "./store/types"
-import { DEMO_ITEMS, DEMO_ORG, DEMO_PROMPTS, DEMO_USERS, JEANMARC_DAILY_PROMPT } from "../scripts/demo-data"
+import { DEMO_ITEMS, DEMO_ORG, DEMO_PROMPTS, DEMO_SKILLS, DEMO_USERS, JEANMARC_DAILY_PROMPT } from "../scripts/demo-data"
 
 const TZ = process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE
 
@@ -57,6 +59,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
       title: u.title,
       role: u.role,
       manager_id: u.manager ? ids[u.manager] : null,
+      can_publish_skills: u.publishSkills ?? false,
       token_hash: hashToken(token),
     })
     const zonesFor = u.role === "admin" ? allZoneIds : u.zones
@@ -97,6 +100,21 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
       zones: [it.zone],
       summary: `1 connaissance ajoutée : ${it.title.slice(0, 80)}`,
       at: new Date(at.getTime() + 15 * 60_000).toISOString(),
+    })
+  }
+
+  // Skills de l'entreprise (une publication par version), et le néon de chaque publication.
+  for (const sk of [...DEMO_SKILLS].sort((a, b) => b.daysAgo - a.daysAgo)) {
+    const files = sk.files.map((f) => (f.path === SKILL_MAIN_FILE ? { ...f, content: withSkillFrontmatter(f.content, sk.name, sk.description) } : f))
+    for (let v = 0; v < (sk.version ?? 1); v++)
+      await store.publishSkill({ name: sk.name, description: sk.description, zone: sk.zone, files, publisher_id: ids[sk.author] })
+    events.push({
+      user_id: ids[sk.author],
+      agent: "dashboard",
+      type: "write",
+      zones: sk.zone ? [sk.zone] : allZoneIds,
+      summary: `Skill publié : ${sk.name}`,
+      at: localTime(sk.daysAgo, 11, 30).toISOString(),
     })
   }
 
@@ -147,7 +165,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
   const autos = detectAutomations(inserted, profiles, { timeZone: TZ })
   if (autos.length) await store.upsertAutomations(autos)
 
-  return { tokens, counts: { users: DEMO_USERS.length, items: items.length, tasks: tasks.length, events: inserted.length, automations: autos.length } }
+  return { tokens, counts: { users: DEMO_USERS.length, skills: DEMO_SKILLS.length, items: items.length, tasks: tasks.length, events: inserted.length, automations: autos.length } }
 }
 
 const g = globalThis as unknown as { __demoBootstrap?: Promise<void> }

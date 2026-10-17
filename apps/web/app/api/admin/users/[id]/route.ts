@@ -14,6 +14,7 @@ const Schema = z.object({
   role: z.enum(["admin", "member"]).optional(),
   zones: z.array(z.string().max(64)).max(30).optional(),
   manager_id: z.string().max(64).nullable().optional(),
+  can_publish_skills: z.boolean().optional(),
 })
 
 /** Rattacher `id` à `managerId` boucle-t-il l'organigramme (managerId est `id` ou l'un de ses subordonnés) ? */
@@ -27,7 +28,7 @@ function makesCycle(id: string, managerId: string, profiles: Profile[]): boolean
   return false
 }
 
-/** Met à jour le rôle, le rattachement et les zones visibles d'un membre. */
+/** Met à jour le rôle, le rattachement, les zones visibles et le droit de publier des skills d'un membre. */
 export const PATCH = withViewer<Ctx>(
   async (req, viewer, { params }) => {
     const { id } = await params
@@ -41,7 +42,13 @@ export const PATCH = withViewer<Ctx>(
       if (!profiles.some((p) => p.id === managerId)) return error(400, "La personne de rattachement n'existe pas.")
       if (makesCycle(id, managerId, profiles)) return error(400, "Rattachement impossible : cette personne fait partie de son équipe.")
     }
-    const profile = await store.updateProfile(id, { name: body.data.name, title: body.data.title, role: body.data.role, manager_id: managerId })
+    const profile = await store.updateProfile(id, {
+      name: body.data.name,
+      title: body.data.title,
+      role: body.data.role,
+      manager_id: managerId,
+      can_publish_skills: body.data.can_publish_skills,
+    })
     if (!profile) return error(404, "Membre introuvable.")
     if (body.data.zones) {
       const known = new Set((await store.listZones()).map((z) => z.id))

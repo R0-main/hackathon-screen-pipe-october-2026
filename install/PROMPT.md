@@ -65,5 +65,5 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 | `--no-open` | N'ouvre pas le navigateur. |
 | `--skip-screenpipe` | Sans Screenpipe : brain-sync lit seulement les sessions Claude Code et Codex. |
 
-Tout retirer : `node ~/.company-brain/brain.mjs uninstall` (hooks, MCP, synchro, service Screenpipe ; `--purge` efface aussi
+Tout retirer : `node ~/.company-brain/brain.mjs uninstall` (hooks, MCP, skills de l'entreprise, synchro, service Screenpipe ; `--purge` efface aussi
 `~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
