@@ -271,6 +271,29 @@ export function BrainIcon({ size = 30, className = "" }: { size?: number; classN
   )
 }
 
+/** Logo NOS Brainer (même dessin que le favicon) : six billes d'encre reliées, la bille centrale en phosphore. */
+export function LogoMark({ size = 26, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 97 97" aria-hidden className={className}>
+      <path
+        d="M24.6 15.95L8.05 50.35L25.75 80.8L48.35 49.5L24.6 15.95M48.35 49.5L72.35 17.2L84.55 51.35L69.1 82.65M48.35 49.5L84.55 51.35"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <g fill="currentColor">
+        <circle cx="24.6" cy="15.95" r="13.6" />
+        <circle cx="72.35" cy="17.2" r="8.4" />
+        <circle cx="84.55" cy="51.35" r="12.5" />
+        <circle cx="8.05" cy="50.35" r="8" />
+        <circle cx="25.75" cy="80.8" r="13.8" />
+        <circle cx="69.1" cy="82.65" r="8.3" />
+      </g>
+      <circle cx="48.35" cy="49.5" r="9" fill="var(--color-phosphor)" />
+    </svg>
+  )
+}
+
 /** Message d'erreur affiché à côté de l'action, annoncé aux lecteurs d'écran. */
 export function ErrorText({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (

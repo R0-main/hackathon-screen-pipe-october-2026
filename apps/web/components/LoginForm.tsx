@@ -10,8 +10,9 @@ import { PersonAvatar } from "./PersonDot"
 import { BrainIcon, CloseIcon, ErrorText, PlusIcon } from "./ui"
 
 /**
- * Connexion : d'abord les entreprises retenues par ce navigateur (un clic pour revenir dans l'une d'elles), puis le jeton
- * personnel, qui en ajoute une. Sans entreprise retenue, le jeton seul.
+ * Connexion : d'abord les entreprises retenues par ce navigateur (un clic pour revenir dans l'une d'elles), puis, en grand,
+ * la création d'une entreprise. Le jeton personnel reste replié dessous : le reste passe par Claude Code ou Codex. Sans
+ * création possible (`BRAIN_SIGNUP=0`) ni entreprise retenue, le jeton seul.
  */
 export function LoginForm({
   demo,
@@ -28,7 +29,7 @@ export function LoginForm({
 }) {
   const { t } = useT()
   const [list, setList] = useState(accounts)
-  const [showToken, setShowToken] = useState(adding || accounts.length === 0)
+  const [showToken, setShowToken] = useState(adding || (!signup && accounts.length === 0))
   const [token, setToken] = useState("")
   const [err, setErr] = useState<string | null>(null)
   // « token » pendant la connexion par jeton, sinon l'identifiant du compte en cours d'ouverture ou d'oubli.
@@ -72,7 +73,7 @@ export function LoginForm({
       await api("/api/session/accounts", { method: "DELETE", json: { userId: a.userId } })
       const rest = list.filter((x) => x.userId !== a.userId)
       setList(rest)
-      if (rest.length === 0) setShowToken(true)
+      if (rest.length === 0 && !signup) setShowToken(true)
     } catch (e) {
       setErr(fmt(t.login.forgetError, { name: a.org.name, error: errorMessage(e) }))
     } finally {
@@ -138,20 +139,22 @@ export function LoginForm({
                 )
               })}
             </ul>
-            {!showToken && (
-              <div className="mt-1 border-t border-line px-1 pt-2">
-                <button type="button" className="btn btn-ghost w-full justify-start" onClick={() => setShowToken(true)}>
-                  <PlusIcon size={14} />
-                  {t.login.addCompany}
-                </button>
-              </div>
-            )}
             {err && !showToken && <ErrorText className="px-3 pb-2">{err}</ErrorText>}
           </section>
         )}
 
-        {showToken && (
-          <form onSubmit={login} className={`panel space-y-3 p-5 ${hasList ? "mt-3" : ""}`} aria-busy={busy === "token"}>
+        {signup && (
+          <div className={hasList ? "mt-3" : ""}>
+            <Link href="/creer" className="btn btn-primary btn-lg w-full">
+              <PlusIcon size={14} />
+              {t.login.create}
+            </Link>
+            <p className="mt-2 text-center text-[12px] text-trace">{t.login.createHelp}</p>
+          </div>
+        )}
+
+        {showToken ? (
+          <form onSubmit={login} className={`panel space-y-3 p-5 ${hasList || signup ? "mt-3" : ""}`} aria-busy={busy === "token"}>
             <label className="block text-[13px] font-medium" htmlFor="token">
               {hasList ? t.login.addTokenLabel : t.login.tokenLabel}
             </label>
@@ -162,7 +165,7 @@ export function LoginForm({
               onChange={(e) => setToken(e.target.value)}
               placeholder="cb_"
               autoComplete="off"
-              autoFocus={hasList}
+              autoFocus={hasList || signup}
               aria-describedby="token-help"
               aria-invalid={err ? true : undefined}
             />
@@ -174,6 +177,12 @@ export function LoginForm({
               {t.login.submit}
             </button>
           </form>
+        ) : (
+          <p className="mt-3 text-center">
+            <button type="button" className="text-[13px] text-trace underline underline-offset-2 hover:text-ink" onClick={() => setShowToken(true)}>
+              {t.login.useToken}
+            </button>
+          </p>
         )}
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[13px] text-trace">
@@ -184,11 +193,6 @@ export function LoginForm({
                 {t.login.tryDemo}
               </Link>
             </p>
-          )}
-          {signup && hasList && (
-            <Link href="/creer" className="underline underline-offset-2 hover:text-ink">
-              {t.login.create}
-            </Link>
           )}
           <LanguageSwitch />
         </div>

@@ -15,7 +15,7 @@ Chaque employé travaille déjà avec Claude Code, Codex ou ChatGPT, mais ce con
 Prérequis : Node.js ≥ 20 et `make`. Docker est facultatif.
 
 ```bash
-make dev      # première fois : .env, npm install, Postgres, migrations, puis http://localhost:3000
+make dev      # première fois : .env, npm install, Postgres, migrations, puis le navigateur s'ouvre sur la création de ton entreprise
 make demo     # la même chose avec l'entreprise fictive Butine : http://localhost:3000/demo
 make help     # toutes les commandes (db-stop, db-reset, seed, simulate, test…)
 ```

@@ -8,7 +8,7 @@ import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage } from "./format"
-import { BrainIcon, CheckIcon, CloseIcon, Dot, ErrorText, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
+import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
 import { deNom } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
@@ -38,6 +38,11 @@ const DEFAULT_PICK = ["dev", "produit", "direction"]
  * contient les prompts, donc les jetons : c'est ce qui permet de les recopier après un rechargement.
  */
 const STORAGE_KEY = "nos-brainer:creer"
+/**
+ * Posé dans l'adresse à l'ouverture du parcours (`/creer?brouillon=1`) : un rechargement ou un retour arrière reprend le
+ * brouillon, alors qu'arriver par un lien (« Créer mon entreprise ») recommence de zéro, même après une entreprise créée.
+ */
+const DRAFT_PARAM = "brouillon"
 const POLL_MS = 3000
 
 function load(): Partial<Saved> | null {
@@ -63,6 +68,12 @@ function save(s: Saved) {
   } catch {}
 }
 
+function clear() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {}
+}
+
 /**
  * Créer son entreprise à partir de zéro, une question par écran : nom, activité, qui on est, zones du cerveau.
  * Ensuite, le prompt à coller dans Claude Code ou Codex pour brancher son poste, puis un prompt par collègue pour l'inviter.
@@ -84,6 +95,12 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has(DRAFT_PARAM)) {
+      clear()
+      url.searchParams.set(DRAFT_PARAM, "1")
+      window.history.replaceState(null, "", url)
+    }
     const s = load()
     if (s) {
       if (s.step) setStep(s.step)
@@ -148,9 +165,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
   function restart() {
     if (created && !confirm(`Recommencer ? Le cerveau ${deNom(created.orgName)} reste en place, vous en créerez un nouveau.`)) return
-    try {
-      sessionStorage.removeItem(STORAGE_KEY)
-    } catch {}
+    clear()
     setCompany("")
     setDescription("")
     setName("")
@@ -176,7 +191,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     <main className="create flex min-h-dvh flex-col">
       <header className="create-wrap flex items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
-          <BrainIcon size={26} />
+          <LogoMark size={26} />
           <span className="whitespace-nowrap text-[15px] font-medium">NOS Brainer</span>
         </Link>
         <div className="flex items-center gap-3 text-[13px] text-trace">
@@ -632,7 +647,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
 
   return (
     <div>
-      <h1 className="create-title">Invitez votre équipe.</h1>
+      <h1 className="create-title">Invitez l'équipe {deNom(created.orgName)}.</h1>
       <p className="create-lead">
         Deux façons, au choix : un message par personne, avec son propre jeton, ou un seul message pour toute l'équipe, où chacun demande à entrer. Dans les deux
         cas, il se colle dans Claude Code ou Codex, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
@@ -724,6 +739,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       <div className="mt-3">
         <TeamJoin
           compact
+          orgName={created.orgName}
           zones={created.zones}
           defaultManager={created.meId}
           onAccepted={(p) => props.setInvites((list) => [{ ...p, prompt: "" }, ...list])}
