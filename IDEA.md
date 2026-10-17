@@ -30,11 +30,17 @@ Screenpipe devient le **pipe** entre le PC de l'utilisateur, ses agents IA et le
 - **État de l'entreprise** : résumé de où en est la boîte — tâches, objectifs, prochaines étapes, et **qui a fait quoi**.
 - **To-do** : brancher l'outil de to-do existant (Todoist, Notion, Linear…) ou en proposer une intégrée au dashboard.
 
-### 4. Propositions d'automatisation
+### 4. Les skills de l'entreprise
+Le cerveau ne garde pas que la connaissance : il conserve aussi **les skills de l'entreprise** (les savoir-faire prêts à l'emploi pour Claude Code) et **les scripts qu'ils utilisent**.
+- **Publication sous autorisation** : pour pousser un skill dans le cerveau, il faut un droit particulier, accordé par un admin.
+- **Un onglet Skills** dans le dashboard regroupe tous les skills de l'entreprise.
+- **Attribution à un cortex** : un skill peut être rattaché à un cortex du cerveau (une zone : dev, compta, sales…). Il n'est alors donné qu'aux personnes qui ont accès à ce contexte.
+
+### 5. Propositions d'automatisation
 On détecte les tâches répétitives à partir de l'activité enregistrée et on les propose aux dirigeants.
 > Ex. : tous les jours à 9h, Jean-Marc de la compta lance le même prompt → on propose une automatisation qui le fait à sa place, et il récupère son début de journée.
 
-### 5. Passation de poste / remplacement
+### 6. Passation de poste / remplacement
 Quand quelqu'un part ou s'absente, son remplaçant récupère **le contexte que ce poste utilisait le plus** (pas forcément toutes les conversations, voir la partie légale).
 
 ## Points à trancher
