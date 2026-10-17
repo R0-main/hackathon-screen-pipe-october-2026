@@ -248,3 +248,21 @@ export function neuronPositions(cell: ZoneCell, count: number): Pt[] {
   }
   return pts.map(roundPt)
 }
+
+// --- Cerveau 3D : positions sur la coque (partagées par le dashboard et la page d'accueil) ---
+
+/** Direction de la i-ème zone sur la coque (spirale de Fibonacci, aplatie en hauteur comme un cerveau). */
+export function zoneDirection(i: number, n: number): [number, number, number] {
+  const phi = Math.acos(1 - (2 * (i + 0.5)) / n)
+  const theta = Math.PI * (1 + Math.sqrt(5)) * i + Math.PI / 2
+  const v: [number, number, number] = [Math.sin(phi) * Math.cos(theta), Math.cos(phi) * 0.75, Math.sin(phi) * Math.sin(theta)]
+  const len = Math.hypot(v[0], v[1], v[2]) || 1
+  return [v[0] / len, v[1] / len, v[2] / len]
+}
+
+/** Direction voisine, pour disperser les billes d'une zone autour de son centre. */
+export function scatter(dir: [number, number, number], rand: () => number, spread: number): [number, number, number] {
+  const v: [number, number, number] = [dir[0] + (rand() - 0.5) * spread, dir[1] + (rand() - 0.5) * spread, dir[2] + (rand() - 0.5) * spread]
+  const len = Math.hypot(v[0], v[1], v[2]) || 1
+  return [v[0] / len, v[1] / len, v[2] / len]
+}
