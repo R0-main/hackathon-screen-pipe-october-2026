@@ -8,15 +8,16 @@ export const DEMO_ORG = {
     "Fournil édite un logiciel de caisse, de stocks et de précommandes pour les boulangeries artisanales. 85 boulangeries clientes, 6 personnes, basée à Paris.",
 }
 
-export type DemoUser = { key: string; name: string; title: string; role: Role; zones: string[]; email: string }
+/** `manager` : clé de la personne à qui le poste est rattaché (déclarée avant dans la liste). */
+export type DemoUser = { key: string; name: string; title: string; role: Role; zones: string[]; email: string; manager?: string }
 
 export const DEMO_USERS: DemoUser[] = [
   { key: "claire", name: "Claire Martin", title: "CEO", role: "admin", zones: [], email: "claire@fournil.example" },
-  { key: "hugo", name: "Hugo Bernard", title: "Lead dev", role: "member", zones: ["dev", "produit", "support"], email: "hugo@fournil.example" },
-  { key: "ines", name: "Inès Lefèvre", title: "Développeuse full-stack", role: "member", zones: ["dev", "produit"], email: "ines@fournil.example" },
-  { key: "jeanmarc", name: "Jean-Marc Dubois", title: "Responsable compta", role: "member", zones: ["compta"], email: "jean-marc@fournil.example" },
-  { key: "sarah", name: "Sarah Cohen", title: "Head of Sales", role: "member", zones: ["sales", "support", "produit"], email: "sarah@fournil.example" },
-  { key: "leo", name: "Léo Petit", title: "Product manager", role: "member", zones: ["produit", "dev", "support", "sales"], email: "leo@fournil.example" },
+  { key: "hugo", name: "Hugo Bernard", title: "Lead dev", role: "member", zones: ["dev", "produit", "support"], email: "hugo@fournil.example", manager: "claire" },
+  { key: "ines", name: "Inès Lefèvre", title: "Développeuse full-stack", role: "member", zones: ["dev", "produit"], email: "ines@fournil.example", manager: "hugo" },
+  { key: "jeanmarc", name: "Jean-Marc Dubois", title: "Responsable compta", role: "member", zones: ["compta"], email: "jean-marc@fournil.example", manager: "claire" },
+  { key: "sarah", name: "Sarah Cohen", title: "Head of Sales", role: "member", zones: ["sales", "support", "produit"], email: "sarah@fournil.example", manager: "claire" },
+  { key: "leo", name: "Léo Petit", title: "Product manager", role: "member", zones: ["produit", "dev", "support", "sales"], email: "leo@fournil.example", manager: "claire" },
 ]
 
 export type DemoItem = {

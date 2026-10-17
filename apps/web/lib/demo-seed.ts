@@ -51,7 +51,14 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
   const ids: Record<string, string> = {}
   for (const u of DEMO_USERS) {
     const token = newToken()
-    const profile = await store.createProfile({ name: u.name, email: u.email, title: u.title, role: u.role, token_hash: hashToken(token) })
+    const profile = await store.createProfile({
+      name: u.name,
+      email: u.email,
+      title: u.title,
+      role: u.role,
+      manager_id: u.manager ? ids[u.manager] : null,
+      token_hash: hashToken(token),
+    })
     const zonesFor = u.role === "admin" ? allZoneIds : u.zones
     await store.setZoneAccess(profile.id, zonesFor.map((zone_id) => ({ zone_id, can_write: true })))
     ids[u.key] = profile.id

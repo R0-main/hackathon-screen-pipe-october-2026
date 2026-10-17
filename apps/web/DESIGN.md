@@ -61,3 +61,17 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 - À droite, la page. La fenêtre ne défile jamais : le cerveau remplit tout l'espace (la molette zoome), les autres
   pages défilent dans leur colonne.
 - L'état vivant (flux SSE, zones allumées) est dans le layout (`components/BrainLive.tsx`) : il survit à la navigation.
+
+## Page d'accueil publique (`/accueil`, servie sur `/` sans session)
+
+Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accueil » de `globals.css`).
+
+- Grands titres Space Grotesk serrés (`.landing-display`, `.landing-h2`), beaucoup de vide, une colonne de texte à gauche.
+- Le cerveau (`ScrollBrain`) reprend la géométrie de `Brain3D` (`brain-geometry.ts`) et ajoute une coque en anneaux
+  de contour ondulés et un brouillard bone pour la profondeur. Pas d'ombre, pas de halo.
+- Mouvement : exception à la règle des 200 ms, réservée à cette page. La scène est épinglée et suit le scroll
+  (GSAP ScrollTrigger, défilement doux Lenis) : le cerveau passe en plein écran et tourne, les connaissances se posent,
+  les zones se nomment, trois agents allument leur zone en phosphore. Aucune animation n'avance seule hors du scroll,
+  sauf la lente rotation d'attente.
+- `prefers-reduced-motion` : pas d'épinglage ni de défilement doux, cerveau immobile et assemblé, chapitres lus à la suite.
+- Le phosphore reste réservé aux zones qu'un agent interroge (ici, les trois agents de la démo).

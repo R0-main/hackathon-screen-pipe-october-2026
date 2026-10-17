@@ -13,3 +13,6 @@ apps/web/.brain/
 apps/web/public/brain.mjs
 .DS_Store
 .next-build/
+
+# Captures de relecture Impeccable (régénérées à chaque passe)
+apps/web/.impeccable/review/

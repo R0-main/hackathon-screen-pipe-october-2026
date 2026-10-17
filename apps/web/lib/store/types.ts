@@ -18,7 +18,7 @@ import type {
   ZoneAccess,
 } from "@brain/core"
 
-export type NewProfile = { name: string; email?: string; title?: string; role: Role; token_hash: string }
+export type NewProfile = { name: string; email?: string; title?: string; role: Role; manager_id?: string | null; token_hash: string }
 export type ProfilePatch = Partial<NewProfile>
 export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: string }
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">

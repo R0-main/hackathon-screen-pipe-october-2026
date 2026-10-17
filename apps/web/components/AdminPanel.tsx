@@ -1,20 +1,66 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify, type Profile, type Zone } from "@brain/core"
 import { PageScroll } from "./AppShell"
-import { api, errorMessage } from "./format"
+import { useBrainLive } from "./BrainLive"
+import { OrgChart, type Presence } from "./OrgChart"
+import { AGENT_LABEL, api, errorMessage, initials } from "./format"
+import { RelTime } from "./RelTime"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 
 type User = Profile & { zones: string[] }
+type Tab = "org" | "access" | "zones"
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "org", label: "Organigramme" },
+  { id: "access", label: "Accès par zone" },
+  { id: "zones", label: "Zones" },
+]
+
+const ACTIVE_MS = 15 * 60_000
+
+/** Ids de `id` et de tout son sous-arbre : on ne peut pas rattacher quelqu'un à l'un d'eux. */
+function teamOf(id: string, users: User[]): Set<string> {
+  const out = new Set([id])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const u of users) {
+      if (u.manager_id && out.has(u.manager_id) && !out.has(u.id)) {
+        out.add(u.id)
+        grew = true
+      }
+    }
+  }
+  return out
+}
 
 export function AdminPanel(props: { orgName: string; meId: string; initialUsers: User[]; initialZones: Zone[]; storeKind: string }) {
+  const { feed, now } = useBrainLive()
+  const [tab, setTab] = useState<Tab>("org")
   const [users, setUsers] = useState(props.initialUsers)
   const [zones, setZones] = useState(props.initialZones)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [invite, setInvite] = useState<{ managerId: string | null } | null>(null)
   const [prompt, setPrompt] = useState<{ name: string; prompt: string } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
+
+  // Présence de chaque poste d'après le fil des agents : session récente et agents de code utilisés.
+  const presence = useMemo(() => {
+    const out: Record<string, Presence & { lastAt?: string }> = {}
+    for (const e of feed) {
+      const p = (out[e.user_id] ??= { active: false, agents: [] })
+      if (!p.lastAt) {
+        p.lastAt = e.at
+        p.active = e.type !== "stopped" && Date.parse(e.at) > now - ACTIVE_MS
+      }
+      if ((e.agent === "claude-code" || e.agent === "codex") && !p.agents.includes(AGENT_LABEL[e.agent])) p.agents.push(AGENT_LABEL[e.agent])
+    }
+    return out
+  }, [feed, now])
 
   /** Relit membres et zones ; ne lève jamais (l'erreur s'affiche en haut de page). Renvoie les zones à jour. */
   async function reload(): Promise<Zone[] | null> {
@@ -29,33 +75,25 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
     }
   }
 
-  async function toggleZone(u: User, zone: string) {
-    if (u.role === "admin") return
-    const next = u.zones.includes(zone) ? u.zones.filter((z) => z !== zone) : [...u.zones, zone]
-    setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, zones: next } : x)))
+  async function patch(u: User, body: Record<string, unknown>, optimistic?: Partial<User>) {
+    if (optimistic) setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, ...optimistic } : x)))
     setSaving(u.id)
     setErr(null)
     try {
-      await api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { zones: next } })
+      await api(`/api/admin/users/${u.id}`, { method: "PATCH", json: body })
+      if (!optimistic) await reload()
     } catch (e) {
-      setErr(errorMessage(e))
+      setErr(`${u.name} : ${errorMessage(e)}`)
       await reload()
     } finally {
       setSaving(null)
     }
   }
 
-  async function setRole(u: User, role: "admin" | "member") {
-    setSaving(u.id)
-    setErr(null)
-    try {
-      await api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { role } })
-      await reload()
-    } catch (e) {
-      setErr(errorMessage(e))
-    } finally {
-      setSaving(null)
-    }
+  function toggleZone(u: User, zone: string) {
+    if (u.role === "admin") return
+    const next = u.zones.includes(zone) ? u.zones.filter((z) => z !== zone) : [...u.zones, zone]
+    void patch(u, { zones: next }, { zones: next })
   }
 
   async function regenerate(u: User) {
@@ -72,115 +110,375 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
     }
   }
 
+  const selectedUser = users.find((u) => u.id === selected) ?? null
+  const defaultManager = users.find((u) => u.role === "admin" && !u.manager_id)?.id ?? null
+
   return (
-    <PageScroll width="max-w-[1300px]">
-      <h1 className="mb-5 text-[22px] font-medium leading-tight">
-        Équipe et accès <span className="font-normal text-trace">{props.orgName}</span>
-      </h1>
-      <div className="space-y-4">
-        {err && (
-          <div role="alert" className="panel flex items-start gap-3 px-4 py-2.5 text-[13px] text-danger">
-            <span className="min-w-0 flex-1">{err}</span>
-            <button type="button" className="btn btn-icon btn-sm shrink-0" onClick={() => setErr(null)} aria-label="Masquer l'erreur">
-              <CloseIcon size={14} />
-            </button>
-          </div>
-        )}
-
-        <section className="panel p-4 sm:p-5">
-          <h2 className="panel-title">Qui voit quelles zones</h2>
-          <p className="mt-1 max-w-3xl text-[13px] text-trace">
-            Un membre, et ses agents via le MCP, ne lit que les zones cochées. Tout le monde nourrit le cerveau ; seule la lecture est restreinte. Les admins voient tout.
+    <div className="flex h-full flex-col">
+      <header className="flex flex-wrap items-end gap-x-6 gap-y-3 border-b border-line bg-bone px-4 pt-5 sm:px-8 sm:pt-6">
+        <div className="min-w-0 pb-3">
+          <h1 className="text-[22px] font-medium leading-tight">
+            Équipe et accès <span className="font-normal text-trace">{props.orgName}</span>
+          </h1>
+          <p className="mt-1 text-[13px] text-trace">
+            <span className="tabular-nums">{users.length}</span> personne{users.length > 1 ? "s" : ""}, <span className="tabular-nums">{zones.length}</span> zone
+            {zones.length > 1 ? "s" : ""}
           </p>
-          <div className="scroll-thin mt-4 overflow-x-auto">
-            <table className="w-full min-w-[760px] text-[13px]">
-              <thead>
-                <tr className="text-left text-[12px] text-trace">
-                  <th scope="col" className="py-2 pr-3 font-medium">
-                    Membre
-                  </th>
-                  {zones.map((z) => (
-                    <th key={z.id} scope="col" className="px-2 py-2 text-center font-medium text-ink">
-                      <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
-                    </th>
-                  ))}
-                  <th scope="col" className="px-2 py-2 font-medium">
-                    Rôle
-                  </th>
-                  <th scope="col" className="px-2 py-2">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="border-t border-line">
-                    <td className="py-2.5 pr-3">
-                      <div className="font-medium">{u.name}</div>
-                      <div className="text-[12px] text-trace">{u.title ?? u.email ?? ""}</div>
-                    </td>
-                    {zones.map((z) => {
-                      const on = u.role === "admin" || u.zones.includes(z.id)
-                      return (
-                        <td key={z.id} className="px-2 py-2.5 text-center">
-                          <input
-                            type="checkbox"
-                            className="size-4"
-                            checked={on}
-                            disabled={u.role === "admin" || saving === u.id}
-                            onChange={() => toggleZone(u, z.id)}
-                            aria-label={`${u.name} : accès à ${z.name}`}
-                          />
-                        </td>
-                      )
-                    })}
-                    <td className="px-2 py-2.5">
-                      <select
-                        className="input input-sm"
-                        aria-label={`Rôle de ${u.name}`}
-                        value={u.role}
-                        disabled={u.id === props.meId || saving === u.id}
-                        onChange={(e) => setRole(u, e.target.value as "admin" | "member")}
-                      >
-                        <option value="member">Membre</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2.5 text-right">
-                      <div className="inline-flex gap-1.5">
-                        <Link className="btn btn-sm" href={`/people/${u.id}`}>
-                          Passation
-                        </Link>
-                        <button type="button" className="btn btn-sm" onClick={() => regenerate(u)} disabled={saving === u.id}>
-                          Nouveau prompt
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        </div>
+        <nav className="-mb-px flex gap-1 self-end" aria-label="Vues de l'équipe">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-current={tab === t.id ? "page" : undefined}
+              onClick={() => setTab(t.id)}
+              className={`border-b-2 px-3 pb-2.5 pt-1 text-[13px] font-medium transition-colors duration-150 ease-out ${
+                tab === t.id ? "border-ink text-ink" : "border-transparent text-trace hover:text-ink"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+        <button type="button" className="btn btn-primary mb-3 ml-auto" onClick={() => setInvite({ managerId: selected ?? defaultManager })}>
+          Inviter quelqu&apos;un
+        </button>
+      </header>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+      {err && (
+        <div role="alert" className="flex items-start gap-3 border-b border-line bg-surface px-4 py-2.5 text-[13px] text-danger sm:px-8">
+          <span className="min-w-0 flex-1">{err}</span>
+          <button type="button" className="btn btn-icon btn-sm shrink-0" onClick={() => setErr(null)} aria-label="Masquer l'erreur">
+            <CloseIcon size={14} />
+          </button>
+        </div>
+      )}
+
+      <div className="relative min-h-0 flex-1">
+        {tab === "org" && <OrgChart users={users} zones={zones} presence={presence} selected={selected} onSelect={setSelected} />}
+        {tab === "access" && (
+          <PageScroll width="max-w-[1300px]">
+            <AccessTable users={users} zones={zones} meId={props.meId} saving={saving} onToggle={toggleZone} onRole={(u, role) => patch(u, { role })} onPrompt={regenerate} />
+          </PageScroll>
+        )}
+        {tab === "zones" && (
+          <PageScroll width="max-w-[720px]">
+            <ZoneForm zones={zones} reload={reload} storeKind={props.storeKind} />
+          </PageScroll>
+        )}
+      </div>
+
+      {tab === "org" && selectedUser && (
+        <MemberDrawer
+          user={selectedUser}
+          users={users}
+          zones={zones}
+          meId={props.meId}
+          saving={saving === selectedUser.id}
+          presence={presence[selectedUser.id]}
+          now={now}
+          onClose={() => setSelected(null)}
+          onToggleZone={(z) => toggleZone(selectedUser, z)}
+          onRole={(role) => patch(selectedUser, { role })}
+          onManager={(managerId) => patch(selectedUser, { manager_id: managerId }, { manager_id: managerId })}
+          onPrompt={() => regenerate(selectedUser)}
+          onAddReport={() => setInvite({ managerId: selectedUser.id })}
+        />
+      )}
+
+      {invite && (
+        <Modal title="Inviter quelqu'un" onClose={() => setInvite(null)}>
           <InviteForm
             zones={zones}
+            users={users}
+            defaultManager={invite.managerId}
             onInvited={(name, p) => {
+              setInvite(null)
               setPrompt({ name, prompt: p })
               void reload()
             }}
           />
-          <ZoneForm zones={zones} reload={reload} storeKind={props.storeKind} />
-        </div>
-      </div>
+        </Modal>
+      )}
       {prompt && <PromptModal name={prompt.name} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
-    </PageScroll>
+    </div>
   )
 }
 
-function InviteForm({ zones, onInvited }: { zones: Zone[]; onInvited: (name: string, prompt: string) => void }) {
+/** Panneau latéral d'une personne de l'organigramme : rattachement, rôle, zones, prompt et passation. */
+function MemberDrawer(props: {
+  user: User
+  users: User[]
+  zones: Zone[]
+  meId: string
+  saving: boolean
+  presence?: Presence & { lastAt?: string }
+  now: number
+  onClose: () => void
+  onToggleZone: (zone: string) => void
+  onRole: (role: "admin" | "member") => void
+  onManager: (managerId: string | null) => void
+  onPrompt: () => void
+  onAddReport: () => void
+}) {
+  const { user: u, users, zones, presence: p, onClose } = props
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const blocked = teamOf(u.id, users)
+  const reports = users.filter((x) => x.manager_id === u.id)
+  const manager = users.find((x) => x.id === u.manager_id)
+
+  // Dialogue : focus initial sur « Fermer », Échap pour fermer, retour du focus à l'élément déclencheur.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    closeRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
+    window.addEventListener("keydown", onKey)
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      previous?.focus?.()
+    }
+  }, [onClose, u.id])
+
+  return (
+    <aside
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="member-drawer-title"
+      className="scroll-thin fixed inset-y-0 right-0 z-40 w-full max-w-md overflow-y-auto border-l border-line bg-surface p-5"
+      aria-busy={props.saving}
+    >
+      <div className="flex items-start gap-3">
+        <span className="relative grid size-12 shrink-0 place-items-center rounded-full border border-line-strong bg-bone text-[14px] font-medium">
+          {initials(u.name)}
+          <span className={`absolute bottom-0 right-0 size-3 rounded-full border border-ink ${p?.active ? "bg-phosphor" : "bg-surface"}`} aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 id="member-drawer-title" className="text-[20px] font-medium leading-tight">
+            {u.name}
+          </h2>
+          <p className="text-[13px] text-trace">{[u.title, u.email].filter(Boolean).join(", ") || "Sans poste renseigné"}</p>
+        </div>
+        <button ref={closeRef} type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Fermer">
+          <CloseIcon />
+        </button>
+      </div>
+
+      <div className="inset mt-4 px-3 py-2.5 text-[13px]">
+        {p?.lastAt ? (
+          <>
+            {p.active ? "Agent actif" : "Dernière activité"} <RelTime iso={p.lastAt} now={props.now} className="tabular-nums" />
+            {p.agents.length > 0 && <span className="text-trace">, avec {p.agents.join(" et ")}</span>}
+          </>
+        ) : (
+          <span className="text-trace">Aucune activité d&apos;agent pour l&apos;instant : le poste n&apos;est peut-être pas encore installé.</span>
+        )}
+      </div>
+
+      <div className="mt-5 space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-medium">Rattaché à</span>
+          <select className="input" value={u.manager_id ?? ""} disabled={props.saving} onChange={(e) => props.onManager(e.target.value || null)}>
+            <option value="">Personne (tête de l&apos;organigramme)</option>
+            {users
+              .filter((x) => !blocked.has(x.id))
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                  {x.title ? ` (${x.title})` : ""}
+                </option>
+              ))}
+          </select>
+          {manager && <span className="mt-1 block text-[12px] text-trace">Rend compte à {manager.name.split(" ")[0]}.</span>}
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-medium">Rôle</span>
+          <select
+            className="input"
+            value={u.role}
+            disabled={u.id === props.meId || props.saving}
+            onChange={(e) => props.onRole(e.target.value as "admin" | "member")}
+          >
+            <option value="member">Membre</option>
+            <option value="admin">Admin (voit tout)</option>
+          </select>
+          {u.id === props.meId && <span className="mt-1 block text-[12px] text-trace">Vous ne pouvez pas retirer vos propres droits admin.</span>}
+        </label>
+
+        <div>
+          <span className="mb-1.5 block text-[13px] font-medium">Zones visibles</span>
+          {u.role === "admin" ? (
+            <p className="text-[13px] text-trace">Les admins lisent toutes les zones.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Zones visibles par ${u.name}`}>
+              {zones.map((z) => {
+                const on = u.zones.includes(z.id)
+                return (
+                  <button
+                    type="button"
+                    key={z.id}
+                    className={`chip ${on ? "chip-on" : ""}`}
+                    aria-pressed={on}
+                    disabled={props.saving}
+                    onClick={() => props.onToggleZone(z.id)}
+                  >
+                    <Dot color={zoneColor(z.color, z.position)} />
+                    {z.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <p className="mt-1.5 text-[12px] text-trace">La personne et ses agents (MCP) ne lisent que ces zones ; tout le monde nourrit le cerveau.</p>
+        </div>
+
+        {reports.length > 0 && (
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium">Équipe directe</span>
+            <ul className="flex flex-wrap gap-1.5">
+              {reports.map((r) => (
+                <li key={r.id} className="chip">
+                  {r.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 border-t border-line pt-4">
+          <button type="button" className="btn" onClick={props.onAddReport}>
+            Ajouter quelqu&apos;un dans son équipe
+          </button>
+          <Link className="btn" href={`/people/${u.id}`}>
+            Passation
+          </Link>
+          <button type="button" className="btn" onClick={props.onPrompt} disabled={props.saving}>
+            Nouveau prompt
+          </button>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+function AccessTable(props: {
+  users: User[]
+  zones: Zone[]
+  meId: string
+  saving: string | null
+  onToggle: (u: User, zone: string) => void
+  onRole: (u: User, role: "admin" | "member") => void
+  onPrompt: (u: User) => void
+}) {
+  const { users, zones, saving } = props
+  return (
+    <section className="panel p-4 sm:p-5">
+      <h2 className="panel-title">Qui voit quelles zones</h2>
+      <p className="mt-1 max-w-3xl text-[13px] text-trace">
+        Un membre, et ses agents via le MCP, ne lit que les zones cochées. Tout le monde nourrit le cerveau ; seule la lecture est restreinte. Les admins voient tout.
+      </p>
+      <div className="scroll-thin mt-4 overflow-x-auto">
+        <table className="w-full min-w-[760px] text-[13px]">
+          <thead>
+            <tr className="text-left text-[12px] text-trace">
+              <th scope="col" className="py-2 pr-3 font-medium">
+                Membre
+              </th>
+              {zones.map((z) => (
+                <th key={z.id} scope="col" className="px-2 py-2 text-center font-medium text-ink">
+                  <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
+                </th>
+              ))}
+              <th scope="col" className="px-2 py-2 font-medium">
+                Rôle
+              </th>
+              <th scope="col" className="px-2 py-2">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-t border-line">
+                <td className="py-2.5 pr-3">
+                  <div className="font-medium">{u.name}</div>
+                  <div className="text-[12px] text-trace">{u.title ?? u.email ?? ""}</div>
+                </td>
+                {zones.map((z) => {
+                  const on = u.role === "admin" || u.zones.includes(z.id)
+                  return (
+                    <td key={z.id} className="px-2 py-2.5 text-center">
+                      <input
+                        type="checkbox"
+                        className="size-4"
+                        checked={on}
+                        disabled={u.role === "admin" || saving === u.id}
+                        onChange={() => props.onToggle(u, z.id)}
+                        aria-label={`${u.name} : accès à ${z.name}`}
+                      />
+                    </td>
+                  )
+                })}
+                <td className="px-2 py-2.5">
+                  <select
+                    className="input input-sm"
+                    aria-label={`Rôle de ${u.name}`}
+                    value={u.role}
+                    disabled={u.id === props.meId || saving === u.id}
+                    onChange={(e) => props.onRole(u, e.target.value as "admin" | "member")}
+                  >
+                    <option value="member">Membre</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </td>
+                <td className="whitespace-nowrap px-2 py-2.5 text-right">
+                  <div className="inline-flex gap-1.5">
+                    <Link className="btn btn-sm" href={`/people/${u.id}`}>
+                      Passation
+                    </Link>
+                    <button type="button" className="btn btn-sm" onClick={() => props.onPrompt(u)} disabled={saving === u.id}>
+                      Nouveau prompt
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+/** Fenêtre modale simple : Échap ou clic à l'extérieur pour fermer. */
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/20 p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={title} className="w-full max-w-xl" onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function InviteForm({
+  zones,
+  users,
+  defaultManager,
+  onInvited,
+}: {
+  zones: Zone[]
+  users: User[]
+  defaultManager: string | null
+  onInvited: (name: string, prompt: string) => void
+}) {
   const [name, setName] = useState("")
+  const [manager, setManager] = useState(defaultManager ?? "")
   const [email, setEmail] = useState("")
   const [title, setTitle] = useState("")
   const [role, setRole] = useState<"member" | "admin">("member")
@@ -193,7 +491,7 @@ function InviteForm({ zones, onInvited }: { zones: Zone[]; onInvited: (name: str
     setBusy(true)
     setErr(null)
     try {
-      const r = await api<{ prompt: string }>("/api/admin/users", { method: "POST", json: { name, email, title, role, zones: selected } })
+      const r = await api<{ prompt: string }>("/api/admin/users", { method: "POST", json: { name, email, title, role, zones: selected, manager_id: manager || null } })
       onInvited(name, r.prompt)
       setName("")
       setEmail("")
@@ -217,6 +515,15 @@ function InviteForm({ zones, onInvited }: { zones: Zone[]; onInvited: (name: str
         <select className="input" aria-label="Rôle" value={role} onChange={(e) => setRole(e.target.value as "member" | "admin")}>
           <option value="member">Membre</option>
           <option value="admin">Admin (voit tout)</option>
+        </select>
+        <select className="input sm:col-span-2" aria-label="Rattaché à" value={manager} onChange={(e) => setManager(e.target.value)}>
+          <option value="">Rattaché à : personne (tête de l&apos;organigramme)</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              Rattaché à : {u.name}
+              {u.title ? ` (${u.title})` : ""}
+            </option>
+          ))}
         </select>
       </div>
       {role === "member" && (

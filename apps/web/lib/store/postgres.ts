@@ -38,6 +38,7 @@ function toProfile(r: Row): Profile {
     email: r.email ?? undefined,
     title: r.title ?? undefined,
     role: r.role,
+    manager_id: r.manager_id ?? null,
     created_at: iso(r.created_at),
   }
 }
@@ -222,8 +223,8 @@ export class PostgresStore implements BrainStore {
     return rows.map(toProfile)
   }
   async createProfile(p: NewProfile) {
-    const [r] = await this.sql`insert into profiles (org_id, name, email, title, role, token_hash)
-      values (${await this.orgId()}, ${p.name}, ${p.email ?? null}, ${p.title ?? null}, ${p.role}, ${p.token_hash}) returning *`
+    const [r] = await this.sql`insert into profiles (org_id, name, email, title, role, manager_id, token_hash)
+      values (${await this.orgId()}, ${p.name}, ${p.email ?? null}, ${p.title ?? null}, ${p.role}, ${p.manager_id ?? null}, ${p.token_hash}) returning *`
     return toProfile(r)
   }
   async updateProfile(id: string, patch: ProfilePatch) {
@@ -232,7 +233,8 @@ export class PostgresStore implements BrainStore {
     const c = current[0]
     const [r] = await this.sql`update profiles set
         name = ${patch.name ?? c.name}, email = ${patch.email ?? c.email}, title = ${patch.title ?? c.title},
-        role = ${patch.role ?? c.role}, token_hash = ${patch.token_hash ?? c.token_hash}
+        role = ${patch.role ?? c.role}, token_hash = ${patch.token_hash ?? c.token_hash},
+        manager_id = ${patch.manager_id === undefined ? c.manager_id : patch.manager_id}
       where id = ${id} returning *`
     return toProfile(r)
   }
