@@ -15,14 +15,22 @@ import {
   type Profile,
   type ScoredItem,
   type Skill,
+  type SyncReport,
+  type SyncReportRow,
   type Task,
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, JoinRequest, JoinStatus, NewEvent, NewItem, NewJoinRequest, NewProfile, NewSkill, NewTask, NewTenantOrg, ProfilePatch, ZoneStat, AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
+/** Une connaissance en fichier porte aussi son vecteur sémantique (jamais renvoyé aux appelants). */
+type StoredItem = KnowledgeItem & { embedding?: number[]; embedding_model?: string }
+
+function publicItem({ embedding: _e, embedding_model: _m, ...i }: StoredItem): KnowledgeItem {
+  return i
+}
 type StoredJoinRequest = JoinRequest & { token_hash: string }
 
 type Data = {
@@ -31,7 +39,7 @@ type Data = {
   profiles: StoredProfile[]
   zones: Zone[]
   zone_access: ZoneAccess[]
-  items: KnowledgeItem[]
+  items: StoredItem[]
   events: AgentEvent[]
   tasks: Task[]
   automations: AutomationSuggestion[]
@@ -43,10 +51,33 @@ type Data = {
   join_code?: string
   join_requests?: StoredJoinRequest[]
   settings?: Record<string, string>
+  /** Comptes rendus de synchro des postes (supervision), les plus récents à la fin. */
+  sync_reports?: SyncReportRow[]
 }
 
 const MAX_EVENTS = 20000
 const ORG_ID_RE = /^[0-9a-f-]{36}$/i
+
+/**
+ * Abonnés au flux temps réel, par entreprise, partagés par globalThis : en `next dev`, deux copies de ce module (et deux
+ * instances du stockage) peuvent coexister ; l'insertion de l'une doit réveiller les flux ouverts par l'autre.
+ */
+const listeners = ((globalThis as unknown as { __brainFileListeners?: Map<string, Set<() => void>> }).__brainFileListeners ??= new Map())
+
+function notifyOrg(orgId: string) {
+  const set = listeners.get(orgId)
+  if (!set) return
+  // Après l'écriture du fichier, hors de la section verrouillée : un abonné qui relit tout de suite voit les événements.
+  queueMicrotask(() => {
+    for (const fn of [...set]) {
+      try {
+        fn()
+      } catch (err) {
+        console.error("[store] abonné du flux :", err)
+      }
+    }
+  })
+}
 const LOCK_STALE_MS = 15_000
 const LOCK_WAIT_MS = 10_000
 
@@ -394,11 +425,63 @@ export class FileStore implements BrainStore {
   async insertItems(items: NewItem[]) {
     return this.mutate((d) =>
       items.map((i) => {
-        const item: KnowledgeItem = { ...i, id: randomUUID(), org_id: d.org.id, created_at: i.created_at ?? new Date().toISOString() }
+        const item: StoredItem = { ...i, id: randomUUID(), org_id: d.org.id, created_at: i.created_at ?? new Date().toISOString(), superseded_by: null }
         d.items.push(item)
-        return item
+        return publicItem(item)
       }),
     )
+  }
+
+  async markSuperseded(oldId: string, newId: string) {
+    this.mutate((d) => {
+      const old = d.items.find((i) => i.id === oldId)
+      if (old && d.items.some((i) => i.id === newId)) old.superseded_by = newId
+    })
+  }
+
+  async listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }) {
+    const allowed = new Set(f.zones)
+    return this.load()
+      .items.filter(
+        (i) =>
+          !i.superseded_by &&
+          (allowed.has(i.zone) || (f.authorId && i.author_id === f.authorId)) &&
+          i.entities.some((e) => e.type === f.type && normalize(e.name) === f.normName),
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, f.limit ?? 100)
+      .map(publicItem)
+  }
+
+  async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }) {
+    const allowed = new Set(f.zones)
+    return (this.load().items as StoredItem[])
+      .filter((i) => !i.superseded_by && Array.isArray(i.embedding) && (allowed.has(i.zone) || (f.authorId && i.author_id === f.authorId)))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, f.limit ?? 2000)
+      .map((i) => ({ id: i.id, embedding: i.embedding as number[] }))
+  }
+
+  async setEmbeddings(rows: { id: string; embedding: number[]; model: string }[]) {
+    if (!rows.length) return
+    this.mutate((d) => {
+      const by = new Map(rows.map((r) => [r.id, r]))
+      for (const i of d.items as StoredItem[]) {
+        const r = by.get(i.id)
+        if (r) {
+          i.embedding = r.embedding
+          i.embedding_model = r.model
+        }
+      }
+    })
+  }
+
+  async listItemsWithoutEmbedding(model: string, limit: number) {
+    return (this.load().items as StoredItem[])
+      .filter((i) => !i.superseded_by && (!Array.isArray(i.embedding) || i.embedding_model !== model))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit)
+      .map(publicItem)
   }
 
   async searchItems(query: string, zones: string[], limit: number, opts: { authorId?: string } = {}): Promise<ScoredItem[]> {
@@ -409,6 +492,7 @@ export class FileStore implements BrainStore {
     const matches = (tokens: string[], t: string) => tokens.some((x) => x === t || (t.length >= 4 && x.startsWith(t)))
     const scored: ScoredItem[] = []
     for (const item of this.load().items) {
+      if (item.superseded_by) continue
       if (!allowed.has(item.zone) && !(opts.authorId && item.author_id === opts.authorId)) continue
       const title = tokenize(item.title)
       const body = tokenize(item.body)
@@ -423,22 +507,28 @@ export class FileStore implements BrainStore {
       if (score === 0) continue
       const ageDays = (now - new Date(item.created_at).getTime()) / 86400_000
       score = score * (hits / q.length) * (1 + 0.15 * Math.max(0, 1 - ageDays / 30))
-      scored.push({ ...item, score: Math.round(score * 100) / 100 })
+      scored.push({ ...publicItem(item), score: Math.round(score * 100) / 100 })
     }
     return scored.sort((a, b) => b.score - a.score).slice(0, limit)
   }
 
-  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string }) {
+  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }) {
     const zones = f.zones ? new Set(f.zones) : null
     return this.load()
       .items.filter(
-        (i) => (!zones || zones.has(i.zone)) && (!f.authorId || i.author_id === f.authorId) && (!f.sinceIso || i.created_at >= f.sinceIso),
+        (i) =>
+          (!zones || zones.has(i.zone)) &&
+          (!f.authorId || i.author_id === f.authorId) &&
+          (!f.sinceIso || i.created_at >= f.sinceIso) &&
+          (!f.excludeSuperseded || !i.superseded_by),
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, f.limit ?? 1000)
+      .map(publicItem)
   }
   async getItem(id: string) {
-    return this.load().items.find((i) => i.id === id) ?? null
+    const i = this.load().items.find((x) => x.id === id)
+    return i ? publicItem(i) : null
   }
   async deleteItem(id: string) {
     return this.mutate((d) => {
@@ -488,13 +578,57 @@ export class FileStore implements BrainStore {
   }
 
   async insertEvents(events: NewEvent[]) {
-    return this.mutate((d) =>
+    const out = this.mutate((d) =>
       events.map((e) => {
         const ev: AgentEvent = { ...e, id: ++d.seq.event, org_id: d.org.id }
         d.events.push(ev)
         return ev
       }),
     )
+    if (out.length) notifyOrg(out[0].org_id)
+    return out
+  }
+
+  onEvents(orgId: string, listener: () => void) {
+    let set = listeners.get(orgId)
+    if (!set) listeners.set(orgId, (set = new Set()))
+    set.add(listener)
+    return () => {
+      set.delete(listener)
+      if (set.size === 0) listeners.delete(orgId)
+    }
+  }
+
+  eventNotifyMode() {
+    return "local" as const
+  }
+
+  async saveSyncReport(userId: string, report: SyncReport) {
+    return this.mutate((d) => {
+      const row: SyncReportRow = { ...report, id: randomUUID(), org_id: d.org.id, user_id: userId }
+      const all = (d.sync_reports ?? []).concat(row)
+      // Historique borné par poste.
+      const mine = all.filter((r) => r.user_id === userId)
+      const drop = new Set(mine.slice(0, Math.max(0, mine.length - SYNC_REPORTS_KEEP)).map((r) => r.id))
+      d.sync_reports = drop.size ? all.filter((r) => !drop.has(r.id)) : all
+      return row
+    })
+  }
+
+  async latestSyncReports() {
+    const latest = new Map<string, SyncReportRow>()
+    for (const r of this.load().sync_reports ?? []) {
+      const prev = latest.get(r.user_id)
+      if (!prev || r.at > prev.at) latest.set(r.user_id, r)
+    }
+    return [...latest.values()].sort((a, b) => b.at.localeCompare(a.at))
+  }
+
+  async listSyncReports(f: { userId?: string; limit?: number }) {
+    return (this.load().sync_reports ?? [])
+      .filter((r) => !f.userId || r.user_id === f.userId)
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, f.limit ?? 100)
   }
 
   async listEvents(f: { afterId?: number; sinceIso?: string; limit?: number; type?: string; userId?: string }) {
@@ -526,6 +660,36 @@ export class FileStore implements BrainStore {
       }),
     )
   }
+  async upsertExternalTasks(source: string, tasks: NewTask[]) {
+    return this.mutate((d) => {
+      const now = new Date().toISOString()
+      const seen = new Set<string>()
+      const out: Task[] = []
+      for (const t of tasks) {
+        if (!t.external_id) continue
+        seen.add(t.external_id)
+        const prev = d.tasks.find((x) => x.external_source === source && x.external_id === t.external_id)
+        if (prev) {
+          const changed = prev.title !== t.title || prev.status !== t.status || prev.zone !== t.zone || prev.external_url !== t.external_url
+          if (changed) Object.assign(prev, { title: t.title, status: t.status, zone: t.zone, external_url: t.external_url, updated_at: now })
+          out.push(prev)
+        } else {
+          const task: Task = { ...t, external_source: source, id: randomUUID(), created_at: t.created_at ?? now, updated_at: now }
+          d.tasks.push(task)
+          out.push(task)
+        }
+      }
+      for (const x of d.tasks) {
+        if (x.external_source === source && x.external_id && !seen.has(x.external_id) && x.status === "open") {
+          x.status = "done"
+          x.updated_at = now
+          out.push(x)
+        }
+      }
+      return out
+    })
+  }
+
   async updateTask(id: string, patch: { status?: Task["status"]; assignee_id?: string }) {
     return this.mutate((d) => {
       const t = d.tasks.find((x) => x.id === id)

@@ -9,15 +9,17 @@ import { createHash, createHmac } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
-import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput } from "@brain/core"
+import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, posteHealth, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput, type Task } from "@brain/core"
 import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
 import { getAccess, redactEvent } from "../lib/access"
 import {
   createEventPoller,
+  getEntityContext,
   getPersonContext,
   getState,
+  hybridSearch,
   ingestItems,
   itemAuthorOrAdmin,
   queryBrain,
@@ -908,6 +910,84 @@ async function main() {
   }
 
   for (const id of created) await store.deleteItem(id)
+  console.log("\n— Supervision : comptes rendus de synchro et état des postes")
+  const failedReport = await store.saveSyncReport(hugo.profile.id, {
+    at: new Date().toISOString(),
+    ok: false,
+    duration_ms: 1200,
+    items_sent: 0,
+    duplicates: 0,
+    conversations: { claude: 2 },
+    distiller: "claude-cli",
+    failed: 1,
+    deferred: 0,
+    error: `Smoke ${run} : jeton expiré`,
+  })
+  assert((await store.latestSyncReports()).find((r) => r.user_id === hugo.profile.id)?.id === failedReport.id, "le dernier compte rendu de chaque poste est celui qui vient d'arriver")
+  assert(posteHealth({ report: failedReport, lastEventAt: null, now: Date.now() }).status === "error", "un poste dont la synchro a échoué est « en erreur »")
+  const okReport = await store.saveSyncReport(hugo.profile.id, { ...failedReport, ok: true, error: undefined, items_sent: 3, at: new Date().toISOString() })
+  assert(posteHealth({ report: okReport, lastEventAt: null, now: Date.now() }).status === "ok", "puis « à jour » après une synchro réussie")
+  assert((await store.listSyncReports({ userId: hugo.profile.id, limit: 10 }))[0]?.id === okReport.id, "historique du poste, le plus récent d'abord")
+
+  console.log("\n— Flux temps réel : le stockage prévient à l'insertion")
+  let notified = 0
+  const unsubscribe = store.onEvents(hugo.profile.org_id, () => notified++)
+  await sleep(store.kind === "postgres" ? 500 : 0)
+  await recordEvents(hugo, [{ agent: "mcp", type: "query", zones: ["dev"], summary: `Smoke ${run} notification` }])
+  for (let i = 0; i < 30 && notified === 0; i++) await sleep(50)
+  unsubscribe()
+  if (store.eventNotifyMode() === "local") assert(notified >= 1, "stockage fichier : l'abonné du flux est réveillé")
+  else console.log(`· Postgres : mode ${store.eventNotifyMode()}, ${notified} notification(s) reçue(s) (la relecture de sécurité couvre le reste)`)
+
+  console.log("\n— Qualité : décision revue, quasi-doublon écarté, synonymes, entités")
+  const qtag = `Smoke ${run} qualité`
+  const decision = (body: string, at: number): KnowledgeItemInput => ({
+    zone: "dev",
+    kind: "decision",
+    title: `${qtag} : les webhooks Stripe passent par une file d'attente`,
+    body,
+    entities: [{ type: "tool", name: "Redis" }],
+    source: { app: "Terminal", tool: "claude-code", at: new Date(at).toISOString() },
+    confidence: 0.8,
+  })
+  // Le tag du passage figure aussi dans le corps : un smoke rejoué sur le même stockage ne retrouve pas les décisions du
+  // passage précédent comme quasi-doublons.
+  const firstDecision = await ingestItems(hugo, [decision(`On met les webhooks Stripe dans une file Redis pour absorber les pics de commandes (passage ${run}).`, Date.now() - 60_000)])
+  assert(firstDecision.inserted === 1, "première version de la décision insérée")
+  const near = await ingestItems(hugo, [decision(`On met les webhooks Stripe dans une file Redis pour absorber les pics de commandes (passage ${run}) !`, Date.now() - 30_000)])
+  assert(near.inserted === 0 && near.skipped === 1, "un quasi-doublon (même contenu à la ponctuation près) est écarté")
+  const revised = await ingestItems(hugo, [decision(`Finalement pas de file : les webhooks Stripe sont traités en direct, Redis retiré de l'infra après les tests de charge (passage ${run}).`, Date.now() + 5_000)])
+  assert(revised.inserted === 1 && revised.replaced === 1, "une décision revue (même sujet, contenu différent) remplace l'ancienne")
+  assert((await store.getItem(firstDecision.ids[0]))?.superseded_by === revised.ids[0], "l'ancienne version porte superseded_by")
+  const current = await hybridSearch(`${qtag} file d'attente webhooks`, ["dev"], 5)
+  assert(current.some((i) => i.id === revised.ids[0]) && !current.some((i) => i.id === firstDecision.ids[0]), "la recherche ne propose que la version à jour")
+  assert(!(await store.listItems({ zones: ["dev"], limit: 50, excludeSuperseded: true })).some((i) => i.id === firstDecision.ids[0]), "les listes du dashboard l'écartent aussi")
+  assert((await hybridSearch("how do we ship a release", allZones, 5)).some((i) => /d[ée]ployer/i.test(i.title)), "synonymes FR/EN : « ship a release » trouve « Déployer »")
+  const redis = await getEntityContext(hugo, "tool", "redis")
+  assert(redis !== null && redis.items.some((i) => i.id === revised.ids[0]) && !redis.items.some((i) => i.id === firstDecision.ids[0]), "la page d'une entité ne cite que les connaissances à jour")
+  assert(redis !== null && redis.name === "Redis", "le nom affiché garde sa casse d'origine")
+  // Nettoyage : un passage suivant sur le même stockage ne doit pas retrouver ces décisions comme quasi-doublons.
+  for (const id of [firstDecision.ids[0], revised.ids[0]]) assert(await store.deleteItem(id), "décision de test supprimée")
+
+  console.log("\n— Connecteurs : tâches externes insérées, mises à jour, fermées")
+  // Ne compter que les tâches de ce passage : la boucle de fermeture renvoie aussi les tâches ouvertes d'un passage précédent.
+  const mine = (ts: Task[]) => ts.filter((t) => t.external_id?.startsWith(`${run}-`))
+  const ext1 = mine(
+    await store.upsertExternalTasks("linear", [
+      { title: `${qtag} FOU-1`, zone: "dev", status: "open", external_id: `${run}-1`, external_url: "https://linear.app/x/1" },
+      { title: `${qtag} FOU-2`, zone: "dev", status: "open", external_id: `${run}-2` },
+    ]),
+  )
+  assert(ext1.length === 2 && ext1.every((t) => t.external_source === "linear"), "deux tâches importées avec leur source")
+  const ext2 = await store.upsertExternalTasks("linear", [{ title: `${qtag} FOU-1 renommée`, zone: "dev", status: "open", external_id: `${run}-1`, external_url: "https://linear.app/x/1" }])
+  const ext1a = ext2.find((t) => t.external_id === `${run}-1`)
+  const ext2a = ext2.find((t) => t.external_id === `${run}-2`)
+  assert(ext1a?.title.endsWith("renommée") && ext1a.id === ext1[0].id, "la même tâche est mise à jour, sans doublon")
+  assert(ext2a?.status === "done", "une tâche disparue chez l'outil passe faite ici")
+  assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.id === ext1a!.id && t.external_url === "https://linear.app/x/1"), "le lien vers l'outil est conservé")
+  // Nettoyage : rien d'ouvert de ce passage ne reste pour le suivant.
+  assert((await store.updateTask(ext1a!.id, { status: "done" }))?.status === "done", "tâche de test fermée")
+
   console.log("\nTout est vert.")
   if ("end" in store) await (store as unknown as { end: () => Promise<void> }).end()
 }

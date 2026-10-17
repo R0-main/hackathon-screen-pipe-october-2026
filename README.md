@@ -56,6 +56,26 @@ demo/                 Script de démo
 | **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
 | **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
 
+## Supervision, connecteurs, langues
+
+> Détail et choix techniques : [docs/AMELIORATIONS-V2.md](docs/AMELIORATIONS-V2.md).
+
+- **Supervision** (`/supervision`, admins) : l'état de chaque poste (dernière synchro, retard, erreur) d'après les comptes
+  rendus que `brain sync` envoie à la fin de chaque passage (compteurs seulement, jamais de contenu), les incidents du
+  serveur, et une sonde `GET /api/health` pour un superviseur externe. `BRAIN_ALERT_WEBHOOK` reçoit une alerte (JSON
+  `{ text }`, compatible Slack) pour une route en erreur, une synchro en échec ou un connecteur en panne.
+- **Connecteurs** (`/connecteurs`, admins) : Notion (pages → connaissances), Linear et Todoist (issues et tâches →
+  tâches, fermées quand elles disparaissent chez l'outil), calendrier ICS (réunions → connaissances). Synchro à la
+  demande et toutes les heures en arrière-plan. Le jeton reste côté serveur.
+- **Langues** : l'interface existe en français et en anglais (sélecteur dans la barre latérale et sur la connexion, cookie
+  `brain_lang`, sinon la langue du navigateur). Les pages les plus anciennes restent en français pour l'instant.
+- **Flux temps réel** : le stockage prévient le flux SSE dès qu'un événement est inséré (émetteur local, ou
+  `LISTEN/NOTIFY` en Postgres) ; la relecture périodique ne sert plus que de filet de sécurité.
+- **Qualité du cerveau** : synonymes FR/EN dans la recherche, recherche sémantique optionnelle (`VOYAGE_API_KEY` ou un
+  point de terminaison compatible OpenAI, Ollama compris : `npm run embed` pour l'existant), remplacement automatique
+  d'une décision ou procédure revue (l'ancienne sort des recherches), pages Entités (`/entites`), et `npm run eval`
+  qui mesure la recherche sur la démo Fournil.
+
 ## API du cerveau
 
 Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SHA-256 côté serveur) pour les agents ; cookie de session signé pour le dashboard.
@@ -77,6 +97,9 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | POST | `/api/join`, `/api/join/status` | Public : demande pour rejoindre avec le code du message d'équipe (empreinte du jeton du poste), puis son état (pour qui détient le jeton). |
 | GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin : message d'équipe et demandes en attente, changer le code ; accepter (compte créé tel que réglé) ou refuser. |
 | GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
+| POST | `/api/sync/report` | Compte rendu d'une synchro du poste (compteurs, erreur masquée) : page Supervision. |
+| GET | `/api/admin/monitoring` | Admin : état des postes, incidents du serveur, instance. `GET /api/health` : sonde publique (200 / 503). |
+| GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin : connecteurs Notion, Linear, Todoist, calendrier ICS (réglages sans le jeton, synchro à la demande). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
 
 ## Créer son entreprise à partir de zéro
@@ -184,4 +207,5 @@ Variables : voir [apps/web/.env.example](apps/web/.env.example).
 npm test                 # tests unitaires (core + client)
 npm run typecheck
 npm run smoke            # bout en bout sur le stockage courant (fichier, ou Postgres si DATABASE_URL)
+npm run eval             # qualité de la recherche sur la démo Fournil (après npm run seed)
 ```

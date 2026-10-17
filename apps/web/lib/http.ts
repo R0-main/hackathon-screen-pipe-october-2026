@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { z } from "zod"
 import { viewerFromRequest, type Viewer } from "./auth"
+import { recordIncident, routeOf } from "./monitoring"
 import { isStoreSetupError, runInOrg } from "./store"
 
 export function json(data: unknown, init?: number | ResponseInit) {
@@ -23,18 +24,23 @@ export function withViewer<C = unknown>(handler: Handler<C>, opts: { admin?: boo
       // Tout ce que fait la route vise l'entreprise du compte connecté (getStore()).
       return await runInOrg(viewer.real.org_id, () => handler(req, viewer, ctx))
     } catch (err) {
-      return internalError(err)
+      return internalError(err, routeOf(req))
     }
   }
 }
 
-/** Erreur inattendue d'une route : 503 avec un message clair si le stockage n'est pas prêt (migration…), sinon 500. */
-export function internalError(err: unknown): Response {
+/**
+ * Erreur inattendue d'une route : 503 avec un message clair si le stockage n'est pas prêt (migration…), sinon 500.
+ * `where` : la route, pour la page Supervision (incidents) et l'alerte webhook.
+ */
+export function internalError(err: unknown, where = "api"): Response {
   if (isStoreSetupError(err)) {
     console.error("[api]", err.message)
+    recordIncident(where, err)
     return error(503, err.message)
   }
   console.error("[api]", err)
+  recordIncident(where, err)
   return error(500, "Erreur interne du cerveau.")
 }
 
