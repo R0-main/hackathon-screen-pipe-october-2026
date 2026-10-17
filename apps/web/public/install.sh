@@ -1,15 +1,18 @@
 #!/bin/sh
 # NOS Brainer : branche ce poste au cerveau d'entreprise en une commande.
 #
-#   sh install.sh --url https://cerveau.example.com --token cb_…
+#   sh install.sh --url https://cerveau.example.com --token cb_…        (prompt personnel, jeton remis par un admin)
+#   sh install.sh --url https://cerveau.example.com --join cj_… --name …  (message d'équipe : demande à rejoindre)
 #
 # 1. Trouve Node.js ≥ 20. S'il manque (macOS, Linux), installe une copie privée de Node dans ~/.company-brain/node,
 #    sans droits administrateur, en vérifiant son empreinte SHA-256.
 # 2. Télécharge le client du cerveau (<url>/brain.mjs) et écrit le raccourci ~/.company-brain/brain.
 # 3. Lance `brain setup` avec les mêmes options : Screenpipe, autorisations macOS, MCP, hooks, synchro, néon.
+#    Avec --join, lance `brain join` : la demande attend qu'un admin l'accepte, puis enchaîne sur setup.
 #
 # Le code de sortie est celui de setup : 0 = tout est branché, 3 = autorisation macOS en attente (relancer
 # `~/.company-brain/brain setup` une fois cochée). 2 = mauvais appel, 4 = Node.js manquant sur un système non géré.
+# Avec --join : 5 = demande en attente d'un admin (relancer `~/.company-brain/brain join`), 6 = demande refusée.
 # Pourquoi un script et un CLI plutôt que des instructions à Claude : docs/CLI.md.
 
 set -eu
@@ -27,13 +30,17 @@ fail() {
 
 # --url (ou --url=…) : l'adresse du cerveau, d'où vient brain.mjs. Toutes les options passent ensuite à setup.
 url=""
+command="setup"
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--url" ]; then url="$arg"; fi
-  case "$arg" in --url=*) url="${arg#--url=}" ;; esac
+  case "$arg" in
+    --url=*) url="${arg#--url=}" ;;
+    --join | --join=*) command="join" ;;
+  esac
   prev="$arg"
 done
-[ -n "$url" ] || fail 2 "Usage : sh install.sh --url <adresse du cerveau> --token <jeton personnel>"
+[ -n "$url" ] || fail 2 "Usage : sh install.sh --url <adresse du cerveau> --token <jeton personnel>  (ou --join <code d'équipe>)"
 url="${url%/}"
 command -v curl >/dev/null 2>&1 || fail 4 "curl est introuvable : installe-le, puis relance ce script."
 
@@ -110,4 +117,4 @@ EOF
 chmod +x "$HOME_DIR/brain"
 
 say "Client du cerveau installé : $HOME_DIR/brain (Node.js $("$NODE" -v))."
-exec "$NODE" "$HOME_DIR/brain.mjs" setup "$@"
+exec "$NODE" "$HOME_DIR/brain.mjs" "$command" "$@"

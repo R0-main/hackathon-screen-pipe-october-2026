@@ -18,9 +18,11 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, NewTenantOrg, ProfilePatch, ZoneStat } from "./types"
+import type { BrainStore, EntityStat, JoinRequest, JoinStatus, NewEvent, NewItem, NewJoinRequest, NewProfile, NewTask, NewTenantOrg, ProfilePatch, ZoneStat } from "./types"
+import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
+type StoredJoinRequest = JoinRequest & { token_hash: string }
 
 type Data = {
   version: 1
@@ -34,6 +36,9 @@ type Data = {
   automations: AutomationSuggestion[]
   status: CompanyStatus | null
   seq: { event: number }
+  /** Ajoutés avec le message d'équipe : absents des fichiers plus anciens. */
+  join_code?: string
+  join_requests?: StoredJoinRequest[]
 }
 
 const MAX_EVENTS = 20000
@@ -239,6 +244,76 @@ export class FileStore implements BrainStore {
       if (t.load().profiles.some(match)) return id
     }
     return null
+  }
+
+  async findOrgByJoinCode(code: string) {
+    const root = this.load()
+    if (root.join_code === code) return root.org.id
+    for (const id of this.tenantIds()) if ((this.forOrg(id) as FileStore).load().join_code === code) return id
+    return null
+  }
+
+  async findJoinRequestOrg(id: string) {
+    const has = (d: Data) => (d.join_requests ?? []).some((r) => r.id === id)
+    const root = this.load()
+    if (has(root)) return root.org.id
+    for (const org of this.tenantIds()) if (has((this.forOrg(org) as FileStore).load())) return org
+    return null
+  }
+
+  async getJoinCode() {
+    const current = this.load().join_code
+    if (current) return current
+    return this.mutate((d) => (d.join_code ??= newJoinCode()))
+  }
+
+  async rotateJoinCode() {
+    return this.mutate((d) => (d.join_code = newJoinCode()))
+  }
+
+  async createJoinRequest(r: NewJoinRequest) {
+    return this.mutate((d) => {
+      const req: StoredJoinRequest = {
+        id: randomUUID(),
+        org_id: d.org.id,
+        name: r.name ?? null,
+        title: r.title ?? null,
+        email: r.email ?? null,
+        hostname: r.hostname ?? null,
+        token_hash: r.token_hash,
+        status: "pending",
+        profile_id: null,
+        created_at: new Date().toISOString(),
+        decided_at: null,
+      }
+      ;(d.join_requests ??= []).push(req)
+      const { token_hash: _t, ...out } = req
+      return out
+    })
+  }
+
+  async listJoinRequests(f: { status?: JoinStatus; limit?: number } = {}) {
+    return (this.load().join_requests ?? [])
+      .filter((r) => !f.status || r.status === f.status)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, f.limit ?? 100)
+      .map(({ token_hash: _t, ...r }) => r)
+  }
+
+  async getJoinRequest(id: string) {
+    return (this.load().join_requests ?? []).find((r) => r.id === id) ?? null
+  }
+
+  async decideJoinRequest(id: string, dec: { status: Exclude<JoinStatus, "pending">; profile_id?: string }) {
+    return this.mutate((d) => {
+      const r = (d.join_requests ?? []).find((x) => x.id === id && x.status === "pending")
+      if (!r) return null
+      r.status = dec.status
+      r.profile_id = dec.profile_id ?? null
+      r.decided_at = new Date().toISOString()
+      const { token_hash: _t, ...out } = r
+      return out
+    })
   }
 
   async getOrg() {

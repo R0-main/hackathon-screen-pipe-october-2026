@@ -8,14 +8,16 @@ import { useBrainLive } from "./BrainLive"
 import { OrgChart, type Presence } from "./OrgChart"
 import { AGENT_LABEL, api, errorMessage, initials } from "./format"
 import { RelTime } from "./RelTime"
+import { TeamJoin, usePendingJoins } from "./TeamJoin"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 
 type User = Profile & { zones: string[] }
-type Tab = "org" | "access" | "zones"
+type Tab = "org" | "access" | "requests" | "zones"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "org", label: "Organigramme" },
   { id: "access", label: "Accès par zone" },
+  { id: "requests", label: "Demandes" },
   { id: "zones", label: "Zones" },
 ]
 
@@ -40,6 +42,7 @@ function teamOf(id: string, users: User[]): Set<string> {
 export function AdminPanel(props: { orgName: string; meId: string; initialUsers: User[]; initialZones: Zone[]; storeKind: string }) {
   const { feed, now } = useBrainLive()
   const [tab, setTab] = useState<Tab>("org")
+  const pendingJoins = usePendingJoins(true, 8000)
   const [users, setUsers] = useState(props.initialUsers)
   const [zones, setZones] = useState(props.initialZones)
   const [selected, setSelected] = useState<string | null>(null)
@@ -137,6 +140,7 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
               }`}
             >
               {t.label}
+              {t.id === "requests" && pendingJoins > 0 && <span className="ml-1.5 tabular-nums text-trace">{pendingJoins}</span>}
             </button>
           ))}
         </nav>
@@ -159,6 +163,11 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
         {tab === "access" && (
           <PageScroll width="max-w-[1300px]">
             <AccessTable users={users} zones={zones} meId={props.meId} saving={saving} onToggle={toggleZone} onRole={(u, role) => patch(u, { role })} onPrompt={regenerate} />
+          </PageScroll>
+        )}
+        {tab === "requests" && (
+          <PageScroll width="max-w-[860px]">
+            <TeamJoin zones={zones} people={users.map((u) => ({ id: u.id, name: u.name }))} defaultManager={defaultManager} onAccepted={() => void reload()} />
           </PageScroll>
         )}
         {tab === "zones" && (

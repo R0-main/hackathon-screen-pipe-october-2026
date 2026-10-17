@@ -7,8 +7,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { buildInstallPrompt } from "../../web/lib/install-prompt"
-import { INSTALL_PROMPT_RE } from "../src/secrets"
+import { buildInstallPrompt, buildJoinPrompt } from "../../web/lib/install-prompt"
+import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Fournil", zones: ["compta"] }
@@ -87,6 +87,49 @@ test("install.sh : télécharge brain.mjs, écrit le raccourci, lance setup avec
     assert.ok(existsSync(join(home, "brain")), "raccourci ~/.company-brain/brain")
     const viaShortcut = spawnSync(join(home, "brain"), ["status"], { encoding: "utf8" })
     assert.equal(viaShortcut.stdout.trim(), JSON.stringify(["status"]))
+  } finally {
+    server.close()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+const JOIN = { baseUrl: "https://cerveau.example.com", code: "cj_XXXXXXXXXXXXXXXXXXXXXXXX", orgName: "Atelier Lumen" }
+const joinPrompt = buildJoinPrompt(JOIN)
+
+test("message d'équipe : une seule commande (install.sh --join), champs inconnus laissés à l'admin", () => {
+  assert.ok(joinPrompt.includes(`sh ~/.company-brain/install.sh --url ${JOIN.baseUrl} --join ${JOIN.code} --name "<prénom nom>"`))
+  assert.equal(joinPrompt.split(JOIN.code).length, 2, "le code n'apparaît qu'une fois, dans la commande")
+  assert.match(joinPrompt, /N'invente rien/)
+  assert.match(joinPrompt, /ne le transmets pas hors de l'entreprise/)
+  assert.match(joinPrompt, /Code 5 \(« EN ATTENTE D'ACCEPTATION »\)/)
+  assert.match(joinPrompt, /d'entreprise d'Atelier Lumen/, "élision")
+  assert.ok(joinPrompt.length < 2400, `message court (${joinPrompt.length} caractères)`)
+})
+
+test("message d'équipe : reconnu par brain-sync, et son code est masqué", () => {
+  assert.ok(INSTALL_PROMPT_RE.test(joinPrompt))
+  assert.ok(!maskOwnSecrets(joinPrompt).text.includes(JOIN.code))
+})
+
+test("install.sh --join : lance join (et non setup) avec les mêmes options", async () => {
+  const fake = "console.log(JSON.stringify(process.argv.slice(2))); process.exit(5)"
+  const server = createServer((req, res) => {
+    if (req.url === "/brain.mjs") res.end(fake)
+    else res.writeHead(404).end()
+  })
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const home = mkdtempSync(join(tmpdir(), "brain-install-"))
+  try {
+    const args = ["--url", url, "--join", "cj_test", "--name", "Léa Bernard"]
+    const r = await new Promise<{ status: number | null; stdout: string }>((ok) => {
+      const child = spawn("sh", [installSh, ...args], { env: { ...process.env, COMPANY_BRAIN_HOME: home } })
+      let stdout = ""
+      child.stdout.on("data", (d) => (stdout += d))
+      child.on("close", (status) => ok({ status, stdout }))
+    })
+    assert.equal(r.status, 5, "le code de join est rendu tel quel")
+    assert.ok(r.stdout.includes(JSON.stringify(["join", ...args])), r.stdout)
   } finally {
     server.close()
     rmSync(home, { recursive: true, force: true })

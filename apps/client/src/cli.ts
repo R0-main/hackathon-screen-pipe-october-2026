@@ -39,6 +39,11 @@ Commandes :
                      qu'elles sont accordées, --wait 300 s par défaut), MCP, hooks, synchro toutes les 15 min (activité à venir
                      seulement), néon, puis le cerveau s'ouvre dans le navigateur. Relançable sans paramètres.
                      Code de sortie 3 : tout est branché sauf l'autorisation d'enregistrer l'écran.
+  join --url <url> --join <code d'équipe> [--name <prénom nom>] [--title <poste>] [--email <email>] [--wait-accept <secondes>]
+                     Demande à rejoindre une entreprise (c'est ce que lance le message d'équipe) : le jeton du poste est créé
+                     ici, seule son empreinte part avec la demande. Attend qu'un admin l'accepte (--wait-accept 480 s par
+                     défaut), puis enchaîne sur setup (mêmes options). Code 5 : toujours en attente, \`join\` sans paramètres
+                     reprend la même demande. Code 6 : demande refusée.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
        [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
@@ -96,6 +101,10 @@ async function main(argv: string[]): Promise<number> {
     case "setup": {
       const { cmdSetup } = await import("./setup")
       return cmdSetup(flags)
+    }
+    case "join": {
+      const { cmdJoin } = await import("./join")
+      return cmdJoin(flags)
     }
     case "init": {
       const { cmdInit } = await import("./commands")

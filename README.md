@@ -69,6 +69,8 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET | `/api/status/input` | Admin : matière du résumé (30 derniers jours) pour `refresh-status`. |
 | GET/POST/PATCH | `/api/automations…` | Suggestions (heuristique + workflows Screenpipe), validation par un admin. |
 | POST | `/api/orgs` | Public (sauf `BRAIN_SIGNUP=0`) : crée une entreprise et son admin, ouvre la session, renvoie son prompt d'installation. |
+| POST | `/api/join`, `/api/join/status` | Public : demande pour rejoindre avec le code du message d'équipe (empreinte du jeton du poste), puis son état (pour qui détient le jeton). |
+| GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin : message d'équipe et demandes en attente, changer le code ; accepter (compte créé tel que réglé) ou refuser. |
 | GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
 
@@ -79,8 +81,16 @@ vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en �
 
 1. **Votre poste** : copiez le prompt (ou « Ouvrir dans Claude Code ») et collez-le dans Claude Code. Il installe tout
    comme la démo de la page d'accueil ; la page passe à « Votre poste est connecté » dès le premier signe de son agent.
-2. **Votre équipe** : un nom, les zones qu'elle lit, et son prompt (avec son propre jeton) est copié. Envoyez-le-lui :
-   elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté sur la page.
+2. **Votre équipe**, de deux façons (sur cette page, puis dans Équipe et accès) :
+   - **un message par personne** : un nom, les zones qu'elle lit, et son prompt (avec son propre jeton) est copié.
+     Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté ;
+   - **un seul message pour toute l'équipe** (onglet Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
+     collègues. Le Claude de chacun remplit la demande avec ce qu'il sait déjà (nom, poste, email ; rien d'inventé,
+     le reste reste vide), et `brain join` l'envoie puis attend. Un admin la complète (poste, rôle, zones,
+     rattachement) et l'accepte : le poste termine alors son installation tout seul. Le code ne donne accès à rien ;
+     le jeton est créé sur le poste et seule son empreinte part avec la demande. « Changer le code » invalide
+     l'ancien message. Code de sortie 5 : toujours en attente (`~/.company-brain/brain join` reprend la même
+     demande) ; 6 : refusée.
 
 Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
 Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une

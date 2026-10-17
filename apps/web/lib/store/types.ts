@@ -27,6 +27,22 @@ export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created
 /** Nouvelle entreprise créée depuis la page d'accueil (/creer) : un cerveau à part, à côté de celui de la base. */
 export type NewTenantOrg = { name: string; description: string; zones: Zone[] }
 
+export type JoinStatus = "pending" | "accepted" | "rejected"
+/** Demande pour rejoindre l'entreprise, envoyée par le message d'équipe. Les champs que le Claude du demandeur ne connaissait pas restent null. */
+export type JoinRequest = {
+  id: string
+  org_id: string
+  name: string | null
+  title: string | null
+  email: string | null
+  hostname: string | null
+  status: JoinStatus
+  profile_id: string | null
+  created_at: string
+  decided_at: string | null
+}
+export type NewJoinRequest = { name?: string; title?: string; email?: string; hostname?: string; token_hash: string }
+
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
 
@@ -44,6 +60,18 @@ export interface BrainStore {
   countTenantOrgs(): Promise<number>
   /** Organisation d'un compte, toutes entreprises confondues (connexion par jeton ou par session). */
   findUserOrg(by: { id: string } | { tokenHash: string }): Promise<string | null>
+  /** Entreprise d'un code d'équipe, ou d'une demande pour la rejoindre (stockage racine). */
+  findOrgByJoinCode(code: string): Promise<string | null>
+  findJoinRequestOrg(id: string): Promise<string | null>
+
+  /** Code du message d'équipe de cette entreprise (créé au premier appel) ; `rotateJoinCode` invalide l'ancien message. */
+  getJoinCode(): Promise<string>
+  rotateJoinCode(): Promise<string>
+  createJoinRequest(r: NewJoinRequest): Promise<JoinRequest>
+  /** Les plus récentes d'abord. */
+  listJoinRequests(f?: { status?: JoinStatus; limit?: number }): Promise<JoinRequest[]>
+  getJoinRequest(id: string): Promise<(JoinRequest & { token_hash: string }) | null>
+  decideJoinRequest(id: string, d: { status: Exclude<JoinStatus, "pending">; profile_id?: string }): Promise<JoinRequest | null>
 
   getOrg(): Promise<Org>
   updateOrg(patch: Partial<Pick<Org, "name" | "description">>): Promise<Org>

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { useEffect, useState, type ComponentType, type ReactNode } from "react"
 import { useBrainLive } from "./BrainLive"
 import { api, errorMessage, initials } from "./format"
+import { usePendingJoins } from "./TeamJoin"
 import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LogoutIcon, MenuIcon, NavBrainIcon, PulseIcon, StackIcon, TaskIcon, UsersIcon } from "./ui"
 
 type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number }
@@ -58,6 +59,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const isAdmin = state.real.role === "admin"
+  const pendingJoins = usePendingJoins(isAdmin)
 
   const openTasks = state.tasks.filter((t) => t.status === "open").length
   const proposed = state.automations.filter((a) => a.status === "proposed").length
@@ -71,7 +73,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   ]
   const config: NavItem[] = isAdmin
     ? [
-        { href: "/admin", label: "Équipe et accès", icon: UsersIcon },
+        { href: "/admin", label: "Équipe et accès", icon: UsersIcon, count: pendingJoins },
         { href: "/onboarding", label: "Onboarding", icon: ChatIcon },
       ]
     : []

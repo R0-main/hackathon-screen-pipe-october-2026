@@ -4,12 +4,14 @@ import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify } from "@brain/core"
 import { PromptActions, copyText } from "./PromptActions"
+import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage, initials } from "./format"
 import { BrainIcon, CheckIcon, CloseIcon, Dot, ErrorText, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
 import { deNom } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
 type Step = "intro" | "company" | "about" | "you" | "zones" | "install" | "team"
+/** Une personne ajoutée depuis cette page : invitée (son prompt personnel), ou acceptée via le message d'équipe (prompt vide). */
 type Invite = { id: string; name: string; title?: string; zones: string[]; prompt: string }
 type Created = { orgName: string; meId: string; prompt: string; zones: ZoneOption[] }
 type TeamUser = { id: string; last_at: string | null }
@@ -365,14 +367,16 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
         </section>
 
         <aside className="hidden lg:block" aria-label={`Aperçu du cerveau ${deNom(org)}`}>
-          <MiniBrain org={org} zones={draftZones} people={people} />
-          {created && step !== "intro" && (
-            <p className="mt-6 text-center text-[13px] text-trace">
-              <button type="button" className="hover:text-ink" onClick={restart}>
-                Créer une autre entreprise
-              </button>
-            </p>
-          )}
+          <div className="sticky top-10">
+            <MiniBrain org={org} zones={draftZones} people={people} />
+            {created && step !== "intro" && (
+              <p className="mt-6 text-center text-[13px] text-trace">
+                <button type="button" className="hover:text-ink" onClick={restart}>
+                  Créer une autre entreprise
+                </button>
+              </p>
+            )}
+          </div>
         </aside>
       </div>
     </main>
@@ -553,11 +557,12 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
     <div>
       <h1 className="create-title">Invitez votre équipe.</h1>
       <p className="create-lead">
-        Chaque personne reçoit son propre message, avec son jeton. Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau {deNom(created.orgName)}{" "}
-        et apparaît ici dès qu'il est branché.
+        Deux façons, au choix : un message par personne, avec son propre jeton, ou un seul message pour toute l'équipe, où chacun demande à entrer. Dans les deux
+        cas, il se colle dans Claude Code, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
       </p>
+      <h2 className="mt-10 text-[19px] font-medium">Un message par personne</h2>
 
-      <form onSubmit={invite} className="panel mt-8 space-y-4 px-5 py-5">
+      <form onSubmit={invite} className="panel mt-4 space-y-4 px-5 py-5">
         <div className="grid gap-3 sm:grid-cols-2">
           <input ref={nameRef} className="input" value={name} maxLength={80} aria-label="Nom" placeholder="Prénom Nom" onChange={(e) => setName(e.target.value)} />
           <input className="input" value={title} maxLength={80} aria-label="Rôle" placeholder="Rôle : dev, compta, sales…" onChange={(e) => setTitle(e.target.value)} />
@@ -611,21 +616,35 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
                     })}
                   </p>
                 </div>
-                <button type="button" className="btn" onClick={() => copy(i.id, i.prompt)}>
-                  {copied === i.id ? (
-                    <>
-                      <CheckIcon size={14} /> Copié
-                    </>
-                  ) : (
-                    "Copier son prompt"
-                  )}
-                </button>
+                {i.prompt ? (
+                  <button type="button" className="btn" onClick={() => copy(i.id, i.prompt)}>
+                    {copied === i.id ? (
+                      <>
+                        <CheckIcon size={14} /> Copié
+                      </>
+                    ) : (
+                      "Copier son prompt"
+                    )}
+                  </button>
+                ) : (
+                  <span className="text-[12px] text-trace">Par le message d'équipe</span>
+                )}
               </li>
             )
           })}
         </ul>
       )}
       {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copié : envoyez-le-lui (Slack, mail), il le colle dans Claude Code.</p>}
+
+      <h2 className="mt-12 text-[19px] font-medium">Ou un seul message pour toute l'équipe</h2>
+      <div className="mt-3">
+        <TeamJoin
+          compact
+          zones={created.zones}
+          defaultManager={created.meId}
+          onAccepted={(p) => props.setInvites((list) => [{ ...p, prompt: "" }, ...list])}
+        />
+      </div>
 
       <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
         <Link href="/dashboard" className="btn btn-lg">
@@ -673,7 +692,7 @@ function MiniBrain({ org, zones, people }: { org: string; zones: ZoneOption[]; p
     return { p, x: C + Math.cos(a) * personR, y: C + Math.sin(a) * personR }
   })
   return (
-    <figure className="sticky top-10">
+    <figure>
       <svg viewBox="0 0 400 400" className="h-auto w-full max-w-[440px]" role="img" aria-label={`${zones.length} zones, ${people.length} personnes`}>
         <circle cx={C} cy={C} r={zoneR} fill="none" stroke="var(--color-line)" strokeWidth="1" />
         {ppl.map(({ p, x, y }) => {

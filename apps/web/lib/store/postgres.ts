@@ -19,8 +19,9 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, NewTenantOrg, ProfilePatch, ZoneStat } from "./types"
-import { SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
+import type { BrainStore, EntityStat, JoinRequest, JoinStatus, NewEvent, NewItem, NewJoinRequest, NewProfile, NewTask, NewTenantOrg, ProfilePatch, ZoneStat } from "./types"
+import { newJoinCode } from "./codes"
+import { JOIN_MISSING_MESSAGE, SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
 type Row = Record<string, any>
 type Sql = postgres.Sql
@@ -75,6 +76,21 @@ function toEvent(r: Row): AgentEvent {
     at: iso(r.at),
   }
 }
+function toJoinRequest(r: Row): JoinRequest {
+  return {
+    id: r.id,
+    org_id: r.org_id,
+    name: r.name ?? null,
+    title: r.title ?? null,
+    email: r.email ?? null,
+    hostname: r.hostname ?? null,
+    status: r.status,
+    profile_id: r.profile_id ?? null,
+    created_at: iso(r.created_at),
+    decided_at: isoOrNull(r.decided_at),
+  }
+}
+
 function toTask(r: Row): Task {
   return {
     id: r.id,
@@ -118,6 +134,8 @@ function tsTerms(query: string): string[] {
 
 /** Une entreprise créée depuis /creer est marquée par une ligne `tenant:<id>` de brain_settings (pas de migration). */
 const TENANT_PREFIX = "tenant:"
+/** Code du message d'équipe d'une entreprise : `join:<org_id>` → `cj_…` dans brain_settings. */
+const JOIN_PREFIX = "join:"
 
 export class PostgresStore implements BrainStore {
   readonly kind = "postgres" as const
@@ -269,6 +287,75 @@ export class PostgresStore implements BrainStore {
 
   private async orgId() {
     return (await this.org()).id
+  }
+
+  /** Requête sur join_requests : table absente (migration non appliquée) → erreur de configuration claire (503). */
+  private async joins<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run()
+    } catch (err) {
+      if (missingTable(err)) throw new StoreSetupError(JOIN_MISSING_MESSAGE)
+      throw err
+    }
+  }
+
+  async findOrgByJoinCode(code: string) {
+    const [r] = await this.settings(() => this.sql`select key from brain_settings where key like ${JOIN_PREFIX + "%"} and value = ${code}`)
+    return r ? (r.key as string).slice(JOIN_PREFIX.length) : null
+  }
+
+  async findJoinRequestOrg(id: string) {
+    if (!UUID_RE.test(id)) return null
+    const [r] = await this.joins(() => this.sql`select org_id from join_requests where id = ${id}`)
+    return r ? (r.org_id as string) : null
+  }
+
+  async getJoinCode() {
+    const key = JOIN_PREFIX + (await this.orgId())
+    // Insertion « une seule fois » : deux admins qui ouvrent la page ensemble voient le même code.
+    await this.settings(() => this.sql`insert into brain_settings (key, value) values (${key}, ${newJoinCode()}) on conflict (key) do nothing`)
+    const [r] = await this.sql`select value from brain_settings where key = ${key}`
+    return r.value as string
+  }
+
+  async rotateJoinCode() {
+    const key = JOIN_PREFIX + (await this.orgId())
+    const code = newJoinCode()
+    await this.settings(() => this.sql`insert into brain_settings (key, value) values (${key}, ${code}) on conflict (key) do update set value = excluded.value`)
+    return code
+  }
+
+  async createJoinRequest(r: NewJoinRequest) {
+    const org = await this.orgId()
+    const [row] = await this.joins(() => this.sql`insert into join_requests (org_id, name, title, email, hostname, token_hash)
+      values (${org}, ${r.name ?? null}, ${r.title ?? null}, ${r.email ?? null}, ${r.hostname ?? null}, ${r.token_hash}) returning *`)
+    return toJoinRequest(row)
+  }
+
+  async listJoinRequests(f: { status?: JoinStatus; limit?: number } = {}) {
+    const org = await this.orgId()
+    const limit = f.limit ?? 100
+    const rows = await this.joins(() =>
+      f.status
+        ? this.sql`select * from join_requests where org_id = ${org} and status = ${f.status} order by created_at desc limit ${limit}`
+        : this.sql`select * from join_requests where org_id = ${org} order by created_at desc limit ${limit}`,
+    )
+    return rows.map(toJoinRequest)
+  }
+
+  async getJoinRequest(id: string) {
+    if (!UUID_RE.test(id)) return null
+    const org = await this.orgId()
+    const [r] = await this.joins(() => this.sql`select * from join_requests where id = ${id} and org_id = ${org}`)
+    return r ? { ...toJoinRequest(r), token_hash: r.token_hash as string } : null
+  }
+
+  async decideJoinRequest(id: string, d: { status: Exclude<JoinStatus, "pending">; profile_id?: string }) {
+    if (!UUID_RE.test(id)) return null
+    const org = await this.orgId()
+    const [r] = await this.joins(() => this.sql`update join_requests set status = ${d.status}, profile_id = ${d.profile_id ?? null}, decided_at = now()
+      where id = ${id} and org_id = ${org} and status = 'pending' returning *`)
+    return r ? toJoinRequest(r) : null
   }
 
   async getOrg() {
