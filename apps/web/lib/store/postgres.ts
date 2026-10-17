@@ -235,6 +235,7 @@ export class PostgresStore implements BrainStore {
   private listen: ListenState
   /** Les colonnes de la migration « qualité » (superseded_by, embedding) existent-elles ? Vérifié une fois. */
   private qualityColumns: boolean | null = null
+  private taskExternalColumns: boolean | null = null
   private qualityWarned = false
 
   constructor(url: string | { sql: Sql; orgId: string; listen: ListenState; url: string | null }) {
@@ -656,6 +657,14 @@ export class PostgresStore implements BrainStore {
     return this.qualityColumns
   }
 
+  /** Colonnes external_* de tasks (migration des connecteurs) : absentes, aucune tâche n'est importée. */
+  private async hasTaskExternal(): Promise<boolean> {
+    if (this.taskExternalColumns !== null) return this.taskExternalColumns
+    const [r] = await this.sql`select exists (select 1 from information_schema.columns where table_name = 'tasks' and column_name = 'external_source') as ok`
+    this.taskExternalColumns = Boolean(r.ok)
+    return this.taskExternalColumns
+  }
+
   /** Fragment « non remplacée » (table nue ou alias `k`), vide tant que la colonne n'existe pas. */
   private live(hasQuality: boolean, alias: "" | "k" = "") {
     if (!hasQuality) return this.sql``
@@ -800,8 +809,14 @@ export class PostgresStore implements BrainStore {
   }
   async deleteItem(id: string) {
     if (!UUID_RE.test(id)) return false
-    const rows = await this.sql`delete from knowledge_items where id = ${id} and org_id = ${await this.orgId()} returning id`
-    return rows.length > 0
+    const org = await this.orgId()
+    const external = await this.hasTaskExternal()
+    return this.sql.begin(async (tx: any) => {
+      // Avant l'item : la clé étrangère (on delete set null) détacherait sinon ses tâches, qui resteraient au tableau.
+      await tx`delete from tasks where org_id = ${org} and source_item_id = ${id} ${external ? tx`and external_source is null` : tx``}`
+      const rows = await tx`delete from knowledge_items where id = ${id} and org_id = ${org} returning id`
+      return rows.length > 0
+    }) as Promise<boolean>
   }
   async updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }) {
     if (!UUID_RE.test(id)) return false
