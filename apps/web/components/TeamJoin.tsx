@@ -238,7 +238,7 @@ function RequestCard(props: { request: JoinRequest; zones: ZoneLite[]; people?: 
   )
 }
 
-/** Nombre de demandes en attente, relu régulièrement (barre latérale, onglet « Demandes ») ; 0 hors admin. */
+/** Nombre de demandes en attente, relu régulièrement (barre latérale, sous-page « Demandes ») ; 0 hors admin. */
 export function usePendingJoins(enabled: boolean, everyMs = 15_000): number {
   const [n, setN] = useState(0)
   useEffect(() => {

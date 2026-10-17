@@ -84,7 +84,7 @@ vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en �
 2. **Votre équipe**, de deux façons (sur cette page, puis dans Équipe et accès) :
    - **un message par personne** : un nom, les zones qu'elle lit, et son prompt (avec son propre jeton) est copié.
      Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté ;
-   - **un seul message pour toute l'équipe** (onglet Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
+   - **un seul message pour toute l'équipe** (Équipe et accès, puis Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
      collègues. Le Claude de chacun remplit la demande avec ce qu'il sait déjà (nom, poste, email ; rien d'inventé,
      le reste reste vide), et `brain join` l'envoie puis attend. Un admin la complète (poste, rôle, zones,
      rattachement) et l'accepte : le poste termine alors son installation tout seul. Le code ne donne accès à rien ;

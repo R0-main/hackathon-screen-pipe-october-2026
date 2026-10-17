@@ -624,3 +624,36 @@ html.lenis body {
 .create-input:focus-visible {
   outline: none;
 }
+
+/* --- Sous-menu de la barre latérale (Équipe et accès) --- */
+@layer components {
+.nav-sub {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.2s ease-out,
+    opacity 0.2s ease-out;
+}
+.nav-sub.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+/* La page courante : une barre d'encre posée sur le fil, qui glisse d'une sous-page à l'autre. */
+.nav-sub-mark {
+  position: absolute;
+  left: -1.5px;
+  top: 8px;
+  width: 2px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--text);
+  transition: transform 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-sub,
+  .nav-sub-mark {
+    transition: none;
+  }
+}
+}

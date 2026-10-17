@@ -99,7 +99,7 @@ export async function cmdJoin(flags: Record<string, string | boolean>, log: Log 
       return EXIT_JOIN_REJECTED
     }
     if (Date.now() >= deadline) {
-      log(`EN ATTENTE D'ACCEPTATION : un admin de ${state.org} doit accepter la demande (Équipe et accès, onglet Demandes). Relancez ensuite \`join\` : il reprend la même demande.`)
+      log(`EN ATTENTE D'ACCEPTATION : un admin de ${state.org} doit accepter la demande (Équipe et accès, puis Demandes). Relancez ensuite \`join\` : il reprend la même demande.`)
       return EXIT_JOIN_PENDING
     }
     if (Date.now() - lastNote >= 60_000) {

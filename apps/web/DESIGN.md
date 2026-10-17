@@ -58,6 +58,10 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 - Barre latérale à gauche (fond bone, trait de 1 px) : le cerveau, ses pages (agents en direct, état, connaissances,
   tâches, automatisations), la configuration pour les admins (équipe et accès, onboarding), puis « voir en tant que »,
   mon contexte et la déconnexion. Sous 768 px, elle s'ouvre par le bouton menu.
+- Une rubrique à sous-pages (Équipe et accès : organigramme, accès par zone, demandes, zones ; une adresse chacune sous
+  `/admin`) se déplie quand on y est, sans chevron : un fil de 1 px aligné sur l'icône, les sous-pages en texte
+  secondaire, et une barre d'encre qui glisse le long du fil jusqu'à la page courante (200 ms). Pas d'onglets en haut
+  de page.
 - À droite, la page. La fenêtre ne défile jamais : le cerveau remplit tout l'espace (la molette zoome), les autres
   pages défilent dans leur colonne.
 - L'état vivant (flux SSE, zones allumées) est dans le layout (`components/BrainLive.tsx`) : il survit à la navigation.
