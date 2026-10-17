@@ -53,6 +53,9 @@ import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
 import * as cronNewZonesRoute from "../app/api/cron/new-zones/route"
 import * as adminClaudeRoute from "../app/api/admin/claude/route"
+import * as adminModerationRoute from "../app/api/admin/moderation/route"
+import * as adminModerationInputRoute from "../app/api/admin/moderation/input/route"
+import { loadModerationLog, moderationInput, runModeration, setModerationEnabled } from "../lib/moderation"
 import { runNewZones } from "../lib/new-zones"
 import { getOrgClaudeKey, setOrgClaudeKey } from "../lib/claude-key"
 import { getClaude } from "../lib/ai"
@@ -1233,6 +1236,62 @@ async function main() {
   assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.id === ext1a!.id && t.external_url === "https://linear.app/x/1"), "le lien vers l'outil est conservé")
   // Nettoyage : rien d'ouvert de ce passage ne reste pour le suivant.
   assert((await store.updateTask(ext1a!.id, { status: "done" }))?.status === "done", "tâche de test fermée")
+
+  console.log("\n— Modérateur : passage toutes les 15 min (Claude Code du CEO en CI, ou le serveur)")
+  {
+    const keep = (ref: number) => ({ ref, decision: "publish" as const, category: null, reason: "", zone: null, kind: null, title: null, body: null })
+    // Ce qui attendait déjà (seed, passages précédents) est relu d'abord : on vide la file.
+    for (let n = 0; n < 50; n++) if ((await runModeration(async (input) => input.items.map((i) => keep(i.ref)))).status !== "done") break
+    assert("skipped" in (await moderationInput()), "file du modérateur vide au départ")
+
+    const tag = `Modération ${run}`
+    const posted = await ingestItems(hugo, [
+      { ...item("dev", `${tag} : les webhooks Stripe passent par une file Redis`, "decision"), body: "Pour absorber les pics de précommandes." },
+      { ...item("dev", `${tag} : rendez-vous chez le médecin jeudi`), source: { app: "Screenpipe", tool: "agent", at: new Date().toISOString() } },
+      { ...item("dev", `${tag} : TVA à déclarer`), body: "Déclaration avant le 19 du mois." },
+    ])
+    assert(posted.inserted === 3, "trois connaissances arrivent, publiées tout de suite")
+    const [good, perso, tva] = posted.ids
+    const material = await moderationInput()
+  assert(!("skipped" in material) && [...material.input.items.map((i) => i.id!)].sort().join() === [...posted.ids].sort().join(), "le passage suivant relit exactement ce qui est arrivé")
+    assert(!("skipped" in material) && material.input.items[0].author === "Hugo Bernard", "avec le nom de l'auteur")
+    const claireSession = await createSessionValue(claire.profile.id)
+    const jmSession = await createSessionValue(jm.profile.id)
+    assert((await call(adminModerationInputRoute.GET, "/api/admin/moderation/input", { session: jmSession })).status === 403, "réservé aux admins")
+
+    // Décisions de Claude Code (en CI), envoyées par `brain moderate`.
+    const verdicts = [
+      { id: good, decision: "publish" },
+      { id: perso, decision: "reject", category: "personnel", reason: "Rendez-vous médical de l'employé." },
+      { id: tva, decision: "edit", zone: "compta", kind: "procedure", title: `${tag} : déclarer la TVA avant le 19` },
+    ]
+    const applied = await call(adminModerationRoute.POST, "/api/admin/moderation", { method: "POST", session: claireSession, body: { ids: posted.ids, verdicts } })
+    assert(applied.status === 200 && applied.data.reviewed === 3 && applied.data.edited === 1 && applied.data.rejected === 1, "trois relues, une corrigée, une retirée")
+    assert((await store.getItem(perso)) === null, "la connaissance personnelle est retirée du cerveau")
+    const fixed = await store.getItem(tva)
+    assert(fixed?.zone === "compta" && fixed.kind === "procedure" && fixed.title.endsWith("déclarer la TVA avant le 19"), "la correction est appliquée sur place (zone, type, titre)")
+    assert((await store.getItem(good))?.title.includes("webhooks Stripe"), "la bonne reste telle quelle")
+    const log = await loadModerationLog()
+    assert(log[0]?.decision !== undefined && !JSON.stringify(log).includes("médecin") && !JSON.stringify(log).includes("Rendez-vous"), "le journal ne garde pas le texte retiré")
+    assert(log.some((e) => e.decision === "reject" && e.category === "personnel" && !e.reason), "retrait « personnel » : motif seul, sans la phrase de Claude")
+    const modEvents = (await store.listEvents({ limit: 20, type: "write" })).filter((e) => e.summary?.startsWith("Modérateur"))
+    assert(modEvents.some((e) => e.summary === "Modérateur : 1 connaissance retirée (contenu personnel)" && e.zones.join() === "dev"), "le fil d'activité montre le retrait, sans le texte")
+    assert("skipped" in (await moderationInput()), "déjà relues : le passage suivant n'a rien à faire")
+    const replay = await call(adminModerationRoute.POST, "/api/admin/moderation", { method: "POST", session: claireSession, body: { ids: [good], verdicts: [{ id: good, decision: "reject", category: "vague" }] } })
+    assert(replay.data.reviewed === 0 && (await store.getItem(good)) !== null, "un verdict sur une connaissance déjà relue est ignoré")
+
+    // Passage du serveur : un lot sans réponse de Claude reste en attente, le curseur ne le saute pas.
+    const later = await ingestItems(hugo, [item("dev", `${tag} : procédure de mise en prod revue`, "procedure")])
+    const failed = await runModeration(async () => null)
+    assert(failed.status === "claude_error" && failed.remaining === 1, "Claude muet : rien de relu, la connaissance attend")
+    const ok = await runModeration(async (input) => input.items.map((i) => keep(i.ref)))
+    assert(ok.status === "done" && ok.reviewed === 1 && ok.via === "server", "relue au passage suivant")
+
+    await setModerationEnabled(false)
+    assert((await moderationInput()).hasOwnProperty("skipped") && (await call(adminModerationRoute.POST, "/api/admin/moderation", { method: "POST", session: claireSession, body: { ids: [], verdicts: [] } })).status === 409, "coupé : plus de passage")
+    await setModerationEnabled(true)
+    for (const id of [good, tva, later.ids[0]]) assert(await store.deleteItem(id), "connaissance de test supprimée")
+  }
 
   console.log("\nTout est vert.")
   if ("end" in store) await (store as unknown as { end: () => Promise<void> }).end()

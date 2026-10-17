@@ -16,6 +16,7 @@ import {
   type PersonalSignals,
   type ZoneHint,
 } from "@brain/core"
+import { AGENT_ENGINE_LABELS, agentWindow, pickAgentEngine, runScreenpipeAgent, type AgentResult } from "./agent"
 import { BrainApi, type IngestResult, type Workflow } from "./api"
 import { refreshCache, zoneHints } from "./cache"
 import {
@@ -673,12 +674,35 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
         `rien n'a été envoyé pour ${them(stuck.length, "elle", "elles")}, la synchro continue sans ${them(stuck.length, "elle", "elles")} (checkpoints avancés).`,
     )
 
+  // 4 bis. Agent Screenpipe : Claude Code ou Codex regarde lui-même l'activité récente (MCP Screenpipe, lecture seule).
+  // Sa fenêtre n'avance qu'une fois ses connaissances envoyées ; en cas d'échec, elle est relue au passage suivant (60 min au plus).
+  let agent: AgentResult | null = null
+  const spRead = results.find((r) => r.source === "screenpipe")
+  // Claude déconnecté pendant la distillation : l'agent Claude échouerait pareil (Codex, lui, peut tourner).
+  const engine = spRead?.available && opts.distiller !== "heuristic" ? pickAgentEngine(cfg) : null
+  const agentEngine = engine && !(engine.engine === "claude" && authFailure && distiller.kind === "claude-cli") ? engine : null
+  const agentWin = agentEngine ? agentWindow(opts.reset ? {} : baseState, new Date(now), baseline) : null
+  if (agentEngine && agentWin) {
+    const who = cache.whoami ? [cache.whoami.name, cache.whoami.title].filter(Boolean).join(", ") : undefined
+    agent = await runScreenpipeAgent({ ...agentEngine, cfg, zones, fallbackZone: defaultZone, window: agentWin, who })
+    const span = `${AGENT_ENGINE_LABELS[agentEngine.engine]}, ${hhmm(agentWin.start.toISOString())} → ${hhmm(agentWin.end.toISOString())}`
+    if (agent.ok) {
+      processed.add(agent.id)
+      io.log(
+        `Agent Screenpipe (${span}) : ${plural(agent.items.length, "connaissance proposée", "connaissances proposées")}` +
+          (agent.personal ? `, ${plural(agent.personal, "écartée", "écartées")} (contenu personnel)` : "") +
+          ".",
+      )
+    } else io.warn(`  Agent Screenpipe (${span}) : échec (${truncate(maskOwnSecrets(agent.error, secrets).text, 160)}) ; fenêtre relue au prochain passage.`)
+  }
+
   // Items rangés par conversation (dans l'ordre de traitement) : une conversation est « faite » quand tous ses items sont partis.
   const byConv = new Map<string, KnowledgeItemInput[]>()
   jobs.forEach((j, n) => {
     if (notDistilled.has(j.conv.id)) return
     byConv.set(j.conv.id, [...(byConv.get(j.conv.id) ?? []), ...distilled[n]])
   })
+  if (agent?.ok) byConv.set(agent.id, agent.items)
   const seenKeys = new Set<string>()
   const flat: { item: KnowledgeItemInput; conv: string; last: boolean }[] = []
   for (const [conv, list] of byConv) {
@@ -691,6 +715,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   for (const r of results) convCounts[r.source] = r.conversations.length
 
   const commits = results.flatMap((r) => r.commits)
+  if (agent?.ok) commits.push(agent.commit)
 
   // Ce que l'aperçu ne contient pas : dit clairement (rien de tout cela ne partira avec --confirm).
   const gaps: string[] = []
@@ -701,6 +726,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     if (Number(r.stats.pending)) gaps.push(`${SOURCE_LABELS[r.source]} : ${plural(Number(r.stats.pending), "tour de conversation en cours", "tours de conversation en cours")} (réponse pas encore écrite)`)
   }
   if (notDistilled.size) gaps.push(`${plural(notDistilled.size, "conversation que Claude n'a pas distillée", "conversations que Claude n'a pas distillées")}`)
+  if (agent && !agent.ok) gaps.push("Agent Screenpipe : échec, son activité récente n'a pas été regardée")
   if (retry.size)
     gaps.push(
       retry.size > 1

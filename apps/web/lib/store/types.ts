@@ -129,6 +129,11 @@ export interface BrainStore {
   /** Range ces connaissances dans `zone`, avec les tâches qui en sont issues ; renvoie le nombre de connaissances déplacées. */
   moveItems(ids: string[], zone: string): Promise<number>
   /**
+   * Corrige une connaissance (modérateur) : titre, corps, type, zone. Son vecteur sémantique est effacé (recalculé par
+   * le job d'embeddings) et ses tâches suivent la zone. Faux si elle n'existe plus.
+   */
+  updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }): Promise<boolean>
+  /**
    * Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). Faux si rien n'a été
    * marqué, notamment en Postgres tant que la migration « qualité » n'est pas appliquée : l'ingestion n'échoue jamais pour ça.
    */

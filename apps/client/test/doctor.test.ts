@@ -246,7 +246,7 @@ test("doctor : synchro planifiée en échec et Claude déconnecté, lus dans syn
     let r = await doctorIn(post)
     const auth = byId(r, "claude-connexion")!
     assert.equal(auth.status, "fail")
-    assert.match(auth.command!, /init --claude-token <jeton>$/)
+    assert.match(auth.command!, /connect-claude$/)
     assert.equal(auth.safe, false, "jamais lancé sans l'employé")
     const hookErr = byId(r, "hooks-erreurs")!
     assert.equal(hookErr.status, "warn")

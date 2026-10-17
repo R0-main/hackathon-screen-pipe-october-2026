@@ -277,9 +277,19 @@ function hideToken(s: string, opts: ClaudeCliOptions): string {
   return t && t.length >= 8 ? s.split(t).join("[jeton masqué]") : s
 }
 
-export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120_000, opts: ClaudeCliOptions = {}): Promise<ClaudeCliRun> {
+/**
+ * `args` : arguments (défaut : ceux de la distillation) ; `cwd` : dossier de la session (défaut : ~/.company-brain) ;
+ * `env` : variables en plus. Sert aussi à lancer `codex exec` (agent Screenpipe) : même entrée, mêmes délais et erreurs.
+ */
+export function runClaudeCli(
+  claudePath: string,
+  prompt: string,
+  timeoutMs = 120_000,
+  opts: ClaudeCliOptions = {},
+  run: { args?: string[]; cwd?: string; env?: Record<string, string> } = {},
+): Promise<ClaudeCliRun> {
   return new Promise((resolve) => {
-    const t = spawnTarget(claudePath, claudeCliArgs(claudePath))
+    const t = spawnTarget(claudePath, run.args ?? claudeCliArgs(claudePath))
     let stdout = ""
     let stderr = ""
     let settled = false
@@ -293,8 +303,8 @@ export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120
     let child
     try {
       child = spawn(t.cmd, t.args, {
-        cwd: brainHome(),
-        env: claudeCliEnv(opts),
+        cwd: run.cwd ?? brainHome(),
+        env: { ...claudeCliEnv(opts), ...run.env },
         stdio: ["pipe", "pipe", "pipe"],
         shell: t.shell,
         windowsHide: true,

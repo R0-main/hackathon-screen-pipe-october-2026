@@ -9,10 +9,12 @@ import type { CompanyStatus, KnowledgeItem, KnowledgeItemInput, Profile, Task, Z
 import { ENTITY_TYPES, KNOWLEDGE_KINDS } from "./types"
 import {
   DISTILL_SYSTEM,
+  MODERATION_SYSTEM,
   NEW_ZONES_SYSTEM,
   ONBOARDING_SYSTEM,
   STATUS_SYSTEM,
   buildExtractionPrompt,
+  buildModerationPrompt,
   buildNewZonesPrompt,
   buildStatusPrompt,
   buildTriagePrompt,
@@ -20,6 +22,7 @@ import {
 } from "./prompts"
 import { buildStatusInput, type StatusInput } from "./status"
 import type { NewZoneProposal, NewZonesInput } from "./new-zones"
+import { ModerationVerdictsSchema, type ModerationInput, type ModerationVerdict } from "./moderation"
 import { classifyZones, slugify } from "./zones"
 import { truncate } from "./text"
 
@@ -269,6 +272,17 @@ export async function proposeNewZones(client: Anthropic, input: NewZonesInput): 
     return parsed ? parsed.zones : null
   } catch (err) {
     logError("nouvelles zones", err)
+    return null
+  }
+}
+
+/** Verdicts du modérateur sur un lot de connaissances (Sonnet, effort bas). Null si Claude n'a pas répondu. */
+export async function moderateKnowledge(client: Anthropic, input: ModerationInput): Promise<ModerationVerdict[] | null> {
+  try {
+    const parsed = await parseWithSonnet(client, ModerationVerdictsSchema, MODERATION_SYSTEM, buildModerationPrompt(input), "low")
+    return parsed ? parsed.verdicts : null
+  } catch (err) {
+    logError("modération", err)
     return null
   }
 }

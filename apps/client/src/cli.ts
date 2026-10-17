@@ -7,7 +7,7 @@ import type { DistillerKind } from "./distill"
 import type { SyncSummary } from "./sync"
 
 const VERSION = "0.1.0"
-const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json"])
+const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json", "refresh-status"])
 
 export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string | boolean>; positional: string[] } {
   const flags: Record<string, string | boolean> = {}
@@ -52,8 +52,12 @@ Commandes :
                      Screenpipe (capture, autorisations, jeton), Claude Code (MCP, hooks), synchro planifiée, distillation.
                      Chaque point KO donne la commande qui répare. --json : le même rapport pour Claude Code (champ « safe »
                      sur les commandes qui ne font que rebrancher le poste). Code de sortie 1 s'il reste un point KO.
+  connect-claude     Jeton Claude Code du poste (demandé à l'installation) : lance \`claude setup-token\` (connexion dans le
+                     navigateur), on colle le jeton affiché, il est essayé puis gardé sur le poste (config.json, mode 600).
+                     La synchro des 15 min s'en sert sans session ouverte : distillation, agent Screenpipe, modérateur.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
-       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non] [--ca <pem>]
+       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
+       [--screenpipe-agent oui|non|claude|codex] [--agent-model <modèle>] [--ca <pem>]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
                      --ca : certificat (PEM) de l'autorité d'un cerveau auto-hébergé en HTTPS local ; le client lui fait
                      confiance pour tous ses appels, en plus des certificats publics (« aucun » pour le retirer).
@@ -62,6 +66,10 @@ Commandes :
                      passé à chaque \`claude -p\` du client, synchro planifiée comprise (« aucun » pour le retirer).
                      --share-prompt-summaries non : le hook n'envoie plus aucun résumé de prompt (empreinte seule).
                      --screenpipe-meetings non : les réunions transcrites par Screenpipe ne sont pas distillées.
+                     --screenpipe-agent : à chaque synchro, Claude Code (sinon Codex) regarde lui-même l'activité récente
+                     via le MCP Screenpipe, en lecture seule, et en tire les connaissances utiles. « claude » ou « codex »
+                     impose le moteur, « non » coupe l'agent. --agent-model : son modèle (défaut : sonnet pour Claude Code,
+                     celui de Codex sinon, avec un effort de raisonnement bas ; « défaut » pour y revenir).
                      Le jeton d'une AUTRE entreprise (prompt d'installation d'une deuxième entreprise) l'ajoute à côté de la
                      première au lieu de la remplacer : voir companies.
   companies [--default <nom|n°>] [--remove <nom|n°>]
@@ -94,6 +102,12 @@ Commandes :
                      Admins : passage « nouvelles zones » fait ici par Claude Code (\`claude -p\`, votre abonnement ;
                      en CI, CLAUDE_CODE_OAUTH_TOKEN de \`claude setup-token\`). Le cerveau crée les zones qui manquent
                      et y range leurs connaissances. --dry-run : affiche les propositions sans rien envoyer.
+  moderate [--dry-run] [--refresh-status]
+                     Admins : passage du modérateur fait ici par Claude Code (\`claude -p\`, Sonnet, votre abonnement ;
+                     fait tout seul toutes les 15 min par la synchro planifiée d'un poste admin). Claude relit ce qui est
+                     arrivé depuis le passage précédent, puis le cerveau garde, corrige ou retire chaque connaissance.
+                     --refresh-status : s'il y avait du nouveau, refait ensuite le résumé « où en est la boîte ».
+                     --dry-run : affiche les décisions sans rien appliquer.
   status             État du client en bref : connexion, dernière synchro, Screenpipe, hooks, planification (détail : doctor).
   mcp                Serveur MCP stdio « company-brain » du poste : le secours de setup quand Claude Code ne peut pas joindre
                      l'endpoint MCP du cerveau (certificat privé) ; paramètre company s'il y a plusieurs entreprises.
@@ -162,6 +176,10 @@ async function main(argv: string[]): Promise<number> {
       const { cmdInit } = await import("./commands")
       return cmdInit(flags)
     }
+    case "connect-claude": {
+      const { cmdConnectClaude } = await import("./connect")
+      return cmdConnectClaude()
+    }
     case "companies": {
       const { cmdCompanies } = await import("./companies")
       return cmdCompanies(flags)
@@ -215,6 +233,11 @@ async function main(argv: string[]): Promise<number> {
         const { refreshSkills } = await import("./skills")
         await refreshSkills(console.log, { quiet: true })
       }
+      // Poste d'un admin : la synchro planifiée fait aussi le passage du modérateur (avec son jeton Claude Code).
+      if (flags.scheduled && !summary.skipped) {
+        const { scheduledModeration } = await import("./moderate")
+        await scheduledModeration(console.log)
+      }
       return 0
     }
     case "skills": {
@@ -228,6 +251,10 @@ async function main(argv: string[]): Promise<number> {
     case "refresh-zones": {
       const { cmdRefreshZones } = await import("./refresh-zones")
       return cmdRefreshZones({ dryRun: Boolean(flags["dry-run"]) })
+    }
+    case "moderate": {
+      const { cmdModerate } = await import("./moderate")
+      return cmdModerate({ dryRun: Boolean(flags["dry-run"]), refreshStatus: Boolean(flags["refresh-status"]) })
     }
     case "mcp": {
       const { runMcpServer } = await import("./mcp")
