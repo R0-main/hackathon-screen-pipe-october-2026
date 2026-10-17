@@ -554,6 +554,72 @@ export function arcBetween(a: V3, b: V3, steps = 40): V3[] {
 }
 
 /**
+ * Liens entre connaissances, indépendants des zones : chacune reliée à sa plus proche voisine de la même
+ * zone, et une sur deux à une connaissance d'une autre zone (la plus proche encore libre, pour que les liens
+ * s'éventaillent au lieu de converger) : tout le savoir forme un seul réseau.
+ */
+export function knowledgeLinks(points: V3[], zone: number[]): [number, number][] {
+  const seen = new Set<string>()
+  const out: [number, number][] = []
+  const link = (i: number, j: number) => {
+    const key = i < j ? `${i}-${j}` : `${j}-${i}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(i < j ? [i, j] : [j, i])
+  }
+  const taken = new Set<number>()
+  points.forEach((p, i) => {
+    let same = -1
+    let other = -1
+    points.forEach((q, j) => {
+      if (j === i) return
+      const d = dist2(p, q)
+      if (zone[j] === zone[i]) {
+        if (same < 0 || d < dist2(p, points[same])) same = j
+      } else if (!taken.has(j) && (other < 0 || d < dist2(p, points[other]))) other = j
+    })
+    if (same >= 0) link(i, same)
+    if (i % 2 === 0 && other >= 0) {
+      taken.add(other)
+      link(i, other)
+    }
+  })
+  return out
+}
+
+/** Courbe douce entre deux points, légèrement creusée vers le cœur du cerveau : elle reste dedans. */
+export function bendBetween(a: V3, b: V3, steps = 16): V3[] {
+  const mid: V3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]
+  const m = Math.hypot(mid[0], mid[1], mid[2]) || 1
+  const chord = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])
+  const k = Math.max(0, 1 - (chord * 0.35) / m)
+  const C: V3 = [mid[0] * k, mid[1] * k, mid[2] * k]
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps
+    return [0, 1, 2].map((c) => (1 - u) ** 2 * a[c] + 2 * (1 - u) * u * C[c] + u ** 2 * b[c]) as V3
+  })
+}
+
+/** Des courbes en segments, chacune en dégradé de `from` à `to` : positions et couleurs prêtes pour un LineSegments. */
+export function gradientSegments(lines: { pts: V3[]; from: number[]; to: number[] }[]): { positions: Float32Array; colors: Float32Array } {
+  const n = lines.reduce((sum, l) => sum + (l.pts.length - 1) * 2, 0)
+  const positions = new Float32Array(n * 3)
+  const colors = new Float32Array(n * 3)
+  let v = 0
+  for (const { pts, from, to } of lines) {
+    for (let k = 0; k < pts.length - 1; k++) {
+      for (const m of [k, k + 1]) {
+        const u = m / (pts.length - 1)
+        positions.set(pts[m], v * 3)
+        colors.set([0, 1, 2].map((c) => from[c] + (to[c] - from[c]) * u), v * 3)
+        v++
+      }
+    }
+  }
+  return { positions, colors }
+}
+
+/**
  * Estompe de la face cachée : 0 pour un neurone tourné vers la caméra, 1 pour un neurone de dos.
  * `cam` est la position de la caméra dans le repère du cerveau.
  */

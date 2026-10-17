@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz } from "../BrainViz"
-import { arcBetween, backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
+import { arcBetween, backFade, bendBetween, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
 import { Dot, zoneColor } from "../ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -237,7 +237,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const first = nodes.length
     const count = 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
     for (const idx of zoneNodes(anchors, owner, i, count)) {
-      const end = onSurface(idx, 0.012 + rand() * 0.02)
+      // Sous la surface, à des profondeurs variées : les connaissances se posent dans le cerveau, pas dessus.
+      const end = onSurface(idx, -(0.04 + rand() * 0.14))
       // Avant de se poser, la connaissance flotte loin de la coque, dans sa direction : elle vient d'un poste.
       const away = scatter(dir, rand, 1.2)
       const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(2 + rand())
@@ -275,6 +276,22 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const dustMesh = new T.InstancedMesh(geoSphere, dustMat, DUST)
   group.add(dustMesh)
   materials.push(dustMat)
+
+  // Les connaissances reliées entre elles une fois posées, au-delà de leur zone, en dégradé de couleur.
+  const ends = nodes.map((nd) => nd.end.toArray())
+  const knownSeg = gradientSegments(
+    knowledgeLinks(
+      ends,
+      nodes.map((nd) => nd.zone),
+    ).map(([a, b]) => ({ pts: bendBetween(ends[a], ends[b]), from: gfx[nodes[a].zone].color.toArray(), to: gfx[nodes[b].zone].color.toArray() })),
+  )
+  const knownGeo = new T.BufferGeometry()
+  knownGeo.setAttribute("position", new T.BufferAttribute(knownSeg.positions, 3))
+  knownGeo.setAttribute("color", new T.BufferAttribute(knownSeg.colors, 3))
+  const knownMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 })
+  group.add(new T.LineSegments(knownGeo, knownMat))
+  geometries.push(knownGeo)
+  materials.push(knownMat)
 
   // Synapses : arcs entre zones qui partagent des entités, en dégradé de la couleur de l'une à celle de l'autre.
   const index = new Map(gfx.map((g, i) => [g.id, i]))
@@ -462,6 +479,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       g.outline.scale.setScalar(target * 1.3)
       g.outline.visible = on
     }
+    knownMat.opacity = 0.45 * (still ? 1 : smooth(0.43, 0.55, s))
     for (const sy of syn) {
       const on = lit.has(gfx[sy.a].id) || lit.has(gfx[sy.b].id)
       sy.mat.opacity = on ? 1 : sy.base * (still ? 1 : smooth(0.43, 0.55, s))

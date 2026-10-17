@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { arcBetween, backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
+import { arcBetween, backFade, bendBetween, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -262,7 +262,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const nodes: SphereMesh[] = []
     const linkPts: THREE.Vector3[] = []
     for (const idx of zoneNodes(anchors, owner, i, count)) {
-      const p = onSurface(idx, 0.012 + rand() * 0.02)
+      // Sous la surface, à des profondeurs variées : les connaissances sont dans le cerveau, pas posées dessus.
+      const p = onSurface(idx, -(0.04 + rand() * 0.14))
       const r = 0.007 + rand() * 0.006
       const node: SphereMesh = new T.Mesh(geoSphere, nodeMat)
       node.position.copy(p)
@@ -327,6 +328,22 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     netGeo.attributes.color.needsUpdate = true
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
   }
+
+  // Les connaissances reliées entre elles, au-delà de leur zone, en dégradé de la couleur de l'une à celle de l'autre.
+  const known = [...gfx.values()].flatMap((g, zi) => g.nodes.map((node) => ({ p: node.position.toArray(), zone: zi, color: new T.Color(g.locked ? NEUTRAL : g.color).toArray() })))
+  const knownSeg = gradientSegments(
+    knowledgeLinks(
+      known.map((k) => k.p),
+      known.map((k) => k.zone),
+    ).map(([a, b]) => ({ pts: bendBetween(known[a].p, known[b].p), from: known[a].color, to: known[b].color })),
+  )
+  const knownGeo = new T.BufferGeometry()
+  knownGeo.setAttribute("position", new T.BufferAttribute(knownSeg.positions, 3))
+  knownGeo.setAttribute("color", new T.BufferAttribute(knownSeg.colors, 3))
+  const knownMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.45 })
+  group.add(new T.LineSegments(knownGeo, knownMat))
+  geometries.push(knownGeo)
+  materials.push(knownMat)
 
   // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
   // l'autre, plus marqués quand elles sont actives.
