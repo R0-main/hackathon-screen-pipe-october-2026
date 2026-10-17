@@ -22,7 +22,7 @@ const MIGRATIONS_LOCK = 7_204_331_118
 async function main() {
   if (process.argv.includes("--on-build")) {
     const decision = migrationOnBuild(process.env)
-    console.log(`Migrations au build : ${decision.run ? "oui" : "non"} (${decision.reason}).`)
+    console.log(`Migrations au build : ${decision.run ? "oui" : "non"}, ${decision.reason}.`)
     if (!decision.run) return
   }
   const url = process.env.DATABASE_MIGRATE_URL || process.env.DATABASE_URL
@@ -42,15 +42,21 @@ async function main() {
     const files = fs.readdirSync(path.join(root, "migrations")).filter((f) => f.endsWith(".sql")).sort()
     let applied = 0
     for (const f of files) {
-      const done = await sql.begin(async (tx) => {
-        await tx`select pg_advisory_xact_lock(${MIGRATIONS_LOCK})`
-        // Revérifié sous le verrou : une autre instance a pu l'appliquer pendant qu'on attendait.
-        const [already] = await tx`select 1 from brain_migrations where name = ${f}`
-        if (already) return false
-        await tx.unsafe(fs.readFileSync(path.join(root, "migrations", f), "utf8"))
-        await tx`insert into brain_migrations (name) values (${f})`
-        return true
-      })
+      let done: boolean
+      try {
+        done = await sql.begin(async (tx) => {
+          await tx`select pg_advisory_xact_lock(${MIGRATIONS_LOCK})`
+          // Revérifié sous le verrou : une autre instance a pu l'appliquer pendant qu'on attendait.
+          const [already] = await tx`select 1 from brain_migrations where name = ${f}`
+          if (already) return false
+          await tx.unsafe(fs.readFileSync(path.join(root, "migrations", f), "utf8"))
+          await tx`insert into brain_migrations (name) values (${f})`
+          return true
+        })
+      } catch (err) {
+        // Le fichier fautif dans le message : c'est lui qu'il faut regarder (la transaction l'a entièrement annulé).
+        throw new Error(`${f} : ${err instanceof Error ? err.message : String(err)}`)
+      }
       if (done) applied++
       console.log(done ? `✓ ${f}` : `· ${f} (déjà appliquée)`)
     }
