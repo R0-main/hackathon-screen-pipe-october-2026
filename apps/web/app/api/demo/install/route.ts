@@ -1,14 +1,12 @@
 import { getStore } from "@/lib/store"
 import { hashToken, isDemoMode, newToken } from "@/lib/auth"
-import { ensureDemoBrain } from "@/lib/demo-seed"
+import { DEMO_VISITOR_TITLE, demoVisitorManager, ensureDemoBrain } from "@/lib/demo-seed"
 import { buildInstallPrompt } from "@/lib/install-prompt"
 import { error, internalError, json, publicBaseUrl } from "@/lib/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Titre des comptes créés depuis la page d'accueil : c'est lui qui les compte et les distingue de l'équipe Fournil. */
-const VISITOR_TITLE = "Visiteur de la démo"
 /** Plafond de comptes visiteurs, pour qu'une page publique ne puisse pas remplir la base. */
 const MAX_VISITORS = 100
 const VISITOR_ZONES = ["dev", "produit"]
@@ -22,16 +20,17 @@ export async function POST(req: Request) {
   try {
     await ensureDemoBrain()
     const store = getStore()
-    const visitors = (await store.listProfiles()).filter((p) => p.title === VISITOR_TITLE)
+    const visitors = (await store.listProfiles()).filter((p) => p.title === DEMO_VISITOR_TITLE)
     if (visitors.length >= MAX_VISITORS) return error(429, "La démo a atteint son nombre de visiteurs. Réessayez plus tard.")
     const known = new Set((await store.listZones()).map((z) => z.id))
     const zones = VISITOR_ZONES.filter((z) => known.has(z))
     const token = newToken()
     const profile = await store.createProfile({
       name: `Visiteur ${String(Math.floor(1000 + Math.random() * 9000))}`,
-      title: VISITOR_TITLE,
+      title: DEMO_VISITOR_TITLE,
       role: "member",
-      manager_id: null,
+      // Dans l'organigramme, le visiteur rejoint l'équipe du lead dev (mêmes zones).
+      manager_id: await demoVisitorManager(store),
       token_hash: hashToken(token),
     })
     await store.setZoneAccess(profile.id, zones.map((zone_id) => ({ zone_id, can_write: true })))
