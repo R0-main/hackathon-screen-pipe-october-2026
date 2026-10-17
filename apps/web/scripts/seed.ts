@@ -1,4 +1,4 @@
-// Remplit le cerveau avec l'entreprise fictive Fournil (comptes, zones, connaissances, historique d'activité).
+// Remplit le cerveau avec l'entreprise fictive Butine (comptes, zones, connaissances, historique d'activité).
 // Usage : npm run seed            (stockage fichier, ou Postgres si DATABASE_URL est défini)
 //         npm run seed -- --force (écrase un cerveau existant)
 // Les données viennent de lib/demo-seed.ts (le même amorçage que le mode démo d'un déploiement neuf).

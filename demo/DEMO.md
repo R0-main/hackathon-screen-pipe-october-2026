@@ -1,6 +1,6 @@
 # Script de démo (5 minutes)
 
-Entreprise fictive : **Fournil**, logiciel de caisse et de précommandes pour boulangeries artisanales (6 personnes).
+Entreprise fictive : **Butine**, des balances connectées pour ruches (6 personnes, 3 200 ruches équipées chez 140 apiculteurs). Glissée sous la ruche, la balance dit à l'apiculteur, sur son téléphone, si ses abeilles vont bien (récolte, essaimage, froid, vol), sans ouvrir la ruche.
 
 ## Avant de monter sur scène
 
@@ -16,7 +16,7 @@ Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données f
 
 ## Déroulé
 
-1. **Le problème (30 s).** « Chez Fournil, tout le monde bosse avec Claude Code ou ChatGPT. Mais quand Hugo trouve comment déployer, ou que Jean-Marc met au point son rapprochement bancaire, ce savoir reste dans leur session. »
+1. **Le problème (30 s).** « Butine fabrique des balances qui surveillent les ruches. Chez Butine, tout le monde bosse avec Claude Code ou ChatGPT. Mais quand Hugo trouve comment déployer, ou que Jean-Marc met au point son rapprochement bancaire, ce savoir reste dans leur session. »
 
 2. **Le cerveau (45 s).** Le dashboard : chaque zone (Dev, Produit, Sales, Compta, Support, Direction) est un domaine de connaissance, les points sont les clients/outils/projets les plus cités, les synapses relient les zones qui partagent des entités. Lancer `npm run simulate` : les zones s'allument au fil des sessions et des requêtes MCP, le flux « Agents en direct » défile.
 
@@ -29,12 +29,13 @@ Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données f
 
 6. **L'automatisation (45 s).** La carte verte : « Jean-Marc lance ce prompt presque chaque jour vers 9h07 (6 jours sur 6) → l'exécuter automatiquement à 9h02 ». Détectée à partir des empreintes de prompts envoyées par les hooks, sans stocker le texte brut. « Mettre en place ».
 
-7. **Les skills (30 s).** Onglet « Skills » : les savoir-faire de Fournil prêts pour Claude Code, avec leurs scripts (`deployer-fournil` et son `release.sh`). « Voir en tant que : Jean-Marc » : il ne reçoit que le skill de toute l'entreprise et ceux du cortex Compta, et son poste les installe tout seul. Dans `/admin`, la colonne « Publie des skills » : pousser un skill demande une autorisation.
+7. **Les skills (30 s).** Onglet « Skills » : les savoir-faire de Butine prêts pour Claude Code, avec leurs scripts (`deployer-butine` et son `release.sh`). « Voir en tant que : Jean-Marc » : il ne reçoit que le skill de toute l'entreprise et ceux du cortex Compta, et son poste les installe tout seul. Dans `/admin`, la colonne « Publie des skills » : pousser un skill demande une autorisation.
 
 8. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, la personne qui remplace Hugo récupère ça. »
 
 ## Phrases clés
 
+- « Une ruche, c'est déjà un cerveau collectif. Butine en équipe les ruches ; NOS Brainer en donne un à son équipe. »
 - « Screenpipe est le pipe entre le PC, ses agents IA et le cerveau de l'entreprise. »
 - « Quelques Ko distillés par jour au lieu de 19 Go de captures. »
 - « La compta n'a pas besoin du contexte code, et ses agents non plus. »
