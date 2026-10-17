@@ -34,7 +34,7 @@ const SOFTEN = 0.5
 const BACK = 0.86
 const NEURON_R = 0.008
 
-const CENTER_R = 0.06
+const CENTER_R = 0.042
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
@@ -244,24 +244,26 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const centerPos = onSurface(anchors[i], -0.08)
     const color = new T.Color(zoneColor(z.color, z.position)).getHex()
 
-    const centerMat = new T.MeshBasicMaterial({ color: z.locked ? WHITE : color })
+    // Une pastille de couleur, sans contour : le cercle d'encre ne marque que la zone choisie ou active.
+    const centerMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : color })
     const center: SphereMesh = new T.Mesh(geoSphere, centerMat)
     center.position.copy(centerPos)
     center.scale.setScalar(CENTER_R)
     center.userData.zone = z.id
     const outline: SphereMesh = new T.Mesh(geoSphere, outlineMat)
     outline.position.copy(centerPos)
-    outline.scale.setScalar(CENTER_R * 1.22)
+    outline.scale.setScalar(CENTER_R * 1.3)
+    outline.visible = false
     group.add(outline, center)
     pickables.push(center)
 
     const count = z.locked ? 5 : 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
-    const nodeMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : INK })
+    const nodeMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : color })
     const nodes: SphereMesh[] = []
     const linkPts: THREE.Vector3[] = []
     for (const idx of zoneNodes(anchors, owner, i, count)) {
       const p = onSurface(idx, 0.012 + rand() * 0.02)
-      const r = 0.016 + rand() * 0.014
+      const r = 0.007 + rand() * 0.006
       const node: SphereMesh = new T.Mesh(geoSphere, nodeMat)
       node.position.copy(p)
       node.scale.setScalar(r)
@@ -477,23 +479,23 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const on = Boolean(a && a.until > nowMs)
       if (on !== g.active) {
         g.active = on
-        g.center.material.color.setHex(on ? PHOSPHOR : g.locked ? WHITE : g.color)
-        g.nodeMat.color.setHex(on ? PHOSPHOR : g.locked ? NEUTRAL : INK)
+        g.center.material.color.setHex(on ? PHOSPHOR : g.locked ? NEUTRAL : g.color)
         g.linkMat.color.setHex(on ? INK : LINE)
-        for (const node of g.nodes) node.scale.setScalar((node.userData.r as number) * (on ? 1.5 : 1))
+        for (const node of g.nodes) node.scale.setScalar((node.userData.r as number) * (on ? 1.6 : 1))
       }
       const isSel = sel === g.id
       if (isSel !== g.selected) {
         g.selected = isSel
-        g.outline.scale.setScalar(CENTER_R * (isSel ? 1.5 : 1.22))
       }
       const strong = g.active || g.selected
       if (strong !== g.strong) {
         g.strong = strong
         repaint = true
       }
+      g.outline.visible = g.active || g.selected
       const target = CENTER_R * (on ? 1.3 : 1)
       g.center.scale.setScalar(g.center.scale.x + (target - g.center.scale.x) * Math.min(1, dt * 10))
+      g.outline.scale.setScalar(g.center.scale.x * 1.3)
     }
     if (repaint) paintNetwork()
     shadeNetwork()

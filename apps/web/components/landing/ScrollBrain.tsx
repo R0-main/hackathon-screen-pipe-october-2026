@@ -28,7 +28,7 @@ const RAW = 0xc6c6bf
 const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
 
-const CENTER_R = 0.045
+const CENTER_R = 0.034
 /** Demi-encombrement du cerveau à l'écran (surface + billes), pour cadrer la caméra. */
 const EXTENT = { w: 1.65, h: 1.45 }
 // Focale longue : peu de perspective, les billes gardent la même taille d'un bord à l'autre.
@@ -224,6 +224,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const outline: SphereMesh = new T.Mesh(geoSphere, outlineMat)
     center.position.copy(pos)
     outline.position.copy(pos)
+    outline.visible = false
     group.add(outline, center)
     materials.push(centerMat)
 
@@ -234,7 +235,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       // Avant de se poser, la connaissance flotte loin de la coque, dans sa direction : elle vient d'un poste.
       const away = scatter(dir, rand, 1.2)
       const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(2 + rand())
-      nodes.push({ zone: i, end, start, r: 0.014 + rand() * 0.012, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2 })
+      nodes.push({ zone: i, end, start, r: 0.0065 + rand() * 0.005, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2 })
     }
     gfx.push({ id: z.id, color: new T.Color(zoneColor(z.color, z.position)), center, outline, pos, first, last: nodes.length })
   })
@@ -430,7 +431,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       mtx.compose(tmp, quat, scl.setScalar(r))
       nodeMesh.setMatrixAt(i, mtx)
       ringMesh.setMatrixAt(i, mtx.compose(tmp, quat, scl.setScalar(on ? r * 1.2 : 0)))
-      nodeMesh.setColorAt(i, on ? phosC : col.copy(rawC).lerp(inkC, e))
+      nodeMesh.setColorAt(i, on ? phosC : col.copy(rawC).lerp(gfx[nd.zone].color, e * named))
 
       // Trait : il part du centre au moment où la bille arrive.
       const grow = easeOut(clamp01((k - 0.55) / 0.45))
@@ -447,10 +448,11 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
 
     for (const g of gfx) {
       const on = lit.has(g.id)
-      g.center.material.color.copy(on ? phosC : col.copy(whiteC).lerp(g.color, named))
+      g.center.material.color.copy(on ? phosC : col.copy(rawC).lerp(g.color, named))
       const target = CENTER_R * (0.6 + 0.4 * smooth(0.05, 0.3, assembly)) * (on ? 1.3 : 1)
       g.center.scale.setScalar(target)
-      g.outline.scale.setScalar(target * 1.22)
+      g.outline.scale.setScalar(target * 1.3)
+      g.outline.visible = on
     }
     for (const sy of syn) {
       const on = lit.has(gfx[sy.a].id) || lit.has(gfx[sy.b].id)
