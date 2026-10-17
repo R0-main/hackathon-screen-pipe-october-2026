@@ -1,7 +1,7 @@
 // HTTP client of the brain's API (personal Bearer token).
 
 import type { AgentEventInput, AgentName, KnowledgeItemInput, ModerationInput, ModerationVerdict, NewZonesInput, Skill, SkillFile, StatusInput, SyncReport, ZoneStatus } from "@brain/core"
-import type { ApiZone, CompanyStatusResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
+import type { ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
 
 // API responses read by the MCP tools: shared with the brain's MCP endpoint (@brain/core/mcp).
 export type { ApiItem, ApiZone, CompanyStatusResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
@@ -122,6 +122,15 @@ export class BrainApi {
   /** Admins: applies the decisions made here by Claude (`ids`: the knowledge reviewed, in order). */
   applyModeration(ids: string[], verdicts: (Omit<ModerationVerdict, "ref"> & { id: string })[]) {
     return this.request<ModerationRunResult>("POST", "/api/admin/moderation", { ids, verdicts }, 120000)
+  }
+  /** The company's MCP connector tools open to agents. */
+  connectedTools(input: { connector?: string; query?: string }) {
+    const q = new URLSearchParams({ ...(input.connector ? { connector: input.connector } : {}), ...(input.query ? { query: input.query } : {}) })
+    return this.request<ConnectedTools>("GET", `/api/connected-tools${q.toString() ? `?${q}` : ""}`, undefined, 60000)
+  }
+  /** Calls a connector tool, with the account the admin connected. */
+  callConnectedTool(input: { connector: string; tool: string; arguments: Record<string, unknown> }) {
+    return this.request<ConnectedCall>("POST", "/api/connected-tools/call", input, 70000)
   }
   query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
     return this.request<QueryResult>("POST", "/api/query", input)

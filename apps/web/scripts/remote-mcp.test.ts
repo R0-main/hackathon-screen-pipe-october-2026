@@ -8,7 +8,8 @@ import { createHash, randomBytes } from "node:crypto"
 import http from "node:http"
 import type { AddressInfo } from "node:net"
 import { buildAuthorizeUrl } from "@brain/core"
-import { listTools, McpAuthError } from "../lib/remote-mcp/client"
+import { callTool, listTools, McpAuthError } from "../lib/remote-mcp/client"
+import { exploreConnector, IMPORT_LIMITS } from "../lib/remote-mcp/import"
 import { guardedRequest, type NetDeps } from "../lib/remote-mcp/net"
 import { MAX_DEFAULT_SCOPES, discover, exchangeCode, pickScopes, pkcePair, refreshTokens, registerClient } from "../lib/remote-mcp/oauth"
 
@@ -107,7 +108,22 @@ before(async () => {
       }
       if (msg.method === "tools/list") {
         const page = msg.params?.cursor === "p2" ? TOOLS.slice(2) : TOOLS.slice(0, 2)
-        return send(res, 200, { jsonrpc: "2.0", id: msg.id, result: { tools: page.map((name) => ({ name, inputSchema: { type: "object" } })), ...(msg.params?.cursor ? {} : { nextCursor: "p2" }) } })
+        return send(res, 200, {
+          jsonrpc: "2.0",
+          id: msg.id,
+          result: {
+            tools: page.map((name) => ({ name, description: `tool ${name}`, inputSchema: { type: "object", properties: { q: { type: "string" } } }, ...(name === "fetch" ? { annotations: { readOnlyHint: true } } : {}) })),
+            ...(msg.params?.cursor ? {} : { nextCursor: "p2" }),
+          },
+        })
+      }
+      if (msg.method === "tools/call") {
+        const p = (msg.params ?? {}) as { name?: string; arguments?: { q?: string } }
+        // SSE response, preceded by a progress notification.
+        res.writeHead(200, { "content-type": "text/event-stream" })
+        res.write(`data: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } })}\n\n`)
+        res.write(`data: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: `${p.name}: ${p.arguments?.q ?? ""}` }], isError: p.name === "create_issue" } })}\n\n`)
+        return
       }
       return send(res, 200, { jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "unknown method" } })
     }
@@ -156,7 +172,14 @@ test("remote MCP: discovery, registration, sign-in, PKCE code, tools, refresh", 
 
   await assert.rejects(listTools(serverUrl, undefined, deps), McpAuthError)
   const result = await listTools(serverUrl, tokens.access_token, deps)
-  assert.deepEqual(result.tools, TOOLS, "two pages of tools")
+  assert.deepEqual(result.tools.map((t) => t.name), TOOLS, "two pages of tools")
+  assert.deepEqual(
+    result.tools.map((t) => t.read_only),
+    [true, true, false],
+    "search (read verb), fetch (annotation), create_issue (write)",
+  )
+  assert.deepEqual(result.tools[0].input_schema, { type: "object", properties: { q: { type: "string" } } })
+  assert.deepEqual(await callTool(serverUrl, tokens.access_token, "search", { q: "budget" }, deps), { content: [{ type: "text", text: "search: budget" }], isError: false })
   assert.equal(result.server, "fake-mcp 1.0")
   assert.equal(seen.sessionHeader, "sess-1", "session id sent back")
   assert.equal(seen.initializedNotification, true)
@@ -166,7 +189,7 @@ test("remote MCP: discovery, registration, sign-in, PKCE code, tools, refresh", 
   await assert.rejects(listTools(serverUrl, tokens.access_token, deps), McpAuthError)
   const next = await refreshTokens(meta, client, tokens, deps)
   assert.notEqual(next.access_token, tokens.access_token)
-  assert.deepEqual((await listTools(serverUrl, next.access_token, deps)).tools, TOOLS)
+  assert.deepEqual((await listTools(serverUrl, next.access_token, deps)).tools.map((t) => t.name), TOOLS)
   await assert.rejects(refreshTokens(meta, client, tokens, deps), /unknown refresh token/, "old refresh token used up")
 })
 
@@ -183,4 +206,72 @@ test("scopes: those of the challenge, otherwise a short advertised list; a long 
   assert.equal(pickScopes(undefined, many), undefined)
   assert.equal(pickScopes(undefined, []), undefined)
   assert.equal(pickScopes(undefined, undefined), undefined)
+})
+
+test("import: Claude explores read-only then saves knowledge (simulated Claude)", async () => {
+  type Req = { tools: { name: string }[]; messages: { role: string; content: unknown }[]; model: string }
+  const seen: Req[] = []
+  const script = [
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "notion-search", input: { q: "decisions" } }, { type: "tool_use", id: "t2", name: "unknown", input: {} }] },
+    {
+      stop_reason: "tool_use",
+      content: [
+        {
+          type: "tool_use",
+          id: "t3",
+          name: "save_knowledge",
+          input: {
+            items: [
+              { title: "Deploy on Tuesdays", body: "We deploy on Tuesdays to have the week to fix things.", kind: "decision", zone: "dev", url: "https://notion.so/p1" },
+              { title: "", body: "empty", kind: "fact" },
+              { title: "Acme customer", body: "Acme pays the invoice at 60 days.", kind: "unknown", zone: "missing-zone" },
+            ],
+          },
+        },
+      ],
+    },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Fait." }] },
+  ]
+  const claude = { beta: { messages: { create: async (req: Req) => (seen.push(structuredClone(req)), script[seen.length - 1]) } } }
+  const calls: [string, Record<string, unknown>][] = []
+  const zones = [
+    { id: "dev", name: "Dev", description: "", color: "#000", keywords: ["deploy"], position: 0 },
+    { id: "finance", name: "Finance", description: "", color: "#000", keywords: ["invoice", "customer"], position: 1 },
+  ]
+  const out = await exploreConnector(
+    { id: "notion", name: "Notion" },
+    {
+      claude: claude as never,
+      tools: [{ name: "notion-search", input_schema: { type: "object" }, read_only: true }],
+      callTool: async (name, args) => (calls.push([name, args]), { content: [{ type: "text", text: "Page \"Deploy\": on Tuesdays." }] }),
+      zones,
+      org: { name: "Butine" },
+      now: () => Date.parse("2026-10-17T12:00:00Z"),
+    },
+  )
+  assert.deepEqual(calls, [["notion-search", { q: "decisions" }]], "only the known tool is called")
+  assert.deepEqual(seen[0].tools.map((t) => t.name), ["notion-search", "save_knowledge"])
+  const firstResults = seen[1].messages.at(-1)!.content as { tool_use_id: string; is_error?: boolean; content: string }[]
+  assert.equal(firstResults.length, 2, "both results in a single message")
+  assert.equal(firstResults[1].is_error, true)
+  assert.equal(out.items.length, 2, "the empty item is skipped")
+  assert.equal(out.items[0].zone, "dev")
+  assert.equal(out.items[0].kind, "decision")
+  assert.equal(out.items[0].source.tool, "connector")
+  assert.equal(out.items[0].source.app, "Notion")
+  assert.equal(out.items[0].source.screenpipe_ref, "https://notion.so/p1")
+  assert.match(out.items[0].source.session_id ?? "", /^mcp:notion:[0-9a-f]{16}$/)
+  assert.equal(out.items[1].kind, "fact", "unknown kind: fact")
+  assert.equal(out.items[1].zone, "finance", "missing zone: classified by keywords")
+  assert.equal(out.calls, 1)
+  assert.equal(out.turns, 3)
+
+  // The connector's zone wins; no read-only tool: clear error.
+  const fixed = await exploreConnector(
+    { id: "notion", name: "Notion", zone: "finance" },
+    { claude: { beta: { messages: { create: async () => script[1] } } } as never, tools: [{ name: "search", input_schema: { type: "object" }, read_only: true }], callTool: async () => ({}), zones, org: { name: "Butine" } },
+  )
+  assert.ok(fixed.items.every((i) => i.zone === "finance"))
+  assert.ok(IMPORT_LIMITS.calls > 0)
+  await assert.rejects(exploreConnector({ id: "x", name: "X" }, { claude: claude as never, tools: [], callTool: async () => ({}), zones, org: { name: "Butine" } }), /no read-only tool/)
 })

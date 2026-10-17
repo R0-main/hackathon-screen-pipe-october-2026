@@ -160,7 +160,19 @@ export type McpConnectorConfig = {
   token?: string
   pending?: McpPending
   last_check?: McpCheck
+  /** Tools offered to the team's agents through the brain's MCP (default: read-only). */
+  agents?: McpAgentsMode
+  /** Zone it belongs to: those who read it see the tools; the import files content there (none: whole team, auto classification). */
+  zone?: string
+  /** Importing the content into the brain (Claude explores the tool read-only). */
+  import?: { enabled: boolean; last_run?: McpImportRun }
 }
+
+/** `off`: no tools; `read`: read-only tools; `all`: all tools (writes included). */
+export type McpAgentsMode = "off" | "read" | "all"
+export const MCP_AGENTS_MODES: readonly McpAgentsMode[] = ["off", "read", "all"]
+
+export type McpImportRun = { at: string; ok: boolean; imported: number; skipped?: number; calls?: number; error?: string; duration_ms?: number }
 
 export type McpConnectorsConfig = Record<string, McpConnectorConfig>
 
@@ -178,6 +190,10 @@ export type McpConnectorPublic = {
   has_client: boolean
   has_token: boolean
   last_check?: McpCheck
+  agents: McpAgentsMode
+  zone?: string
+  import_enabled: boolean
+  last_import?: McpImportRun
 }
 
 export function hasAccess(c: McpConnectorConfig): boolean {
@@ -199,6 +215,10 @@ export function publicMcpConnector(c: McpConnectorConfig): McpConnectorPublic {
     has_client: Boolean(c.client?.client_id),
     has_token: Boolean(c.token || c.tokens?.access_token),
     last_check: c.last_check,
+    agents: c.agents ?? "read",
+    zone: c.zone,
+    import_enabled: Boolean(c.import?.enabled),
+    last_import: c.import?.last_run,
   }
 }
 
@@ -364,4 +384,69 @@ export function findResponse(body: string, contentType: string, id: number | str
     }
   }
   return msgs.find((m) => m.id === id && (m.result !== undefined || m.error !== undefined)) ?? null
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Connector tools, offered to the team's agents by the brain's MCP, and importing their content
+
+/** A tool of a connected MCP server, as cached (JSON Schema input schema). */
+export type McpToolDef = { name: string; title?: string; description?: string; input_schema: Record<string, unknown>; read_only: boolean }
+
+const WRITE_VERB = /^(create|update|delete|remove|add|set|send|post|write|edit|move|archive|merge|close|assign|upload|invite|publish|cancel|refund|run|execute|trigger|deploy|duplicate|copy|rename|reply|mark|complete|batch|bulk|upsert|patch|put|insert|apply|approve|reject|start|stop)$/
+const READ_VERB = /^(search|list|get|fetch|read|query|find|retrieve|lookup|describe|show|view|count|whoami)$/
+
+/**
+ * Tool without side effects? The server's `readOnlyHint` annotation decides. Without an annotation: no word of the name
+ * is a write verb, and a read verb comes first, after a brand prefix, or last ("search_issues", "linear_list_projects",
+ * "microsoft_docs_search"). When in doubt, the tool counts as a write.
+ */
+export function isReadOnlyTool(t: { name: string; annotations?: { readOnlyHint?: unknown } | null }): boolean {
+  if (typeof t.annotations?.readOnlyHint === "boolean") return t.annotations.readOnlyHint
+  const words = t.name
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[_\-.:\s]+/)
+    .filter(Boolean)
+  if (!words.length || words.some((w) => WRITE_VERB.test(w))) return false
+  return READ_VERB.test(words[0]) || READ_VERB.test(words[1] ?? "") || READ_VERB.test(words[words.length - 1])
+}
+
+/** A connector's tools visible to agents under the rule the admin chose. */
+export function toolsForAgents(defs: McpToolDef[], mode: McpAgentsMode): McpToolDef[] {
+  if (mode === "off") return []
+  return mode === "all" ? defs : defs.filter((d) => d.read_only)
+}
+
+/** Result of a `tools/call` → text for the agent (text, text resources, mentions of binary content). */
+export function callResultText(result: unknown, maxChars = 40_000): { text: string; is_error: boolean } {
+  const r = (result ?? {}) as { content?: unknown; structuredContent?: unknown; isError?: unknown }
+  const parts: string[] = []
+  for (const c of Array.isArray(r.content) ? r.content : []) {
+    const b = c as { type?: string; text?: unknown; resource?: { uri?: string; text?: unknown; mimeType?: string }; uri?: string; name?: string; mimeType?: string }
+    if (b.type === "text" && typeof b.text === "string") parts.push(b.text)
+    else if (b.type === "resource" && b.resource) parts.push(typeof b.resource.text === "string" ? b.resource.text : `[resource ${b.resource.uri ?? ""} (${b.resource.mimeType ?? "binary"})]`)
+    else if (b.type === "resource_link") parts.push(`[link ${b.name ?? ""} ${b.uri ?? ""}]`.trim())
+    else if (b.type === "image" || b.type === "audio") parts.push(`[${b.type} ${b.mimeType ?? ""} not passed on]`.trim())
+  }
+  if (!parts.length && r.structuredContent !== undefined) parts.push(JSON.stringify(r.structuredContent))
+  const text = parts.join("\n\n").trim() || "(empty response)"
+  return { text: text.length > maxChars ? `${text.slice(0, maxChars)}\n… (truncated at ${maxChars} characters)` : text, is_error: r.isError === true }
+}
+
+/** Interval between two automatic imports (Claude reads the tool: paid calls, so spaced out). */
+export const MCP_IMPORT_INTERVAL_MS = 6 * 60 * 60_000
+
+export function mcpImportDue(c: McpConnectorConfig | undefined, now = Date.now()): boolean {
+  if (!c?.enabled || !c.import?.enabled || !hasAccess(c)) return false
+  const last = c.import.last_run
+  return !last || now - Date.parse(last.at) >= MCP_IMPORT_INTERVAL_MS
+}
+
+/** Tool name accepted by the Claude API (^[a-zA-Z0-9_-]{1,64}$), unique in the list. */
+export function claudeToolName(name: string, taken: Set<string>): string {
+  const base = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60) || "tool"
+  let out = base
+  for (let i = 2; taken.has(out); i++) out = `${base.slice(0, 57)}_${i}`
+  taken.add(out)
+  return out
 }

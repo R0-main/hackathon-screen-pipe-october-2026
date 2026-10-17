@@ -84,6 +84,14 @@ demo/                 Demo script
   `/api/connectors/mcp/callback`. Providers without dynamic registration (GitHub, Slack, HubSpot, Google…) need an
   OAuth client declared by hand: the redirect URI to declare is shown. Tokens refreshed automatically, connection test
   (list of tools), SSRF protection on all requests. Tokens, secrets and PKCE verifiers stay on the server.
+- **Connector tools for agents**: each connected MCP server can be opened to the team's agents (no tools, read-only by
+  default, or all tools) and tied to a zone (only those who read it see it). The brain's MCP adds `connected_tools`
+  (list, argument schemas) and `use_connected_tool` (call with the account the admin connected): "find the Notion page
+  about deploying" or "list my Linear issues" from Claude Code.
+- **Content import**: "Import now", or automatically every 6 hours. Claude (the company's key or `ANTHROPIC_API_KEY`)
+  explores the tool with its read-only tools only, starting with what changed since the last import, and returns lasting
+  knowledge (decisions, procedures, facts) that enters the brain like a sync: secrets redacted, duplicates skipped,
+  connector zone or automatic classification.
 - **Language**: the product is in English (interface, server and CLI messages, prompts, demo data). The old French
   routes (`/etat`, `/connecteurs`, `/creer`…) redirect permanently to the English ones.
 - **Real-time feed**: the storage notifies the SSE stream as soon as an event is inserted (local emitter, or
@@ -125,6 +133,8 @@ Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-
 | GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin: Notion, Linear, Todoist, ICS calendar connectors (settings without the token, sync on demand). |
 | GET/POST | `/api/connectors/mcp` | Admin: MCP servers added (without token) and the OAuth redirect URI; adding from the catalog or a custom server. |
 | PUT/DELETE/POST | `/api/connectors/mcp/:id`, `/api/connectors/mcp/:id/authorize`, `/api/connectors/mcp/:id/test` | Admin: manual OAuth client or token, removal; address of the provider's sign-in page; test (list of tools). |
+| GET/POST | `/api/connected-tools`, `/api/connected-tools/call` | Members (through the brain's MCP): connector tools open to agents, and calling a tool (read-only unless the admin opened everything). |
+| POST | `/api/connectors/mcp/:id/import` | Admin: imports the connector's content now (Claude, read-only). |
 | GET | `/api/connectors/mcp/callback` | OAuth return from the provider (the admin's session, anti-CSRF state tied to the account, 15 min). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Accounts, access, zones, onboarding, sign-in. |
 

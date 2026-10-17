@@ -1,27 +1,43 @@
 // The company's remote MCP connectors: settings (`mcp_connectors` key of the company settings, read and written by the
 // API only — tokens, secrets and PKCE verifiers never leave the server), OAuth connection with a redirect to the
 // provider's sign-in page, return (callback) and connection test (list of tools).
+// The connected servers' tools are cached (`mcp_tools` key) and offered to the team's agents through the brain's MCP,
+// following the rule the admin chose (none, read-only, all) and the connector's zone.
 
 import {
   MCP_RETURN_PAGES,
   buildAuthorizeUrl,
+  callResultText,
   catalogEntry,
+  hasAccess,
+  mcpImportDue,
   publicMcpConnector,
+  toolsForAgents,
   tokenExpiring,
   truncate,
   validateMcpUrl,
   type McpCheck,
   type McpConnectorConfig,
   type McpConnectorPublic,
+  type McpAgentsMode,
   type McpConnectorsConfig,
+  type McpImportRun,
   type McpReturn,
+  type McpToolDef,
 } from "@brain/core"
 import type { Viewer } from "../auth"
+import { getClaude } from "../ai"
+import { ingestItems } from "../brain"
+import { recordIncident, sendAlert } from "../monitoring"
 import { getStore } from "../store"
-import { listTools, McpAuthError } from "./client"
+import { callTool, listTools, McpAuthError } from "./client"
+import { exploreConnector } from "./import"
 import { discover, exchangeCode, pkcePair, randomToken, refreshTokens, registerClient } from "./oauth"
 
 const SETTING = "mcp_connectors"
+const TOOLS_SETTING = "mcp_tools"
+/** Beyond this, the cached list of tools is reread the next time an agent uses it. */
+const TOOLS_TTL_MS = 24 * 60 * 60_000
 /** Time allowed to sign in at the provider and come back. */
 const PENDING_MS = 15 * 60_000
 
@@ -30,8 +46,15 @@ export function mcpRedirectUri(base: string): string {
   return `${base}/api/connectors/mcp/callback`
 }
 
-/** Error to show as is to the admin (400 on the API side). */
-export class McpUserError extends Error {}
+/** Error to show as is (400 by default on the API side; 403 and 404 for agents). */
+export class McpUserError extends Error {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
+    super(message)
+  }
+}
 
 async function load(): Promise<McpConnectorsConfig> {
   const raw = await getStore().getOrgSetting(SETTING)
@@ -109,9 +132,20 @@ export async function addCustom(input: { name: string; url: string; token?: stri
   return auth === "dynamic" || auth === "manual" ? publicMcpConnector((await load())[id]) : checkMcp(id)
 }
 
-export type McpPatch = { client_id?: string; client_secret?: string; token?: string; enabled?: boolean }
+export type McpPatch = {
+  client_id?: string
+  client_secret?: string
+  token?: string
+  enabled?: boolean
+  agents?: McpAgentsMode
+  zone?: string | null
+  import_enabled?: boolean
+}
 
-/** OAuth client declared by hand, personal token, pause. An empty secret keeps the one saved for this client. */
+/**
+ * OAuth client declared by hand, personal token, pause, tools offered to agents, zone, import. An empty secret keeps the
+ * one saved for this client.
+ */
 export async function updateMcp(id: string, patch: McpPatch): Promise<McpConnectorPublic> {
   const c = await mutate((cfg) => {
     const c = ensure(cfg, id)
@@ -127,6 +161,9 @@ export async function updateMcp(id: string, patch: McpPatch): Promise<McpConnect
       delete c.last_check
     }
     if (patch.enabled !== undefined) c.enabled = patch.enabled
+    if (patch.agents !== undefined) c.agents = patch.agents
+    if (patch.zone !== undefined) c.zone = patch.zone || undefined
+    if (patch.import_enabled !== undefined) c.import = { ...c.import, enabled: patch.import_enabled }
     return c
   })
   return publicMcpConnector(c)
@@ -136,6 +173,60 @@ export async function removeMcp(id: string): Promise<void> {
   await mutate((cfg) => {
     delete cfg[id]
   })
+  await saveToolDefs(id, null)
+}
+
+type ToolCache = Record<string, { at: string; tools: McpToolDef[] }>
+
+async function loadToolCache(): Promise<ToolCache> {
+  const raw = await getStore().getOrgSetting(TOOLS_SETTING)
+  try {
+    const parsed = raw ? (JSON.parse(raw) as ToolCache) : {}
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+async function saveToolDefs(id: string, tools: McpToolDef[] | null): Promise<void> {
+  const cache = await loadToolCache()
+  if (tools) cache[id] = { at: new Date().toISOString(), tools }
+  else if (cache[id]) delete cache[id]
+  else return
+  await getStore().setOrgSetting(TOOLS_SETTING, JSON.stringify(cache))
+}
+
+/**
+ * Runs `fn` with the connector's token: refreshed first if it expires, then once more if the server refuses it. The
+ * refreshed tokens are saved.
+ */
+export async function withBearer<T>(c: McpConnectorConfig, fn: (bearer: string | undefined) => Promise<T>): Promise<T> {
+  let tokens = c.tokens
+  let refreshed = false
+  const refresh = async () => {
+    if (!c.oauth || !c.client || !tokens?.refresh_token) return false
+    tokens = await refreshTokens(c.oauth, c.client, tokens)
+    refreshed = true
+    return true
+  }
+  try {
+    if (!c.token && tokenExpiring(tokens)) await refresh()
+    const bearer = () => c.token ?? tokens?.access_token
+    if (c.auth !== "none" && !bearer()) throw new McpUserError('Not connected yet: click "Connect".')
+    try {
+      return await fn(bearer())
+    } catch (err) {
+      if (!(err instanceof McpAuthError) || c.token || refreshed || !(await refresh())) throw err
+      return await fn(bearer())
+    }
+  } finally {
+    if (refreshed && tokens) {
+      const t = tokens
+      await mutate((cfg) => {
+        if (cfg[c.id]) cfg[c.id].tokens = t
+      })
+    }
+  }
 }
 
 /**
@@ -211,31 +302,15 @@ export async function completeAuthorize(viewer: Viewer, p: { state: string; code
   return c.id
 }
 
-/** Tests the connection (list of tools), refreshing the token if it expires or is refused once. */
+/** Tests the connection (list of tools, cached for agents), refreshing the token if needed. */
 export async function checkMcp(id: string): Promise<McpConnectorPublic> {
   const c = (await load())[id]
   if (!c) throw new McpUserError("Connector not added.")
-  let tokens = c.tokens
-  let refreshed = false
-  const refresh = async () => {
-    if (!c.oauth || !c.client || !tokens?.refresh_token) return false
-    tokens = await refreshTokens(c.oauth, c.client, tokens)
-    refreshed = true
-    return true
-  }
   let check: McpCheck
   try {
-    if (!c.token && tokenExpiring(tokens)) await refresh()
-    const bearer = () => c.token ?? tokens?.access_token
-    if (c.auth !== "none" && !bearer()) throw new McpUserError("Not connected yet: click \"Connect\".")
-    let result
-    try {
-      result = await listTools(c.url, bearer())
-    } catch (err) {
-      if (!(err instanceof McpAuthError) || c.token || refreshed || !(await refresh())) throw err
-      result = await listTools(c.url, bearer())
-    }
-    check = { at: new Date().toISOString(), ok: true, tools: result.tools, server: result.server }
+    const result = await withBearer(c, (bearer) => listTools(c.url, bearer))
+    await saveToolDefs(id, result.tools)
+    check = { at: new Date().toISOString(), ok: true, tools: result.tools.map((t) => t.name), server: result.server }
   } catch (err) {
     const text = err instanceof McpAuthError ? `${message(err)}: reconnect the connector` : message(err)
     check = { at: new Date().toISOString(), ok: false, tools: [], error: text }
@@ -243,9 +318,124 @@ export async function checkMcp(id: string): Promise<McpConnectorPublic> {
   const next = await mutate((cfg) => {
     const cur = cfg[id]
     if (!cur) return null
-    if (refreshed && tokens) cur.tokens = tokens
     cur.last_check = check
     return cur
   })
   return publicMcpConnector(next ?? { ...c, last_check: check })
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Tools offered to agents (the brain's MCP)
+
+export type AgentConnector = { id: string; name: string; mode: McpAgentsMode; tools: McpToolDef[] }
+
+/** Connector visible to this member: enabled, connected, tools open to agents, and a readable zone if it has one. */
+function visibleTo(c: McpConnectorConfig, viewer: Viewer): boolean {
+  if (!c.enabled || !hasAccess(c) || (c.agents ?? "read") === "off") return false
+  return !c.zone || viewer.access.readable.includes(c.zone)
+}
+
+/** Tools of the connectors visible to this member (cache reread when needed, in parallel). */
+export async function agentConnectors(viewer: Viewer): Promise<AgentConnector[]> {
+  const cfg = await load()
+  const visible = Object.values(cfg)
+    .filter((c) => visibleTo(c, viewer))
+    .sort((a, b) => a.added_at.localeCompare(b.added_at))
+  if (!visible.length) return []
+  const cache = await loadToolCache()
+  const stale = visible.filter((c) => !cache[c.id] || Date.now() - Date.parse(cache[c.id].at) > TOOLS_TTL_MS)
+  if (stale.length) {
+    await Promise.allSettled(stale.map((c) => checkMcp(c.id)))
+    Object.assign(cache, await loadToolCache())
+  }
+  return visible.map((c) => {
+    const mode = c.agents ?? "read"
+    return { id: c.id, name: c.name, mode, tools: toolsForAgents(cache[c.id]?.tools ?? [], mode) }
+  })
+}
+
+/** A member's agent calls a tool, within the limits the admin chose. Throws McpUserError (400/403/404). */
+export async function callAgentTool(viewer: Viewer, connectorId: string, tool: string, args: Record<string, unknown>): Promise<{ text: string; is_error: boolean }> {
+  const cfg = await load()
+  const c = cfg[connectorId] ?? Object.values(cfg).find((x) => x.name.toLowerCase() === connectorId.toLowerCase())
+  if (!c || !visibleTo(c, viewer)) throw new McpUserError(`Connector "${connectorId}" not found or not shared with agents.`, 404)
+  const mode = c.agents ?? "read"
+  let defs = (await loadToolCache())[c.id]?.tools
+  if (!defs?.some((d) => d.name === tool)) {
+    // Tool that appeared since it was cached: reread the list once.
+    await checkMcp(c.id)
+    defs = (await loadToolCache())[c.id]?.tools
+  }
+  const def = defs?.find((d) => d.name === tool)
+  if (!def) throw new McpUserError(`Tool "${tool}" unknown to ${c.name}: call connected_tools for the list.`, 404)
+  if (!toolsForAgents([def], mode).length) throw new McpUserError(`"${tool}" changes data in ${c.name}: the admin only opened read-only tools to agents.`, 403)
+  return callResultText(await withBearer(c, (bearer) => callTool(c.url, bearer, tool, args)))
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Importing the content into the brain
+
+/**
+ * Imports the connector's content on behalf of `viewer` (the admin who clicks, or the one whose visit triggers the
+ * automatic import): Claude explores the tool read-only, and its knowledge enters the brain. Does not throw: the result
+ * says whether it worked, it is saved with the connector and an alert goes out on failure.
+ */
+export async function importMcp(viewer: Viewer, id: string): Promise<McpImportRun> {
+  const started = Date.now()
+  const finish = async (run: McpImportRun) => {
+    await mutate((cfg) => {
+      if (cfg[id]) cfg[id].import = { enabled: cfg[id].import?.enabled ?? false, last_run: run }
+    })
+    return run
+  }
+  try {
+    const c = (await load())[id]
+    if (!c) throw new McpUserError("Connector not added.")
+    if (!hasAccess(c)) throw new McpUserError('Not connected yet: click "Connect".')
+    const store = getStore()
+    const claude = await getClaude(store)
+    if (!claude) throw new McpUserError("no Claude key: add one in Zones (or ANTHROPIC_API_KEY on the server).")
+    let defs = (await loadToolCache())[id]?.tools
+    if (!defs) {
+      await checkMcp(id)
+      defs = (await loadToolCache())[id]?.tools ?? []
+    }
+    // Read-only tools only, whatever the agents rule: the import never changes the tool.
+    const tools = defs.filter((d) => d.read_only)
+    const [zones, org] = await Promise.all([store.listZones(), store.getOrg()])
+    const outcome = await exploreConnector(c, {
+      claude,
+      tools,
+      callTool: (name, args) => withBearer(c, (bearer) => callTool(c.url, bearer, name, args)),
+      zones,
+      org: { name: org.name, description: org.description || undefined },
+      since: c.import?.last_run?.ok ? c.import.last_run.at : undefined,
+    })
+    const r = outcome.items.length ? await ingestItems(viewer, outcome.items, "job") : { inserted: 0, skipped: 0 }
+    return finish({ at: new Date().toISOString(), ok: true, imported: r.inserted, skipped: r.skipped ?? 0, calls: outcome.calls, duration_ms: Date.now() - started })
+  } catch (err) {
+    const text = message(err)
+    if (!(err instanceof McpUserError)) {
+      recordIncident(`mcp-import:${id}`, err)
+      void sendAlert(`mcp-import:${id}`, `Import of connector ${id} failed: ${text}`)
+    }
+    return finish({ at: new Date().toISOString(), ok: false, imported: 0, error: text, duration_ms: Date.now() - started })
+  }
+}
+
+const importing = new Set<string>()
+
+/** Automatic imports: called in the background when an admin views the state; one import at a time per connector. */
+export async function runDueMcpImports(viewer: Viewer): Promise<void> {
+  if (viewer.real.role !== "admin") return
+  for (const c of Object.values(await load())) {
+    const key = `${viewer.real.org_id}:${c.id}`
+    if (!mcpImportDue(c) || importing.has(key)) continue
+    importing.add(key)
+    try {
+      await importMcp(viewer, c.id)
+    } finally {
+      importing.delete(key)
+    }
+  }
 }
