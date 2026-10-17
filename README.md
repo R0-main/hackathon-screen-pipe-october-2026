@@ -80,7 +80,7 @@ demo/                 Script de démo
 
 ## API du cerveau
 
-Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SHA-256 côté serveur) pour les agents ; cookie de session signé pour le dashboard. Le cookie `brain_accounts` garde une session signée par entreprise ouverte sur ce navigateur (`POST /api/session/accounts {userId}` y revient, `DELETE` l'oublie) ; la déconnexion ne ferme que la session en cours.
+Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SHA-256 côté serveur) pour les agents ; cookie de session signé pour le dashboard. Le cookie `brain_accounts` (httpOnly) retient pendant un an chaque entreprise ouverte sur ce navigateur, sans jeton à ressaisir : `POST /api/session/accounts {userId}` y revient, `DELETE` l'oublie, et une session expirée se rouvre toute seule sur la plus récente (`/reprise`). La déconnexion ne ferme que la session en cours et suspend cette reconnexion automatique jusqu'à la prochaine entreprise ouverte.
 
 | Méthode | Route | Usage |
 |---|---|---|
