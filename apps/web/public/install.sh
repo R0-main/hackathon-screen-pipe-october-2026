@@ -25,6 +25,7 @@
 #   4                 système non géré, ou Node.js impossible à installer ou à lancer ici (le message dit quoi installer).
 #   5                 téléchargement impossible (réseau, proxy, mauvaise adresse, page d'erreur au lieu du client) :
 #                     relancer la même commande. Le client et Node.js déjà installés restent intacts.
+#   9                 (commande du prompt seulement) certificat du cerveau inattendu : empreinte différente de celle du prompt.
 # Le jeton n'est jamais affiché. Pourquoi un script et un CLI plutôt que des instructions à Claude : docs/CLI.md.
 # Tests seulement : COMPANY_BRAIN_FORCE_PRIVATE_NODE=1 ignore le Node.js du système (la CI teste le téléchargement).
 
@@ -115,7 +116,6 @@ fetch() {
 # Windows (Git Bash, MSYS2, Cygwin) : install.ps1 fait le travail (Node.js pour Windows, raccourci brain.cmd), dans le
 # dossier de l'utilisateur Windows (%USERPROFILE%, celui que lit Node.js), pas dans le HOME de Git Bash.
 run_windows() {
-  [ -z "$ca" ] || fail 4 "Cerveau auto-hébergé en HTTPS local (--ca) : pas encore pris en charge sous Windows (install.ps1 ne connaît pas le certificat privé)."
   command -v cygpath >/dev/null 2>&1 || fail 4 "Shell Windows sans cygpath : lance install.ps1 depuis PowerShell (powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url … --token …)."
   if [ -n "${COMPANY_BRAIN_HOME:-}" ]; then
     win_home="$(cygpath -u "$COMPANY_BRAIN_HOME")"
@@ -142,6 +142,25 @@ run_windows() {
   if [ -n "${COMPANY_BRAIN_HOME:-}" ]; then
     COMPANY_BRAIN_HOME="$(cygpath -w "$win_home")"
     export COMPANY_BRAIN_HOME
+  fi
+  # --ca : chemin Windows pour install.ps1 et le client (Node.js ne lit pas /c/Users/…) ; install.ps1 l'ajoute au magasin.
+  if [ -n "$ca" ]; then
+    ca_win="$(cygpath -w "$ca")"
+    n=$#
+    prev=""
+    while [ "$n" -gt 0 ]; do
+      a="$1"
+      shift
+      n=$((n - 1))
+      if [ "$prev" = "--ca" ]; then set -- "$@" "$ca_win"
+      else
+        case "$a" in
+          --ca=*) set -- "$@" "--ca=$ca_win" ;;
+          *) set -- "$@" "$a" ;;
+        esac
+      fi
+      prev="$a"
+    done
   fi
   # Sans conversion de chemins MSYS : les options arrivent à install.ps1 exactement comme reçues ici.
   MSYS_NO_PATHCONV=1

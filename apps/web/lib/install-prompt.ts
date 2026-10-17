@@ -23,7 +23,7 @@ export const BRAIN_CLI = "~/.company-brain/brain"
 export const BRAIN_CLI_WINDOWS = "~/.company-brain/brain.cmd"
 
 /** Codes de sortie cités par les prompts (voir l'en-tête). */
-export const EXIT = { permissions: 3, download: 5, noScreenpipe: 6, joinPending: 7, joinRejected: 8 } as const
+export const EXIT = { permissions: 3, download: 5, noScreenpipe: 6, joinPending: 7, joinRejected: 8, certificate: 9 } as const
 
 /**
  * La commande unique de chaque système, suivie des options (`--token …` ou `--join …`, seul endroit où le jeton ou le
@@ -31,33 +31,58 @@ export const EXIT = { permissions: 3, download: 5, noScreenpipe: 6, joinPending:
  * « curl: (6) » serait lu comme « branché sans Screenpipe ») ; sous Windows, `exit $LASTEXITCODE` rend le code de setup
  * même quand la ligne est passée à `powershell -Command`.
  */
-export function installCommands(baseUrl: string, options = "", caFingerprint?: string): { posix: string; windows: string | null } {
+export function installCommands(baseUrl: string, options = "", caFingerprint?: string): { posix: string; windows: string } {
   const dir = '"$env:USERPROFILE\\.company-brain'
   const args = `--url ${baseUrl}${options ? ` ${options}` : ""}`
+  const ps1 = `try { Invoke-WebRequest -UseBasicParsing ${baseUrl}/install.ps1 -OutFile ${dir}\\install.ps1" -ErrorAction Stop } catch { exit ${EXIT.download} }; `
   if (caFingerprint) {
     // Cerveau auto-hébergé en HTTPS local : son certificat est d'abord récupéré (sans vérification, il n'y a encore rien
-    // pour le vérifier), puis contrôlé par son empreinte SHA-256 donnée ici ; tout le reste passe par lui. Windows :
-    // install.ps1 ne connaît pas encore le certificat privé.
+    // pour le vérifier), puis contrôlé par son empreinte SHA-256 donnée ici (9 si elle diffère) ; tout le reste passe par
+    // lui. Sous Windows, il est ajouté aux certificats de confiance de l'utilisateur (navigateurs et téléchargements ;
+    // Windows demande une confirmation), puis install.ps1 et le client reçoivent --ca.
     const check = `[ "$(openssl x509 -in ${CA_FILE} -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "${caFingerprint}" ]`
     return {
       posix:
-        `mkdir -p ~/.company-brain && (curl -ksSL ${baseUrl}/ca.crt -o ${CA_FILE} || exit ${EXIT.download}) && ${check} && ` +
+        `mkdir -p ~/.company-brain && (curl -ksSL ${baseUrl}/ca.crt -o ${CA_FILE} || exit ${EXIT.download}) && (${check} || exit ${EXIT.certificate}) && ` +
         `(curl -fsSL --cacert ${CA_FILE} ${baseUrl}/install.sh -o ~/.company-brain/install.sh || exit ${EXIT.download}) && sh ~/.company-brain/install.sh ${args} --ca ${CA_FILE}`,
-      windows: null,
+      windows:
+        `New-Item -ItemType Directory -Force ${dir}" | Out-Null; $ca = ${dir}\\ca.crt"; ` +
+        `$skip = @{}; if ($PSVersionTable.PSVersion.Major -ge 6) { $skip = @{ SkipCertificateCheck = $true } } else { [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true } }; ` +
+        `try { Invoke-WebRequest -UseBasicParsing ${baseUrl}/ca.crt -OutFile $ca -ErrorAction Stop @skip } catch { exit ${EXIT.download} }; ` +
+        `[Net.ServicePointManager]::ServerCertificateValidationCallback = $null; ` +
+        `$c = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $ca; ` +
+        `if (([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData)) -replace '-') -ne '${caFingerprint}') { exit ${EXIT.certificate} }; ` +
+        `if (-not (Get-ChildItem Cert:\\CurrentUser\\Root | Where-Object Thumbprint -eq $c.Thumbprint)) { certutil -user -addstore Root $ca | Out-Null }; ` +
+        ps1 +
+        `powershell -NoProfile -ExecutionPolicy Bypass -File ${dir}\\install.ps1" ${args} --ca $ca; exit $LASTEXITCODE`,
     }
   }
   return {
     posix: `(curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh || exit ${EXIT.download}) && sh ~/.company-brain/install.sh ${args}`,
-    windows:
-      `New-Item -ItemType Directory -Force ${dir}" | Out-Null; ` +
-      `try { Invoke-WebRequest -UseBasicParsing ${baseUrl}/install.ps1 -OutFile ${dir}\\install.ps1" -ErrorAction Stop } catch { exit ${EXIT.download} }; ` +
-      `powershell -NoProfile -ExecutionPolicy Bypass -File ${dir}\\install.ps1" ${args}; exit $LASTEXITCODE`,
+    windows: `New-Item -ItemType Directory -Force ${dir}" | Out-Null; ` + ps1 + `powershell -NoProfile -ExecutionPolicy Bypass -File ${dir}\\install.ps1" ${args}; exit $LASTEXITCODE`,
   }
 }
 
-/** Les deux lignes « système : commande » du prompt ; sans commande Windows (certificat privé), une phrase le dit. */
-function commandLines(cmd: { posix: string; windows: string | null }): string {
-  return `   macOS, Linux, Git Bash : ${cmd.posix}\n` + (cmd.windows ? `   Windows, PowerShell : ${cmd.windows}` : "   Windows : pas encore pris en charge pour un cerveau auto-hébergé en HTTPS local (utilise un Mac ou Linux).")
+/**
+ * Relancer l'installation depuis un poste déjà branché (brain doctor) : la config garde le jeton, et le certificat d'un
+ * cerveau auto-hébergé est déjà sur le poste (ajouté au magasin Windows à la première installation).
+ */
+export function reinstallCommands(baseUrl: string, caFile?: string): { posix: string; windows: string } {
+  if (!caFile) return installCommands(baseUrl)
+  const dir = '"$env:USERPROFILE\\.company-brain'
+  const q = `"${caFile.replace(/"/g, '\\"')}"`
+  return {
+    posix: `(curl -fsSL --cacert ${q} --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh || exit ${EXIT.download}) && sh ~/.company-brain/install.sh --url ${baseUrl} --ca ${q}`,
+    windows:
+      `New-Item -ItemType Directory -Force ${dir}" | Out-Null; ` +
+      `try { Invoke-WebRequest -UseBasicParsing ${baseUrl}/install.ps1 -OutFile ${dir}\\install.ps1" -ErrorAction Stop } catch { exit ${EXIT.download} }; ` +
+      `powershell -NoProfile -ExecutionPolicy Bypass -File ${dir}\\install.ps1" --url ${baseUrl} --ca ${q}; exit $LASTEXITCODE`,
+  }
+}
+
+/** Les deux lignes « système : commande » du prompt. */
+function commandLines(cmd: { posix: string; windows: string }): string {
+  return `   macOS, Linux, Git Bash : ${cmd.posix}\n   Windows, PowerShell : ${cmd.windows}`
 }
 
 /** Ce que Claude fait des codes communs (setup, et join une fois la demande acceptée). */
@@ -73,7 +98,7 @@ function commonCodes(brain: string): string {
 /** Où install.sh et le client gardent le certificat d'un cerveau auto-hébergé. */
 export const CA_FILE = "~/.company-brain/ca.crt"
 
-const CA_NOTE = "   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; si cette vérification échoue, arrête-toi et préviens-moi.)\n"
+const CA_NOTE = "   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; code 9 = empreinte différente, arrête-toi et préviens-moi. Sous Windows, une boîte de dialogue demande de confirmer l'ajout du certificat : accepter.)\n"
 
 /** « de Fournil », « d'Atelier Lumen » : l'élision devant une voyelle ou un h. */
 export function deNom(name: string): string {
