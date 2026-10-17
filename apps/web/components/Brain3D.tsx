@@ -53,18 +53,13 @@ const BACK = 0.86
 const NEURON_R = 0.008
 /** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
 const SYNAPSE_R = 0.0045
-/** Flux le long des arcs entre zones : finesse de la gaine, vitesse (tours par seconde), opacité au cœur et largeur des lueurs. */
-const FLOW_RINGS = 96
-const FLOW_SPEED = 0.16
 /**
- * Les deux gaines d'une lueur : un cœur net, plus épais que l'arc et à sa couleur vive, et un halo large et
- * pâle autour. `head` / `tail` : longueur de l'avant et de la traînée (en part de l'arc) : une comète.
+ * Flux entre zones : des billes qui circulent à l'intérieur des arcs, dans les deux sens. Par sens et par arc,
+ * leur nombre ; leur vitesse (en tours d'arc par seconde) et leur rayon, relatif à celui de l'arc.
  */
-type FlowLayer = { radius: number; alpha: number; head: number; tail: number }
-const FLOW_LAYERS: FlowLayer[] = [
-  { radius: 1.9, alpha: 1, head: 0.025, tail: 0.13 },
-  { radius: 4.2, alpha: 0.3, head: 0.04, tail: 0.18 },
-]
+const BEADS_PER_WAY = 2
+const BEAD_SPEED = 0.12
+const BEAD_R = 2.4
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
@@ -116,15 +111,17 @@ type ZoneGfx = {
   dismissedAt: number
 }
 
-/** `flow` : les gaines autour de l'arc où circulent les lueurs (cœur, halo) ; une couleur RGBA par sommet, l'alpha est animé. */
 type SynapseGfx = {
   a: string
   b: string
   mat: THREE.MeshBasicMaterial
   baseOpacity: number
   active: boolean
-  flow: { attr: THREE.BufferAttribute; layer: FlowLayer }[]
-  /** Décalage de départ des lueurs, propre à chaque arc : elles ne partent pas toutes ensemble. */
+  /** L'arc (pour y poser les billes) et ses deux couleurs d'extrémité. */
+  curve: THREE.CatmullRomCurve3
+  from: THREE.Color
+  to: THREE.Color
+  /** Décalage de départ des billes, propre à chaque arc : elles ne partent pas toutes ensemble. */
   phase: number
 }
 /** `fade` : instant où l'onde commence à s'éteindre avant son terme (zone désélectionnée). */
@@ -546,8 +543,6 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
 
   const reducedFlow = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  /** Profil d'une lueur le long de l'arc (x > 0 : devant elle) : une tête nette, une traînée qui s'étire derrière. */
-  const flowBump = (x: number, l: FlowLayer) => Math.exp(-((x / (x > 0 ? l.head : l.tail)) ** 2))
   // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
   // l'autre, plus marqués quand elles sont actives.
   const TUBULAR = 64
@@ -560,7 +555,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
     const baseOpacity = 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08)
     const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
-    const geo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), TUBULAR, SYNAPSE_R, RADIAL, false)
+    const curve = new T.CatmullRomCurve3(pts)
+    const geo = new T.TubeGeometry(curve, TUBULAR, SYNAPSE_R, RADIAL, false)
     const from = new T.Color(A.locked ? NEUTRAL : A.color)
     const to = new T.Color(B.locked ? NEUTRAL : B.color)
     const cols = new Float32Array(geo.attributes.position.count * 3)
@@ -571,51 +567,38 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     geometries.push(geo)
     materials.push(mat)
 
-    // Les gaines du flux : même arc, plus larges, transparentes sauf là où passe une lueur. Leur couleur suit le
-    // dégradé de l'arc, avivée : la lueur se voit dans la couleur des zones qu'elle relie.
-    const flow = FLOW_LAYERS.map((layer) => {
-      const flowGeo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), FLOW_RINGS, SYNAPSE_R * layer.radius, RADIAL, false)
-      const flowCols = new Float32Array(flowGeo.attributes.position.count * 4)
-      for (let v = 0; v < flowGeo.attributes.position.count; v++) {
-        tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / FLOW_RINGS).offsetHSL(0, 0.15, 0).toArray(flowCols, v * 4)
-        flowCols[v * 4 + 3] = 0
-      }
-      const attr = new T.BufferAttribute(flowCols, 4)
-      flowGeo.setAttribute("color", attr)
-      const flowMat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
-      const flowMesh = new T.Mesh(flowGeo, flowMat)
-      flowMesh.visible = !reducedFlow
-      group.add(flowMesh)
-      geometries.push(flowGeo)
-      materials.push(flowMat)
-      return { attr, layer }
-    })
-    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, flow, phase: (hashString(`${s.a}|${s.b}`) % 1000) / 1000 })
+    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, curve, from, to, phase: (hashString(`${s.a}|${s.b}`) % 1000) / 1000 })
   }
+  // Les billes du flux, toutes dans un seul maillage : chacune prend la couleur de l'arc là où elle passe, avivée.
+  const beads = new T.InstancedMesh(geoSphere, new T.MeshBasicMaterial({ color: WHITE }), Math.max(1, syn.length * BEADS_PER_WAY * 2))
+  beads.count = reducedFlow ? 0 : syn.length * BEADS_PER_WAY * 2
+  beads.frustumCulled = false
+  group.add(beads)
+  materials.push(beads.material as THREE.Material)
+  const beadAt = new T.Vector3()
   /**
-   * Le flux entre zones : deux lueurs par arc, l'une de A vers B, l'autre de B vers A, qui glissent en continu.
-   * Elles s'effacent près des billes, et s'avivent et accélèrent quand une des deux zones est active.
+   * Le flux entre zones : sur chaque arc, des billes vont de A vers B et d'autres de B vers A, en continu et
+   * régulièrement espacées. Elles rapetissent jusqu'à disparaître en arrivant sur une zone, et accélèrent quand
+   * une des deux zones est active.
    */
   const flowFrame = (time: number) => {
     if (reducedFlow) return
+    let n = 0
     for (const s of syn) {
-      const speed = FLOW_SPEED * (s.active ? 1.8 : 1)
-      const go = (time * speed + s.phase) % 1
-      const back = 1 - ((time * speed + s.phase + 0.5) % 1)
-      for (const { attr, layer } of s.flow) {
-        const peak = Math.min(1, layer.alpha * (s.active ? 1.5 : 1))
-        const arr = attr.array as Float32Array
-        for (let ring = 0; ring <= FLOW_RINGS; ring++) {
-          const u = ring / FLOW_RINGS
-          // L'une va de A vers B (devant elle : u > go), l'autre de B vers A (devant elle : u < back).
-          const glow = Math.max(flowBump(u - go, layer), flowBump(back - u, layer))
-          const ends = Math.min(1, u / 0.08, (1 - u) / 0.08)
-          const alpha = peak * glow * ends
-          for (let k = 0; k <= RADIAL; k++) arr[(ring * (RADIAL + 1) + k) * 4 + 3] = alpha
-        }
-        attr.needsUpdate = true
+      const run = time * BEAD_SPEED * (s.active ? 1.8 : 1) + s.phase
+      for (let j = 0; j < BEADS_PER_WAY * 2; j++) {
+        // Les billes paires vont de A vers B, les impaires de B vers A ; chaque sens est décalé d'une demi-bille.
+        const along = (run + Math.floor(j / 2) / BEADS_PER_WAY + (j % 2) * (0.5 / BEADS_PER_WAY)) % 1
+        const u = j % 2 === 0 ? along : 1 - along
+        s.curve.getPointAt(u, beadAt)
+        const r = SYNAPSE_R * BEAD_R * Math.min(1, u / 0.1, (1 - u) / 0.1)
+        beads.setMatrixAt(n, mtx.makeScale(r, r, r).setPosition(beadAt))
+        beads.setColorAt(n, tone.copy(s.from).lerp(s.to, u).offsetHSL(0, 0.12, -0.06))
+        n++
       }
     }
+    beads.instanceMatrix.needsUpdate = true
+    if (beads.instanceColor) beads.instanceColor.needsUpdate = true
   }
 
   // Dots des personnes : posés à l'écran, juste hors de la silhouette du cerveau, dans la direction de leur zone.
@@ -1024,6 +1007,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
     neurons.dispose()
+    beads.dispose()
     kit.dispose()
     renderer.dispose()
   }
