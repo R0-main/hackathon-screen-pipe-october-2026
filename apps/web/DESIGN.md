@@ -92,7 +92,7 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 ## Page d'accueil publique (`/`)
 
 Adresses : `/` la page d'accueil (pour tout le monde), `/creer` la création d'une entreprise, `/demo` l'entrée de la
-démo (choix d'un compte de Butine, mode démo seulement), `/login` la connexion par jeton, `/dashboard` le cerveau et,
+démo (choix d'un compte de Butine, mode démo seulement), `/login` l'entrée (entreprises retenues, gros bouton « Créer mon entreprise », jeton replié dessous), `/dashboard` le cerveau et,
 à côté, les autres pages connectées. `/accueil` redirige vers `/`.
 
 Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accueil » de `globals.css`).
