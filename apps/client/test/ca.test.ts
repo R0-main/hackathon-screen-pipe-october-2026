@@ -157,3 +157,12 @@ test("cerveau en HTTPS privé : le client lui fait confiance au démarrage grâc
     server.close()
   }
 })
+
+test("empreinte en PowerShell (commande Windows du prompt) : la même que openssl et que le client", (t) => {
+  const file = caFile()
+  const expr = `$c = New-Object Security.Cryptography.X509Certificates.X509Certificate2 '${file}'; [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData)) -replace '-'`
+  const r = spawnSync("pwsh", ["-NoProfile", "-Command", expr], { encoding: "utf8", timeout: 60_000 })
+  if (r.error) return t.skip("pwsh indisponible")
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout.trim(), TEST_FP)
+})

@@ -49,6 +49,9 @@ l'empreinte correspond ; `install.sh` télécharge ensuite `brain.mjs` avec ce c
 - l'installe pour les navigateurs du poste (trousseau de session sur macOS, magasin utilisateur sur Windows, base NSS
   pour Chrome sous Linux), une fois par certificat ; Firefox a son propre magasin (Paramètres → Certificats → Importer).
 
+Sous Windows, la commande du prompt (PowerShell) fait la même chose : certificat récupéré, empreinte vérifiée (code 9 si
+elle diffère), ajout au magasin de l'utilisateur (Windows demande une confirmation), puis `install.ps1 --ca`.
+
 Le message d'équipe (« rejoindre sur demande ») fait la même chose. Exemple complet du prompt : [install/PROMPT.md](../install/PROMPT.md#cerveau-auto-hébergé-https-sur-le-réseau-local).
 
 Le jour où l'autorité change (machine réinstallée, passage à vos propres certificats), chaque poste relance

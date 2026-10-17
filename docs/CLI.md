@@ -60,7 +60,7 @@ envoie la demande, attend qu'un admin l'accepte, puis enchaîne sur `setup` avec
 | `apps/client/src/cli.ts`, `setup.ts` | Le CLI, empaqueté en un seul fichier `brain.mjs` (servi sur `/brain.mjs`, empreinte sur `/brain.mjs.sha256`). |
 | `apps/client/src/doctor.ts` | `brain doctor` : diagnostic en lecture seule, avec la commande qui répare chaque point KO (`--json` pour Claude). |
 | `apps/web/lib/install-prompt.ts` | Le prompt court, généré avec le jeton de chaque employé. |
-| `apps/web/lib/ca.ts`, `app/ca.crt/route.ts` | Cerveau auto-hébergé : certificat de l'autorité privée servi sur `/ca.crt`, empreinte épinglée dans le prompt (`--ca` côté `install.sh` et client ; macOS, Linux et Git Bash seulement). |
+| `apps/web/lib/ca.ts`, `app/ca.crt/route.ts` | Cerveau auto-hébergé : certificat de l'autorité privée servi sur `/ca.crt`, empreinte épinglée dans le prompt (`--ca` côté `install.sh`, `install.ps1` et client ; sous Windows, le certificat est ajouté au magasin de l'utilisateur). |
 | `apps/client/test/install-prompt.test.ts` | Le prompt ne cite que des commandes et des codes qui existent ; avec un certificat privé, `install.sh --ca` télécharge par lui et le transmet à `setup`. |
 | `apps/client/test/install-script.test.ts` | `install.sh` / `install.ps1` : téléchargements, page d'erreur refusée, raccourcis, codes ; en CI sous Linux et Windows. |
 
