@@ -38,6 +38,11 @@ const DEFAULT_PICK = ["dev", "produit", "direction"]
  * contient les prompts, donc les jetons : c'est ce qui permet de les recopier après un rechargement.
  */
 const STORAGE_KEY = "nos-brainer:creer"
+/**
+ * Posé dans l'adresse à l'ouverture du parcours (`/creer?brouillon=1`) : un rechargement ou un retour arrière reprend le
+ * brouillon, alors qu'arriver par un lien (« Créer mon entreprise ») recommence de zéro, même après une entreprise créée.
+ */
+const DRAFT_PARAM = "brouillon"
 const POLL_MS = 3000
 
 function load(): Partial<Saved> | null {
@@ -63,6 +68,12 @@ function save(s: Saved) {
   } catch {}
 }
 
+function clear() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {}
+}
+
 /**
  * Créer son entreprise à partir de zéro, une question par écran : nom, activité, qui on est, zones du cerveau.
  * Ensuite, le prompt à coller dans Claude Code ou Codex pour brancher son poste, puis un prompt par collègue pour l'inviter.
@@ -84,6 +95,12 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has(DRAFT_PARAM)) {
+      clear()
+      url.searchParams.set(DRAFT_PARAM, "1")
+      window.history.replaceState(null, "", url)
+    }
     const s = load()
     if (s) {
       if (s.step) setStep(s.step)
@@ -148,9 +165,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
   function restart() {
     if (created && !confirm(`Recommencer ? Le cerveau ${deNom(created.orgName)} reste en place, vous en créerez un nouveau.`)) return
-    try {
-      sessionStorage.removeItem(STORAGE_KEY)
-    } catch {}
+    clear()
     setCompany("")
     setDescription("")
     setName("")
