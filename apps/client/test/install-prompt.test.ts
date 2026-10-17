@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands } from "../../web/lib/install-prompt"
+import { EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands } from "../../web/lib/install-prompt"
 import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
 import { EXIT_JOIN_PENDING, EXIT_JOIN_REJECTED } from "../src/join"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
@@ -155,24 +155,54 @@ test("prompt d'onboarding : cadré par ce que l'entreprise fait, pour laisser de
 })
 const FP = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49"
 
-test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, empreinte vérifiée, puis tout passe par lui", () => {
+test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, empreinte vérifiée, puis tout passe par lui (macOS, Linux, Windows)", () => {
   const p = buildInstallPrompt({ ...EXAMPLE, caFingerprint: FP })
   const check = `[ "$(openssl x509 -in ~/.company-brain/ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "${FP}" ]`
   const posix =
-    `mkdir -p ~/.company-brain && (curl -ksSL ${EXAMPLE.baseUrl}/ca.crt -o ~/.company-brain/ca.crt || exit 5) && ${check} && ` +
+    `mkdir -p ~/.company-brain && (curl -ksSL ${EXAMPLE.baseUrl}/ca.crt -o ~/.company-brain/ca.crt || exit 5) && (${check} || exit 9) && ` +
     `(curl -fsSL --cacert ~/.company-brain/ca.crt ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token} --ca ~/.company-brain/ca.crt`
+  const cmd = installCommands(EXAMPLE.baseUrl, `--token ${EXAMPLE.token}`, FP)
+  assert.equal(cmd.posix, posix)
   assert.ok(p.includes(`macOS, Linux, Git Bash : ${posix}\n`), p)
-  assert.deepEqual(installCommands(EXAMPLE.baseUrl, `--token ${EXAMPLE.token}`, FP), { posix, windows: null })
-  assert.match(p, /Windows : pas encore pris en charge pour un cerveau auto-hébergé/)
-  assert.equal(p.split(EXAMPLE.token).length, 2, "le jeton n'apparaît qu'une fois (pas de commande Windows)")
+  assert.ok(p.includes(`Windows, PowerShell : ${cmd.windows}\n`), "la commande Windows")
+  // Windows : le certificat est récupéré sans vérification (PowerShell 5.1 et 7), vérifié par la même empreinte (9 sinon),
+  // ajouté au magasin de l'utilisateur s'il n'y est pas, puis install.ps1 est téléchargé normalement et reçoit --ca.
+  const w = cmd.windows
+  const order = [
+    `$ca = "$env:USERPROFILE\\.company-brain\\ca.crt"; `,
+    `if ($PSVersionTable.PSVersion.Major -ge 6) { $skip = @{ SkipCertificateCheck = $true } } else { [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true } }; `,
+    `try { Invoke-WebRequest -UseBasicParsing ${EXAMPLE.baseUrl}/ca.crt -OutFile $ca -ErrorAction Stop @skip } catch { exit 5 }; `,
+    `[Net.ServicePointManager]::ServerCertificateValidationCallback = $null; `,
+    `-replace '-') -ne '${FP}') { exit 9 }; `,
+    `if (-not (Get-ChildItem Cert:\\CurrentUser\\Root | Where-Object Thumbprint -eq $c.Thumbprint)) { certutil -user -addstore Root $ca | Out-Null }; `,
+    `try { Invoke-WebRequest -UseBasicParsing ${EXAMPLE.baseUrl}/install.ps1 -OutFile "$env:USERPROFILE\\.company-brain\\install.ps1" -ErrorAction Stop } catch { exit 5 }; `,
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.company-brain\\install.ps1" --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token} --ca $ca; exit $LASTEXITCODE`,
+  ]
+  let at = -1
+  for (const part of order) {
+    const i = w.indexOf(part)
+    assert.ok(i > at, `dans l'ordre : ${part}`)
+    at = i
+  }
+  assert.equal(w.split("SkipCertificateCheck").length, 2, "la vérification n'est sautée que pour récupérer le certificat")
+  assert.equal(p.split(EXAMPLE.token).length, 3, "le jeton n'apparaît que dans les deux commandes")
   assert.equal(p.split("curl -k").length, 2, "-k ne sert qu'à récupérer le certificat, jamais pour install.sh")
-  assert.match(p, /si cette vérification échoue, arrête-toi/)
+  assert.match(p, /code 9 = empreinte différente, arrête-toi et préviens-moi/)
+  assert.match(p, /Sous Windows, une boîte de dialogue demande de confirmer l'ajout du certificat/)
   assert.ok(INSTALL_PROMPT_RE.test(p))
-  assert.ok(p.length < 3000, `prompt court (${p.length} caractères)`)
+  assert.ok(p.length < 4500, `prompt (${p.length} caractères)`)
   const j = buildJoinPrompt({ ...JOIN, caFingerprint: FP })
-  assert.ok(j.includes(`${check} && (curl -fsSL --cacert ~/.company-brain/ca.crt ${JOIN.baseUrl}/install.sh`))
+  assert.ok(j.includes(`(${check} || exit 9) && (curl -fsSL --cacert ~/.company-brain/ca.crt ${JOIN.baseUrl}/install.sh`))
   assert.ok(j.includes(`--join ${JOIN.code} --name "<prénom nom>" --title "<poste>" --email "<email>" --ca ~/.company-brain/ca.crt`))
+  assert.ok(j.includes(`--join ${JOIN.code} --name "<prénom nom>" --title "<poste>" --email "<email>" --ca $ca; exit $LASTEXITCODE`))
   assert.ok(!prompt.includes("ca.crt") && !joinPrompt.includes("ca.crt"), "sans empreinte (cloud) : rien ne change")
+  // Depuis un poste déjà branché (brain doctor) : le certificat du poste, sans jeton, sans nouvel ajout au magasin.
+  const again = reinstallCommands(EXAMPLE.baseUrl, "/Users/jm/.company-brain/ca.crt")
+  assert.equal(again.posix, `(curl -fsSL --cacert "/Users/jm/.company-brain/ca.crt" --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --ca "/Users/jm/.company-brain/ca.crt"`)
+  const winAgain = reinstallCommands(EXAMPLE.baseUrl, "C:\\Users\\jm\\.company-brain\\ca.crt").windows
+  assert.ok(winAgain.endsWith(`install.ps1" --url ${EXAMPLE.baseUrl} --ca "C:\\Users\\jm\\.company-brain\\ca.crt"; exit $LASTEXITCODE`), winAgain)
+  assert.ok(!/certutil|--token/.test(winAgain))
+  assert.deepEqual(reinstallCommands(EXAMPLE.baseUrl), installCommands(EXAMPLE.baseUrl))
 })
 
 test("install.sh --ca : brain.mjs téléchargé avec le certificat (HTTPS privé), option transmise à setup ; refusé sans", async (t) => {

@@ -396,4 +396,11 @@ test("reinstallCommand : la commande d'installation du système, sans jeton (la 
   )
   assert.match(reinstallCommand("https://c.example", "win32"), /install\.ps1" --url https:\/\/c\.example; exit \$LASTEXITCODE$/)
   assert.ok(!/--token/.test(reinstallCommand("https://c.example", "win32")))
+  // Cerveau auto-hébergé : le certificat déjà sur le poste sert au téléchargement et repart à setup (--ca).
+  assert.equal(
+    reinstallCommand("https://c.example", "linux", "/home/jm/.company-brain/ca.crt"),
+    '(curl -fsSL --cacert "/home/jm/.company-brain/ca.crt" --create-dirs https://c.example/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://c.example --ca "/home/jm/.company-brain/ca.crt"',
+  )
+  const win = reinstallCommand("https://c.example", "win32", "C:\\Users\\jm\\.company-brain\\ca.crt")
+  assert.ok(win.endsWith('install.ps1" --url https://c.example --ca "C:\\Users\\jm\\.company-brain\\ca.crt"; exit $LASTEXITCODE'), win)
 })

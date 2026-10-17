@@ -9,7 +9,7 @@ import { createHash } from "node:crypto"
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs"
 import { basename, join } from "node:path"
 import { redactText, truncate } from "@brain/core"
-import { installCommands } from "../../web/lib/install-prompt"
+import { reinstallCommands } from "../../web/lib/install-prompt"
 import { ApiError, BrainApi } from "./api"
 import { zoneName } from "./cache"
 import {
@@ -213,12 +213,11 @@ export function captureDiagnosis(
   return { status: "ok", reason: "ok", detail: `capture de l'écran active${age}` }
 }
 
-/** Commande d'installation à relancer (la config garde le jeton : l'adresse du cerveau suffit). */
-export function reinstallCommand(url: string, platform: NodeJS.Platform = process.platform): string {
+/** Commande d'installation à relancer (la config garde le jeton : l'adresse du cerveau suffit, et le certificat s'il y en a un). */
+export function reinstallCommand(url: string, platform: NodeJS.Platform = process.platform, caFile?: string): string {
   // Les commandes du prompt d'installation, sans le jeton.
-  const c = installCommands(url)
-  // Sans certificat privé, la commande Windows existe toujours ; sinon on rend celle de sh (Git Bash).
-  return platform === "win32" && c.windows ? c.windows : c.posix
+  const c = reinstallCommands(url, caFile)
+  return platform === "win32" ? c.windows : c.posix
 }
 
 type Ctx = {
@@ -246,7 +245,7 @@ function checkNode(ctx: Ctx) {
   const v = process.versions.node
   const major = Number.parseInt(v, 10)
   const exec = process.execPath
-  const reinstall = ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform), safe: true } : {}
+  const reinstall = ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform, ctx.cfg.ca_file), safe: true } : {}
   if (major < 20) {
     return add(ctx, { id: "node", group: "Poste", status: "fail", detail: `Node.js ${v} (${exec}) : il faut la version 20 ou plus`, fix: "Relance la commande d'installation : elle installe sa propre copie de Node.js.", ...reinstall })
   }
@@ -288,12 +287,12 @@ function checkClientFiles(ctx: Ctx) {
       status: "warn",
       detail: `ce client (${script}) n'est pas celui du poste (${installed}) : hooks, MCP et synchro lanceront peut-être un autre fichier`,
       fix: "Utilise le raccourci du poste, ou relance la commande d'installation.",
-      ...(ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform), safe: true } : {}),
+      ...(ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform, ctx.cfg.ca_file), safe: true } : {}),
     })
   }
 
   const shortcut = shortcutPath(ctx.platform)
-  const reinstall = ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform), safe: true } : {}
+  const reinstall = ctx.cfg ? { command: reinstallCommand(ctx.cfg.url, ctx.platform, ctx.cfg.ca_file), safe: true } : {}
   if (!existsSync(shortcut)) {
     add(ctx, {
       id: "raccourci",
@@ -460,7 +459,7 @@ async function checkBrain(ctx: Ctx) {
       status: "warn",
       detail: "le cerveau sert une version plus récente du client",
       fix: "Relance la commande d'installation pour la mettre à jour (configuration et historique gardés).",
-      command: reinstallCommand(cfg.url, ctx.platform),
+      command: reinstallCommand(cfg.url, ctx.platform, cfg.ca_file),
       safe: true,
     })
 }

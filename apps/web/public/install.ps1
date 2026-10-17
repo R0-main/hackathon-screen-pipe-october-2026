@@ -2,6 +2,8 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://cerveau.example.com --token cb_...
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://cerveau.example.com --join cj_... --name ...
+#   ... --ca %USERPROFILE%\.company-brain\ca.crt   (cerveau auto-heberge en HTTPS local : certificat de son autorite, deja
+#                                              verifie par son empreinte dans le prompt ; ajoute au magasin de l'utilisateur)
 #
 # Equivalent Windows de install.sh (memes options, memes codes de sortie) ; install.sh lui passe la main dans Git Bash.
 # Fichier en ASCII pur : Windows PowerShell 5.1 lit un .ps1 sans BOM dans la page de code ANSI. Les messages detailles
@@ -21,6 +23,7 @@
 #   4             systeme non gere, ou Node.js impossible a installer ou a lancer ici (le message dit quoi installer).
 #   5             telechargement impossible (reseau, proxy, mauvaise adresse, page d'erreur au lieu du client) :
 #                 relancer la meme commande. Le client et Node.js deja installes restent intacts.
+#   9             (commande du prompt seulement) certificat du cerveau inattendu : empreinte differente de celle du prompt.
 # Le jeton n'est jamais affiche.
 # Tests seulement : COMPANY_BRAIN_FORCE_PRIVATE_NODE=1 ignore le Node.js du systeme (la CI teste le telechargement).
 
@@ -249,10 +252,13 @@ function ConvertTo-ShQuoted([string]$Value) { return "'" + $Value.Replace("'", "
 
 $ScriptArgs = @(Repair-Arguments $RawArgs)
 $Url = ''
+$Ca = ''
 $Command = 'setup'
 for ($i = 0; $i -lt $ScriptArgs.Count; $i++) {
   if ($ScriptArgs[$i] -eq '--url' -and $i + 1 -lt $ScriptArgs.Count) { $Url = $ScriptArgs[$i + 1] }
   elseif ($ScriptArgs[$i] -like '--url=*') { $Url = $ScriptArgs[$i].Substring(6) }
+  if ($ScriptArgs[$i] -eq '--ca' -and $i + 1 -lt $ScriptArgs.Count) { $Ca = $ScriptArgs[$i + 1] }
+  elseif ($ScriptArgs[$i] -like '--ca=*') { $Ca = $ScriptArgs[$i].Substring(5) }
   # Message d'equipe : demande a rejoindre (brain join), qui enchaine sur setup une fois acceptee.
   if ($ScriptArgs[$i] -eq '--join' -or $ScriptArgs[$i] -like '--join=*') { $Command = 'join' }
 }
@@ -264,6 +270,25 @@ if ($Url -cmatch '^https://.') { }
 elseif ($Url -cmatch '^http://(localhost|127\.0\.0\.1|\[::1\])([:/].*)?$') { }
 elseif ($Url -cmatch '^http://.') { Warn "Attention : $Url n'est pas en HTTPS, le client et ton jeton passeront en clair sur le reseau." }
 else { Fail 2 "--url doit etre l'adresse du cerveau, en https:// (par exemple --url https://cerveau.example.com)." }
+
+# Cerveau auto-heberge en HTTPS local (--ca) : le certificat de son autorite, deja verifie par son empreinte dans le
+# prompt. Ajoute aux certificats de confiance de l'utilisateur Windows (navigateurs, et les telechargements ci-dessous) ;
+# le client recoit l'option telle quelle et lui fait confiance de son cote.
+if ($Ca) {
+  if (-not (Test-Path -LiteralPath $Ca -PathType Leaf)) { Fail 2 "Certificat introuvable : $Ca (option --ca)." }
+  if ($OnWindows) {
+    try {
+      $caCert = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $Ca
+      $present = Get-ChildItem Cert:\CurrentUser\Root -ErrorAction Stop | Where-Object { $_.Thumbprint -eq $caCert.Thumbprint }
+      if (-not $present) {
+        Say "Certificat du cerveau ajoute aux certificats de confiance de l'utilisateur (Windows demande une confirmation)."
+        & certutil -user -addstore Root $Ca | Out-Null
+      }
+    } catch {
+      Warn "Certificat du cerveau non ajoute au magasin Windows ($($_.Exception.Message)) : a faire a la main : certutil -user -addstore Root `"$Ca`""
+    }
+  }
+}
 
 # Windows PowerShell 5.1 : TLS 1.2 (pas toujours actif par defaut) et proxy d'entreprise avec le compte Windows.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
