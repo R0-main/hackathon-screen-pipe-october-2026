@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, write
 import { homedir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
 import { brainHome, UserError } from "./config"
-import { findOnPath } from "./distill"
+import { findOnPath, spawnTarget } from "./distill"
 
 type Log = (s: string) => void
 
@@ -17,13 +17,25 @@ export const SCREENPIPE_VERSION = "0.4.52"
 /** Libellé du LaunchAgent écrit par `screenpipe service install` sur macOS. */
 export const SCREENPIPE_LAUNCHD_LABEL = "com.screenpipe.agent"
 
-/** Paquets npm des binaires (dépendances optionnelles du paquet `screenpipe`). */
+/**
+ * Paquets npm des binaires (dépendances optionnelles du paquet `screenpipe`). Windows ARM64 : Screenpipe ne publie que
+ * le binaire x64, que Windows 11 exécute en émulation (installé avec `--cpu=x64`).
+ */
 const PLATFORM_PACKAGES: Record<string, string> = {
   "darwin-arm64": "@screenpipe/cli-darwin-arm64",
   "darwin-x64": "@screenpipe/cli-darwin-x64",
   "linux-x64": "@screenpipe/cli-linux-x64",
   "win32-x64": "@screenpipe/cli-win32-x64",
+  "win32-arm64": "@screenpipe/cli-win32-x64",
 }
+
+/** Postes sans binaire Screenpipe publié : setup branche quand même le reste (sessions Claude Code et Codex). */
+export function screenpipeSupported(platform: string = process.platform, arch: string = process.arch): boolean {
+  return Boolean(PLATFORM_PACKAGES[`${platform}-${arch}`])
+}
+
+/** Ni télémétrie de Screenpipe à l'installation (nom du poste envoyé à PostHog), ni pendant nos appels au CLI. */
+export const NO_TELEMETRY_ENV = { DO_NOT_TRACK: "1", SCREENPIPE_DISABLE_TELEMETRY: "1" }
 
 export function screenpipePrefix(home = brainHome()): string {
   return join(home, "screenpipe")
@@ -35,6 +47,21 @@ export function screenpipeBinPath(prefix = screenpipePrefix(), platform: string 
   if (!pkg) return null
   return join(prefix, "node_modules", ...pkg.split("/"), "bin", platform === "win32" ? "screenpipe.exe" : "screenpipe")
 }
+
+/**
+ * Le binaire démarre-t-il ? Sous Linux il lui faut glibc ≥ 2.39 et des bibliothèques système (pipewire, pulse…) ; sur un
+ * Mac trop ancien, dyld refuse. On ne lit que ces erreurs de chargement : une option inconnue ne dit rien du binaire.
+ */
+export function screenpipeLoadError(bin: string): string | null {
+  const r = runCommand(bin, ["--version"], 15_000, NO_TELEMETRY_ENV)
+  if (r.ok) return null
+  const text = `${r.stderr}\n${r.stdout}`
+  const line = text.split(/\r?\n/).find((l) => LOAD_ERROR_RE.test(l))
+  // Le chemin du binaire (très long, sous ~/.company-brain/screenpipe/node_modules/…) n'apprend rien : seule l'erreur compte.
+  return line ? line.split(bin).join("screenpipe").trim().slice(0, 300) : null
+}
+
+const LOAD_ERROR_RE = /error while loading shared libraries|cannot open shared object|GLIBC_\d|GLIBCXX_\d|dyld\b|Library not loaded|Symbol not found|Exec format error|bad CPU type|ENOEXEC|EACCES/i
 
 /** Le binaire installé par le client, s'il existe. */
 export function installedScreenpipeBin(): string | null {
@@ -61,13 +88,12 @@ export function parseAuthToken(out: string): string | null {
   return null
 }
 
-export function runCommand(cmd: string, args: string[], timeoutMs = 30_000) {
+export function runCommand(cmd: string, args: string[], timeoutMs = 30_000, extraEnv: Record<string, string> = {}) {
   // Windows : npm.cmd / npx.cmd ne se lancent que via le shell, qui ne cite rien lui-même (chemins avec espaces).
-  const shell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd)
-  const q = (s: string) => (shell && /\s/.test(s) ? `"${s}"` : s)
+  const t = spawnTarget(cmd, args)
   // npm et npx sont des scripts « #!/usr/bin/env node » : le node qui exécute ce client passe en tête du PATH.
-  const env = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter) }
-  const r = spawnSync(q(cmd), args.map(q), { encoding: "utf8", timeout: timeoutMs, shell, env, windowsHide: true })
+  const env = { ...process.env, ...extraEnv, PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter) }
+  const r = spawnSync(t.cmd, t.args, { encoding: "utf8", timeout: timeoutMs, shell: t.shell, env, windowsHide: true })
   return { ok: !r.error && r.status === 0, stdout: r.stdout ?? "", stderr: (r.stderr ?? "") || (r.error?.message ?? "") }
 }
 
@@ -95,11 +121,17 @@ export function installScreenpipeCli(log: Log = console.log): string {
   const prefix = screenpipePrefix()
   mkdirSync(prefix, { recursive: true })
   log(`Installation de Screenpipe ${SCREENPIPE_VERSION} (paquet npm officiel « screenpipe ») dans ${prefix}… une à deux minutes.`)
-  const r = runCommand(npm, ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--loglevel=error", `screenpipe@${SCREENPIPE_VERSION}`], 10 * 60_000)
+  // --ignore-scripts : le script post-installation du paquet télécharge un ffmpeg non figé depuis un site tiers (macOS),
+  // lance `sudo apt-get` (Linux) et envoie de la télémétrie. Screenpipe installe lui-même ffmpeg au premier lancement.
+  const cpu = process.platform === "win32" && process.arch === "arm64" ? ["--cpu=x64", "--os=win32"] : []
+  const args = ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--ignore-scripts", "--loglevel=error", ...cpu, `screenpipe@${SCREENPIPE_VERSION}`]
+  const r = runCommand(npm, args, 10 * 60_000, NO_TELEMETRY_ENV)
   if (!r.ok || !existsSync(bin)) {
     throw new UserError(`Échec de l'installation de Screenpipe (${tail(r.stderr || r.stdout)}). Autre voie : l'application Screenpipe (https://screenpi.pe), puis relance setup.`)
   }
   if (process.platform !== "win32") chmodSync(bin, 0o755)
+  // Ce que faisait le script post-installation qui compte : macOS ne doit pas bloquer le binaire téléchargé.
+  if (process.platform === "darwin") runCommand("xattr", ["-d", "com.apple.quarantine", bin], 10_000)
   return bin
 }
 
@@ -143,13 +175,13 @@ export function restartScreenpipeService(): boolean {
 /** Jeton d'API local (obligatoire pour /search) ; via notre binaire, sinon via npx (application Screenpipe). */
 export function readScreenpipeToken(bin: string | null): string | null {
   if (bin) {
-    const r = runCommand(bin, ["auth", "token"], 20_000)
+    const r = runCommand(bin, ["auth", "token"], 20_000, NO_TELEMETRY_ENV)
     return r.ok ? parseAuthToken(r.stdout) : null
   }
   const local = join(dirname(process.execPath), process.platform === "win32" ? "npx.cmd" : "npx")
   const npx = existsSync(local) ? local : findOnPath("npx")
   if (!npx) return null
-  const r = runCommand(npx, ["-y", `screenpipe@${SCREENPIPE_VERSION}`, "auth", "token"], 5 * 60_000)
+  const r = runCommand(npx, ["-y", `screenpipe@${SCREENPIPE_VERSION}`, "auth", "token"], 5 * 60_000, NO_TELEMETRY_ENV)
   return r.ok ? parseAuthToken(r.stdout) : null
 }
 

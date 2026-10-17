@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify } from "@brain/core"
+import { AgentLogos } from "./brand-logos"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage, initials } from "./format"
@@ -63,7 +64,7 @@ function save(s: Saved) {
 
 /**
  * Créer son entreprise à partir de zéro, une question par écran : nom, activité, qui on est, zones du cerveau.
- * Ensuite, le prompt à coller dans Claude Code pour brancher son poste, puis un prompt par collègue pour l'inviter.
+ * Ensuite, le prompt à coller dans Claude Code ou Codex pour brancher son poste, puis un prompt par collègue pour l'inviter.
  * Les postes branchés apparaissent en direct (lecture de /api/admin/team).
  */
 export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: boolean }) {
@@ -212,7 +213,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <>
                   <h1 className="create-title">Créons le cerveau de votre entreprise.</h1>
                   <p className="create-lead">
-                    Quatre questions pour monter votre dashboard. Ensuite, un message à coller dans Claude Code branche votre poste, et un message par collègue
+                    Quatre questions pour monter votre dashboard. Ensuite, un message à coller dans Claude Code ou Codex branche votre poste, et un message par collègue
                     les fait rejoindre le cerveau. Deux minutes en tout.
                   </p>
                   <div className="mt-9 flex flex-wrap items-center gap-3">
@@ -323,7 +324,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <>
                   <h1 className="create-title">Le cerveau {deNom(created.orgName)} est prêt.</h1>
                   <p className="create-lead">
-                    Branchez votre poste : collez ce message dans Claude Code. Il installe Screenpipe, branche le MCP et les hooks, puis ouvre votre dashboard déjà
+                    Branchez votre poste : ouvrez ce message dans Claude Code ou Codex. Il installe Screenpipe, branche le MCP et les hooks, puis ouvre votre dashboard déjà
                     connecté. Sur Mac, il faudra autoriser l'enregistrement de l'écran.
                   </p>
                   <div className="panel mt-8 px-5 py-5">
@@ -633,7 +634,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       <h1 className="create-title">Invitez votre équipe.</h1>
       <p className="create-lead">
         Deux façons, au choix : un message par personne, avec son propre jeton, ou un seul message pour toute l'équipe, où chacun demande à entrer. Dans les deux
-        cas, il se colle dans Claude Code, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
+        cas, il se colle dans Claude Code ou Codex, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
       </p>
       <h2 className="mt-10 text-[19px] font-medium">Un message par personne</h2>
 
@@ -665,7 +666,13 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
-            {busy ? "Création du prompt…" : "Créer et copier son prompt"}
+            {busy ? (
+              "Création du prompt…"
+            ) : (
+              <>
+                <AgentLogos /> Créer et copier son prompt
+              </>
+            )}
           </button>
           {err && <ErrorText>{err}</ErrorText>}
         </div>
@@ -709,7 +716,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
           })}
         </ul>
       )}
-      {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copié : envoyez-le-lui (Slack, mail), il le colle dans Claude Code.</p>}
+      {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copié : envoyez-le-lui (Slack, mail), il le colle dans Claude Code ou Codex.</p>}
 
       <h2 className="mt-12 text-[19px] font-medium">Ou un seul message pour toute l'équipe</h2>
       <div className="mt-3">

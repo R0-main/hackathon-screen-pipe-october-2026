@@ -45,7 +45,8 @@ function station(url: string, token = "cb_test_token_123456", extra: Record<stri
 }
 
 const AUTH_HELP = /Claude Code n'est plus connecté sur ce poste : le jeton Claude a expiré ou a été révoqué/
-const AUTH_STEPS = /Lancez `claude setup-token`, puis `node ~\/\.company-brain\/brain\.mjs init --claude-token <jeton>` \(ou `claude \/login`\)/
+// La commande citée est celle du poste : le raccourci ~/.company-brain/brain s'il existe, sinon Node.js et le script.
+const AUTH_STEPS = /Lancez `claude setup-token`, puis `[^`]+ init --claude-token <jeton>` \(ou `claude \/login`\)/
 
 test("classifyFailure / cliFailure : jeton expiré ou révoqué, /login, réseau, quotas ; le reste est propre à la conversation", () => {
   for (const t of [

@@ -52,6 +52,7 @@ demo/                 Script de démo
 | **brain-sync** | `brain.mjs sync` | Lit les logs Claude Code / Codex et l'API locale de Screenpipe, filtre (liste blanche d'apps, secrets, données perso), distille avec Claude, envoie. `--dry-run --full` montre tout ce qui partirait, `--confirm` envoie exactement ce qui a été relu. |
 | **Skills sur le poste** | `brain.mjs skills` | Installe dans `~/.claude/skills` les skills attribués au poste (après chaque synchro et au `setup`), retire ceux qui ne le sont plus, ne touche jamais un skill personnel. `skills push <dossier> --cortex <zone>` publie un dossier. |
 | **État par Claude** | `brain.mjs refresh-status` | Admins : rédige « où en est la boîte » sur le poste avec Claude (abonnement) et l'envoie au dashboard. |
+| **Diagnostic** | `brain.mjs doctor` | Passe le poste en revue sans rien modifier (Node, raccourci, cerveau, Screenpipe, MCP, hooks, synchro, distillation) et donne la commande qui répare chaque point KO ; `--json` pour Claude Code. |
 | **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
 | **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
 
@@ -90,11 +91,12 @@ vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en �
      Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté ;
    - **un seul message pour toute l'équipe** (Équipe et accès, puis Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
      collègues. Le Claude de chacun remplit la demande avec ce qu'il sait déjà (nom, poste, email ; rien d'inventé,
-     le reste reste vide), et `brain join` l'envoie puis attend. Un admin la complète (poste, rôle, zones,
+     le reste reste vide), et `brain join` (lancé par `install.sh --join`, ou `install.ps1 --join` sous Windows) l'envoie
+     puis attend. Un admin la complète (poste, rôle, zones,
      rattachement) et l'accepte : le poste termine alors son installation tout seul. Le code ne donne accès à rien ;
      le jeton est créé sur le poste et seule son empreinte part avec la demande. « Changer le code » invalide
-     l'ancien message. Code de sortie 5 : toujours en attente (`~/.company-brain/brain join` reprend la même
-     demande) ; 6 : refusée.
+     l'ancien message. Code de sortie 7 : toujours en attente (`~/.company-brain/brain join` reprend la même
+     demande) ; 8 : refusée. Les autres codes sont ceux de l'installation ([docs/CLI.md](docs/CLI.md)).
 
 Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
 Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
@@ -119,9 +121,10 @@ L'interview en 7 questions reste disponible en dessous. Le lien est aussi propos
 ## Brancher un vrai poste
 
 1. Dans `/admin`, invitez la personne et choisissez ses zones : le dashboard génère son prompt (voir [install/PROMPT.md](install/PROMPT.md)).
-2. Elle le colle dans Claude Code, qui lance **une seule commande** (`install.sh`, qui trouve ou installe Node.js puis lance
-   `brain setup` ; pourquoi un CLI : [docs/CLI.md](docs/CLI.md)) : Screenpipe installé et lancé, autorisations macOS
-   (écran, et accessibilité en option ; pas de micro) avec reprise automatique, MCP, hooks, synchro toutes les 15 min, néon allumé.
+2. Elle le colle dans Claude Code, qui lance **une seule commande** (`install.sh` sur macOS / Linux, `install.ps1` sous
+   Windows : ils trouvent ou installent Node.js puis lancent `brain setup` ; pourquoi un CLI : [docs/CLI.md](docs/CLI.md)) :
+   Screenpipe installé et lancé, autorisations macOS (écran, et accessibilité en option ; pas de micro) avec reprise
+   automatique, MCP, hooks, synchro toutes les 15 min, néon allumé. Si ça coince, `brain doctor` dit quoi et comment réparer.
 3. Le cerveau s'ouvre dans son navigateur, déjà connecté. Ensuite rien à faire : en travaillant avec Claude Code, elle le nourrit.
    `sync --dry-run --full` permet de revoir à tout moment ce qui partirait, `uninstall` retire tout.
 
@@ -157,8 +160,8 @@ Variables : voir [apps/web/.env.example](apps/web/.env.example).
 ### Claude sans clé API (abonnement Claude Code)
 
 - **brain-sync** distille sur chaque poste avec `claude -p` : il utilise l'abonnement Claude Code de l'employé.
-- Synchro planifiée (sans session ouverte) : générez un jeton avec `claude setup-token` puis `node ~/.company-brain/brain.mjs init --claude-token <jeton>`. Le jeton reste sur le poste (config en mode 600), il est passé à chaque `claude -p` du client et n'apparaît jamais dans la crontab ni dans les logs. Il est valable **un an** et ne se renouvelle pas tout seul : à expiration, le client l'indique ; relancez `claude setup-token` puis `init --claude-token`.
-- « Où en est la boîte » rédigé par Claude : un admin lance `node ~/.company-brain/brain.mjs refresh-status` sur son poste (planifiable chaque matin) ; sans cela, le serveur garde le résumé heuristique. Le serveur n'a besoin d'aucune clé (`ANTHROPIC_API_KEY` reste possible).
+- Synchro planifiée (sans session ouverte) : générez un jeton avec `claude setup-token` puis `~/.company-brain/brain init --claude-token <jeton>`. Le jeton reste sur le poste (config en mode 600), il est passé à chaque `claude -p` du client et n'apparaît jamais dans la crontab ni dans les logs. Il est valable **un an** et ne se renouvelle pas tout seul : à expiration, le client l'indique ; relancez `claude setup-token` puis `init --claude-token`.
+- « Où en est la boîte » rédigé par Claude : un admin lance `~/.company-brain/brain refresh-status` sur son poste (planifiable chaque matin) ; sans cela, le serveur garde le résumé heuristique. Le serveur n'a besoin d'aucune clé (`ANTHROPIC_API_KEY` reste possible).
 - Chaque employé utilise **son propre** abonnement et son propre jeton : les conditions d'Anthropic interdisent de faire passer les requêtes de plusieurs personnes par l'abonnement d'une seule. Pour proposer l'outil à d'autres entreprises, il faut des clés API.
 - Si `ANTHROPIC_API_KEY` est définie sur le poste, c'est elle que Claude Code utilise ; `claude auth status` indique l'authentification active.
 - Pannes et limites : une limite d'abonnement atteinte (« You've hit your session limit », quota hebdomadaire…), une surcharge ou une erreur réseau n'est jamais imputée à une conversation : rien n'est perdu, la synchro suivante réessaie. Un jeton expiré ou révoqué arrête la synchro avec la marche à suivre (`claude setup-token`, puis `init --claude-token`).

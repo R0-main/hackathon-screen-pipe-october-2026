@@ -336,6 +336,45 @@ button.chip:hover:not(.chip-on) {
 .brain-label.is-flip > span {
   flex-direction: row-reverse;
 }
+
+/* Dots des personnes autour du cerveau 3D : les modèles sont dans la scène ; ici, leur zone cliquable et leur prénom,
+   posés par le JS au même endroit. Le prénom n'apparaît qu'au survol, sauf le vôtre et ceux qui travaillent à l'instant. */
+.brain-dot {
+  visibility: hidden;
+  transform-origin: 0 0;
+  display: block;
+}
+.brain-dot-hit {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+}
+.brain-dot:focus-visible .brain-dot-hit {
+  outline: 1px solid var(--color-ink);
+  outline-offset: 2px;
+}
+.brain-dot-name {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-ink);
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.brain-dot:hover .brain-dot-name,
+.brain-dot:focus-visible .brain-dot-name,
+.brain-dot[data-me] .brain-dot-name,
+.brain-dot[data-live] .brain-dot-name {
+  opacity: 1;
+}
 }
 
 /* --- Page d'accueil publique (components/landing) ---
@@ -425,9 +464,6 @@ html.lenis body {
 .landing-chapter > * {
   max-width: 30rem;
 }
-.landing-section {
-  padding-block: clamp(96px, 13vw, 184px);
-}
 
 /* Scène épinglée : le cerveau en plein cadre, les chapitres passent par-dessus. */
 .landing-stage.is-scroll {
@@ -477,6 +513,131 @@ html.lenis body {
   transform: scaleX(0);
   transform-origin: left center;
 }
+
+/* Chaque section occupe un écran, contenu centré verticalement ; elle s'arrête alignée sur l'écran pendant une
+   partie du scroll (components/landing/motion/setup.ts). */
+.landing-section {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-block: clamp(56px, 9vh, 112px);
+}
+.landing-section > .landing-wrap {
+  width: 100%;
+}
+
+/* Fil de billes qui relie les sections. */
+.landing-thread {
+  position: absolute;
+  top: clamp(56px, 9vh, 112px);
+  bottom: clamp(160px, 30vh, 320px);
+  left: max(calc(var(--gutter) / 2), calc((100vw - 1440px) / 2 + var(--gutter) / 2));
+  width: 1px;
+  background: var(--text);
+  transform-origin: 50% 0%;
+}
+.landing-bead {
+  position: absolute;
+  top: clamp(56px, 9vh, 112px);
+  left: max(calc(var(--gutter) / 2), calc((100vw - 1440px) / 2 + var(--gutter) / 2));
+  width: 11px;
+  height: 11px;
+  margin: -5px 0 0 -5px;
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  background: var(--bg);
+}
+.landing-bead > span {
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: var(--text);
+}
+
+/* « Le brut reste sur le poste » (components/landing/PrivacyFlow.tsx). L'état décrit ici est l'état final :
+   captures perso écartées, secret masqué, connaissances arrivées. Large écran : poste, rail du filtre, cerveau. */
+.privacy-flow {
+  display: grid;
+  gap: 16px;
+  align-items: center;
+}
+@media (min-width: 1024px) {
+  .privacy-flow {
+    grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+.privacy-row [data-pf-dim] {
+  opacity: 0.4;
+}
+.privacy-strike {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 50%;
+  height: 1px;
+  background: var(--text);
+  transform-origin: 0% 50%;
+}
+.privacy-mask {
+  position: absolute;
+  inset: 1px -2px;
+  border-radius: 2px;
+  background: var(--text);
+  transform-origin: 0% 50%;
+}
+/* Rail vertical : entre les deux panneaux sur grand écran, entre le poste et le cerveau quand ils s'empilent. */
+.privacy-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 4px 2px;
+}
+@media (min-width: 1024px) {
+  .privacy-rail {
+    gap: 32px;
+  }
+}
+.privacy-rail-line {
+  position: absolute;
+  left: 7px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--text);
+  transform-origin: 50% 0%;
+}
+.privacy-node {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  background: var(--bg);
+}
+.privacy-node > span {
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: var(--text);
+}
+
+/* Boutons magnétiques : GSAP pilote leur transform, la transition CSS ne doit pas s'en mêler. */
+.landing [data-magnetic] {
+  transition-property: background-color, border-color;
+}
+}
+
+/* Premier écran : masqué jusqu'à son entrée animée, sauf sous mouvement réduit (rien ne s'anime alors). */
+@media (prefers-reduced-motion: no-preference) {
+  .landing [data-hero] {
+    visibility: hidden;
+  }
 }
 
 /* --- Créer son entreprise (/creer) : une question par écran, beaucoup de vide, le cerveau qui se construit à droite. --- */
@@ -658,13 +819,3 @@ html.lenis body {
 }
 }
 
-/* Boutons « ouvrir dans… » réduits au logo de l'agent (nom en aria-label et en infobulle). */
-@layer components {
-.logo-btn {
-  width: 44px;
-  padding: 0;
-}
-.logo-btn.btn-lg {
-  width: 52px;
-}
-}

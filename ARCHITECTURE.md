@@ -100,12 +100,15 @@ type AgentEvent = {
 5. *(Stretch)* Connecteurs Notion et Calendar.
 
 ### 2. Onboarding employé (le « prompt magique »)
-L'admin invite quelqu'un → la personne reçoit **un prompt à coller dans Claude Code**, qui lance une seule commande,
-`brain.mjs setup` (détail et autorisations : [install/PROMPT.md](install/PROMPT.md)) :
+L'admin invite quelqu'un → la personne reçoit **un prompt à coller dans Claude Code**, qui lance une seule commande :
+`install.sh` (macOS, Linux) ou `install.ps1` (Windows) trouve ou installe Node.js, télécharge le client et lance
+`brain.mjs setup` (détail, codes de sortie et autorisations : [install/PROMPT.md](install/PROMPT.md), choix d'un CLI :
+[docs/CLI.md](docs/CLI.md)) :
 - installe et lance Screenpipe s'il est absent (CLI officiel en service, micro coupé), puis récupère le token local ;
 - ouvre les bons Réglages macOS et reprend tout seul dès que l'Enregistrement de l'écran (et l'Accessibilité, facultative) est accordé ;
 - ajoute le MCP `company-brain` et les hooks dans la config Claude Code, planifie `brain-sync` toutes les 15 min ;
-- fait un test de bout en bout (un événement « hello » qui s'allume) et ouvre le dashboard déjà connecté (lien de connexion de 2 min).
+- fait un test de bout en bout (un événement « hello » qui s'allume) et ouvre le dashboard déjà connecté (lien de connexion de 2 min) ;
+- si quelque chose coince, `brain doctor` passe le poste en revue sans rien modifier et donne la commande qui répare.
 
 ### 3. Capture → cerveau (`brain-sync`, toutes les 15-30 min)
 1. `GET /search?content_type=parsed&start_time=<dernier checkpoint>` filtré sur les apps IA (Claude, Terminal/iTerm pour Claude Code, Codex, onglets ChatGPT/Claude du navigateur), avec un fallback `accessibility`.

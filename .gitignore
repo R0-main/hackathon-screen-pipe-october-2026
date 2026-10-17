@@ -16,8 +16,12 @@ deploy/local/certs/*
 !deploy/local/certs/.gitkeep
 deploy/local/ca.crt
 deploy/local/backups/
+apps/web/public/brain.mjs.sha256
 .DS_Store
 .next-build/
 
 # Captures de relecture Impeccable (régénérées à chaque passe)
 apps/web/.impeccable/review/
+
+# Worktrees des agents Claude Code (temporaires)
+.claude/worktrees/

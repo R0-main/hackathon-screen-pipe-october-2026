@@ -2,11 +2,11 @@
 
 import { resolve } from "node:path"
 import { trustConfiguredCa } from "./ca"
-import { SOURCE_NAMES, UserError, applyScheduleEnv, loadPartialConfig, selfScript, type SourceName } from "./config"
+import { SOURCE_NAMES, UserError, applyScheduleEnv, brainHome, loadPartialConfig, selfCommand, selfScript, type SourceName } from "./config"
 import type { DistillerKind } from "./distill"
 
 const VERSION = "0.1.0"
-const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe"])
+const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json"])
 
 export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string | boolean>; positional: string[] } {
   const flags: Record<string, string | boolean> = {}
@@ -28,7 +28,7 @@ export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string,
 }
 
 function help(): string {
-  const me = `node ${selfScript()}`
+  const me = selfCommand()
   return `NOS Brainer — client du poste (v${VERSION})
 
 Usage : ${me} <commande> [options]
@@ -39,12 +39,17 @@ Commandes :
                      en service s'il ne tourne pas, micro coupé par défaut), autorisations macOS (réglages ouverts, reprise dès
                      qu'elles sont accordées, --wait 300 s par défaut), MCP, hooks, synchro toutes les 15 min (activité à venir
                      seulement), néon, puis le cerveau s'ouvre dans le navigateur. Relançable sans paramètres.
-                     Code de sortie 3 : tout est branché sauf l'autorisation d'enregistrer l'écran.
+                     Codes de sortie : 0 tout est branché ; 3 tout sauf l'autorisation d'enregistrer l'écran (relancer setup une
+                     fois cochée) ; 6 tout sauf Screenpipe (pas de version pour ce poste, ou il ne démarre pas : voir doctor).
   join --url <url> --join <code d'équipe> [--name <prénom nom>] [--title <poste>] [--email <email>] [--wait-accept <secondes>]
                      Demande à rejoindre une entreprise (c'est ce que lance le message d'équipe) : le jeton du poste est créé
                      ici, seule son empreinte part avec la demande. Attend qu'un admin l'accepte (--wait-accept 480 s par
-                     défaut), puis enchaîne sur setup (mêmes options). Code 5 : toujours en attente, \`join\` sans paramètres
-                     reprend la même demande. Code 6 : demande refusée.
+                     défaut), puis enchaîne sur setup (mêmes options, mêmes codes). Code 7 : toujours en attente, \`join\` sans
+                     paramètres reprend la même demande. Code 8 : demande refusée.
+  doctor [--json]    Diagnostic du poste, sans rien modifier : Node.js, raccourci, cerveau (connexion, version du client),
+                     Screenpipe (capture, autorisations, jeton), Claude Code (MCP, hooks), synchro planifiée, distillation.
+                     Chaque point KO donne la commande qui répare. --json : le même rapport pour Claude Code (champ « safe »
+                     sur les commandes qui ne font que rebrancher le poste). Code de sortie 1 s'il reste un point KO.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
        [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non] [--ca <pem>]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
@@ -75,8 +80,8 @@ Commandes :
   refresh-status [--dry-run]
                      Admins : rédige « où en est la boîte » sur ce poste avec Claude (\`claude -p\`, votre abonnement ;
                      sinon la clé API) et l'envoie au dashboard. --dry-run : affiche le résumé sans l'envoyer.
-  status             État du client : connexion, dernière synchro, Screenpipe, hooks, planification.
-  mcp                Serveur MCP stdio « company-brain » (à brancher avec : claude mcp add company-brain --scope user -- node ${selfScript()} mcp).
+  status             État du client en bref : connexion, dernière synchro, Screenpipe, hooks, planification (détail : doctor).
+  mcp                Serveur MCP stdio « company-brain » (branché par setup dans Claude Code, portée utilisateur).
   hook               Gestionnaire des hooks Claude Code (lit le JSON du hook sur l'entrée standard).
   install-hooks      Ajoute les hooks SessionStart, UserPromptSubmit et Stop à ~/.claude/settings.json.
   install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows), à partir de maintenant pour
@@ -102,6 +107,11 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "hook") {
     const { runHook } = await import("./hook")
     return runHook()
+  }
+  // Diagnostic (doctor) : quel Node.js et quel script ce raccourci, ce hook ou cette synchro planifiée lancent vraiment.
+  if (cmd === "_probe") {
+    console.log(JSON.stringify({ version: VERSION, node: process.execPath, script: selfScript(), home: brainHome() }))
+    return 0
   }
   if (flags.version || cmd === "version") {
     console.log(VERSION)
@@ -131,6 +141,10 @@ async function main(argv: string[]): Promise<number> {
     case "status": {
       const { cmdStatus } = await import("./commands")
       return cmdStatus()
+    }
+    case "doctor": {
+      const { cmdDoctor } = await import("./doctor")
+      return cmdDoctor({ version: VERSION, json: Boolean(flags.json) })
     }
     case "sync": {
       const { runSync } = await import("./sync")

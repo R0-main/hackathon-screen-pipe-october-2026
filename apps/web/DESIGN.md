@@ -77,11 +77,24 @@ Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accu
 - Grands titres Space Grotesk serrés (`.landing-display`, `.landing-h2`), beaucoup de vide, une colonne de texte à gauche.
 - Le cerveau (`ScrollBrain`) reprend la géométrie de `Brain3D` (`brain-geometry.ts`) et ajoute une coque en anneaux
   de contour ondulés et un brouillard bone pour la profondeur. Pas d'ombre, pas de halo.
-- Mouvement : exception à la règle des 200 ms, réservée à cette page. La scène est épinglée et suit le scroll
-  (GSAP ScrollTrigger, défilement doux Lenis) : le cerveau passe en plein écran et tourne, les connaissances se posent,
-  les zones se nomment, trois agents allument leur zone en phosphore. Aucune animation n'avance seule hors du scroll,
-  sauf la lente rotation d'attente.
-- `prefers-reduced-motion` : pas d'épinglage ni de défilement doux, cerveau immobile et assemblé, chapitres lus à la suite.
+- Mouvement : exception à la règle des 200 ms, réservée à cette page (`components/landing/motion/setup.ts`).
+  - La scène du cerveau est épinglée sur 7 écrans et suit le scroll (GSAP ScrollTrigger, défilement doux Lenis) :
+    le cerveau passe en plein écran et tourne, les connaissances se posent, les zones se nomment, trois agents
+    allument leur zone en phosphore.
+  - Ensuite, chaque section occupe un écran, contenu centré, et marque un arrêt : elle reste calée sur l'écran
+    pendant 0,6 écran de scroll (`data-hold` pour allonger : 1,4 pour « Le brut reste sur le poste »). Lâché tout
+    près d'un chapitre ou d'une section, le scroll s'y cale en douceur.
+  - Toutes les animations des sections suivent le scroll : elles avancent quand on descend, s'arrêtent quand on
+    s'arrête, se rejouent à l'envers quand on remonte. Les titres passent de pâle à encre mot par mot ; le panneau
+    « Où en est Fournil » se remplit et le prompt s'écrit pendant l'arrêt ; le schéma vie privée (`PrivacyFlow`)
+    attend que sa section soit calée pour se jouer.
+  - Un fil encre descend le long des sections, avec une bille qui se remplit à chaque section.
+  - Seule l'entrée du premier écran se joue au chargement (les mots du titre, puis le reste), et la lente rotation
+    d'attente du cerveau tourne seule.
+  - Boutons magnétiques (souris seulement) : ils glissent vers le pointeur, reviennent avec un léger rebond et
+    s'enfoncent au clic.
+- `prefers-reduced-motion` : pas d'épinglage, d'arrêt ni de défilement doux, cerveau immobile et assemblé, chapitres
+  lus à la suite, toutes les sections dans leur état final.
 - Le phosphore reste réservé aux zones qu'un agent interroge (ici, les trois agents de la démo).
 
 ## Créer son entreprise (`/creer`, `components/CreateCompany.tsx`)

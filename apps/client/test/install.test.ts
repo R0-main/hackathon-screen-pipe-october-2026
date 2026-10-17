@@ -3,21 +3,31 @@ import { spawnSync } from "node:child_process"
 import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import { delimiter, join } from "node:path"
 import { test } from "node:test"
-import { applyScheduleEnv, type State } from "../src/config"
+import { applyScheduleEnv, quoteArg, selfCommand, type State } from "../src/config"
+import { spawnTarget } from "../src/distill"
 import {
   baselineSources,
   cronLine,
   hookCommand,
+  hookEntry,
   hooksInstalled,
   installHooks,
+  isOurHook,
   launchdPlist,
+  mcpArgs,
+  mcpUpToDate,
   mergeCrontab,
   mergeHooks,
+  parseCronTarget,
+  parsePlistTarget,
+  parseTaskXmlTarget,
   prepareSchedule,
+  readMcpEntry,
   removeFromCrontab,
   removeHooks,
   scheduleEnv,
   uninstallHooks,
+  versionLt,
   windowsTaskArgs,
 } from "../src/install"
 import { tempDir } from "./helpers"
@@ -261,4 +271,111 @@ test("launchd et schtasks : contenu généré (pas de lancement au chargement, e
   const custom = windowsTaskArgs("C:\\node\\node.exe", "C:\\b\\brain.mjs", "D:\\cerveau")
   assert.equal(custom[8], '"C:\\node\\node.exe" "C:\\b\\brain.mjs" sync --scheduled --home "D:\\cerveau"')
   assert.ok(custom[8].length <= 261)
+})
+
+test("hookEntry : forme « exec » sous Windows (PowerShell ne lit pas la ligne), ligne de commande ailleurs ou si Claude Code est trop ancien", () => {
+  const win = hookEntry({ platform: "win32", claudeVersion: "2.1.302", execPath: "C:\\Program Files\\nodejs\\node.exe", script: "C:\\Users\\Jean Dupont\\.company-brain\\brain.mjs" })
+  assert.equal(win.command, "C:\\Program Files\\nodejs\\node.exe")
+  assert.deepEqual((win.args as string[]).slice(0, 2), ["C:\\Users\\Jean Dupont\\.company-brain\\brain.mjs", "hook"])
+  assert.ok(isOurHook(win))
+  assert.notEqual(hookEntry({ platform: "win32", claudeVersion: null, gitBash: false }).args, undefined, "version inconnue, sans Git Bash : forme exec")
+  assert.equal(hookEntry({ platform: "win32", claudeVersion: null, gitBash: true }).args, undefined, "version inconnue, avec Git Bash : ligne de commande")
+  const old = hookEntry({ platform: "win32", claudeVersion: "2.1.100", execPath: "C:\\n\\node.exe", script: "C:\\b\\brain.mjs" })
+  assert.equal(old.args, undefined)
+  assert.match(String(old.command), /"C:\\n\\node\.exe" "C:\\b\\brain\.mjs" hook/)
+  assert.equal(hookEntry({ platform: "darwin", claudeVersion: "2.1.302" }).args, undefined)
+  assert.ok(versionLt("2.1.38", "2.1.139"))
+  assert.ok(!versionLt("2.1.139", "2.1.139"))
+  assert.ok(!versionLt("2.10.0", "2.1.139"))
+})
+
+test("mergeHooks : passe une ligne de commande à la forme « exec » et retire nos doublons, sans toucher aux autres hooks", () => {
+  const exec = { type: "command", command: "C:\\node.exe", args: ["C:\\b\\brain.mjs", "hook"], timeout: 5 }
+  const dup = mergeHooks(foreign, CMD).settings as { hooks: Record<string, { hooks: unknown[] }[]> }
+  dup.hooks.Stop.push({ hooks: [{ type: "command", command: '"/old/node" "/old/brain.mjs" hook' }] })
+  const { settings, changes } = mergeHooks(dup, exec)
+  assert.ok(changes.includes("Stop : 1 doublon(s) retiré(s)"), changes.join(" | "))
+  const hooks = settings.hooks as Record<string, { hooks: Record<string, unknown>[] }[]>
+  assert.equal(hooks.Stop.length, 2, "le groupe vidé disparaît, le hook étranger reste")
+  assert.equal(hooks.Stop[0].hooks[0].command, "say fini")
+  assert.deepEqual(hooks.Stop[1].hooks[0], exec)
+  assert.deepEqual(mergeHooks(settings, exec).changes, [])
+  // Retour à la ligne de commande : « args » disparaît.
+  const back = mergeHooks(settings, CMD).settings.hooks as Record<string, { hooks: Record<string, unknown>[] }[]>
+  assert.equal(back.Stop[1].hooks[0].args, undefined)
+  assert.equal(back.Stop[1].hooks[0].command, CMD)
+  assert.equal(removeHooks(settings).removed, 3)
+
+  // Plusieurs copies : on garde celle qui se déclenche toujours (sans filtre), pas une ancienne limitée à « startup ».
+  const filtered = {
+    hooks: {
+      SessionStart: [
+        { matcher: "startup", hooks: [{ type: "command", command: '"/old/node" "/old/brain.mjs" hook' }] },
+        { hooks: [{ type: "command", command: CMD, timeout: 5 }] },
+      ],
+    },
+  }
+  const kept = mergeHooks(filtered, CMD).settings.hooks as Record<string, { matcher?: string; hooks: { command: string }[] }[]>
+  assert.equal(kept.SessionStart.length, 1)
+  assert.equal(kept.SessionStart[0].matcher, undefined)
+  assert.equal(kept.SessionStart[0].hooks[0].command, CMD)
+})
+
+test("cibles de la synchro planifiée : relues dans le plist, la ligne crontab et le XML de la tâche Windows", () => {
+  const plist = launchdPlist("/Users/u/.company-brain/node/bin/node", "/Users/u/.company-brain/brain.mjs", "/Users/u/.company-brain", {})
+  assert.deepEqual(parsePlistTarget(plist), { execPath: "/Users/u/.company-brain/node/bin/node", script: "/Users/u/.company-brain/brain.mjs", home: "/Users/u/.company-brain" })
+  const line = cronLine("/usr/bin/node", "/h/mon dossier/brain.mjs", "/h/l'équipe", { COMPANY_BRAIN_HOME: "/h/l'équipe" })
+  assert.deepEqual(parseCronTarget(line), { execPath: "/usr/bin/node", script: "/h/mon dossier/brain.mjs", home: "/h/l'équipe" })
+  const xmlText = `<Task><Actions><Exec><Command>"C:\\Program Files\\nodejs\\node.exe"</Command><Arguments>"C:\\Users\\u\\.company-brain\\brain.mjs" sync --scheduled --home "D:\\cerveau"</Arguments></Exec></Actions></Task>`
+  assert.deepEqual(parseTaskXmlTarget(xmlText), { execPath: "C:\\Program Files\\nodejs\\node.exe", script: "C:\\Users\\u\\.company-brain\\brain.mjs", home: "D:\\cerveau" })
+  assert.equal(parseTaskXmlTarget("<Task/>"), undefined)
+})
+
+test("MCP : entrée relue dans .claude.json, à jour seulement si elle lance ce Node.js et ce script", () => {
+  const dir = tempDir("brain-mcp-")
+  const file = join(dir, ".claude.json")
+  assert.equal(readMcpEntry(file), null, "pas de fichier : pas de MCP")
+  writeFileSync(file, "{ pas du json")
+  assert.equal(readMcpEntry(file), undefined)
+  writeFileSync(file, JSON.stringify({ mcpServers: { autre: { command: "x" } } }))
+  assert.equal(readMcpEntry(file), null)
+  const script = join(dir, "brain.mjs")
+  writeFileSync(script, "")
+  writeFileSync(file, JSON.stringify({ mcpServers: { "company-brain": { type: "stdio", command: process.execPath, args: mcpArgs(script), env: {} } } }))
+  const e = readMcpEntry(file)!
+  assert.ok(mcpUpToDate(e, process.execPath, script))
+  assert.ok(!mcpUpToDate(e, process.execPath, join(dir, "autre.mjs")))
+  assert.ok(!mcpUpToDate({ command: process.execPath, args: [script, "hook"] }, process.execPath, script))
+})
+
+test("spawnTarget : sous Windows, un .cmd passe par le shell avec des chemins cités ; un .exe se lance directement", () => {
+  const cmd = spawnTarget("C:\\Users\\Jean Dupont\\AppData\\Roaming\\npm\\claude.cmd", ["-p", "--tools", ""], "win32")
+  assert.equal(cmd.shell, true)
+  assert.equal(cmd.cmd, '"C:\\Users\\Jean Dupont\\AppData\\Roaming\\npm\\claude.cmd"')
+  assert.deepEqual(cmd.args, ["-p", "--tools", '""'])
+  const exe = spawnTarget("C:\\Users\\Jean Dupont\\.local\\bin\\claude.exe", ["-p", ""], "win32")
+  assert.deepEqual(exe, { cmd: "C:\\Users\\Jean Dupont\\.local\\bin\\claude.exe", args: ["-p", ""], shell: false })
+  assert.equal(spawnTarget("/usr/bin/claude", ["-p"], "linux").shell, false)
+})
+
+test("selfCommand : le raccourci s'il existe (cité si le dossier est personnalisé), sinon Node.js et le script", () => {
+  const home = tempDir("brain-self-")
+  const saved = process.env.COMPANY_BRAIN_HOME
+  process.env.COMPANY_BRAIN_HOME = join(home, "mon cerveau")
+  try {
+    assert.match(selfCommand("linux"), /^\S+ \S+$|^'.*' '.*'$|^\S+ '.*'$/)
+    mkdirSync(join(home, "mon cerveau"))
+    writeFileSync(join(home, "mon cerveau", "brain"), "")
+    assert.equal(selfCommand("linux"), `'${join(home, "mon cerveau", "brain")}'`)
+    writeFileSync(join(home, "mon cerveau", "brain.cmd"), "")
+    assert.equal(selfCommand("win32"), `"${join(home, "mon cerveau", "brain.cmd")}"`)
+  } finally {
+    if (saved === undefined) delete process.env.COMPANY_BRAIN_HOME
+    else process.env.COMPANY_BRAIN_HOME = saved
+  }
+  assert.equal(quoteArg("/a b/c'd", "linux"), `'/a b/c'\\''d'`)
+  // Windows : barres obliques (Git Bash efface les « \\ » hors guillemets), guillemets doubles s'il y a un espace.
+  assert.equal(quoteArg("C:\\Program Files\\nodejs\\node.exe", "win32"), '"C:/Program Files/nodejs/node.exe"')
+  assert.equal(quoteArg("C:\\Users\\jean\\.company-brain\\brain.mjs", "win32"), "C:/Users/jean/.company-brain/brain.mjs")
+  assert.equal(quoteArg("/usr/bin/node", "linux"), "/usr/bin/node")
 })

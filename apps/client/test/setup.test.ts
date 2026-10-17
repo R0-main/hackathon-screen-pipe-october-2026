@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert"
 import { spawn } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { parseAuthToken, recordArgs, screenpipeBinPath } from "../src/screenpipe-cli"
@@ -132,6 +132,37 @@ test("setup --skip-screenpipe --no-open : config, hooks, néon, sans rien touche
     assert.match(settings, /brain\.mjs\\" hook/)
     assert.ok(brain.requests.some((r) => r.method === "POST" && r.url === "/api/events"))
     assert.ok(!existsSync(join(home, "brain", "screenpipe")))
+  } finally {
+    await brain.close()
+  }
+})
+
+test("setup : Screenpipe qui ne démarre pas (bibliothèque manquante) → le reste est branché quand même, code 6", { skip: `${process.platform}-${process.arch}` !== "linux-x64" }, async () => {
+  const brain = await mockBrain()
+  const home = tempDir("brain-setup-nosp-")
+  const brainDir = join(home, "brain")
+  // Faux binaire Screenpipe « installé par le client », qui échoue comme sur une distribution trop ancienne.
+  const bin = screenpipeBinPath(join(brainDir, "screenpipe"), "linux", "x64")!
+  mkdirSync(dirname(bin), { recursive: true })
+  writeFileSync(bin, "#!/bin/sh\necho 'screenpipe: error while loading shared libraries: libpipewire-0.3.so.0: cannot open shared object file' >&2\nexit 127\n", { mode: 0o755 })
+  try {
+    const { code, out } = await runCli(
+      ["setup", "--url", brain.url, "--token", "cb_test_token_123456", "--screenpipe-url", "http://127.0.0.1:9", "--no-open"],
+      {
+        HOME: home,
+        COMPANY_BRAIN_HOME: brainDir,
+        COMPANY_BRAIN_SCRIPT: join(brainDir, "brain.mjs"),
+        CLAUDE_CONFIG_DIR: join(home, "claude"),
+        PATH: join(home, "vide"),
+      },
+    )
+    assert.equal(code, 6, out)
+    assert.match(out, /Screenpipe ne démarre pas sur ce poste \(« screenpipe: error while loading shared libraries: libpipewire/)
+    assert.match(out, /glibc ≥ 2\.39/)
+    for (const step of ["[4/6]", "[5/6]", "[6/6]"]) assert.ok(out.includes(step), `étape sautée : ${step}\n${out}`)
+    assert.match(out, /BRANCHÉ SANS SCREENPIPE : .* Détail et correction : .* doctor/)
+    assert.match(readFileSync(join(home, "claude", "settings.json"), "utf8"), /brain\.mjs\\" hook/)
+    assert.ok(brain.requests.some((r) => r.method === "POST" && r.url === "/api/events"), "néon envoyé")
   } finally {
     await brain.close()
   }
