@@ -106,7 +106,7 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connectors", b
             {items.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
-                <div className="grid items-start gap-3 md:grid-cols-2">
+                <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
                   {items.map((c) => (
                     <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
                   ))}
@@ -133,7 +133,7 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connectors", b
                 <p className="text-[13px] text-trace">{k.noResult}</p>
               ) : (
                 <>
-                  <div className={`grid items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
+                  <div className={`grid grid-cols-1 items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
                     {(collapsed ? catalog.slice(0, preview) : catalog).map((e) => (
                       <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
                     ))}
