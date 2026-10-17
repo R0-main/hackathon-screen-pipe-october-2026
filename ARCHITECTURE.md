@@ -87,7 +87,7 @@ type AgentEvent = {
 }
 ```
 
-**Tables Supabase** : `orgs`, `profiles` (rôle), `zones`, `zone_access` (user ↔ zone, lecture/écriture), `knowledge_items`, `entities`, `edges` (graphe : item ↔ entité, entité ↔ entité), `agent_events`, `tasks`, `automation_suggestions`, `company_status` (résumé généré).
+**Tables Supabase** : `orgs`, `profiles` (rôle), `zones`, `zone_access` (user ↔ zone, lecture/écriture), `knowledge_items`, `entities`, `edges` (graphe : item ↔ entité, entité ↔ entité), `agent_events`, `tasks`, `automation_suggestions`, `company_status` (résumé généré), `skills` (skills Claude Code de l'entreprise et leurs scripts, attribués à un cortex = une zone).
 **RLS** : un utilisateur ne lit `knowledge_items` que si `zone ∈ zone_access(user)`. Les admins voient tout.
 
 ## Les flux en détail

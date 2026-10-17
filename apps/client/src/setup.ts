@@ -13,6 +13,7 @@ import { cmdHello, cmdInit } from "./commands"
 import { loadPartialConfig, maskSecret, requireConfig, saveConfig, selfScript, UserError, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { installHooks, installSchedule, scheduleInstalled } from "./install"
+import { refreshSkills } from "./skills"
 import {
   installedScreenpipeBin,
   installScreenpipeCli,
@@ -319,9 +320,10 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
     if (capture.screen) log("Screenpipe capture l'écran.")
   }
 
-  log("[4/6] Claude Code : MCP company-brain et hooks")
+  log("[4/6] Claude Code : MCP company-brain, hooks et skills de l'entreprise")
   ensureMcp(log)
   installHooks(log)
+  await refreshSkills(log)
 
   log("[5/6] Synchro automatique")
   if (scheduleInstalled()) log("Déjà planifiée toutes les 15 min : rien à changer.")

@@ -137,7 +137,16 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
         {tab === "org" && <OrgChart users={users} zones={zones} presence={presence} selected={selected} onSelect={setSelected} />}
         {tab === "access" && (
           <PageScroll width="max-w-[1300px]">
-            <AccessTable users={users} zones={zones} meId={props.meId} saving={saving} onToggle={toggleZone} onRole={(u, role) => patch(u, { role })} onPrompt={regenerate} />
+            <AccessTable
+              users={users}
+              zones={zones}
+              meId={props.meId}
+              saving={saving}
+              onToggle={toggleZone}
+              onRole={(u, role) => patch(u, { role })}
+              onPublishSkills={(u, on) => patch(u, { can_publish_skills: on }, { can_publish_skills: on })}
+              onPrompt={regenerate}
+            />
           </PageScroll>
         )}
         {tab === "requests" && (
@@ -165,6 +174,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
           onToggleZone={(z) => toggleZone(selectedUser, z)}
           onRole={(role) => patch(selectedUser, { role })}
           onManager={(managerId) => patch(selectedUser, { manager_id: managerId }, { manager_id: managerId })}
+          onPublishSkills={(on) => patch(selectedUser, { can_publish_skills: on }, { can_publish_skills: on })}
           onPrompt={() => regenerate(selectedUser)}
           onAddReport={() => setInvite({ managerId: selectedUser.id })}
         />
@@ -202,6 +212,7 @@ function MemberDrawer(props: {
   onToggleZone: (zone: string) => void
   onRole: (role: "admin" | "member") => void
   onManager: (managerId: string | null) => void
+  onPublishSkills: (on: boolean) => void
   onPrompt: () => void
   onAddReport: () => void
 }) {
@@ -316,6 +327,27 @@ function MemberDrawer(props: {
           <p className="mt-1.5 text-[12px] text-trace">La personne et ses agents (MCP) ne lisent que ces zones ; tout le monde nourrit le cerveau.</p>
         </div>
 
+        <div>
+          <span className="mb-1.5 block text-[13px] font-medium">Skills de l&apos;entreprise</span>
+          {u.role === "admin" ? (
+            <p className="text-[13px] text-trace">Les admins peuvent toujours publier des skills.</p>
+          ) : (
+            <label className="flex items-start gap-2 text-[13px]">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4"
+                checked={u.can_publish_skills === true}
+                disabled={props.saving}
+                onChange={(e) => props.onPublishSkills(e.target.checked)}
+              />
+              <span>
+                Peut publier des skills
+                <span className="block text-[12px] text-trace">Dans toute l&apos;entreprise, ou dans les cortex qu&apos;il ou elle lit.</span>
+              </span>
+            </label>
+          )}
+        </div>
+
         {reports.length > 0 && (
           <div>
             <span className="mb-1.5 block text-[13px] font-medium">Équipe directe</span>
@@ -352,6 +384,7 @@ function AccessTable(props: {
   saving: string | null
   onToggle: (u: User, zone: string) => void
   onRole: (u: User, role: "admin" | "member") => void
+  onPublishSkills: (u: User, on: boolean) => void
   onPrompt: (u: User) => void
 }) {
   const { users, zones, saving } = props
@@ -360,6 +393,7 @@ function AccessTable(props: {
       <h2 className="panel-title">Qui voit quelles zones</h2>
       <p className="mt-1 max-w-3xl text-[13px] text-trace">
         Un membre, et ses agents via le MCP, ne lit que les zones cochées. Tout le monde nourrit le cerveau ; seule la lecture est restreinte. Les admins voient tout.
+        Publier des skills demande une autorisation ; un skill attribué à un cortex n&apos;est donné qu&apos;à ceux qui lisent cette zone.
       </p>
       <div className="scroll-thin mt-4 overflow-x-auto">
         <table className="w-full min-w-[760px] text-[13px]">
@@ -373,6 +407,9 @@ function AccessTable(props: {
                   <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
                 </th>
               ))}
+              <th scope="col" className="px-2 py-2 text-center font-medium" title="Peut publier des skills de l'entreprise">
+                Publie des skills
+              </th>
               <th scope="col" className="px-2 py-2 font-medium">
                 Rôle
               </th>
@@ -403,6 +440,16 @@ function AccessTable(props: {
                     </td>
                   )
                 })}
+                <td className="px-2 py-2.5 text-center">
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={u.role === "admin" || u.can_publish_skills === true}
+                    disabled={u.role === "admin" || saving === u.id}
+                    onChange={(e) => props.onPublishSkills(u, e.target.checked)}
+                    aria-label={`${u.name} : peut publier des skills`}
+                  />
+                </td>
                 <td className="px-2 py-2.5">
                   <select
                     className="input input-sm"
@@ -467,6 +514,7 @@ function InviteForm({
   const [title, setTitle] = useState("")
   const [role, setRole] = useState<"member" | "admin">("member")
   const [selected, setSelected] = useState<string[]>([])
+  const [publishSkills, setPublishSkills] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -475,12 +523,16 @@ function InviteForm({
     setBusy(true)
     setErr(null)
     try {
-      const r = await api<{ prompt: string }>("/api/admin/users", { method: "POST", json: { name, email, title, role, zones: selected, manager_id: manager || null } })
+      const r = await api<{ prompt: string }>("/api/admin/users", {
+        method: "POST",
+        json: { name, email, title, role, zones: selected, manager_id: manager || null, can_publish_skills: role === "member" && publishSkills },
+      })
       onInvited(name, r.prompt)
       setName("")
       setEmail("")
       setTitle("")
       setSelected([])
+      setPublishSkills(false)
     } catch (e) {
       setErr(errorMessage(e))
     } finally {
@@ -528,6 +580,12 @@ function InviteForm({
             )
           })}
         </div>
+      )}
+      {role === "member" && (
+        <label className="flex items-center gap-2 text-[13px]">
+          <input type="checkbox" className="size-4" checked={publishSkills} onChange={(e) => setPublishSkills(e.target.checked)} />
+          Peut publier des skills de l&apos;entreprise
+        </label>
       )}
       {err && <ErrorText>{err}</ErrorText>}
       <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>

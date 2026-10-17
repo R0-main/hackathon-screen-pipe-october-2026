@@ -164,6 +164,15 @@ export function BoltIcon(props: IconProps) {
   )
 }
 
+/** Skill : un savoir-faire outillé (chevrons de code). */
+export function SkillIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10" />
+    </Icon>
+  )
+}
+
 export function UsersIcon(props: IconProps) {
   return (
     <Icon {...props}>

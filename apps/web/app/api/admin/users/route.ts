@@ -26,6 +26,7 @@ const Schema = z.object({
   role: z.enum(["admin", "member"]).default("member"),
   zones: z.array(z.string().max(64)).max(30).default([]),
   manager_id: z.string().max(64).nullable().optional(),
+  can_publish_skills: z.boolean().default(false),
 })
 
 /** Invite un membre : crée son compte, ses accès, et renvoie son prompt d'installation (jeton affiché une seule fois). */
@@ -44,6 +45,7 @@ export const POST = withViewer(
       title: body.data.title,
       role: body.data.role,
       manager_id: body.data.manager_id ?? null,
+      can_publish_skills: body.data.can_publish_skills,
       token_hash: hashToken(token),
     })
     await store.setZoneAccess(profile.id, zones.map((zone_id) => ({ zone_id, can_write: true })))

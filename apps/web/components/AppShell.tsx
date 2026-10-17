@@ -7,7 +7,7 @@ import { useBrainLive } from "./BrainLive"
 import { api, errorMessage, initials } from "./format"
 import { usePendingJoins } from "./TeamJoin"
 import { ADMIN_VIEWS } from "./admin-views"
-import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LogoutIcon, MenuIcon, NavBrainIcon, PulseIcon, StackIcon, TaskIcon, UsersIcon } from "./ui"
+import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LogoutIcon, MenuIcon, NavBrainIcon, PulseIcon, SkillIcon, StackIcon, TaskIcon, UsersIcon } from "./ui"
 
 type SubItem = { href: string; label: string; count?: number }
 type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number; children?: SubItem[] }
@@ -70,6 +70,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     { href: "/activite", label: "Agents en direct", icon: PulseIcon },
     { href: "/etat", label: "Où en est la boîte", icon: DocIcon },
     { href: "/connaissances", label: "Connaissances", icon: StackIcon, count: state.totals.items },
+    { href: "/skills", label: "Skills", icon: SkillIcon, count: state.totals.skills },
     { href: "/taches", label: "Tâches", icon: TaskIcon, count: openTasks },
     { href: "/automatisations", label: "Automatisations", icon: BoltIcon, count: proposed },
   ]

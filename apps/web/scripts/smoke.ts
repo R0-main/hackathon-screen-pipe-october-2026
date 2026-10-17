@@ -42,6 +42,10 @@ import * as joinRoute from "../app/api/join/route"
 import * as joinStatusRoute from "../app/api/join/status/route"
 import * as adminJoinRoute from "../app/api/admin/join/route"
 import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
+import * as skillsRoute from "../app/api/skills/route"
+import * as skillRoute from "../app/api/skills/[id]/route"
+import { DEMO_VISITOR_TITLE, demoVisitorManager, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
+import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`ÉCHEC : ${msg}`)
@@ -247,6 +251,95 @@ async function main() {
   assert(ctx && ctx.zones[0]?.zone === "dev" && ctx.items.length > 0, "contexte de passation de Hugo")
 
   assert(await store.deleteItem(res.ids[0]), "l'auteur peut supprimer une connaissance")
+
+  console.log("\n— Skills de l'entreprise : publication sous autorisation, attribution à un cortex")
+  const names = async (v: Viewer) => (await listVisibleSkills(v)).map((x) => x.name)
+  const jmSkills = await names(jm)
+  assert(jmSkills.includes("ton-fournil") && jmSkills.includes("rapprochement-qonto-pennylane"), "Jean-Marc reçoit les skills de toute l'entreprise et du cortex compta")
+  assert(!jmSkills.includes("deployer-fournil"), "mais pas celui du cortex dev")
+  assert((await names(hugo)).includes("deployer-fournil") && !(await names(hugo)).includes("rapprochement-qonto-pennylane"), "Hugo reçoit le skill dev, pas celui de la compta")
+  assert((await names(claire)).length >= 5, "l'admin voit tous les skills")
+  assert(canPublishSkills(claire) && canPublishSkills(hugo) && !canPublishSkills(ines), "publier : admins et membres autorisés seulement")
+  const refused = async (p: Promise<unknown>, status: number) => {
+    try {
+      await p
+      return false
+    } catch (err) {
+      return err instanceof SkillError && err.status === status
+    }
+  }
+  const skillName = `smoke-${run}`
+  const files = [
+    { path: "SKILL.md", content: "# Test de fumée\n\nLancer scripts/run.py." },
+    { path: "scripts/run.py", content: "import os\nprint(os.environ['PENNYLANE_TOKEN'])\n" },
+  ]
+  assert(await refused(publishSkill(ines, { name: skillName, description: "Test", zone: null, files }), 403), "Inès (sans autorisation) ne peut pas publier")
+  assert(await refused(publishSkill(jm, { name: skillName, description: "Test", zone: "dev", files }), 403), "Jean-Marc ne peut pas attribuer un skill au cortex dev, qu'il ne lit pas")
+  const leak = [...files, { path: "scripts/leak.sh", content: `curl -H "Authorization: Bearer ${["sk-ant-", "api03-", "z".repeat(40)].join("")}" https://api.example` }]
+  try {
+    await publishSkill(jm, { name: skillName, description: "Test", zone: "compta", files: leak })
+    throw new Error("ÉCHEC : un skill avec un secret aurait dû être refusé")
+  } catch (err) {
+    assert(err instanceof SkillError && err.status === 400 && err.details?.some((d) => d.startsWith("scripts/leak.sh")), "un script qui contient un secret est refusé, en nommant le fichier")
+  }
+  assert(await refused(publishSkill(jm, { name: skillName, description: "Test", zone: "compta", files: [...files, { path: "../../.bashrc", content: "x" }] }), 400), "un chemin qui sort du skill est refusé")
+  const v1 = await publishSkill(jm, { name: skillName, description: "Test de fumée des skills", zone: "compta", files })
+  assert(v1.created && v1.skill.version === 1 && v1.skill.zone === "compta", "Jean-Marc publie un skill dans le cortex compta")
+  assert(v1.skill.files[0].content.startsWith(`---\nname: ${skillName}\ndescription: "Test de fumée des skills"\n---`), "SKILL.md reçoit l'en-tête que Claude Code attend")
+  assert((await store.listEvents({ limit: 5 })).some((e) => e.type === "write" && e.zones.join() === "compta" && e.summary?.includes(skillName)), "la publication allume le cortex compta")
+  const v2 = await publishSkill(jm, { name: skillName, description: "", files })
+  assert(!v2.created && v2.skill.version === 2 && v2.skill.zone === "compta" && v2.skill.description === "Test de fumée des skills", "même nom : version 2, cortex et description gardés")
+  assert(await refused(publishSkill(hugo, { name: skillName, description: "x", zone: "dev", files }), 409), "un nom pris dans un cortex illisible est refusé sans rien en dire")
+  assert(await refused(setSkillZone(hugo, v1.skill.id, null), 404), "Hugo ne voit pas le skill de la compta (404)")
+  await setSkillZone(jm, v1.skill.id, null)
+  assert((await names(hugo)).includes(skillName), "attribué à toute l'entreprise, Hugo le reçoit")
+  assert(await refused(setSkillZone(hugo, v1.skill.id, "dev"), 403), "seul l'auteur ou un admin change son cortex")
+  await setSkillZone(claire, v1.skill.id, "dev")
+  assert(!(await names(jm)).includes(skillName) && (await names(hugo)).includes(skillName), "l'admin l'attribue au cortex dev : Jean-Marc ne le reçoit plus")
+  assert((await getState(jm)).totals.skills === (await names(jm)).length, "le compteur de l'onglet Skills suit les droits")
+  const ineSession = await createSessionValue(ines.profile.id)
+  const listed = await call(skillsRoute.GET, "/api/skills", { session: ineSession })
+  assert(listed.status === 200 && listed.data.can_publish === false && listed.data.skills.every((x: { zone: string | null }) => x.zone === null || ines.access.readable.includes(x.zone)), "GET /api/skills : les skills d'Inès, sans droit de publier")
+  const denied = await call(skillsRoute.POST, "/api/skills", { method: "POST", session: ineSession, body: { name: `${skillName}-b`, description: "x", files } })
+  assert(denied.status === 403 && /autorisation/.test(denied.data.error), "POST /api/skills sans autorisation : 403")
+  const jmSession = await createSessionValue(jm.profile.id)
+  const patched = await skillRoute.PATCH(
+    new Request(`http://smoke.test/api/skills/${v1.skill.id}`, { method: "PATCH", headers: { cookie: `brain_session=${jmSession}`, "content-type": "application/json" }, body: JSON.stringify({ zone: null }) }),
+    { params: Promise.resolve({ id: v1.skill.id }) },
+  )
+  assert(patched.status === 404, "PATCH d'un skill hors de ses cortex : 404")
+  await removeSkill(claire, v1.skill.id)
+  assert(!(await store.getSkill(v1.skill.id)), "l'admin retire le skill")
+
+  console.log("\n— Démo remplie par une version antérieure : complétée sans rien effacer")
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "brain-upgrade-"))
+    try {
+      const old = new FileStore(tmp)
+      await seedDemoBrain(old)
+      // Avant les rattachements et les skills : organigramme à plat, aucun skill, personne n'a le droit de publier.
+      const team = await old.listProfiles()
+      for (const p of team) await old.updateProfile(p.id, { manager_id: null, can_publish_skills: false })
+      for (const sk of await old.listSkills()) await old.deleteSkill(sk.id)
+      const visitor = await old.createProfile({ name: "Visiteur 1234", title: DEMO_VISITOR_TITLE, role: "member", token_hash: hashToken(newToken()) })
+      const itemsBefore = (await old.listItems({})).length
+      const res = await upgradeDemoBrain(old)
+      const after = new Map((await old.listProfiles()).map((p) => [p.name, p]))
+      const id = (n: string) => team.find((p) => p.name.startsWith(n))!.id
+      assert(after.get("Inès Lefèvre")?.manager_id === id("Hugo") && after.get("Jean-Marc Dubois")?.manager_id === id("Claire"), "l'organigramme à plat retrouve ses rattachements")
+      assert(after.get("Claire Martin")?.manager_id == null, "la CEO reste en tête")
+      assert(after.get("Visiteur 1234")?.manager_id === id("Hugo"), "les visiteurs rejoignent l'équipe du lead dev")
+      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deployer-fournil")?.version === 3, "les skills de démo sont ajoutés")
+      assert(after.get("Hugo Bernard")?.can_publish_skills === true && after.get("Inès Lefèvre")?.can_publish_skills === false, "Hugo et Jean-Marc reçoivent le droit de publier")
+      assert((await old.listItems({})).length === itemsBefore && visitor.id === after.get("Visiteur 1234")?.id, "rien n'est effacé")
+      await old.updateProfile(id("Inès"), { manager_id: id("Claire") })
+      const again = await upgradeDemoBrain(old)
+      assert(again.managers === 0 && again.skills === 0 && (await old.getProfile(id("Inès")))?.manager_id === id("Claire"), "relancé : ne touche plus aux choix d'un admin")
+      assert((await demoVisitorManager(old)) === id("Hugo"), "un nouveau visiteur est rattaché au lead dev")
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
 
   console.log("\n— Écriture libre, droit de regard de l'auteur (D1)")
   const jmDev = await ingestItems(jm, [item("dev", `Smoke ${run} déploiement Vercel par la compta`, "procedure")])

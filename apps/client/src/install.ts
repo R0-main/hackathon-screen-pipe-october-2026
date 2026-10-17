@@ -11,6 +11,7 @@ import { findOnPath } from "./distill"
 import { isBrainSetupText, ownSecrets } from "./secrets"
 import { completeLinesEnd, listJsonlFiles } from "./sources/jsonl"
 import { uninstallScreenpipeService } from "./screenpipe-cli"
+import { removeInstalledSkills } from "./skills"
 
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const
 export const HOOK_TIMEOUT_S = 5
@@ -522,6 +523,11 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
     uninstallSchedule(log)
   } catch (err) {
     log(`Planification : ${(err as Error).message}`)
+  }
+  try {
+    removeInstalledSkills(log)
+  } catch (err) {
+    log(`Skills : ${(err as Error).message}`)
   }
   try {
     uninstallScreenpipeService(log)

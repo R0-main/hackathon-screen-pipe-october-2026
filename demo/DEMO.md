@@ -29,7 +29,9 @@ Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données f
 
 6. **L'automatisation (45 s).** La carte verte : « Jean-Marc lance ce prompt presque chaque jour vers 9h07 (6 jours sur 6) → l'exécuter automatiquement à 9h02 ». Détectée à partir des empreintes de prompts envoyées par les hooks, sans stocker le texte brut. « Mettre en place ».
 
-7. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, la personne qui remplace Hugo récupère ça. »
+7. **Les skills (30 s).** Onglet « Skills » : les savoir-faire de Fournil prêts pour Claude Code, avec leurs scripts (`deployer-fournil` et son `release.sh`). « Voir en tant que : Jean-Marc » : il ne reçoit que le skill de toute l'entreprise et ceux du cortex Compta, et son poste les installe tout seul. Dans `/admin`, la colonne « Publie des skills » : pousser un skill demande une autorisation.
+
+8. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, la personne qui remplace Hugo récupère ça. »
 
 ## Phrases clés
 
