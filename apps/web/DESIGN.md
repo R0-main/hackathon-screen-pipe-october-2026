@@ -47,9 +47,12 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 
 ## Cerveau 3D (`components/Brain3D.tsx`)
 
-- Billes = connaissances (encre), groupées par zone sur une coque ; centre de zone = bille colorée cerclée
-  d'encre ; traits fins vers le centre ; arcs entre zones qui partagent des entités.
-- Zone active : phosphore sur ses billes et son centre, onde phosphore, bulle blanche avec le libellé.
+- La forme du cerveau (hémisphères à circonvolutions, cervelet, tronc) est dessinée par un réseau de neurones
+  (`components/brain-shape.ts`, déterministe) : chaque neurone prend la couleur de la zone la plus proche.
+- Billes = connaissances (encre), des neurones de leur zone ; centre de zone = bille colorée cerclée
+  d'encre ; traits fins vers le centre ; faisceaux courbes entre zones qui partagent des entités ;
+  des influx (points encre) courent le long des liaisons, coupés sous `prefers-reduced-motion`.
+- Zone active : phosphore sur ses neurones, ses billes et son centre, onde phosphore, bulle blanche avec le libellé.
 - Libellés = vrais boutons HTML projetés sur la scène (clavier et lecteur d'écran), glisser pour tourner,
   molette, pincer ou boutons pour zoomer. Sans WebGL : `BrainViz` (2D, même monochrome).
 

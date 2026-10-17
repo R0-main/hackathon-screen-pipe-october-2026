@@ -5,6 +5,7 @@ import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
 import { hashString, seeded } from "./brain-geometry"
+import { buildBrainShape, zoneAnchor, type BrainShape, type V3 } from "./brain-shape"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -24,15 +25,16 @@ const INK = 0x0a0a0a
 const TRACE = 0x78786f
 const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
+const PALE = 0xe4e4dd
 const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
 
-const RADIUS = 1.25
-const AXES = { x: 1.3, y: 1, z: 0.95 }
 const CENTER_R = 0.06
-const ZOOM = { min: 2.6, max: 8, start: 5, step: 0.6 }
+const ZOOM = { min: 2.8, max: 9, start: 5, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
+const PULSES = 90
+const PULSE_SPEED = 0.55
 
 type ThreeModule = typeof import("three")
 type SphereMesh = THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>
@@ -40,6 +42,7 @@ type RingMesh = THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
 
 type ZoneGfx = {
   id: string
+  index: number
   locked: boolean
   color: number
   center: SphereMesh
@@ -57,25 +60,31 @@ type View = { rx: number; ry: number; zoom: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
-/** Direction de la i-ème zone sur la coque (spirale de Fibonacci, aplatie en hauteur comme un cerveau). */
-function zoneDirection(i: number, n: number): [number, number, number] {
-  const phi = Math.acos(1 - (2 * (i + 0.5)) / n)
-  const theta = Math.PI * (1 + Math.sqrt(5)) * i + Math.PI / 2
-  const v: [number, number, number] = [Math.sin(phi) * Math.cos(theta), Math.cos(phi) * 0.75, Math.sin(phi) * Math.sin(theta)]
-  const len = Math.hypot(v[0], v[1], v[2]) || 1
-  return [v[0] / len, v[1] / len, v[2] / len]
+const smooth = (lo: number, hi: number, v: number) => {
+  const t = clamp((v - lo) / (hi - lo), 0, 1)
+  return t * t * (3 - 2 * t)
 }
 
-/** Direction voisine, pour disperser les billes d'une zone autour de son centre. */
-function scatter(dir: [number, number, number], rand: () => number, spread: number): [number, number, number] {
-  const v: [number, number, number] = [dir[0] + (rand() - 0.5) * spread, dir[1] + (rand() - 0.5) * spread, dir[2] + (rand() - 0.5) * spread]
-  const len = Math.hypot(v[0], v[1], v[2]) || 1
-  return [v[0] / len, v[1] / len, v[2] / len]
+/** La forme ne dépend de rien : on la calcule une fois pour toute la session. */
+let shapeCache: BrainShape | null = null
+const getBrainShape = () => (shapeCache ??= buildBrainShape())
+
+/** Pastille ronde pour dessiner les neurones (les points WebGL sont carrés sinon). */
+function dotTexture(T: ThreeModule): THREE.CanvasTexture {
+  const cv = document.createElement("canvas")
+  cv.width = cv.height = 64
+  const ctx = cv.getContext("2d")!
+  ctx.fillStyle = "#fff"
+  ctx.beginPath()
+  ctx.arc(32, 32, 30, 0, Math.PI * 2)
+  ctx.fill()
+  return new T.CanvasTexture(cv)
 }
 
 /**
- * Le cerveau en trois dimensions : des billes (les connaissances) groupées par zone sur une coque
- * ellipsoïdale, reliées à leur centre et entre zones par des traits fins. On le fait tourner à la
+ * Le cerveau en trois dimensions : un réseau de neurones qui dessine hémisphères, cervelet et tronc,
+ * coloré par zone. Les billes (les connaissances) sont des neurones de leur zone, reliées à son centre ;
+ * des faisceaux courbes relient les zones et des influx courent le long des liaisons. On le fait tourner à la
  * souris, on zoome à la molette, en pinçant ou avec les boutons. Il remplit son conteneur : la page ne défile
  * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
  */
@@ -88,7 +97,7 @@ export function Brain3D(props: Brain3DProps) {
   const ripplesRef = useRef(ripples)
   const selectedRef = useRef(selected)
   const onSelectRef = useRef(onSelect)
-  const viewRef = useRef<View>({ rx: 0.28, ry: -0.35, zoom: ZOOM.start })
+  const viewRef = useRef<View>({ rx: 0.18, ry: -0.85, zoom: ZOOM.start })
   const zoomRef = useRef<(delta: number) => void>(() => {})
   const [fallback, setFallback] = useState(false)
   activityRef.current = activity
@@ -217,7 +226,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 50)
   const view = refs.viewRef.current
   const state = { zoomTarget: view.zoom, lastInteraction: -Infinity, visible: true, running: false }
-  camera.position.set(0, 0.2, view.zoom)
+  camera.position.set(0, 0.15, view.zoom)
   camera.lookAt(0, 0, 0)
 
   const group = new T.Group()
@@ -228,22 +237,115 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const geoSphere = new T.SphereGeometry(1, 20, 14)
   const geoRing = new T.RingGeometry(0.93, 1, 48)
   const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
+  const dotTex = dotTexture(T)
   const geometries: THREE.BufferGeometry[] = [geoSphere, geoRing]
   const materials: THREE.Material[] = [outlineMat]
 
-  /** Point de la coque dans la direction d, à la fraction k du rayon. */
-  const onShell = (d: [number, number, number], k: number) => new T.Vector3(d[0] * RADIUS * AXES.x * k, d[1] * RADIUS * AXES.y * k, d[2] * RADIUS * AXES.z * k)
+  // Le réseau de neurones qui dessine le cerveau (hémisphères, cervelet, tronc).
+  const shape = getBrainShape()
+  const P = shape.positions
+  const NRM = shape.normals
+  const nPts = P.length / 3
+  const pointAt = (i: number) => new T.Vector3(P[i * 3], P[i * 3 + 1], P[i * 3 + 2])
+  const normalAt = (i: number) => new T.Vector3(NRM[i * 3], NRM[i * 3 + 1], NRM[i * 3 + 2])
+  const dist2 = (i: number, v: V3) => (P[i * 3] - v[0]) ** 2 + (P[i * 3 + 1] - v[1]) ** 2 + (P[i * 3 + 2] - v[2]) ** 2
 
+  // Chaque zone s'ancre sur un neurone ; chaque neurone appartient à la zone la plus proche (Voronoï).
   const n = zones.length
-  const spread = Math.min(1.1, 2.2 / Math.sqrt(Math.max(1, n)))
+  const anchors = zones.map((_, i) => {
+    const target = zoneAnchor(i, n)
+    let best = 0
+    let bd = Infinity
+    for (let k = 0; k < nPts; k++) {
+      const d = dist2(k, target)
+      if (d < bd) [bd, best] = [d, k]
+    }
+    return best
+  })
+  const anchorPos: V3[] = anchors.map((k) => [P[k * 3], P[k * 3 + 1], P[k * 3 + 2]])
+  const owner = new Int32Array(nPts)
+  const ownerDist = new Float32Array(nPts)
+  for (let k = 0; k < nPts; k++) {
+    let bz = 0
+    let bd = Infinity
+    anchorPos.forEach((a, zi) => {
+      const d = dist2(k, a)
+      if (d < bd) [bd, bz] = [d, zi]
+    })
+    owner[k] = bz
+    ownerDist[k] = Math.sqrt(bd)
+  }
+
+  const zoneHex = zones.map((z) => (z.locked ? NEUTRAL : new T.Color(zoneColor(z.color, z.position)).getHex()))
+  const pale = new T.Color(PALE)
+  const baseColors = new Float32Array(nPts * 3)
+  const c = new T.Color()
+  for (let k = 0; k < nPts; k++) {
+    // Couleur pleine près du centre de la zone, qui pâlit vers ses frontières.
+    const f = 0.04 + 0.3 * smooth(0.3, 1.3, ownerDist[k])
+    c.setHex(zoneHex[owner[k]]).lerp(pale, f)
+    baseColors.set([c.r, c.g, c.b], k * 3)
+  }
+  const liveColors = baseColors.slice()
+
+  const neuronGeo = new T.BufferGeometry()
+  neuronGeo.setAttribute("position", new T.BufferAttribute(P, 3))
+  const neuronColor = new T.BufferAttribute(liveColors, 3)
+  neuronGeo.setAttribute("color", neuronColor)
+  const neuronMat = new T.PointsMaterial({ size: 0.03, vertexColors: true, map: dotTex, alphaTest: 0.4, transparent: true, sizeAttenuation: true })
+  group.add(new T.Points(neuronGeo, neuronMat))
+
+  const E = shape.edges
+  const nEdges = E.length / 2
+  const edgePos = new Float32Array(nEdges * 6)
+  const edgeCol = new Float32Array(nEdges * 6)
+  for (let e = 0; e < nEdges; e++) {
+    edgePos.set(P.subarray(E[e * 2] * 3, E[e * 2] * 3 + 3), e * 6)
+    edgePos.set(P.subarray(E[e * 2 + 1] * 3, E[e * 2 + 1] * 3 + 3), e * 6 + 3)
+  }
+  const edgeGeo = new T.BufferGeometry()
+  edgeGeo.setAttribute("position", new T.BufferAttribute(edgePos, 3))
+  const edgeColor = new T.BufferAttribute(edgeCol, 3)
+  edgeGeo.setAttribute("color", edgeColor)
+  const edgeMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false })
+  group.add(new T.LineSegments(edgeGeo, edgeMat))
+  geometries.push(neuronGeo, edgeGeo)
+  materials.push(neuronMat, edgeMat)
+
+  /** Recopie les couleurs des neurones sur les liaisons et pousse le tout au GPU. */
+  const refreshColors = () => {
+    for (let e = 0; e < nEdges; e++) {
+      edgeCol.set(liveColors.subarray(E[e * 2] * 3, E[e * 2] * 3 + 3), e * 6)
+      edgeCol.set(liveColors.subarray(E[e * 2 + 1] * 3, E[e * 2 + 1] * 3 + 3), e * 6 + 3)
+    }
+    neuronColor.needsUpdate = true
+    edgeColor.needsUpdate = true
+  }
+  refreshColors()
+
+  const regions = zones.map((_, zi) => {
+    const idx: number[] = []
+    for (let k = 0; k < nPts; k++) if (owner[k] === zi) idx.push(k)
+    return idx
+  })
+  const phosphor = new T.Color(PHOSPHOR)
+  const paintRegion = (zi: number, on: boolean) => {
+    for (const k of regions[zi]) {
+      if (on) {
+        c.setRGB(baseColors[k * 3], baseColors[k * 3 + 1], baseColors[k * 3 + 2]).lerp(phosphor, 0.85)
+        liveColors.set([c.r, c.g, c.b], k * 3)
+      } else liveColors.set(baseColors.subarray(k * 3, k * 3 + 3), k * 3)
+    }
+  }
+
   const gfx = new Map<string, ZoneGfx>()
   const pickables: THREE.Object3D[] = []
 
-  zones.forEach((z, i) => {
+  zones.forEach((z, zi) => {
     const rand = seeded(hashString(z.id))
-    const dir = zoneDirection(i, n)
-    const centerPos = onShell(dir, 0.86)
-    const color = new T.Color(zoneColor(z.color, z.position)).getHex()
+    const a = anchors[zi]
+    const centerPos = pointAt(a).add(normalAt(a).multiplyScalar(0.16))
+    const color = zoneHex[zi]
 
     const centerMat = new T.MeshBasicMaterial({ color: z.locked ? WHITE : color })
     const center: SphereMesh = new T.Mesh(geoSphere, centerMat)
@@ -256,13 +358,16 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     group.add(outline, center)
     pickables.push(center)
 
+    // Les connaissances sont des neurones de la zone, pris autour de son ancrage.
     const count = z.locked ? 5 : 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
+    const pool = regions[zi].slice().sort((p, q) => dist2(p, anchorPos[zi]) - dist2(q, anchorPos[zi]))
+    const picked = pool.slice(0, count * 4).filter(() => rand() < 0.35).slice(0, count)
     const nodeMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : INK })
     const nodes: SphereMesh[] = []
     const linkPts: THREE.Vector3[] = []
-    for (let k = 0; k < count; k++) {
-      const p = onShell(scatter(dir, rand, spread), 0.95 + rand() * 0.1)
-      const r = 0.02 + rand() * 0.018
+    for (const k of picked) {
+      const p = pointAt(k).add(normalAt(k).multiplyScalar(0.015))
+      const r = 0.012 + rand() * 0.01
       const node: SphereMesh = new T.Mesh(geoSphere, nodeMat)
       node.position.copy(p)
       node.scale.setScalar(r)
@@ -278,23 +383,74 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     group.add(new T.LineSegments(linkGeo, linkMat))
     geometries.push(linkGeo)
     materials.push(centerMat, nodeMat, linkMat)
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
+    gfx.set(z.id, { id: z.id, index: zi, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
   })
 
-  // Synapses : cordes entre deux zones qui partagent des entités, plus marquées quand elles sont actives.
+  // Synapses : faisceaux courbes qui passent par l'intérieur du cerveau entre deux zones qui partagent des entités.
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const A = gfx.get(s.a)
     const B = gfx.get(s.b)
     if (!A || !B) continue
-    const pts = [A.center.position.clone(), B.center.position.clone()]
-    const baseOpacity = 0.18 + Math.min(0.27, Math.log2(1 + s.weight) * 0.06)
-    const mat = new T.LineBasicMaterial({ color: TRACE, transparent: true, opacity: baseOpacity })
+    const a = A.center.position
+    const b = B.center.position
+    const mid = a.clone().add(b).multiplyScalar(0.2)
+    const pts = new T.QuadraticBezierCurve3(a.clone(), mid, b.clone()).getPoints(32)
+    const baseOpacity = 0.2 + Math.min(0.3, Math.log2(1 + s.weight) * 0.07)
+    const mat = new T.LineBasicMaterial({ color: TRACE, transparent: true, opacity: baseOpacity, depthWrite: false })
     const geo = new T.BufferGeometry().setFromPoints(pts)
     group.add(new T.Line(geo, mat))
     geometries.push(geo)
     materials.push(mat)
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false })
+  }
+
+  // Influx : de petites impulsions qui courent de neurone en neurone le long des liaisons.
+  const adj = shape.adjacency
+  const pulses = Array.from({ length: PULSES }, () => ({ from: 0, to: 0, t: 0, len: 1 }))
+  const pulsePos = new Float32Array(PULSES * 3)
+  const pulseGeo = new T.BufferGeometry()
+  const pulseAttr = new T.BufferAttribute(pulsePos, 3)
+  pulseGeo.setAttribute("position", pulseAttr)
+  const pulseMat = new T.PointsMaterial({ color: INK, size: 0.05, map: dotTex, alphaTest: 0.4, transparent: true, depthWrite: false, sizeAttenuation: true })
+  const pulsePoints = new T.Points(pulseGeo, pulseMat)
+  group.add(pulsePoints)
+  geometries.push(pulseGeo)
+  materials.push(pulseMat)
+  const edgeLen = (a: number, b: number) => Math.sqrt(dist2(b, [P[a * 3], P[a * 3 + 1], P[a * 3 + 2]])) || 0.05
+  const activeRegions: number[] = []
+  const spawn = (p: (typeof pulses)[number]) => {
+    // Un influx sur deux naît dans une zone active, s'il y en a une.
+    const region = activeRegions.length && Math.random() < 0.5 ? regions[activeRegions[(Math.random() * activeRegions.length) | 0]] : null
+    let from = region && region.length ? region[(Math.random() * region.length) | 0] : (Math.random() * nPts) | 0
+    if (!adj[from].length) from = E[((Math.random() * nEdges) | 0) * 2]
+    p.from = from
+    p.to = adj[from][(Math.random() * adj[from].length) | 0]
+    p.t = Math.random()
+    p.len = edgeLen(p.from, p.to)
+  }
+  for (const p of pulses) spawn(p)
+  const stepPulses = (dt: number) => {
+    for (let i = 0; i < PULSES; i++) {
+      const p = pulses[i]
+      p.t += (dt * PULSE_SPEED) / p.len
+      if (p.t >= 1) {
+        if (Math.random() < 0.06) spawn(p)
+        else {
+          const next = adj[p.to].filter((k) => k !== p.from)
+          p.from = p.to
+          p.to = next.length ? next[(Math.random() * next.length) | 0] : adj[p.to][0]
+          p.t = 0
+          p.len = edgeLen(p.from, p.to)
+        }
+      }
+      const a = p.from * 3
+      const b = p.to * 3
+      pulsePos[i * 3] = P[a] + (P[b] - P[a]) * p.t
+      pulsePos[i * 3 + 1] = P[a + 1] + (P[b + 1] - P[a + 1]) * p.t
+      pulsePos[i * 3 + 2] = P[a + 2] + (P[b + 2] - P[a + 2]) * p.t
+    }
+    pulseAttr.needsUpdate = true
   }
 
   // Taille : le canvas suit son conteneur.
@@ -405,6 +561,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
   // Boucle : ondes, états actifs, rotation d'attente, libellés projetés.
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  pulsePoints.visible = !reduced
   const live: RippleGfx[] = []
   const seen = new Set<string>()
   const tmp = new T.Vector3()
@@ -422,11 +579,14 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
     const act = refs.activityRef.current
     const sel = refs.selectedRef.current
+    let colorsDirty = false
     for (const g of gfx.values()) {
       const a = act[g.id]
       const on = Boolean(a && a.until > nowMs)
       if (on !== g.active) {
         g.active = on
+        paintRegion(g.index, on)
+        colorsDirty = true
         g.center.material.color.setHex(on ? PHOSPHOR : g.locked ? WHITE : g.color)
         g.nodeMat.color.setHex(on ? PHOSPHOR : g.locked ? NEUTRAL : INK)
         g.linkMat.color.setHex(on ? INK : LINE)
@@ -440,6 +600,12 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const target = CENTER_R * (on ? 1.3 : 1)
       g.center.scale.setScalar(g.center.scale.x + (target - g.center.scale.x) * Math.min(1, dt * 10))
     }
+    if (colorsDirty) {
+      refreshColors()
+      activeRegions.length = 0
+      for (const g of gfx.values()) if (g.active) activeRegions.push(g.index)
+    }
+    if (!reduced) stepPulses(dt)
     for (const s of syn) {
       const on = Boolean(gfx.get(s.a)?.active || gfx.get(s.b)?.active)
       if (on !== s.active) {
@@ -532,6 +698,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     for (const r of live) r.mesh.material.dispose()
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
+    dotTex.dispose()
     renderer.dispose()
   }
 }
