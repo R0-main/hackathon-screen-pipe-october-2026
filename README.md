@@ -1,253 +1,253 @@
 # NOS Brainer
 
-> Le cerveau d'entreprise qui est un *no-brainer* : un prompt à coller dans Claude Code, et ta boîte a un cerveau.
+> The company brain that is a *no-brainer*: one prompt to paste into Claude Code, and your company has a brain.
 
-> Hackathon Screenpipe « Build Agents That Remember » — 42 Paris, octobre 2026.
-> Le pitch est dans [IDEA.md](IDEA.md), l'architecture dans [ARCHITECTURE.md](ARCHITECTURE.md), le déroulé de la démo dans [demo/DEMO.md](demo/DEMO.md), l'hébergement sur une machine de l'entreprise dans [docs/LOCAL.md](docs/LOCAL.md).
+> Screenpipe hackathon "Build Agents That Remember" — 42 Paris, October 2026.
+> The pitch is in [IDEA.md](IDEA.md), the architecture in [ARCHITECTURE.md](ARCHITECTURE.md), the demo run-through in [demo/DEMO.md](demo/DEMO.md), hosting on a company machine in [docs/LOCAL.md](docs/LOCAL.md).
 
-Chaque employé travaille déjà avec Claude Code, Codex ou ChatGPT, mais ce contexte reste enfermé dans des sessions individuelles.
-**Screenpipe** capte ces sessions sur chaque poste, **brain-sync** les distille en connaissances (décisions, procédures, faits, tâches) et les envoie à **un cerveau unique de l'entreprise**. Les agents de chacun interrogent ce cerveau via un **MCP**, avec des **accès par zone**, et le dashboard montre le cerveau s'allumer en direct.
+Every employee already works with Claude Code, Codex or ChatGPT, but that context stays locked in individual sessions.
+**Screenpipe** captures these sessions on each computer, **brain-sync** distills them into knowledge (decisions, procedures, facts, tasks) and sends it to **a single company brain**. Everyone's agents query that brain through an **MCP**, with **per-zone access**, and the dashboard shows the brain light up live.
 
-**Le brut reste sur le PC, seul le distillé monte au cerveau.**
+**The raw data stays on the computer, only the distilled knowledge goes up to the brain.**
 
-## Lancer la démo en 2 minutes
+## Run the demo in 2 minutes
 
-Prérequis : Node.js ≥ 20.
+Prerequisite: Node.js ≥ 20.
 
 ```bash
 npm install
-npm run seed                 # entreprise fictive « Fournil » : 6 comptes, 5 skills, 34 connaissances, 10 jours d'activité
-BRAIN_DEMO=1 npm run dev     # http://localhost:3000/demo → connexion en un clic (mode démo)
-npm run simulate             # dans un 2e terminal : des agents travaillent, le cerveau s'allume
+npm run seed                 # fictitious company "Fournil": 6 accounts, 5 skills, 34 knowledge items, 10 days of activity
+BRAIN_DEMO=1 npm run dev     # http://localhost:3000/demo → one-click sign-in (demo mode)
+npm run simulate             # in a 2nd terminal: agents work, the brain lights up
 ```
 
-- Connectez-vous en **Claire (CEO, admin)** pour tout voir, puis « Voir en tant que : Jean-Marc » : la compta ne voit que sa zone, et une question sur le déploiement ne renvoie rien (la zone Dev est verrouillée).
-- Sans clé Claude, tout fonctionne avec des heuristiques locales. Avec `ANTHROPIC_API_KEY`, le résumé « où en est la boîte » et l'onboarding sont rédigés par Claude.
-- `npm run smoke` vérifie le cerveau de bout en bout (accès par zone, masquage des secrets, détection d'automatisation…).
+- Sign in as **Claire (CEO, admin)** to see everything, then "View as: Jean-Marc": finance only sees its zone, and a question about deployment returns nothing (the Dev zone is locked).
+- Without a Claude key, everything works with local heuristics. With `ANTHROPIC_API_KEY`, the "where does the company stand" summary and the onboarding are written by Claude.
+- `npm run smoke` checks the brain end to end (per-zone access, secret redaction, automation detection…).
 
-## Ce que contient le repo
+## What the repo contains
 
 ```
-packages/core/        Contrats partagés (KnowledgeItem, AgentEvent), zones, filtre vie privée,
-                      distillation (Claude + heuristique), détection d'automatisations, résumé d'état
-apps/web/             Le cerveau : dashboard Next.js + API (/api/ingest, /api/query, /api/events, /api/stream…)
-  lib/store/          Stockage : fichier JSON (zéro config) ou Postgres/Supabase (DATABASE_URL)
-  scripts/            seed (Fournil), simulate (activité en direct), smoke (tests), migrate (SQL)
-apps/client/          Le client poste, livré en UN fichier (brain.mjs, servi par le dashboard sur /brain.mjs) :
-                      brain-sync, serveur MCP company-brain, hooks Claude Code, installation
-supabase/migrations/  Schéma Postgres + politiques RLS par zone
-install/              Le « prompt magique » d'installation (généré par le dashboard pour chaque employé)
-demo/                 Script de démo
+packages/core/        Shared contracts (KnowledgeItem, AgentEvent), zones, privacy filter,
+                      distillation (Claude + heuristic), automation detection, status summary
+apps/web/             The brain: Next.js dashboard + API (/api/ingest, /api/query, /api/events, /api/stream…)
+  lib/store/          Storage: JSON file (zero config) or Postgres/Supabase (DATABASE_URL)
+  scripts/            seed (Fournil), simulate (live activity), smoke (tests), migrate (SQL)
+apps/client/          The computer client, shipped as ONE file (brain.mjs, served by the dashboard on /brain.mjs):
+                      brain-sync, company-brain MCP server, Claude Code hooks, install
+supabase/migrations/  Postgres schema + per-zone RLS policies
+install/              The install "magic prompt" (generated by the dashboard for each employee)
+demo/                 Demo script
 ```
 
-## Les briques
+## The building blocks
 
-| Brique | Où | Rôle |
+| Block | Where | Role |
 |---|---|---|
-| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »), avec le fil « Agents en direct » posé à côté : on lit l'événement pendant que sa zone s'allume, et une zone du fil ouvre son tiroir. Pages séparées : « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
-| **Équipe & accès** | `/admin` | Organigramme (qui est rattaché à qui, agents actifs, zones de chacun ; cliquer une carte pour régler rattachement, rôle et zones), matrice membres × zones, invitation → prompt d'installation avec jeton personnel. |
-| **Skills** | `/skills` | Les skills Claude Code de l'entreprise (SKILL.md et les scripts qu'ils utilisent), regroupés par cortex. Publier demande un droit accordé dans `/admin` (les admins l'ont toujours) ; un skill attribué à un cortex (une zone) n'est donné qu'à ceux qui lisent cette zone. Un script qui contient un secret est refusé. |
-| **Onboarding** | `/onboarding` | Interview guidée de 7 questions + lecture des liens → zones et premières connaissances, validées avant application. |
-| **Passation** | `/people/:id` | Zones, sujets, prompts fréquents et connaissances d'un poste (et droit de regard : l'employé supprime ses items). |
-| **brain-sync** | `brain.mjs sync` | Lit les logs Claude Code / Codex et l'API locale de Screenpipe, filtre (liste blanche d'apps, secrets, données perso), distille avec Claude, envoie. `--dry-run --full` montre tout ce qui partirait, `--confirm` envoie exactement ce qui a été relu. |
-| **Skills sur le poste** | `brain.mjs skills` | Installe dans `~/.claude/skills` les skills attribués au poste (après chaque synchro et au `setup`), retire ceux qui ne le sont plus, ne touche jamais un skill personnel. `skills push <dossier> --cortex <zone>` publie un dossier. |
-| **État par Claude** | `brain.mjs refresh-status` | Admins : rédige « où en est la boîte » sur le poste avec Claude (abonnement) et l'envoie au dashboard. |
-| **Nouvelles zones** | `brain.mjs refresh-zones` | Admins : passage « nouvelles zones » fait par Claude Code (abonnement), sur un poste ou dans la CI de l'entreprise (GitHub Actions). |
-| **Diagnostic** | `brain.mjs doctor` | Passe le poste en revue sans rien modifier (Node, raccourci, cerveau, Screenpipe, MCP, hooks, synchro, distillation) et donne la commande qui répare chaque point KO ; `--json` pour Claude Code. |
-| **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
-| **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
+| **Dashboard** | `apps/web` | Sidebar on the left, full-screen 3D brain on the right (zones lighting up in neon through SSE, wheel to zoom, "view as" search), with the "Live agents" feed next to it: you read the event while its zone lights up, and a zone in the feed opens its drawer. Separate pages: "where does the company stand" (`/status`), knowledge, tasks, automations. |
+| **Team & access** | `/admin` | Org chart (who reports to whom, active agents, everyone's zones; click a card to set manager, role and zones), members × zones matrix, invitation → install prompt with a personal token. |
+| **Skills** | `/skills` | The company's Claude Code skills (SKILL.md and the scripts they use), grouped by cortex. Publishing needs a permission granted in `/admin` (admins always have it); a skill assigned to a cortex (a zone) is only given to those who read that zone. A script that contains a secret is refused. |
+| **Onboarding** | `/onboarding` | Guided 7-question interview + reading of links → zones and first knowledge, reviewed before being applied. |
+| **Handover** | `/people/:id` | Zones, topics, frequent prompts and knowledge of a computer (and oversight: the employee deletes their items). |
+| **brain-sync** | `brain.mjs sync` | Reads the Claude Code / Codex logs and Screenpipe's local API, filters (app allowlist, secrets, personal data), distills with Claude, sends. `--dry-run --full` shows everything that would be sent, `--confirm` sends exactly what was reviewed. |
+| **Skills on the computer** | `brain.mjs skills` | Installs in `~/.claude/skills` the skills assigned to the computer (after each sync and at `setup`), removes those that no longer are, never touches a personal skill. `skills push <folder> --cortex <zone>` publishes a folder. |
+| **Status by Claude** | `brain.mjs refresh-status` | Admins: writes "where does the company stand" on their computer with Claude (subscription) and sends it to the dashboard. |
+| **New zones** | `brain.mjs refresh-zones` | Admins: "new zones" run done by Claude Code (subscription), on a computer or in the company's CI (GitHub Actions). |
+| **Diagnosis** | `brain.mjs doctor` | Reviews the computer without changing anything (Node, shortcut, brain, Screenpipe, MCP, hooks, sync, distillation) and gives the command that repairs each KO item; `--json` for Claude Code. |
+| **company-brain MCP** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Each query lights up the zone found. |
+| **Claude Code hooks** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → events: reliable neons, and detection of repetitive prompts by fingerprint. A short redacted summary is only sent if the prompt concerns a zone and has nothing personal (`init --share-prompt-summaries no` turns it off). |
 
-## Supervision, connecteurs, langues
+## Monitoring, connectors, language
 
-> Détail et choix techniques : [docs/AMELIORATIONS-V2.md](docs/AMELIORATIONS-V2.md).
+> Details and technical choices: [docs/IMPROVEMENTS-V2.md](docs/IMPROVEMENTS-V2.md).
 
-- **Supervision** (`/supervision`, admins) : l'état de chaque poste (dernière synchro, retard, erreur) d'après les comptes
-  rendus que `brain sync` envoie à la fin de chaque passage (compteurs seulement, jamais de contenu), les incidents du
-  serveur, et une sonde `GET /api/health` pour un superviseur externe. `BRAIN_ALERT_WEBHOOK` reçoit une alerte (JSON
-  `{ text }`, compatible Slack) pour une route en erreur, une synchro en échec ou un connecteur en panne.
-- **Connecteurs** (`/connecteurs`, admins) : Notion (pages → connaissances), Linear et Todoist (issues et tâches →
-  tâches, fermées quand elles disparaissent chez l'outil), calendrier ICS (réunions → connaissances). Synchro à la
-  demande et toutes les heures en arrière-plan. Le jeton reste côté serveur.
-- **Langues** : l'interface existe en français et en anglais (sélecteur dans la barre latérale et sur la connexion, cookie
-  `brain_lang`, sinon la langue du navigateur). Les pages les plus anciennes restent en français pour l'instant.
-- **Flux temps réel** : le stockage prévient le flux SSE dès qu'un événement est inséré (émetteur local, ou
-  `LISTEN/NOTIFY` en Postgres) ; la relecture périodique ne sert plus que de filet de sécurité.
-- **Qualité du cerveau** : synonymes FR/EN dans la recherche, recherche sémantique optionnelle (`VOYAGE_API_KEY` ou un
-  point de terminaison compatible OpenAI, Ollama compris : `npm run embed` pour l'existant), remplacement automatique
-  d'une décision ou procédure revue (l'ancienne sort des recherches), pages Entités (`/entites`), et `npm run eval`
-  qui mesure la recherche sur la démo Fournil.
+- **Monitoring** (`/monitoring`, admins): the state of each computer (last sync, delay, error) from the reports
+  `brain sync` sends at the end of each run (counters only, never any content), the server's incidents, and a
+  `GET /api/health` probe for an external monitor. `BRAIN_ALERT_WEBHOOK` receives an alert (JSON `{ text }`,
+  Slack-compatible) for a route in error, a failed sync or a broken connector.
+- **Connectors** (`/connectors`, admins): Notion (pages → knowledge), Linear and Todoist (issues and tasks →
+  tasks, closed when they disappear from the tool), ICS calendar (meetings → knowledge). Sync on demand and every
+  hour in the background. The token stays on the server.
+- **Language**: the product is in English (interface, server and CLI messages, prompts, demo data). The old French
+  routes (`/etat`, `/connecteurs`, `/creer`…) redirect permanently to the English ones.
+- **Real-time feed**: the storage notifies the SSE stream as soon as an event is inserted (local emitter, or
+  `LISTEN/NOTIFY` on Postgres); the periodic reread is only a safety net.
+- **Brain quality**: synonyms in search, optional semantic search (`VOYAGE_API_KEY` or an OpenAI-compatible
+  endpoint, Ollama included: `npm run embed` for existing data), automatic replacement of a revised decision or
+  procedure (the old one leaves the searches), Entities pages (`/entities`), and `npm run eval` which measures search
+  on the Fournil demo.
 
-## API du cerveau
+## Brain API
 
-Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SHA-256 côté serveur) pour les agents ; cookie de session signé pour le dashboard.
+Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-256 on the server) for agents; signed session cookie for the dashboard.
 
-| Méthode | Route | Usage |
+| Method | Route | Use |
 |---|---|---|
-| POST | `/api/ingest` | `{items: KnowledgeItemInput[]}` — connaissances distillées (re-masquées côté serveur). |
-| POST | `/api/events` | `AgentEventInput` ou `{events: [...]}` — ce qui fait s'allumer le cerveau. |
-| POST | `/api/query` | `{query, zones?, limit?}` — recherche limitée aux zones lisibles ; signale les zones restreintes sans rien en dire. |
-| GET | `/api/zones`, `/api/zones/:id` | Zones (avec mots-clés pour les hooks), résumé d'une zone. |
-| GET | `/api/whoami`, `/api/people/:id` | Contexte du poste (passation). |
-| GET | `/api/stream` | Flux SSE des événements, filtré selon les droits. |
-| GET/POST | `/api/status` | État de l'entreprise (titre global réservé à qui lit toutes les zones). POST admin : sans corps, recalcul côté serveur ; avec `{status}`, résumé rédigé sur un poste. |
-| GET | `/api/status/input` | Admin : matière du résumé (30 derniers jours) pour `refresh-status`. |
-| GET/POST | `/api/skills` | Skills reçus par la personne (toute l'entreprise + ses cortex), fichiers compris. POST `{name, description, zone?, files: [{path, content}]}` : publie (droit requis), même nom → version suivante. |
-| PATCH/DELETE | `/api/skills/:id` | `{zone}` : attribue le skill à un cortex (`null` : toute l'entreprise). Auteur ou admin. |
-| GET/POST/PATCH | `/api/automations…` | Suggestions (heuristique + workflows Screenpipe), validation par un admin. |
-| POST | `/api/orgs` | Public (sauf `BRAIN_SIGNUP=0`) : crée une entreprise et son admin, ouvre la session, renvoie son prompt d'installation. |
-| POST | `/api/join`, `/api/join/status` | Public : demande pour rejoindre avec le code du message d'équipe (empreinte du jeton du poste), puis son état (pour qui détient le jeton). |
-| GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin : message d'équipe et demandes en attente, changer le code ; accepter (compte créé tel que réglé) ou refuser. |
-| GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
-| GET/PUT/DELETE | `/api/admin/claude` | Admin : clé API Claude de l'entreprise (`{key}`, vérifiée puis chiffrée) ; GET n'en renvoie que la source et les 4 derniers caractères. |
-| GET/POST | `/api/admin/zones/auto` | Admin : historique du job « nouvelles zones » ; POST sans corps : passage du serveur (clé API) ; avec `{zones: [{name, description, keywords, item_ids}]}` : applique ce qu'a proposé `refresh-zones`. |
-| GET | `/api/admin/zones/auto/input` | Admin : matière d'un passage (zones, connaissances récentes numérotées) pour `refresh-zones`. |
-| GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`) : job quotidien « nouvelles zones », toutes entreprises confondues. |
-| POST | `/api/sync/report` | Compte rendu d'une synchro du poste (compteurs, erreur masquée) : page Supervision. |
-| GET | `/api/admin/monitoring` | Admin : état des postes, incidents du serveur, instance. `GET /api/health` : sonde publique (200 / 503). |
-| GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin : connecteurs Notion, Linear, Todoist, calendrier ICS (réglages sans le jeton, synchro à la demande). |
-| … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
+| POST | `/api/ingest` | `{items: KnowledgeItemInput[]}` — distilled knowledge (redacted again on the server). |
+| POST | `/api/events` | `AgentEventInput` or `{events: [...]}` — what makes the brain light up. |
+| POST | `/api/query` | `{query, zones?, limit?}` — search limited to readable zones; flags restricted zones without saying anything about them. |
+| GET | `/api/zones`, `/api/zones/:id` | Zones (with keywords for the hooks), summary of a zone. |
+| GET | `/api/whoami`, `/api/people/:id` | Context of the computer (handover). |
+| GET | `/api/stream` | SSE stream of the events, filtered by access rights. |
+| GET/POST | `/api/status` | Company status (overall headline reserved to whoever reads every zone). Admin POST: without a body, recomputed on the server; with `{status}`, summary written on a computer. |
+| GET | `/api/status/input` | Admin: material for the summary (last 30 days) for `refresh-status`. |
+| GET/POST | `/api/skills` | Skills the person receives (whole company + their cortexes), files included. POST `{name, description, zone?, files: [{path, content}]}`: publishes (permission required), same name → next version. |
+| PATCH/DELETE | `/api/skills/:id` | `{zone}`: assigns the skill to a cortex (`null`: the whole company). Author or admin. |
+| GET/POST/PATCH | `/api/automations…` | Suggestions (heuristic + Screenpipe workflows), approval by an admin. |
+| POST | `/api/orgs` | Public (unless `BRAIN_SIGNUP=0`): creates a company and its admin, opens the session, returns their install prompt. |
+| POST | `/api/join`, `/api/join/status` | Public: request to join with the team message code (fingerprint of the computer's token), then its state (for whoever holds the token). |
+| GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin: team message and pending requests, change the code; accept (account created as set) or decline. |
+| GET | `/api/admin/team` | Admin: the team and the last sign of each computer (`last_at`, null until it is connected). |
+| GET/PUT/DELETE | `/api/admin/claude` | Admin: the company's Claude API key (`{key}`, checked then encrypted); GET only returns its source and last 4 characters. |
+| GET/POST | `/api/admin/zones/auto` | Admin: history of the "new zones" job; POST without a body: server run (API key); with `{zones: [{name, description, keywords, item_ids}]}`: applies what `refresh-zones` proposed. |
+| GET | `/api/admin/zones/auto/input` | Admin: material for a run (zones, numbered recent knowledge) for `refresh-zones`. |
+| GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`): daily "new zones" job, across all companies. |
+| POST | `/api/sync/report` | Report of a computer's sync (counters, redacted error): Monitoring page. |
+| GET | `/api/admin/monitoring` | Admin: state of the computers, server incidents, instance. `GET /api/health`: public probe (200 / 503). |
+| GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin: Notion, Linear, Todoist, ICS calendar connectors (settings without the token, sync on demand). |
+| … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Accounts, access, zones, onboarding, sign-in. |
 
-## Créer son entreprise à partir de zéro
+## Create your company from scratch
 
-Sur la page d'accueil, **Créer mon entreprise** (`/creer`) : quatre questions, une par écran (nom, activité, qui
-vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en êtes l'admin. Ensuite :
+On the home page, **Create my company** (`/create`): four questions, one per screen (name, activity, who you are,
+zones of the brain), and the company's dashboard exists, with you as its admin. Then:
 
-1. **Votre poste** : copiez le prompt (ou « Ouvrir dans Claude Code ») et collez-le dans Claude Code. Il installe tout
-   comme la démo de la page d'accueil ; la page passe à « Votre poste est connecté » dès le premier signe de son agent.
-2. **Votre équipe**, de deux façons (sur cette page, puis dans Équipe et accès) :
-   - **un message par personne** : un nom, les zones qu'elle lit, et son prompt (avec son propre jeton) est copié.
-     Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté ;
-   - **un seul message pour toute l'équipe** (Équipe et accès, puis Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
-     collègues. Le Claude de chacun remplit la demande avec ce qu'il sait déjà (nom, poste, email ; rien d'inventé,
-     le reste reste vide), et `brain join` (lancé par `install.sh --join`, ou `install.ps1 --join` sous Windows) l'envoie
-     puis attend. Un admin la complète (poste, rôle, zones,
-     rattachement) et l'accepte : le poste termine alors son installation tout seul. Le code ne donne accès à rien ;
-     le jeton est créé sur le poste et seule son empreinte part avec la demande. « Changer le code » invalide
-     l'ancien message. Code de sortie 7 : toujours en attente (`~/.company-brain/brain join` reprend la même
-     demande) ; 8 : refusée. Les autres codes sont ceux de l'installation ([docs/CLI.md](docs/CLI.md)).
+1. **Your computer**: copy the prompt (or "Open in Claude Code") and paste it into Claude Code. It installs everything
+   like the home page demo; the page switches to "Your computer is connected" at the first sign of its agent.
+2. **Your team**, in two ways (on this page, then in Team and access):
+   - **one message per person**: a name, the zones they read, and their prompt (with their own token) is copied.
+     Send it to them: they paste it into Claude Code, their computer joins the brain and shows up as connected;
+   - **a single message for the whole team** (Team and access, then Requests): the same for everyone, to send to
+     colleagues only. Each person's Claude fills in the request with what it already knows (name, role, email; nothing
+     made up, the rest stays empty), and `brain join` (run by `install.sh --join`, or `install.ps1 --join` on Windows)
+     sends it then waits. An admin completes it (role, access level, zones, manager) and accepts it: the computer then
+     finishes its install on its own. The code grants access to nothing; the token is created on the computer and only
+     its fingerprint goes with the request. "Change the code" invalidates the old message. Exit code 7: still waiting
+     (`~/.company-brain/brain join` resumes the same request); 8: declined. The other codes are those of the install
+     ([docs/CLI.md](docs/CLI.md)).
 
-Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
-Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
-organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_settings`, sans migration ; fichier :
-`<BRAIN_DATA_DIR>/orgs/<id>/`). Un jeton ou une session désigne son entreprise, et chaque route lit la sienne.
-`BRAIN_SIGNUP=0` ferme la création, `BRAIN_MAX_ORGS` la plafonne (200 par défaut).
+Each company has its own brain: accounts, zones, knowledge and activity never cross, and the Fournil demo is not
+touched (a reseed replaces it without deleting the companies created). On the storage side: one organization per
+company (Postgres: marked `tenant:<id>` in `brain_settings`, no migration; file: `<BRAIN_DATA_DIR>/orgs/<id>/`). A
+token or a session points to its company, and each route reads its own. `BRAIN_SIGNUP=0` closes sign-up,
+`BRAIN_MAX_ORGS` caps it (200 by default).
 
-### Remplir le cerveau depuis ses anciennes conversations
+### Fill the brain from past conversations
 
-Page **Onboarding** (admins), étape « contexte » de `/creer`, et rappel sur un dashboard vide : « Donnez au cerveau
-le contexte de vos comptes ». Le prompt s'ouvre dans Claude Code en local (lien `claude-cli://`, terminal sur ce
-poste ; VS Code et l'app de bureau en mode « Local » en option) ou se copie pour Codex. L'agent s'arrête s'il tourne
-dans le cloud, demande d'abord l'accord de la personne (« Acceptes-tu de donner accès à ces données à ce site ? »),
-ne garde que les conversations qui concernent l'entreprise (son nom et ce qu'elle fait, tels que saisis dans
-`/creer`), lit l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README de ces projets, en
-tire les zones et 10 à 40 premières connaissances (jamais de secrets ni de données perso), puis les envoie avec un code d'envoi
-valable 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin seulement). La page se remplit toute seule avec la
-proposition, masquée à nouveau côté serveur ; rien n'est appliqué avant que l'admin l'ait relue et validée.
-L'interview en 7 questions reste disponible en dessous. Le lien est aussi proposé à la fin de `/creer`, et la page
-`/demo` propose « Créer mon dashboard ».
+**Onboarding** page (admins), "context" step of `/create`, and a reminder on an empty dashboard: "Give the brain your
+accounts' context". The prompt opens in Claude Code locally (`claude-cli://` link, terminal on this computer; VS Code
+and the desktop app in "Local" mode as options) or is copied for Codex. The agent stops if it runs in the cloud, first
+asks for the person's consent ("Do you agree to give this website access to that data?"), only keeps the conversations
+that concern the company (its name and what it does, as entered in `/create`), reads the computer's history
+(`~/.claude/projects`, `~/.codex/sessions`) and the READMEs of those projects, draws the zones and 10 to 40 first
+knowledge items from them (never any secrets or personal data), then sends them with an upload code valid for 2 h
+(`POST /api/onboarding/import`, Bearer `co_…`, admin only). The page fills in on its own with the proposal, redacted
+again on the server; nothing is applied before the admin has reviewed and validated it. The 7-question interview stays
+available below. The link is also offered at the end of `/create`, and the `/demo` page offers "Create my dashboard".
 
-## Brancher un vrai poste
+## Connect a real computer
 
-1. Dans `/admin`, invitez la personne et choisissez ses zones : le dashboard génère son prompt (voir [install/PROMPT.md](install/PROMPT.md)).
-2. Elle le colle dans Claude Code, qui lance **une seule commande** (`install.sh` sur macOS / Linux, `install.ps1` sous
-   Windows : ils trouvent ou installent Node.js puis lancent `brain setup` ; pourquoi un CLI : [docs/CLI.md](docs/CLI.md)) :
-   Screenpipe installé et lancé, autorisations macOS (écran, et accessibilité en option ; pas de micro) avec reprise
-   automatique, MCP, hooks, synchro toutes les 15 min, néon allumé. Si ça coince, `brain doctor` dit quoi et comment réparer.
-3. Le cerveau s'ouvre dans son navigateur, déjà connecté. Ensuite rien à faire : en travaillant avec Claude Code, elle le nourrit.
-   `sync --dry-run --full` permet de revoir à tout moment ce qui partirait, `uninstall` retire tout.
+1. In `/admin`, invite the person and choose their zones: the dashboard generates their prompt (see [install/PROMPT.md](install/PROMPT.md)).
+2. They paste it into Claude Code, which runs **a single command** (`install.sh` on macOS / Linux, `install.ps1` on
+   Windows: they find or install Node.js then run `brain setup`; why a CLI: [docs/CLI.md](docs/CLI.md)):
+   Screenpipe installed and started, macOS permissions (screen, and accessibility as an option; no microphone) with
+   automatic resume, MCP, hooks, sync every 15 min, neon lit. If something gets stuck, `brain doctor` says what and how to fix it.
+3. The brain opens in their browser, already signed in. Then nothing to do: by working with Claude Code, they feed it.
+   `sync --dry-run --full` lets them review at any time what would be sent, `uninstall` removes everything.
 
-Le dashboard doit être joignable par les postes (URL publique ou réseau local) : définissez `BRAIN_PUBLIC_URL`.
+The dashboard must be reachable by the computers (public URL or local network): set `BRAIN_PUBLIC_URL`.
 
-## Héberger le cerveau sur une machine de l'entreprise (Docker, HTTPS local)
+## Host the brain on a company machine (Docker, local HTTPS)
 
-Rien ne sort de l'entreprise : Postgres, le dashboard et HTTPS tournent sur un ordinateur allumé en permanence, les postes
-le joignent sur le réseau local, et le prompt d'installation épingle le certificat du cerveau.
+Nothing leaves the company: Postgres, the dashboard and HTTPS run on a computer that is always on, the computers
+reach it on the local network, and the install prompt pins the brain's certificate.
 
 ```bash
-sh deploy/local/brain-local.sh up      # .env, image Docker, Postgres + cerveau + Caddy, adresse affichée
+sh deploy/local/brain-local.sh up      # .env, Docker image, Postgres + brain + Caddy, address shown
 ```
 
-Puis `https://<adresse>/creer` pour créer l'entreprise. Tout le détail (certificats, sauvegarde, mise à jour, options) :
+Then `https://<address>/create` to create the company. All the details (certificates, backup, update, options):
 [docs/LOCAL.md](docs/LOCAL.md).
 
-## Déployer le cerveau partagé (Vercel + Neon, offres gratuites)
+## Deploy the shared brain (Vercel + Neon, free tiers)
 
-Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgres gratuit, en veille après 5 min d'inactivité, réveil en moins d'une seconde). N'importe quel Postgres convient (Supabase compris) : le schéma est dans `supabase/migrations/`.
+The brain runs on **Vercel Hobby** (always online) with **Neon** (free Postgres, asleep after 5 min of inactivity, wakes up in less than a second). Any Postgres works (Supabase included): the schema is in `supabase/migrations/`.
 
-1. **Base** : créez un projet Neon (région Francfort), puis `DATABASE_URL=… npm run db:migrate` — ou exécutez `supabase/local/auth_stub.sql` puis `supabase/migrations/*.sql` dans l'éditeur SQL de Neon.
-2. **Vercel** : importez le repo avec ces réglages :
-   - Root Directory : `apps/web` (avec « Include source files outside of the Root Directory »)
-   - Install Command : `cd ../.. && npm ci` (le monorepo s'installe depuis la racine)
-   - Build Command : `npm run build` (construit aussi `brain.mjs`, servi sur `/brain.mjs`)
-   - Région des fonctions : la même que la base (`fra1` pour Neon Francfort)
-   - Désactivez « Vercel Authentication » : les postes appellent l'API avec leur jeton personnel.
-3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Fournil au premier passage sur `/login`. Le secret de session est généré tout seul et conservé dans la base.
+1. **Database**: create a Neon project (Frankfurt region), then `DATABASE_URL=… npm run db:migrate` — or run `supabase/local/auth_stub.sql` then `supabase/migrations/*.sql` in Neon's SQL editor.
+2. **Vercel**: import the repo with these settings:
+   - Root Directory: `apps/web` (with "Include source files outside of the Root Directory")
+   - Install Command: `cd ../.. && npm ci` (the monorepo installs from the root)
+   - Build Command: `npm run build` (also builds `brain.mjs`, served on `/brain.mjs`)
+   - Functions region: the same as the database (`fra1` for Neon Frankfurt)
+   - Turn off "Vercel Authentication": the computers call the API with their personal token.
+3. **Variables**: `DATABASE_URL` (Neon, "pooled" connection), `BRAIN_PUBLIC_URL` (the public URL, used in the install prompt), `BRAIN_DEMO=1` for the demo. With `BRAIN_DEMO=1`, an empty database is filled automatically with the fictitious company Fournil the first time `/login` is opened. The session secret is generated on its own and kept in the database.
 
-4. **Job quotidien « nouvelles zones »** : définissez `CRON_SECRET` (une longue chaîne aléatoire, `openssl rand -hex 32`) et
-   `BRAIN_SECRET_KEY` (idem, chiffre les clés Claude des entreprises). `apps/web/vercel.json` déclare le cron. La clé Claude,
-   elle, se règle dans l'appli : chaque admin colle celle de son entreprise dans **Équipe et accès → Zones**.
+4. **Daily "new zones" job**: set `CRON_SECRET` (a long random string, `openssl rand -hex 32`) and
+   `BRAIN_SECRET_KEY` (same, encrypts the companies' Claude keys). `apps/web/vercel.json` declares the cron. The Claude
+   key itself is set in the app: each admin pastes their company's key in **Team and access → Zones**.
 
-Variables : voir [apps/web/.env.example](apps/web/.env.example).
+Variables: see [apps/web/.env.example](apps/web/.env.example).
 
-### Zones créées automatiquement
+### Zones created automatically
 
-Chaque jour à 10 h, Claude relit les zones et les connaissances des 30 derniers jours d'une entreprise, repère un domaine de
-travail récurrent qui n'a pas de zone à lui (du juridique rangé faute de mieux dans « Direction »…) et la zone est **créée tout
-de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisit, dans Équipe et accès → Zones, qui fait l'analyse :
+Every day at 10 am, Claude rereads a company's zones and the knowledge of the last 30 days, spots a recurring area of
+work that has no zone of its own (legal work filed in "Leadership" for lack of anything better…) and the zone is
+**created right away, without approval**. No computer needs to be on. The admin chooses, in Team and access → Zones,
+who does the analysis:
 
-- **Abonnement Claude (Claude Code)**, sans clé API : un workflow GitHub Actions dans un repo de l'entreprise (le dashboard
-  le donne prêt à copier) lance chaque jour à 10 h `brain.mjs refresh-zones` avec deux secrets, `CLAUDE_CODE_OAUTH_TOKEN`
-  (`claude setup-token`) et `BRAIN_TOKEN` (le jeton du cerveau de l'admin). C'est le Claude Code de l'entreprise qui analyse
-  (`claude -p`, `GET /api/admin/zones/auto/input`) : le jeton Claude ne quitte jamais sa CI, le cerveau ne reçoit que les
-  zones proposées (`POST /api/admin/zones/auto`, connaissances désignées par identifiant) et les applique avec ses garde-fous.
-  `~/.company-brain/brain refresh-zones [--dry-run]` fait la même chose à la main sur le poste d'un admin.
-- **Clé API Claude** : Vercel Cron appelle `/api/cron/new-zones` et le serveur fait l'analyse avec la clé de l'entreprise.
-- **Cerveau hébergé sur une machine de l'entreprise (Docker)** : pas de Vercel Cron. En mode clé API, faites appeler
-  `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://<adresse>/api/cron/new-zones` par le cron de la machine, à 8 h
-  et 9 h UTC comme `vercel.json`. En mode abonnement, GitHub ne joint pas un cerveau du réseau local : lancez `refresh-zones`
-  depuis un poste (ou un runner GitHub auto-hébergé dans l'entreprise).
+- **Claude subscription (Claude Code)**, without an API key: a GitHub Actions workflow in a company repo (the dashboard
+  gives it ready to copy) runs `brain.mjs refresh-zones` every day at 10 am with two secrets, `CLAUDE_CODE_OAUTH_TOKEN`
+  (`claude setup-token`) and `BRAIN_TOKEN` (the admin's brain token). The company's Claude Code does the analysis
+  (`claude -p`, `GET /api/admin/zones/auto/input`): the Claude token never leaves its CI, the brain only receives the
+  proposed zones (`POST /api/admin/zones/auto`, knowledge designated by id) and applies them with its safeguards.
+  `~/.company-brain/brain refresh-zones [--dry-run]` does the same by hand on an admin's computer.
+- **Claude API key**: Vercel Cron calls `/api/cron/new-zones` and the server does the analysis with the company's key.
+- **Brain hosted on a company machine (Docker)**: no Vercel Cron. In API key mode, have the machine's cron call
+  `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://<address>/api/cron/new-zones`, at 8 am and 9 am UTC like
+  `vercel.json`. In subscription mode, GitHub cannot reach a brain on the local network: run `refresh-zones` from a
+  computer (or a self-hosted GitHub runner inside the company).
 
-- Les connaissances concernées y sont rangées (avec leurs tâches), et la zone reçoit des mots-clés : les synchros
-  suivantes y classent les nouvelles sessions.
-- Droits : la lisent ses auteurs et chaque membre qui lisait **toutes** les zones d'où viennent ses connaissances.
-  Personne ne perd de vue une connaissance qu'il lisait, personne n'en découvre une qu'il ne pouvait pas lire.
-- Garde-fous, puisque personne ne relit : au moins 4 connaissances (sur au moins 12 récentes), 2 zones par jour au plus,
-  12 zones au total, jamais de doublon d'une zone existante, une seule fois par jour et par entreprise.
-- **Clé Claude de l'entreprise** : un admin la colle dans Équipe et accès → Zones (clé de la Console Anthropic, `sk-ant-…`).
-  Elle est essayée auprès d'Anthropic avant d'être enregistrée, chiffrée en AES-256-GCM dans les réglages de l'entreprise
-  (avec `BRAIN_SECRET_KEY`, sinon le secret de session du cerveau) et n'est plus jamais affichée, seulement ses 4 derniers
-  caractères. Elle sert aussi au résumé d'état et à l'onboarding. Sans elle, le serveur prend `ANTHROPIC_API_KEY` s'il en a
-  une ; sinon l'entreprise est sautée par le cron (sans rien noter dans l'historique). Le jeton d'abonnement n'est jamais
-  stocké sur le serveur : les conditions d'Anthropic réservent les produits tiers aux clés API, d'où le mode CI ci-dessus.
-- Le fil d'activité annonce la zone (le néon s'allume). Les admins lisent l'historique des passages et peuvent en lancer
-  un tout de suite pour leur entreprise (`GET` / `POST /api/admin/zones/auto`). Pour tester le cron : `curl -H "Authorization: Bearer $CRON_SECRET" "$URL/api/cron/new-zones?force=1"`.
+- The knowledge concerned is filed in it (with its tasks), and the zone gets keywords: the following syncs classify
+  new sessions in it.
+- Access: it is readable by its authors and by every member who read **all** the zones its knowledge comes from.
+  Nobody loses sight of a knowledge item they could read, nobody discovers one they could not read.
+- Safeguards, since nobody reviews: at least 4 knowledge items (out of at least 12 recent ones), at most 2 zones per
+  day, 12 zones in total, never a duplicate of an existing zone, once a day per company at most.
+- **The company's Claude key**: an admin pastes it in Team and access → Zones (Anthropic Console key, `sk-ant-…`).
+  It is tried against Anthropic before being saved, encrypted with AES-256-GCM in the company's settings (with
+  `BRAIN_SECRET_KEY`, otherwise the brain's session secret) and never shown again, only its last 4 characters. It
+  also serves the status summary and the onboarding. Without it, the server uses `ANTHROPIC_API_KEY` if it has one;
+  otherwise the company is skipped by the cron (without noting anything in the history). The subscription token is
+  never stored on the server: Anthropic's terms reserve third-party products to API keys, hence the CI mode above.
+- The activity feed announces the zone (the neon lights up). Admins read the history of the runs and can start one
+  right away for their company (`GET` / `POST /api/admin/zones/auto`). To test the cron: `curl -H "Authorization: Bearer $CRON_SECRET" "$URL/api/cron/new-zones?force=1"`.
 
-### Claude sans clé API (abonnement Claude Code)
+### Claude without an API key (Claude Code subscription)
 
-- **brain-sync** distille sur chaque poste avec `claude -p` : il utilise l'abonnement Claude Code de l'employé.
-- Synchro planifiée (sans session ouverte) : générez un jeton avec `claude setup-token` puis `~/.company-brain/brain init --claude-token <jeton>`. Le jeton reste sur le poste (config en mode 600), il est passé à chaque `claude -p` du client et n'apparaît jamais dans la crontab ni dans les logs. Il est valable **un an** et ne se renouvelle pas tout seul : à expiration, le client l'indique ; relancez `claude setup-token` puis `init --claude-token`.
-- « Où en est la boîte » rédigé par Claude : un admin lance `~/.company-brain/brain refresh-status` sur son poste (planifiable chaque matin) ; sans cela, le serveur garde le résumé heuristique. Le serveur n'a besoin d'aucune clé (`ANTHROPIC_API_KEY` reste possible).
-- Chaque employé utilise **son propre** abonnement et son propre jeton : les conditions d'Anthropic interdisent de faire passer les requêtes de plusieurs personnes par l'abonnement d'une seule. Pour proposer l'outil à d'autres entreprises, il faut des clés API.
-- Si `ANTHROPIC_API_KEY` est définie sur le poste, c'est elle que Claude Code utilise ; `claude auth status` indique l'authentification active.
-- Pannes et limites : une limite d'abonnement atteinte (« You've hit your session limit », quota hebdomadaire…), une surcharge ou une erreur réseau n'est jamais imputée à une conversation : rien n'est perdu, la synchro suivante réessaie. Un jeton expiré ou révoqué arrête la synchro avec la marche à suivre (`claude setup-token`, puis `init --claude-token`).
-- Une conversation n'est abandonnée (rien envoyé, checkpoint avancé, avertissement affiché) qu'après 3 échecs avérés : Claude a répondu sans JSON exploitable, ou l'appel a échoué pendant une synchro où Claude a répondu aux autres. Si Claude ne répond plus du tout, il faut en plus 5 essais étalés sur 24 h, pour qu'une capture Screenpipe bloquée ne fige pas le poste.
-- `claude -p` est toujours lancé sans mode `--bare` (ni `CLAUDE_CODE_SIMPLE`), qui ignorerait le jeton.
+- **brain-sync** distills on each computer with `claude -p`: it uses the employee's Claude Code subscription.
+- Scheduled sync (without an open session): generate a token with `claude setup-token` then `~/.company-brain/brain init --claude-token <token>`. The token stays on the computer (config in mode 600), it is passed to each `claude -p` of the client and never appears in the crontab or the logs. It is valid for **one year** and does not renew on its own: when it expires, the client says so; run `claude setup-token` again then `init --claude-token`.
+- "Where does the company stand" written by Claude: an admin runs `~/.company-brain/brain refresh-status` on their computer (can be scheduled every morning); without it, the server keeps the heuristic summary. The server needs no key (`ANTHROPIC_API_KEY` is still possible).
+- Each employee uses **their own** subscription and their own token: Anthropic's terms forbid routing several people's requests through one person's subscription. To offer the tool to other companies, API keys are needed.
+- If `ANTHROPIC_API_KEY` is set on the computer, Claude Code uses it; `claude auth status` shows the active authentication.
+- Outages and limits: a subscription limit reached ("You've hit your session limit", weekly quota…), an overload or a network error is never blamed on a conversation: nothing is lost, the next sync tries again. An expired or revoked token stops the sync with the steps to follow (`claude setup-token`, then `init --claude-token`).
+- A conversation is only given up (nothing sent, checkpoint moved forward, warning shown) after 3 proven failures: Claude answered without usable JSON, or the call failed during a sync where Claude answered the others. If Claude does not answer at all any more, it also takes 5 attempts spread over 24 h, so that a stuck Screenpipe capture does not freeze the computer.
+- `claude -p` is always run without `--bare` mode (or `CLAUDE_CODE_SIMPLE`), which would ignore the token.
 
-## Vie privée et sécurité (MVP)
+## Privacy and security (MVP)
 
-- Sur le poste : liste blanche d'apps (sessions IA, terminaux, éditeurs), exclusion des contenus perso, masquage des secrets (clés API, jetons, mots de passe, clés privées), emails, téléphones, IBAN, cartes (Luhn), n° de sécu. Rien de brut n'est envoyé.
-- Côté serveur : nouveau masquage à l'ingestion, lecture filtrée par zone sur **toutes** les routes (même règle que les politiques RLS SQL), jetons stockés hachés, secret de session aléatoire conservé en base et lié au jeton, protection SSRF vérifiée à la connexion sur le scraping d'onboarding.
-- Activité : une zone s'allume pour tout le monde, mais le contenu d'un événement (résumé, empreinte) n'est visible que de la personne concernée, des admins, ou de qui lit **toutes** ses zones. Une recherche ne garde son texte que si elle ne touche aucune zone illisible pour la personne qui cherche et n'a rien de personnel.
-- Écriture : tout le monde nourrit le cerveau, dans n'importe quelle zone existante ; seule la lecture est restreinte (`zone_access.can_write` est réservé). Doublons écartés (même auteur, même zone, même titre et même contenu sur 30 jours).
-- Skills : publication réservée aux admins et aux membres autorisés, vers un cortex qu'ils lisent ; distribution limitée aux lecteurs du cortex (même règle que la politique RLS « skills par cortex ») ; fichiers texte aux chemins relatifs vérifiés, refusés s'ils contiennent un secret ; le client n'écrit que dans les dossiers qu'il a créés.
-- Droit de regard : chaque personne voit et supprime les connaissances issues de son poste, y compris celles rangées dans une zone qu'elle ne peut pas lire.
-- À trancher avant une vraie mise en production : consentement des salariés et information CSE, durée de conservation, hébergement UE, audit des accès.
+- On the computer: app allowlist (AI sessions, terminals, editors), exclusion of personal content, redaction of secrets (API keys, tokens, passwords, private keys), emails, phone numbers, IBANs, cards (Luhn), social security numbers. Nothing raw is sent.
+- On the server: redaction again on ingestion, reading filtered by zone on **every** route (same rule as the SQL RLS policies), tokens stored hashed, random session secret kept in the database and bound to the token, SSRF protection checked at connection time on the onboarding scraping.
+- Activity: a zone lights up for everyone, but the content of an event (summary, fingerprint) is only visible to the person concerned, the admins, or whoever reads **all** its zones. A search only keeps its text if it touches no zone the searcher cannot read and has nothing personal.
+- Writing: everyone feeds the brain, in any existing zone; only reading is restricted (`zone_access.can_write` is reserved). Duplicates dropped (same author, same zone, same title and same content over 30 days).
+- Skills: publishing reserved to admins and allowed members, to a cortex they read; distribution limited to the cortex's readers (same rule as the "skills by cortex" RLS policy); text files with checked relative paths, refused if they contain a secret; the client only writes into the folders it created.
+- Oversight: each person sees and deletes the knowledge coming from their computer, including items filed in a zone they cannot read.
+- To settle before a real production rollout: employee consent and information of the works council, retention period, EU hosting, access audit.
 
 ## Tests
 
 ```bash
-npm test                 # tests unitaires (core + client)
+npm test                 # unit tests (core + client)
 npm run typecheck
-npm run smoke            # bout en bout sur le stockage courant (fichier, ou Postgres si DATABASE_URL)
-npm run eval             # qualité de la recherche sur la démo Fournil (après npm run seed)
+npm run smoke            # end to end on the current storage (file, or Postgres if DATABASE_URL)
+npm run eval             # search quality on the Fournil demo (after npm run seed)
 ```

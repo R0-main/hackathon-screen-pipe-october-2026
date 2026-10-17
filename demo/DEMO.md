@@ -1,47 +1,47 @@
-# Script de démo (5 minutes)
+# Demo script (5 minutes)
 
-Entreprise fictive : **Fournil**, logiciel de caisse et de précommandes pour boulangeries artisanales (6 personnes).
+Fictitious company: **Fournil**, point-of-sale and pre-order software for artisan bakeries (6 people).
 
-## Avant de monter sur scène
+## Before going on stage
 
 ```bash
-npm run seed -- --force          # repart d'un cerveau propre (jetons affichés dans le terminal)
-BRAIN_DEMO=1 npm run dev         # ou l'URL déployée
-npm run simulate -- --speed 1.5  # 2e terminal, à lancer au moment voulu (Ctrl-C pour arrêter)
+npm run seed -- --force          # starts from a clean brain (tokens shown in the terminal)
+BRAIN_DEMO=1 npm run dev         # or the deployed URL
+npm run simulate -- --speed 1.5  # 2nd terminal, to start at the right moment (Ctrl-C to stop)
 ```
 
-Onglets à préparer : le dashboard (`/dashboard`, entrée par `/demo`) connecté en **Claire (CEO, admin)**, `/admin`, et un terminal avec Claude Code sur un vrai projet si un poste est branché.
+Tabs to prepare: the dashboard (`/dashboard`, entry through `/demo`) signed in as **Claire (CEO, admin)**, `/admin`, and a terminal with Claude Code on a real project if a computer is connected.
 
-Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données fictives, amorcées automatiquement sur une base vide).
+Online version: https://cerveau-entreprise.vercel.app (demo mode, fictitious data, seeded automatically on an empty database).
 
-## Déroulé
+## Run-through
 
-1. **Le problème (30 s).** « Chez Fournil, tout le monde bosse avec Claude Code ou ChatGPT. Mais quand Hugo trouve comment déployer, ou que Jean-Marc met au point son rapprochement bancaire, ce savoir reste dans leur session. »
+1. **The problem (30 s).** "At Fournil, everyone works with Claude Code or ChatGPT. But when Hugo figures out how to deploy, or Jean-Marc fine-tunes his bank reconciliation, that knowledge stays in their session."
 
-2. **Le cerveau (45 s).** Le dashboard : chaque zone (Dev, Produit, Sales, Compta, Support, Direction) est un domaine de connaissance, les points sont les clients/outils/projets les plus cités, les synapses relient les zones qui partagent des entités. Lancer `npm run simulate` : les zones s'allument au fil des sessions et des requêtes MCP, le flux « Agents en direct » défile.
+2. **The brain (45 s).** The dashboard: each zone (Dev, Product, Sales, Finance, Support, Leadership) is a knowledge area, the dots are the most cited customers/tools/projects, the synapses link the zones that share entities. Start `npm run simulate`: the zones light up as sessions and MCP queries go by, the "Live agents" feed scrolls.
 
-3. **Comment ça arrive là (45 s).** Montrer `/admin` → « Inviter quelqu'un » → le **prompt magique** : on le colle dans Claude Code, il installe Screenpipe, brain-sync, le MCP et les hooks. « Le brut reste sur le PC : brain-sync filtre, masque les secrets et n'envoie que des connaissances distillées. »
-   *Si un poste est branché :* `~/.company-brain/brain hello` → son néon s'allume en direct ; une question dans Claude Code allume la zone concernée.
+3. **How it gets there (45 s).** Show `/admin` → "Invite someone" → the **magic prompt**: you paste it into Claude Code, it installs Screenpipe, brain-sync, the MCP and the hooks. "The raw data stays on the computer: brain-sync filters, redacts the secrets and only sends distilled knowledge."
+   *If a computer is connected:* `~/.company-brain/brain hello` → its neon lights up live; a question in Claude Code lights up the zone concerned.
 
-4. **Les accès par zone (60 s).** Dans la barre du haut : « Voir en tant que : Jean-Marc Dubois ». Le cerveau se verrouille sauf la Compta. Demander « comment déployer en production ? » → rien, et le bandeau indique que la zone Dev pourrait en savoir plus mais lui est fermée. Demander « rapprochement Qonto » → la procédure, et seule la zone Compta s'allume. Revenir en admin.
+4. **Per-zone access (60 s).** In the top bar: "View as: Jean-Marc Dubois". The brain locks except Finance. Ask "how do we deploy to production?" → nothing, and the banner says the Dev zone might know more but is closed to him. Ask "Qonto reconciliation" → the procedure, and only the Finance zone lights up. Go back to admin.
 
-5. **Où en est la boîte (45 s).** Objectifs, avancement, prochaines étapes et qui a fait quoi, par zone. Pour une version rédigée par Claude avec ton abonnement : lancer avant la démo `~/.company-brain/brain refresh-status` sur le poste admin (le bouton « Rafraîchir l'état » recalcule la version heuristique côté serveur). Montrer aussi « Voir en tant que : Jean-Marc » : Jean-Marc ne reçoit que la compta, avec un titre calculé sur sa zone.
+5. **Where the company stands (45 s).** Goals, progress, next steps and who did what, per zone. For a version written by Claude with your subscription: before the demo, run `~/.company-brain/brain refresh-status` on the admin computer (the "Refresh the status" button recomputes the heuristic version on the server). Also show "View as: Jean-Marc": Jean-Marc only gets finance, with a headline computed on his zone.
 
-6. **L'automatisation (45 s).** La carte verte : « Jean-Marc lance ce prompt presque chaque jour vers 9h07 (6 jours sur 6) → l'exécuter automatiquement à 9h02 ». Détectée à partir des empreintes de prompts envoyées par les hooks, sans stocker le texte brut. « Mettre en place ».
+6. **The automation (45 s).** The green card: "Jean-Marc runs this prompt almost every day around 09:07 (6 times over 6 days) → run it automatically Monday to Friday at 09:02". Detected from the prompt fingerprints sent by the hooks, without storing the raw text. "Set it up".
 
-7. **Les skills (30 s).** Onglet « Skills » : les savoir-faire de Fournil prêts pour Claude Code, avec leurs scripts (`deployer-fournil` et son `release.sh`). « Voir en tant que : Jean-Marc » : il ne reçoit que le skill de toute l'entreprise et ceux du cortex Compta, et son poste les installe tout seul. Dans `/admin`, la colonne « Publie des skills » : pousser un skill demande une autorisation.
+7. **The skills (30 s).** "Skills" tab: Fournil's know-how ready for Claude Code, with their scripts (`deploy-fournil` and its `release.sh`). "View as: Jean-Marc": he only gets the whole company's skill and those of the Finance cortex, and his computer installs them on its own. In `/admin`, the "Publishes skills" column: pushing a skill needs a permission.
 
-8. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, la personne qui remplace Hugo récupère ça. »
+8. **The handover (30 s).** `/admin` → "Handover" on Hugo: his zones, his tools, his recurring prompts and his knowledge. "The day Hugo goes on leave, the person replacing him gets all of this."
 
-## Phrases clés
+## Key lines
 
-- « Screenpipe est le pipe entre le PC, ses agents IA et le cerveau de l'entreprise. »
-- « Quelques Ko distillés par jour au lieu de 19 Go de captures. »
-- « La compta n'a pas besoin du contexte code, et ses agents non plus. »
+- "Screenpipe is the pipe between the computer, its AI agents and the company's brain."
+- "A few KB distilled per day instead of 19 GB of captures."
+- "Finance does not need the code context, and neither do its agents."
 
-## Si quelque chose lâche
+## If something breaks
 
-- Pas de réseau / pas de poste branché : `npm run simulate` suffit pour toute la démo.
-- Capture lente : `~/.company-brain/brain sync --since 2h` force la synchro (source de secours : les logs Claude Code locaux).
-- Poste qui ne s'allume pas : `~/.company-brain/brain doctor` dit ce qui coince (cerveau, Screenpipe, MCP, hooks, synchro) et la commande qui répare.
-- Données abîmées : `npm run seed -- --force`.
+- No network / no computer connected: `npm run simulate` is enough for the whole demo.
+- Slow capture: `~/.company-brain/brain sync --since 2h` forces the sync (backup source: the local Claude Code logs).
+- Computer that does not light up: `~/.company-brain/brain doctor` says what is stuck (brain, Screenpipe, MCP, hooks, sync) and the command that repairs it.
+- Damaged data: `npm run seed -- --force`.
