@@ -34,10 +34,11 @@ Usage : ${me} <commande> [options]
 
 Commandes :
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
-       [--share-prompt-summaries oui|non]
+       [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
                      Chaque option peut être donnée seule pour compléter une config existante.
                      --share-prompt-summaries non : le hook n'envoie plus aucun résumé de prompt (empreinte seule).
+                     --screenpipe-meetings non : les réunions transcrites par Screenpipe ne sont pas distillées.
   hello              Test de bout en bout : vos zones s'allument sur le dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
                      Lit les sessions IA locales, filtre (secrets, perso), distille et envoie au cerveau.
@@ -50,7 +51,9 @@ Commandes :
   install-hooks      Ajoute les hooks SessionStart, UserPromptSubmit et Stop à ~/.claude/settings.json.
   install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows), à partir de maintenant :
                      l'historique non relu n'est jamais envoyé automatiquement. À lancer après sync --confirm.
-  uninstall [--purge] Retire hooks, planification et MCP ; --purge supprime aussi ~/.company-brain.
+  install-pipe       Écrit le pipe Screenpipe « brain-sync » (~/.screenpipe/pipes/brain-sync/pipe.md) : la synchro apparaît dans les tâches
+                     planifiées de Screenpipe et se relance à la fin de chaque réunion. Demande l'application Screenpipe (moteur de pipes).
+  uninstall [--purge] Retire hooks, planification, pipe Screenpipe et MCP ; --purge supprime aussi ~/.company-brain.
 
 Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
 }
@@ -122,6 +125,11 @@ async function main(argv: string[]): Promise<number> {
     case "install-schedule": {
       const { installSchedule } = await import("./install")
       return installSchedule() ? 0 : 1
+    }
+    case "install-pipe": {
+      const { installPipe } = await import("./install")
+      installPipe()
+      return 0
     }
     case "uninstall": {
       const { uninstall } = await import("./install")

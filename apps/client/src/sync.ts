@@ -356,6 +356,8 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       explicitSince,
       contentTypes: cfg.screenpipe_content_types,
       whitelist: cfg.app_whitelist,
+      meetings: cfg.screenpipe_meetings !== false,
+      selfNames: [cache.whoami?.name ?? ""].filter(Boolean),
     })
     results.push(sp)
     if (sp.available) {
@@ -372,7 +374,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     else {
       const extra =
         r.source === "screenpipe"
-          ? `${r.stats.items ?? 0} captures, type « ${r.stats.content_type ?? "?"} »`
+          ? `${r.stats.items ?? 0} captures, type « ${r.stats.content_type ?? "?"} »` + (r.stats.meetings !== undefined ? `, ${plural(Number(r.stats.meetings), "réunion")}` : "")
           : `${plural(Number(r.stats.files ?? 0), "fichier")} lu${Number(r.stats.files) > 1 ? "s" : ""}, ${kb(Number(r.stats.bytes ?? 0))}` +
             (Number(r.stats.internal) ? `, ${r.stats.internal} session(s) interne(s) ignorée(s)` : "") +
             (Number(r.stats.pending) ? `, ${plural(Number(r.stats.pending), "tour en cours", "tours en cours")} lu(s) au prochain passage` : "")
