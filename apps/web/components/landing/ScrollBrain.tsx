@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz } from "../BrainViz"
-import { backFade, brainNetwork, brainSurface, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
+import { backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
 import { Dot, zoneColor } from "../ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -197,11 +197,10 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
 
   // Le réseau qui dessine le cerveau : gris brut au départ, chaque territoire prend la couleur de sa zone quand elle est nommée.
   const net = brainNetwork(owner)
-  const netPos = new Float32Array(net.edges.length * 6)
-  const netCol = new Float32Array(net.edges.length * 6)
-  net.edges.forEach(([a, b], e) => netPos.set([...net.points[a], ...net.points[b]], e * 6))
+  const curves = curveNetwork(net)
+  const netCol = new Float32Array(curves.positions.length)
   const netGeo = new T.BufferGeometry()
-  netGeo.setAttribute("position", new T.BufferAttribute(netPos, 3))
+  netGeo.setAttribute("position", new T.BufferAttribute(curves.positions, 3))
   netGeo.setAttribute("color", new T.BufferAttribute(netCol, 3))
   const shellMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 })
   const neuronMat = new T.MeshBasicMaterial({ color: WHITE, transparent: true, opacity: 0 })
@@ -345,7 +344,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const whiteC = new T.Color(WHITE)
 
   const boneC = new T.Color(BONE)
-  const linkBase = net.points.map(() => new T.Color())
+  const netC = new T.Color()
+  const linkBase = new Float32Array(net.points.length * 3)
   const dotBase = net.points.map(() => new T.Color())
   const fade = new Float32Array(net.points.length)
   const camLocal = new T.Vector3()
@@ -357,11 +357,11 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     net.points.forEach((_, i) => {
       const zone = net.zone[i]
       if (zone < 0) {
-        linkBase[i].copy(rawC)
+        rawC.toArray(linkBase, i * 3)
         dotBase[i].copy(rawC)
         return
       }
-      linkBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN), named)
+      netC.copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN), named).toArray(linkBase, i * 3)
       dotBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN * 0.4), named)
     })
   }
@@ -371,10 +371,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     camLocal.copy(camera.position)
     group.worldToLocal(camLocal)
     backFade(net, camLocal.toArray(), fade)
-    net.edges.forEach(([a, b], e) => {
-      col.copy(linkBase[a]).lerp(boneC, fade[a] * BACK).toArray(netCol, e * 6)
-      col.copy(linkBase[b]).lerp(boneC, fade[b] * BACK).toArray(netCol, e * 6 + 3)
-    })
+    shadeCurves(curves, linkBase, fade, BACK, boneC.toArray() as [number, number, number], netCol)
     net.points.forEach((_, i) => neurons.setColorAt(i, col.copy(dotBase[i]).lerp(boneC, fade[i] * BACK)))
     netGeo.attributes.color.needsUpdate = true
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true

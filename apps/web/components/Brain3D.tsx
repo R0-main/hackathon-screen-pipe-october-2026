@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { backFade, brainNetwork, brainSurface, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
+import { backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -280,14 +280,13 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false, strong: false })
   })
 
-  // Le réseau qui dessine le cerveau : chaque liaison prend, à chaque bout, la couleur du territoire où elle se trouve.
+  // Le réseau qui dessine le cerveau : des liaisons en arcs, en dégradé entre les couleurs des territoires qu'elles relient.
   const net = brainNetwork(owner)
+  const curves = curveNetwork(net)
   const zoneList = [...gfx.values()]
-  const netPos = new Float32Array(net.edges.length * 6)
-  const netCol = new Float32Array(net.edges.length * 6)
-  net.edges.forEach(([a, b], e) => netPos.set([...net.points[a], ...net.points[b]], e * 6))
+  const netCol = new Float32Array(curves.positions.length)
   const netGeo = new T.BufferGeometry()
-  netGeo.setAttribute("position", new T.BufferAttribute(netPos, 3))
+  netGeo.setAttribute("position", new T.BufferAttribute(curves.positions, 3))
   netGeo.setAttribute("color", new T.BufferAttribute(netCol, 3))
   const netMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 })
   const neuronMat = new T.MeshBasicMaterial({ color: WHITE })
@@ -302,7 +301,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const whiteC = new T.Color(WHITE)
   const tone = new T.Color()
   // Couleurs de base par neurone (liaison et point), puis estompées chaque image selon la face visible.
-  const linkBase = net.points.map(() => new T.Color())
+  const linkBase = new Float32Array(net.points.length * 3)
   const dotBase = net.points.map(() => new T.Color())
   const fade = new Float32Array(net.points.length)
   /** Couleur d'un neurone selon son territoire et l'état de sa zone. */
@@ -313,7 +312,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
   const paintNetwork = () => {
     net.points.forEach((_, i) => {
-      neuronColor(net.zone[i], SOFTEN, linkBase[i])
+      neuronColor(net.zone[i], SOFTEN, tone).toArray(linkBase, i * 3)
       neuronColor(net.zone[i], SOFTEN * 0.4, dotBase[i])
     })
   }
@@ -323,10 +322,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     camLocal.copy(camera.position)
     group.worldToLocal(camLocal)
     backFade(net, camLocal.toArray(), fade)
-    net.edges.forEach(([a, b], e) => {
-      tone.copy(linkBase[a]).lerp(whiteC, fade[a] * BACK).toArray(netCol, e * 6)
-      tone.copy(linkBase[b]).lerp(whiteC, fade[b] * BACK).toArray(netCol, e * 6 + 3)
-    })
+    shadeCurves(curves, linkBase, fade, BACK, [1, 1, 1], netCol)
     net.points.forEach((_, i) => neurons.setColorAt(i, tone.copy(dotBase[i]).lerp(whiteC, fade[i] * BACK)))
     netGeo.attributes.color.needsUpdate = true
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true

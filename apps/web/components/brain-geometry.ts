@@ -435,6 +435,64 @@ export function brainNetwork(owner: number[], spacing = 0.15): BrainNetwork {
   return { points, normals, zone, edges }
 }
 
+export type Curves = { positions: Float32Array; a: Uint32Array; b: Uint32Array; t: Float32Array }
+
+/**
+ * Les liaisons en courbes : chaque liaison est un arc de Bézier qui se bombe le long de la surface
+ * (il l'épouse au lieu de la couper) et s'incline un peu de côté, pour un tracé arrondi, organique.
+ * Rendu en segments : pour chaque sommet, les deux neurones de la liaison et la position t le long de l'arc.
+ */
+export function curveNetwork(net: BrainNetwork, steps = 10): Curves {
+  const n = net.edges.length * steps * 2
+  const positions = new Float32Array(n * 3)
+  const a = new Uint32Array(n)
+  const b = new Uint32Array(n)
+  const t = new Float32Array(n)
+  let v = 0
+  net.edges.forEach(([i, j], e) => {
+    const A = net.points[i]
+    const B = net.points[j]
+    const d: V3 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]]
+    const len = Math.hypot(d[0], d[1], d[2]) || 1
+    const nm: V3 = [net.normals[i][0] + net.normals[j][0], net.normals[i][1] + net.normals[j][1], net.normals[i][2] + net.normals[j][2]]
+    const nl = Math.hypot(nm[0], nm[1], nm[2]) || 1
+    // De côté : perpendiculaire à la liaison, dans le plan de la surface ; le sens alterne d'une liaison à l'autre.
+    const side: V3 = [d[1] * nm[2] - d[2] * nm[1], d[2] * nm[0] - d[0] * nm[2], d[0] * nm[1] - d[1] * nm[0]]
+    const sl = Math.hypot(side[0], side[1], side[2]) || 1
+    const bulge = len * 0.2
+    const sway = len * (e % 2 === 0 ? 0.16 : -0.16)
+    const C: V3 = [0, 1, 2].map((k) => (A[k] + B[k]) / 2 + (nm[k] / nl) * bulge + (side[k] / sl) * sway) as V3
+    const at = (u: number): V3 => [0, 1, 2].map((k) => (1 - u) ** 2 * A[k] + 2 * (1 - u) * u * C[k] + u ** 2 * B[k]) as V3
+    for (let s = 0; s < steps; s++) {
+      for (const u of [s / steps, (s + 1) / steps]) {
+        positions.set(at(u), v * 3)
+        a[v] = i
+        b[v] = j
+        t[v] = u
+        v++
+      }
+    }
+  })
+  return { positions, a, b, t }
+}
+
+/**
+ * Couleur de chaque sommet des courbes : dégradé entre les couleurs de ses deux neurones (`base`, 3 valeurs par
+ * neurone), pâli vers le fond `bg` sur la face cachée (`fade` × `back`).
+ */
+export function shadeCurves(c: Curves, base: Float32Array, fade: Float32Array, back: number, bg: V3, out: Float32Array): void {
+  for (let v = 0; v < c.t.length; v++) {
+    const i = c.a[v]
+    const j = c.b[v]
+    const u = c.t[v]
+    const f = (fade[i] * (1 - u) + fade[j] * u) * back
+    for (let k = 0; k < 3; k++) {
+      const col = base[i * 3 + k] * (1 - u) + base[j * 3 + k] * u
+      out[v * 3 + k] = col + (bg[k] - col) * f
+    }
+  }
+}
+
 /**
  * Estompe de la face cachée : 0 pour un neurone tourné vers la caméra, 1 pour un neurone de dos.
  * `cam` est la position de la caméra dans le repère du cerveau.
