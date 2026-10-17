@@ -234,7 +234,7 @@ function sections(root: HTMLElement, holds: Holds) {
     if (rows.length) enter(tl, rows, { autoAlpha: 0, x: -16 }, { duration: 0.12, stagger: 0.08, ease: "none" })
     const typed = panel.querySelector<HTMLElement>("[data-type]")
     if (typed) {
-      const chars = SplitText.create(typed, { type: "chars" }).chars
+      const chars = SplitText.create(typed, { type: "words,chars" }).chars
       enter(tl, chars, { opacity: 0 }, { duration: 0.01, stagger: 0.4 / chars.length, ease: "none" })
     }
     tl.to({}, { duration: 0.15 })
