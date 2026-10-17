@@ -190,6 +190,11 @@ p {
 .input::placeholder {
   color: var(--muted);
 }
+/* Champ de recherche : la croix du navigateur est remplacée par la nôtre. */
+.input[type="search"]::-webkit-search-cancel-button,
+.input[type="search"]::-webkit-search-decoration {
+  appearance: none;
+}
 .input:disabled {
   color: var(--muted);
   background: var(--bg);

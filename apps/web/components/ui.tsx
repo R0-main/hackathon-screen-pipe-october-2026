@@ -31,6 +31,14 @@ export function Dot({ color, size = 8, className = "" }: { color: string; size?:
   return <span aria-hidden className={`inline-block shrink-0 rounded-full ${className}`} style={{ background: color, width: size, height: size }} />
 }
 
+/**
+ * Bille de zone, comme le centre d'une zone dans le cerveau : sa couleur cerclée d'encre. Elle accroche une zone (ou une
+ * connaissance de cette zone) à un fil ; le nom de la zone est toujours écrit à côté.
+ */
+export function ZoneBead({ color, size = 11, className = "" }: { color: string; size?: number; className?: string }) {
+  return <span aria-hidden className={`block shrink-0 rounded-full border border-ink ${className}`} style={{ background: color, width: size, height: size }} />
+}
+
 /** Nom de zone avec sa pastille : la seule façon d'afficher une zone dans l'interface. */
 export function ZoneTag({ name, color, className = "" }: { name: string; color: string; className?: string }) {
   return (
@@ -88,6 +96,24 @@ export function MinusIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M3.5 8h9" />
+    </Icon>
+  )
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.4 10.4l3.1 3.1" />
+    </Icon>
+  )
+}
+
+export function CopyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.2" />
+      <path d="M10.5 5.5V3.7a1.2 1.2 0 0 0-1.2-1.2H3.7a1.2 1.2 0 0 0-1.2 1.2v5.6a1.2 1.2 0 0 0 1.2 1.2h1.8" />
     </Icon>
   )
 }

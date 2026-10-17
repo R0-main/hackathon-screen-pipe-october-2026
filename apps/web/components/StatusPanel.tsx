@@ -1,33 +1,60 @@
 "use client"
 
-import { useState } from "react"
-import type { CompanyStatus } from "@brain/core"
-import type { ZoneView } from "@/lib/brain"
+import Link from "next/link"
+import { useState, type ReactNode } from "react"
+import type { CompanyStatus, Task, ZoneStatus } from "@brain/core"
+import type { DashboardState, ZoneView } from "@/lib/brain"
+import { fmt, plural } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
+import { useT } from "./I18n"
+import { PersonAvatar } from "./PersonDot"
 import { RelTime } from "./RelTime"
-import { ErrorText, ZoneTag, zoneColor } from "./ui"
+import { CheckIcon, CopyIcon, ErrorText, ZoneBead, ZoneTag, zoneColor } from "./ui"
 
 /** Commande du client installé (voir lib/install-prompt.ts) qui fait rédiger l'état par Claude sur le poste, puis l'envoie. */
 const REFRESH_COMMAND = "~/.company-brain/brain refresh-status"
 
+type Person = DashboardState["people"][number]
+type TaskCounts = DashboardState["task_counts"]
+
+/**
+ * « Où en est l'entreprise », lu comme un point d'équipe : la réponse d'abord, puis ce qui est à suivre dans toutes les
+ * zones et le sommaire des zones, puis le détail zone par zone, accroché à un fil (une bille par zone, comme dans le
+ * cerveau). L'avancement se lit en billes : une par tâche, pleine quand elle est faite.
+ */
 export function StatusPanel({
   status,
   zones,
+  people,
+  tasks,
+  taskCounts,
   canRefresh,
   onRefreshed,
   now,
 }: {
   status: CompanyStatus | null
   zones: ZoneView[]
+  people: Person[]
+  tasks: Task[]
+  taskCounts: TaskCounts
   canRefresh: boolean
   onRefreshed: () => void
   now?: number
 }) {
+  const { t } = useT()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const zone = (id: string) => zones.find((z) => z.id === id)
   // Spectateur qui ne lit pas toutes les zones : le titre est recalculé sur ses zones par le serveur (pas par Claude).
   const headlineScoped = zones.some((z) => z.locked)
+
+  // Zones du point encore présentes, une fois chacune (une zone supprimée depuis la génération disparaît).
+  const sections: { zs: ZoneStatus; z: ZoneView }[] = []
+  for (const zs of status?.zones ?? []) {
+    const z = zones.find((x) => x.id === zs.zone)
+    if (z && !sections.some((s) => s.z.id === z.id)) sections.push({ zs, z })
+  }
+  const steps = sections.flatMap(({ zs, z }) => zs.next_steps.map((text) => ({ text, z, done: stepDone(text, z.id, tasks) })))
+  const openSteps = steps.filter((s) => !s.done).length
 
   async function refresh() {
     setBusy(true)
@@ -42,86 +69,262 @@ export function StatusPanel({
     }
   }
 
+  const generator = !status
+    ? null
+    : status.generator !== "claude"
+      ? t.status.byHeuristic
+      : headlineScoped
+        ? t.status.byClaudeScoped
+        : t.status.byClaude
+
   return (
-    <section className="panel p-4 sm:p-5" aria-busy={busy}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="panel-title">Où en est l&apos;entreprise</h2>
-          <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">{status?.headline ?? "Pas encore de résumé. Lancez une première génération pour que le cerveau fasse le point."}</p>
-          {status && (
-            <p className="mt-1 text-[12px] text-trace">
-              Généré <RelTime iso={status.generated_at} now={now} />{" "}
-              {status.generator !== "claude"
-                ? "par l'heuristique locale, sans Claude"
-                : headlineScoped
-                  ? "à partir des résumés des zones rédigés par Claude"
-                  : "par Claude"}
-            </p>
-          )}
-          {/* Admins : sans clé API sur le serveur, Claude peut rédiger le résumé depuis un poste (abonnement de l'employé). */}
-          {canRefresh && status?.generator !== "claude" && (
-            <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-trace">
-              Pour un résumé rédigé par Claude avec votre abonnement (sans clé API), lancez sur votre poste :{" "}
-              <code className="mono select-all rounded-[4px] bg-bone px-1.5 py-0.5 text-ink [overflow-wrap:anywhere]">{REFRESH_COMMAND}</code>
-            </p>
+    <div className="space-y-10 sm:space-y-12" aria-busy={busy}>
+      <header>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <h1 className="text-[22px] font-medium leading-tight">{t.status.title}</h1>
+          {canRefresh && (
+            <button type="button" className="btn btn-primary" onClick={refresh} disabled={busy}>
+              {busy ? t.status.refreshing : t.status.refresh}
+            </button>
           )}
         </div>
-        {canRefresh && (
-          <button type="button" className="btn btn-primary" onClick={refresh} disabled={busy}>
-            {busy ? "Génération en cours" : "Rafraîchir l'état"}
-          </button>
+        <p className="mt-4 max-w-[60ch] text-[19px] leading-[1.45] sm:text-[21px]">
+          {status?.headline ?? (canRefresh ? t.status.emptyAdmin : t.status.empty)}
+        </p>
+        {status && (
+          <p className="mt-3 text-[13px] text-trace">
+            {t.status.generated} <RelTime iso={status.generated_at} now={now} /> {generator}
+          </p>
         )}
-      </div>
-      {err && <ErrorText className="mt-2">{err}</ErrorText>}
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {(status?.zones ?? []).map((zs, i) => {
-          const z = zone(zs.zone)
-          if (!z) return null
-          return (
-            <article key={`${zs.zone}-${i}`} className="inset p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-[14px] font-medium">
-                  <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
-                </h3>
-                <span className="text-[12px] text-trace">{zs.progress}</span>
-              </div>
-              <p className="mt-2 text-[13px] leading-relaxed">{zs.summary}</p>
-              {zs.objectives.length > 0 && (
-                <Section title="Objectifs">
-                  {zs.objectives.map((o, i) => (
-                    <li key={i}>{o}</li>
-                  ))}
-                </Section>
-              )}
-              {zs.next_steps.length > 0 && (
-                <Section title="Prochaines étapes">
-                  {zs.next_steps.map((o, i) => (
-                    <li key={i}>{o}</li>
-                  ))}
-                </Section>
-              )}
-              {zs.who_did_what.length > 0 && (
-                <Section title="Qui a fait quoi">
-                  {zs.who_did_what.map((w, i) => (
-                    <li key={i}>
-                      <b className="font-medium text-ink">{w.person}</b> : {w.did}
-                    </li>
-                  ))}
-                </Section>
-              )}
-            </article>
-          )
-        })}
-      </div>
-    </section>
+        {err && <ErrorText className="mt-3">{fmt(t.status.refreshError, { error: err })}</ErrorText>}
+        {/* Admins : sans clé API sur le serveur, Claude peut rédiger le point depuis un poste (abonnement de l'employé). */}
+        {canRefresh && status?.generator !== "claude" && <CommandHint />}
+      </header>
+
+      {sections.length > 0 && (
+        <div className="grid gap-x-12 gap-y-10 border-t border-line pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)]">
+          <section aria-labelledby="status-next">
+            <SectionTitle id="status-next" count={openSteps || undefined}>
+              {t.status.next}
+            </SectionTitle>
+            {steps.length === 0 ? (
+              <p className="mt-3 text-[13px] text-trace">{t.status.nextEmpty}</p>
+            ) : (
+              <ul className="mt-3 border-t border-line">
+                {steps.map((s, i) => (
+                  <li key={`${s.z.id}-${i}`} className="flex items-start gap-3 border-b border-line py-3">
+                    <span
+                      aria-hidden
+                      className={`mt-[5px] block size-[9px] shrink-0 rounded-full border ${s.done ? "border-ink bg-ink" : "border-trace"}`}
+                    />
+                    <span className={`min-w-0 flex-1 text-[14px] leading-snug [overflow-wrap:anywhere] ${s.done ? "text-trace line-through decoration-line-strong" : ""}`}>
+                      {s.text}
+                      {s.done && <span className="sr-only"> ({t.status.stepDone})</span>}
+                    </span>
+                    <ZoneTag name={s.z.name} color={zoneColor(s.z.color, s.z.position)} className="shrink-0 pt-px text-[12px] text-trace" />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section aria-labelledby="status-zones">
+            <SectionTitle id="status-zones">{t.status.zones}</SectionTitle>
+            <ul className="mt-3 border-t border-line">
+              {sections.map(({ z }) => (
+                <li key={z.id} className="border-b border-line">
+                  <a
+                    href={`#zone-${z.id}`}
+                    className="-mx-2 flex items-center gap-3 rounded-[6px] px-2 py-3 transition-colors duration-150 ease-out hover:bg-surface"
+                  >
+                    <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} className="min-w-0 flex-1 text-[14px] font-medium" />
+                    <span className="text-[12px] tabular-nums text-trace">{plural(z.count, t.status.items, t.status.itemsPlural)}</span>
+                    <Progress counts={taskCounts[z.id]} max={6} />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
+
+      {sections.length > 0 && (
+        <section aria-labelledby="status-detail" className="border-t border-line pt-8">
+          <SectionTitle id="status-detail">{t.status.byZone}</SectionTitle>
+          <ol className="mt-7">
+            {sections.map(({ zs, z }, i) => (
+              <ZoneSection
+                key={z.id}
+                zs={zs}
+                zone={z}
+                counts={taskCounts[z.id]}
+                people={people}
+                byClaude={status?.generator === "claude"}
+                last={i === sections.length - 1}
+              />
+            ))}
+          </ol>
+        </section>
+      )}
+    </div>
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function ZoneSection({
+  zs,
+  zone,
+  counts,
+  people,
+  byClaude,
+  last,
+}: {
+  zs: ZoneStatus
+  zone: ZoneView
+  counts: TaskCounts[string] | undefined
+  people: Person[]
+  byClaude: boolean
+  last: boolean
+}) {
+  const { t } = useT()
+  // L'heuristique écrit « 1/2 tâches terminées » : les billes le disent déjà. La phrase de Claude, elle, ajoute du sens.
+  const progressNote = byClaude && zs.progress.trim() && !/^\s*\d+\s*\/\s*\d+/.test(zs.progress) ? zs.progress : null
+  const hasDetail = zs.objectives.length > 0 || zs.who_did_what.length > 0
   return (
-    <div className="mt-3">
-      <h4 className="text-[12px] font-medium">{title}</h4>
-      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[13px] text-trace marker:text-line-strong">{children}</ul>
+    <li id={`zone-${zone.id}`} className={`relative scroll-mt-6 pl-8 ${last ? "" : "pb-12"}`}>
+      {/* Le fil : de la bille de cette zone à celle de la suivante. */}
+      {!last && <span aria-hidden className="absolute -bottom-[4px] left-[5px] top-[21px] w-px bg-line-strong" />}
+      <ZoneBead color={zoneColor(zone.color, zone.position)} className="absolute left-0 top-[6.5px]" />
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h3 className="text-[17px] font-medium leading-6">{zone.name}</h3>
+        <Progress counts={counts} max={10} />
+      </div>
+      <p className="mt-2 max-w-[68ch] text-[15px] leading-relaxed">{zs.summary}</p>
+      {progressNote && <p className="mt-1.5 max-w-[68ch] text-[13px] leading-relaxed text-trace">{progressNote}</p>}
+
+      {hasDetail && (
+        <div className="mt-6 grid gap-x-12 gap-y-6 md:grid-cols-2">
+          {zs.objectives.length > 0 && (
+            <div>
+              <h4 className="text-[13px] font-medium">{t.status.objectives}</h4>
+              <ul className="mt-2.5 space-y-2 text-[14px] leading-snug">
+                {zs.objectives.map((o, i) => (
+                  <li key={i} className="flex gap-2.5">
+                    <span aria-hidden className="mt-[6px] block size-[6px] shrink-0 rounded-full border border-trace" />
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{o}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {zs.who_did_what.length > 0 && (
+            <div>
+              <h4 className="text-[13px] font-medium">{t.status.whoDidWhat}</h4>
+              <ul className="mt-2.5 space-y-3">
+                {zs.who_did_what.map((w, i) => {
+                  const p = findPerson(people, w.person)
+                  return (
+                    <li key={i} className="flex gap-2.5">
+                      {p ? (
+                        <PersonAvatar id={p.id} size={26} bg="surface" />
+                      ) : (
+                        <span aria-hidden className="block size-[26px] shrink-0 rounded-full border border-line-strong bg-surface" />
+                      )}
+                      <div className="min-w-0 text-[13px] leading-snug">
+                        <p className="font-medium">{p?.name ?? w.person}</p>
+                        <p className="mt-0.5 text-trace [overflow-wrap:anywhere]">{w.did}</p>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <Link
+        href={`/connaissances?zone=${encodeURIComponent(zone.id)}`}
+        className="mt-5 inline-block rounded-[4px] text-[13px] underline decoration-line-strong decoration-1 underline-offset-4 transition-colors duration-150 ease-out hover:decoration-ink"
+      >
+        {fmt(t.status.seeKnowledge, { zone: zone.name })}
+      </Link>
+    </li>
+  )
+}
+
+/** Avancement d'une zone : une bille par tâche (pleine quand elle est faite), puis « 1 sur 2 ». Au-delà de `max`, à l'échelle. */
+function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max: number }) {
+  const { t } = useT()
+  const done = counts?.done ?? 0
+  const total = done + (counts?.open ?? 0)
+  if (total === 0) return <span className="text-[12px] text-trace">{t.status.noTasks}</span>
+  const beads = Math.min(total, max)
+  const filled = total <= max ? done : Math.round((done / total) * max)
+  const long = plural(done, t.status.tasksLong, t.status.tasksLongPlural, { total })
+  return (
+    <span className="inline-flex shrink-0 items-center gap-2 text-[12px] tabular-nums text-trace" title={long}>
+      <span aria-hidden className="flex gap-[3px]">
+        {Array.from({ length: beads }, (_, i) => (
+          <span key={i} className={`block size-2 rounded-full border ${i < filled ? "border-ink bg-ink" : "border-trace"}`} />
+        ))}
+      </span>
+      <span aria-hidden>{fmt(t.status.tasks, { n: done, total })}</span>
+      <span className="sr-only">{long}</span>
+    </span>
+  )
+}
+
+function SectionTitle({ id, count, children }: { id: string; count?: number; children: ReactNode }) {
+  return (
+    <h2 id={id} className="text-[15px] font-medium leading-tight">
+      {children}
+      {count !== undefined && <span className="ml-2 tabular-nums text-trace">{count}</span>}
+    </h2>
+  )
+}
+
+/** La commande qui fait rédiger le point par Claude sur un poste, à copier. */
+function CommandHint() {
+  const { t } = useT()
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(REFRESH_COMMAND)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      /* presse-papiers refusé : la commande reste sélectionnable d'un clic */
+    }
+  }
+  return (
+    <div className="mt-6 max-w-2xl">
+      <p className="text-[13px] leading-relaxed text-trace">{t.status.claudeHint}</p>
+      <div className="mt-2 flex items-center gap-2 rounded-[6px] border border-line bg-surface py-1 pl-3 pr-1">
+        <code className="mono min-w-0 flex-1 select-all text-[12.5px] [overflow-wrap:anywhere]">{REFRESH_COMMAND}</code>
+        <button type="button" className="btn btn-sm shrink-0" onClick={copy} aria-label={copied ? t.status.copied : t.status.copyCommand}>
+          {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
+          <span aria-hidden>{copied ? t.status.copied : t.status.copy}</span>
+        </button>
+      </div>
+      <span role="status" className="sr-only">
+        {copied ? t.status.copied : ""}
+      </span>
     </div>
   )
+}
+
+/**
+ * Une prochaine étape est faite quand les tâches de sa zone qui portent ce titre le sont toutes (l'heuristique reprend
+ * le titre de la tâche, tronqué par « … »).
+ */
+function stepDone(step: string, zone: string, tasks: Task[]): boolean {
+  const prefix = step.endsWith("…") ? step.slice(0, -1) : null
+  const matches = tasks.filter((x) => x.zone === zone && (x.title === step || (prefix !== null && x.title.startsWith(prefix))))
+  return matches.length > 0 && matches.every((x) => x.status === "done")
+}
+
+/** Claude écrit souvent le prénom seul, l'heuristique le nom complet. */
+function findPerson(people: Person[], name: string): Person | undefined {
+  const n = name.trim().toLowerCase()
+  return people.find((p) => p.name.toLowerCase() === n) ?? people.find((p) => p.name.toLowerCase().split(" ")[0] === n)
 }
