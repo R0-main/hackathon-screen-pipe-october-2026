@@ -22,10 +22,12 @@ import {
   selfCommand,
   selfScript,
   shortcutPath,
+  companiesOf,
   withDefaults,
   type Config,
 } from "./config"
 import { DISTILLER_LABELS, apiKey, findOnPath, pickDistiller, spawnTarget } from "./distill"
+import { codexConfigPath, codexPresent, mcpSpecs, probeMcp, readClaudeMcp, readCodexMcp, type McpCompany, type McpServerSpec } from "./mcp-config"
 import {
   HOOK_EVENTS,
   claudeCodeVersion,
@@ -50,7 +52,7 @@ import { LOCK_STALE_MS, PREVIEW_TTL_MS, pidAlive } from "./sync"
 type Log = (s: string) => void
 
 export type Status = "ok" | "warn" | "fail" | "skip" | "info"
-export const GROUPS = ["Poste", "Cerveau", "Screenpipe", "Claude Code", "Synchro", "Distillation"] as const
+export const GROUPS = ["Poste", "Cerveau", "Screenpipe", "Claude Code", "Codex", "Synchro", "Distillation"] as const
 export type Group = (typeof GROUPS)[number]
 
 /**
@@ -585,6 +587,42 @@ async function checkScreenpipe(ctx: Ctx) {
 
 // ——— Claude Code ———
 
+/** Les serveurs MCP des entreprises attendus sur ce poste (setup les a branchés), ou null : serveur du poste (stdio). */
+function companyMcpSpecs(ctx: Ctx): McpServerSpec[] | null {
+  const cfg = ctx.cfg
+  if (!cfg || cfg.ca_file) return null
+  const list = companiesOf(cfg)
+  if (!list.every((c) => c.id)) return null
+  if (!Object.keys(readClaudeMcp() ?? {}).length && !Object.keys(readCodexMcp()).length) return null
+  return mcpSpecs(list as McpCompany[])
+}
+
+/** Le serveur MCP de chaque entreprise : enregistré dans Claude Code (et Codex s'il est là), à la bonne adresse, et il répond. */
+async function checkCompanyMcp(ctx: Ctx) {
+  const specs = companyMcpSpecs(ctx)
+  if (!specs) return
+  const setup = { command: `${ctx.me} setup`, safe: true }
+  const names = specs.map((s) => s.name).join(", ")
+  const claude = readClaudeMcp() ?? {}
+  const missing = specs.filter((s) => claude[s.name] !== s.url)
+  if (missing.length) {
+    add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `MCP ${missing.map((s) => s.name).join(", ")} absent(s) de Claude Code, ou sur une ancienne adresse`, fix: "setup les rebranche.", ...setup })
+  } else {
+    const down = (await Promise.all(specs.map(async (s) => ({ s, err: await probeMcp(s.url, 5000) })))).filter((d) => d.err)
+    if (down.length) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: clean(ctx, `MCP ${down.map((d) => `${d.s.name} ne répond pas (${d.err})`).join(" ; ")}`), fix: "Vérifie la connexion au cerveau, puis relance setup.", ...setup })
+    else add(ctx, { id: "mcp", group: "Claude Code", status: "ok", detail: `MCP ${names} branché(s) (HTTP, portée utilisateur), il(s) répond(ent)` })
+  }
+  if (!codexPresent()) return
+  const codex = readCodexMcp()
+  const absent = specs.filter((s) => codex[s.name] !== s.url)
+  add(
+    ctx,
+    absent.length
+      ? { id: "codex-mcp", group: "Codex", status: "warn", detail: `MCP ${absent.map((s) => s.name).join(", ")} absent(s) de ${codexConfigPath()}`, fix: "setup les y ajoute.", ...setup }
+      : { id: "codex-mcp", group: "Codex", status: "ok", detail: `MCP ${names} déclaré(s) dans ${codexConfigPath()}` },
+  )
+}
+
 function checkClaudeCode(ctx: Ctx) {
   const claude = findOnPath("claude")
   const setup = { command: `${ctx.me} setup`, safe: true }
@@ -600,9 +638,13 @@ function checkClaudeCode(ctx: Ctx) {
     })
   else add(ctx, { id: "claude", group: "Claude Code", status: "ok", detail: `Claude Code ${version ?? "(version inconnue)"} (${claude})` })
 
-  // MCP company-brain : lu dans ~/.claude.json, puis lancé pour de vrai.
-  const entry = readMcpEntry()
-  if (entry === undefined) add(ctx, { id: "mcp", group: "Claude Code", status: "warn", detail: `${claudeJsonPath()} illisible : impossible de vérifier le MCP` })
+  // MCP company-brain (serveur du poste) : lu dans ~/.claude.json, puis lancé pour de vrai. Quand chaque entreprise a
+  // son serveur MCP (HTTP), checkCompanyMcp les vérifie à la place.
+  const perCompany = companyMcpSpecs(ctx) !== null
+  const entry = perCompany ? null : readMcpEntry()
+  if (perCompany) {
+    // vérifié par checkCompanyMcp
+  } else if (entry === undefined) add(ctx, { id: "mcp", group: "Claude Code", status: "warn", detail: `${claudeJsonPath()} illisible : impossible de vérifier le MCP` })
   else if (entry === null) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: "MCP company-brain absent de Claude Code : tes agents ne peuvent pas interroger le cerveau", fix: "setup le branche.", ...setup })
   else {
     const p = probeOnce(entry.command, entry.args.slice(0, 1))
@@ -843,6 +885,7 @@ export async function runDoctor(opts: { version: string; platform?: NodeJS.Platf
   }
   await Promise.all(network)
   checkClaudeCode(ctx)
+  await checkCompanyMcp(ctx)
   checkSync(ctx)
   if (configured) checkDistiller(ctx)
   else add(ctx, { id: "distillation", group: "Distillation", status: "skip", detail: "sans config" })

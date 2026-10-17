@@ -5,7 +5,7 @@ import { buildCliStatusPrompt, parseStatusJson, redactText, truncate, type Statu
 import { ApiError, BrainApi } from "./api"
 import { UserError, requireConfig, type Config } from "./config"
 import { apiKey, claudeAuthHelp, claudeCliOptions, cliFailure, findOnPath, runClaudeCli } from "./distill"
-import { formatStatus } from "./format"
+import { formatStatus } from "@brain/core/mcp"
 import { maskOwnSecrets, ownSecrets } from "./secrets"
 
 export const STATUS_CLI_TIMEOUT_MS = 180_000
