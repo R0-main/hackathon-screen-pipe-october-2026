@@ -120,6 +120,7 @@ L'admin invite quelqu'un → la personne reçoit **un prompt à coller dans Clau
 ### 4. Lecture par les agents (MCP `company-brain`)
 Outils : `search_brain(query, zones?)`, `get_zone_summary(zone)`, `whoami_context()` (le contexte du poste, utile pour la passation).
 Chaque appel passe par `/query` (RLS appliquée avec le token de l'utilisateur) et émet un `AgentEvent{type:"query"}` → néon.
+Une personne peut appartenir à plusieurs entreprises (un jeton par entreprise, `companies` dans la config du poste) : chaque outil prend alors `company`, par défaut la première ; le nom et la description de chaque entreprise (instructions du serveur MCP et description du paramètre) disent au modèle laquelle interroger, et chaque réponse nomme l'entreprise qui a répondu.
 
 ### 5. Jobs planifiés (cloud)
 - **État de l'entreprise** (quotidien + bouton « rafraîchir ») : Sonnet résume par zone les objectifs, l'avancement, les prochaines étapes et qui a fait quoi.

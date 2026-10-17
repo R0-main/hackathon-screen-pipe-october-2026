@@ -9,9 +9,9 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { BrainApi } from "./api"
-import { cmdHello, cmdInit } from "./commands"
+import { cmdHello, initBrain } from "./commands"
 import { fingerprintOfFile, trustInBrowsers } from "./ca"
-import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Config } from "./config"
+import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Company, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
 import { refreshSkills } from "./skills"
@@ -208,7 +208,7 @@ export function ensureMcp(log: Log = console.log): boolean {
 }
 
 /** Ouvre le cerveau, déjà connecté grâce à un lien de connexion à usage court ; à défaut, la page de connexion. */
-async function openBrain(cfg: Config, noOpen: boolean, log: Log) {
+async function openBrain(cfg: Pick<Config, "url" | "token">, noOpen: boolean, log: Log) {
   if (noOpen) return log(`Le cerveau : ${cfg.url}`)
   let target = `${cfg.url}/login`
   try {
@@ -322,11 +322,15 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   const me = selfCommand()
 
   log("[1/6] Connexion au cerveau")
+  // Entreprise ajoutée à côté de la première (jeton d'une autre entreprise) : c'est elle qui s'allume et s'ouvre à la fin.
+  let added: Company | undefined
   if (flags.url || flags.token) {
-    if ((await cmdInit(flags, log)) !== 0) {
+    const init = await initBrain(flags, log)
+    if (init.code !== 0) {
       log("Le cerveau n'a pas accepté la connexion : vérifie l'URL et le jeton, puis relance setup.")
       return 1
     }
+    if (init.added) added = init.company
   }
   let cfg = requireConfig()
   if (!(flags.url || flags.token)) {
@@ -386,11 +390,11 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
 
   log("[6/6] Ton néon et le cerveau")
   try {
-    await cmdHello(log)
+    await cmdHello(log, added)
   } catch (err) {
     log(`Néon : ${(err as Error).message}`)
   }
-  await openBrain(cfg, Boolean(flags["no-open"]), log)
+  await openBrain(added ?? cfg, Boolean(flags["no-open"]), log)
 
   log("")
   log("C'est branché. Continue à travailler avec Claude Code : chaque session allume ta zone, et les connaissances distillées arrivent dans le cerveau toutes les 15 minutes.")

@@ -1,13 +1,16 @@
 // Serveur MCP stdio « company-brain » : les agents de l'employé lisent (et enrichissent) le cerveau.
 // Rien ne doit être écrit sur stdout en dehors du transport : les journaux vont sur stderr.
+// Poste branché sur plusieurs entreprises : chaque outil prend `company` (par défaut la première) ; le nom et la
+// description de chacune, dans les instructions du serveur et la description du paramètre, guident le choix du modèle.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import { KNOWLEDGE_KINDS, classifyZones, extractEntities, normalize, redactText, truncate, type KnowledgeItemInput } from "@brain/core"
-import { BrainApi } from "./api"
+import { BrainApi, type ApiZone } from "./api"
 import { zoneHints, zoneName } from "./cache"
-import { loadCache, loadConfig, selfCommand, type Cache } from "./config"
+import { companyLabel, describeCompanies, pickCompany } from "./companies"
+import { companiesOf, loadCache, loadConfig, selfCommand, type Cache, type Company } from "./config"
 import { formatQuery, formatStatus, formatWhoami, formatZoneSummary, formatZones } from "./format"
 import { maskOwnSecrets, ownSecrets } from "./secrets"
 
@@ -16,39 +19,84 @@ type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean
 const ok = (text: string): ToolResult => ({ content: [{ type: "text", text }] })
 const fail = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true })
 
-export function createBrainMcpServer(version = "0.1.0"): McpServer {
-  const server = new McpServer({ name: "company-brain", version })
-  let cache: Cache | null = loadCache()
+/** Consigne du serveur quand le poste a plusieurs entreprises : laquelle interroger, et quand en changer. */
+export function companiesInstructions(list: Company[]): string {
+  return (
+    `Ce poste est branché sur ${list.length} entreprises, chacune avec son propre cerveau. Les outils interrogent la première par défaut ; ` +
+    "passez `company` (nom ou numéro) seulement quand la demande porte sur une autre entreprise, d'après son nom ou sa description. " +
+    "Chaque réponse commence par l'entreprise qui a répondu.\n" +
+    describeCompanies(list)
+  )
+}
 
-  const api = (): BrainApi => {
+/** Ce qu'un appel d'outil vise : l'API de l'entreprise choisie, et la clé de son cache de zones. */
+type Ctx = { api: BrainApi; key: string; header: string }
+
+export function createBrainMcpServer(version = "0.1.0"): McpServer {
+  // Les entreprises connues au démarrage décrivent les outils ; chaque appel relit la config (entreprise ajoutée entre-temps).
+  const startCfg = loadConfig()
+  const known = startCfg ? companiesOf(startCfg) : []
+  const multi = known.length > 1
+  const server = new McpServer({ name: "company-brain", version }, multi ? { instructions: companiesInstructions(known) } : undefined)
+  // Zones de chaque entreprise (noms lisibles, classification), par jeton : la première part du cache du poste.
+  const caches = new Map<string, Cache | null>()
+
+  const open = (wanted?: string): Ctx => {
     const cfg = loadConfig()
     if (!cfg) throw new Error(`Client du cerveau non configuré : lancez \`${selfCommand()} init --url <url> --token <jeton>\`.`)
-    return new BrainApi(cfg.url, cfg.token, 20000)
+    const list = companiesOf(cfg)
+    const company = pickCompany(list, wanted)
+    if (!caches.has(company.token)) caches.set(company.token, company.token === cfg.token ? loadCache() : null)
+    // Plusieurs entreprises : chaque réponse dit laquelle a répondu.
+    const header = list.length > 1 ? `Entreprise : ${companyLabel(company)}\n\n` : ""
+    return { api: new BrainApi(company.url, company.token, 20000), key: company.token, header }
   }
-  const name = (id: string) => zoneName(cache, id)
+  const cacheOf = (c: Ctx) => caches.get(c.key) ?? null
+  const keepZones = (c: Ctx, zones: ApiZone[]) =>
+    caches.set(c.key, {
+      ...(cacheOf(c) ?? { updated_at: new Date().toISOString() }),
+      zones: zones.map((z) => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords, readable: z.readable })),
+    })
+  const namer = (c: Ctx) => (id: string) => zoneName(cacheOf(c), id)
   /** Accepte un identifiant de zone ou son nom (« Compta », « compta »…). */
-  const resolveZone = (z: string): string => {
+  const resolveZone = (c: Ctx, z: string): string => {
     const n = normalize(z.trim())
-    const found = cache?.zones?.find((x) => x.id === z || normalize(x.id) === n || normalize(x.name) === n)
+    const found = cacheOf(c)?.zones?.find((x) => x.id === z || normalize(x.id) === n || normalize(x.name) === n)
     return found?.id ?? z.trim()
   }
-  const guard = async (fn: () => Promise<string>): Promise<ToolResult> => {
+  const guard = async (company: string | undefined, fn: (c: Ctx) => Promise<string>): Promise<ToolResult> => {
     try {
-      return ok(await fn())
+      const c = open(company)
+      return ok(c.header + (await fn(c)))
     } catch (err) {
       return fail(`Erreur du cerveau d'entreprise : ${(err as Error).message}`)
     }
   }
   // Rafraîchit le cache des zones au premier appel si besoin (noms lisibles, classification).
-  const ensureZones = async (a: BrainApi) => {
-    if (cache?.zones?.length) return
+  const ensureZones = async (c: Ctx) => {
+    if (cacheOf(c)?.zones?.length) return
     try {
-      const zones = await a.zones()
-      cache = { ...(cache ?? { updated_at: new Date().toISOString() }), zones: zones.map((z) => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords, readable: z.readable })) }
+      keepZones(c, await c.api.zones())
     } catch {
       // pas grave : on affichera les identifiants
     }
   }
+  // Paramètre `company`, seulement si le poste a plusieurs entreprises (sinon rien à choisir). Typé comme toujours
+  // présent : il est facultatif, les outils le reçoivent `undefined` quand il est absent du schéma.
+  const companyParam = (
+    multi
+      ? {
+          company: z
+            .string()
+            .max(120)
+            .optional()
+            .describe(
+              `Entreprise à interroger, par nom ou numéro ; par défaut la première (« ${companyLabel(known[0])} »). À préciser seulement quand ` +
+                `la demande porte sur une autre entreprise du poste :\n${describeCompanies(known)}`,
+            ),
+        }
+      : {}
+  ) as { company: z.ZodOptional<z.ZodString> }
 
   server.registerTool(
     "search_brain",
@@ -63,15 +111,15 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         query: z.string().min(1).max(500).describe("La question ou les mots-clés, en langage naturel (ex. « déployer en production »)."),
         zones: z.array(z.string()).max(20).optional().describe("Optionnel : limiter à certaines zones (identifiants de list_zones, ex. [\"dev\"])."),
         limit: z.number().int().min(1).max(50).optional().describe("Nombre maximum de résultats (8 par défaut)."),
+        ...companyParam,
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ query, zones, limit }) =>
-      guard(async () => {
-        const a = api()
-        await ensureZones(a)
-        const r = await a.query({ query, zones: zones?.map(resolveZone), limit, agent: "mcp" })
-        return formatQuery(r, name)
+    async ({ query, zones, limit, company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        const r = await c.api.query({ query, zones: zones?.map((x) => resolveZone(c, x)), limit, agent: "mcp" })
+        return formatQuery(r, namer(c))
       }),
   )
 
@@ -82,14 +130,13 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
       description:
         "Donne l'état d'une zone de connaissance de l'entreprise (dev, produit, sales, compta…) : résumé, objectifs, prochaines étapes, " +
         "qui a fait quoi, connaissances récentes, tâches ouvertes et entités clés. Utile pour se mettre à jour sur un domaine.",
-      inputSchema: { zone: z.string().min(1).max(64).describe("Identifiant ou nom de la zone (voir list_zones), ex. « dev »." ) },
+      inputSchema: { zone: z.string().min(1).max(64).describe("Identifiant ou nom de la zone (voir list_zones), ex. « dev »."), ...companyParam },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ zone }) =>
-      guard(async () => {
-        const a = api()
-        await ensureZones(a)
-        return formatZoneSummary(await a.zone(resolveZone(zone)))
+    async ({ zone, company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        return formatZoneSummary(await c.api.zone(resolveZone(c, zone)))
       }),
   )
 
@@ -98,12 +145,13 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
     {
       title: "Lister les zones",
       description: "Liste les zones de connaissance de l'entreprise (identifiant, description, nombre de connaissances) et indique celles auxquelles l'utilisateur a accès.",
+      inputSchema: { ...companyParam },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async () =>
-      guard(async () => {
-        const zones = await api().zones()
-        cache = { ...(cache ?? { updated_at: new Date().toISOString() }), zones: zones.map((z) => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords, readable: z.readable })) }
+    async ({ company }) =>
+      guard(company, async (c) => {
+        const zones = await c.api.zones()
+        keepZones(c, zones)
         return formatZones(zones)
       }),
   )
@@ -115,13 +163,13 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
       description:
         "Décrit le poste de l'utilisateur connecté : rôle, zones accessibles, zones et entités qu'il utilise le plus, prompts fréquents, " +
         "décisions et procédures récentes. Utile pour une passation de poste, un remplacement, ou pour adapter une réponse au rôle de l'utilisateur.",
+      inputSchema: { ...companyParam },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async () =>
-      guard(async () => {
-        const a = api()
-        await ensureZones(a)
-        return formatWhoami(await a.whoami(), name)
+    async ({ company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        return formatWhoami(await c.api.whoami(), namer(c))
       }),
   )
 
@@ -130,13 +178,13 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
     {
       title: "Où en est l'entreprise ?",
       description: "Résumé de l'état de l'entreprise par zone : objectifs, avancement, prochaines étapes et qui a fait quoi (limité aux zones accessibles).",
+      inputSchema: { ...companyParam },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async () =>
-      guard(async () => {
-        const a = api()
-        await ensureZones(a)
-        return formatStatus(await a.status(), name)
+    async ({ company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        return formatStatus(await c.api.status(), namer(c))
       }),
   )
 
@@ -153,18 +201,20 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         body: z.string().min(1).max(4000).describe("1 à 5 phrases compréhensibles par un collègue, avec le pourquoi."),
         kind: z.enum(KNOWLEDGE_KINDS).describe("fact | decision | task | procedure | question"),
         zone: z.string().max(64).optional().describe("Optionnel : identifiant de zone ; sinon classée automatiquement (la réponse indique la zone retenue)."),
+        ...companyParam,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ title, body, kind, zone }) =>
-      guard(async () => {
-        const a = api()
-        await ensureZones(a)
+    async ({ title, body, kind, zone, company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        const cache = cacheOf(c)
+        const name = namer(c)
         const hints = zoneHints(cache)
-        const known = new Set(hints.map((z) => z.id))
-        const asked = zone ? resolveZone(zone) : undefined
+        const zoneIds = new Set(hints.map((z) => z.id))
+        const asked = zone ? resolveZone(c, zone) : undefined
         const classified = classifyZones(`${title} ${body}`, hints, 1)[0]
-        const chosen = (asked && known.has(asked) ? asked : undefined) ?? classified ?? cache?.whoami?.writable[0] ?? hints[0]?.id ?? "general"
+        const chosen = (asked && zoneIds.has(asked) ? asked : undefined) ?? classified ?? cache?.whoami?.writable[0] ?? hints[0]?.id ?? "general"
         const how =
           asked && chosen === asked
             ? "zone demandée"
@@ -183,7 +233,7 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
           source: { app: "claude-code", tool: "agent", at: new Date().toISOString() },
           confidence: 0.8,
         }
-        const r = await a.ingest([item], "mcp")
+        const r = await c.api.ingest([item], "mcp")
         const where = r.zones[0] ?? chosen
         const label = `${name(where)} (\`${where}\`)`
         if (!r.inserted && r.skipped) {

@@ -61,6 +61,12 @@ Commandes :
                      passé à chaque \`claude -p\` du client, synchro planifiée comprise (« aucun » pour le retirer).
                      --share-prompt-summaries non : le hook n'envoie plus aucun résumé de prompt (empreinte seule).
                      --screenpipe-meetings non : les réunions transcrites par Screenpipe ne sont pas distillées.
+                     Le jeton d'une AUTRE entreprise (prompt d'installation d'une deuxième entreprise) l'ajoute à côté de la
+                     première au lieu de la remplacer : voir companies.
+  companies [--default <nom|n°>] [--remove <nom|n°>]
+                     Les entreprises de ce poste. La première est celle par défaut : les outils MCP l'interrogent tant qu'on
+                     ne leur en demande pas une autre (paramètre company, guidé par le nom et la description de chacune), et
+                     la synchro, les hooks et les skills restent sur elle. --default change la première, --remove en retire une.
   hello              Test de bout en bout : vos zones s'allument sur le dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
                      Lit les sessions IA locales, filtre (secrets, perso), distille et envoie au cerveau.
@@ -153,6 +159,10 @@ async function main(argv: string[]): Promise<number> {
     case "init": {
       const { cmdInit } = await import("./commands")
       return cmdInit(flags)
+    }
+    case "companies": {
+      const { cmdCompanies } = await import("./companies")
+      return cmdCompanies(flags)
     }
     case "hello": {
       const { cmdHello } = await import("./commands")

@@ -100,8 +100,69 @@ async function verifySigned(value: string | undefined, purpose: string): Promise
   return userId
 }
 
-function verifySession(value: string | undefined): Promise<string | null> {
+/** Le compte d'une valeur de cookie de session, si elle est valable (signature, expiration, jeton non régénéré). */
+export function sessionUserId(value: string | undefined): Promise<string | null> {
   return verifySigned(value, "v2")
+}
+const verifySession = sessionUserId
+
+/**
+ * Entreprises retenues par ce navigateur : une session signée par entreprise (séparées par `~`), la plus récente
+ * d'abord. Elles permettent de revenir à une entreprise, ou de passer de l'une à l'autre, sans ressaisir son jeton.
+ * Même protection que le cookie de session (httpOnly, signé, 14 jours, invalidé quand le jeton est régénéré).
+ */
+export const ACCOUNTS_COOKIE = "brain_accounts"
+const MAX_ACCOUNTS = 8
+
+export type RememberedAccount = {
+  userId: string
+  name: string
+  title?: string
+  role: Profile["role"]
+  org: { id: string; name: string; description: string }
+}
+
+type Remembered = RememberedAccount & { session: string }
+
+/** Les sessions retenues encore valables, avec leur compte et leur entreprise ; une seule par entreprise (la première). */
+async function readRemembered(value: string | undefined): Promise<Remembered[]> {
+  const out: Remembered[] = []
+  for (const session of (value ?? "").split("~").filter(Boolean).slice(0, MAX_ACCOUNTS + 2)) {
+    if (out.length >= MAX_ACCOUNTS) break
+    const userId = await verifySession(session)
+    if (!userId || out.some((a) => a.userId === userId)) continue
+    const profile = await (await storeForUser(userId))?.getProfile(userId)
+    if (!profile || out.some((a) => a.org.id === profile.org_id)) continue
+    const org = await storeForOrg(profile.org_id).getOrg()
+    out.push({ session, userId, name: profile.name, title: profile.title, role: profile.role, org: { id: org.id, name: org.name, description: org.description } })
+  }
+  return out
+}
+
+/** Les entreprises retenues par ce navigateur, sans les sessions (pour l'affichage). */
+export async function listRememberedAccounts(value: string | undefined): Promise<RememberedAccount[]> {
+  return (await readRemembered(value)).map(({ session: _session, ...account }) => account)
+}
+
+/**
+ * Nouvelle valeur du cookie des entreprises : les sessions données, dans l'ordre (la plus récente d'abord), sans les
+ * sessions expirées ni un second compte de la même entreprise. Chaque argument est une session ou une liste `~`.
+ */
+export async function rememberAccounts(...values: (string | undefined)[]): Promise<string> {
+  return (await readRemembered(values.filter(Boolean).join("~"))).map((a) => a.session).join("~")
+}
+
+/** La liste des entreprises retenues, sans le compte `userId`. */
+export async function forgetAccount(value: string | undefined, userId: string): Promise<string> {
+  return (await readRemembered(value))
+    .filter((a) => a.userId !== userId)
+    .map((a) => a.session)
+    .join("~")
+}
+
+/** Vrai si ce navigateur retient encore une session valable pour ce compte. */
+export async function isRemembered(value: string | undefined, userId: string): Promise<boolean> {
+  return (await readRemembered(value)).some((a) => a.userId === userId)
 }
 
 /**

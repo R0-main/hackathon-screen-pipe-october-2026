@@ -19,7 +19,8 @@ export type NewZonesRunResult =
   | { status: "skipped"; reason: string }
 
 export type WhoAmI = {
-  org: { name: string; description: string }
+  /** `id` : absent d'un cerveau plus ancien. */
+  org: { id?: string; name: string; description: string }
   profile: Profile
   access: { isAdmin: boolean; readable: string[]; writable: string[] }
   context: {

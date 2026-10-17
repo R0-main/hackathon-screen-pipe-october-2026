@@ -1,8 +1,8 @@
-import { cookies } from "next/headers"
 import { z } from "zod"
 import { getStore } from "@/lib/store"
-import { createSessionValue, isDemoMode, SESSION_COOKIE, sessionCookieOptions, VIEW_AS_COOKIE } from "@/lib/auth"
+import { isDemoMode } from "@/lib/auth"
 import { error, internalError, json, parseBody } from "@/lib/http"
+import { openSession } from "@/lib/session"
 import { ensureDemoBrain } from "@/lib/demo-seed"
 
 export const runtime = "nodejs"
@@ -30,10 +30,7 @@ export async function POST(req: Request) {
   try {
     const profile = await getStore().getProfile(body.data.userId)
     if (!profile) return error(404, "Membre introuvable.")
-    const session = await createSessionValue(profile.id)
-    const jar = await cookies()
-    jar.set(SESSION_COOKIE, session, sessionCookieOptions)
-    jar.delete(VIEW_AS_COOKIE)
+    await openSession(profile.id)
     return json({ ok: true, profile })
   } catch (err) {
     return internalError(err)

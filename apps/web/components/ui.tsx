@@ -213,6 +213,13 @@ export function TagIcon(props: IconProps) {
   )
 }
 
+export function ChevronsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 6l3-3 3 3M5 10l3 3 3-3" />
+    </Icon>
+  )
+}
 export function LogoutIcon(props: IconProps) {
   return (
     <Icon {...props}>
