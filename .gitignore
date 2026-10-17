@@ -11,6 +11,7 @@ dist/
 apps/web/.brain/
 # Built client bundle served by the dashboard
 apps/web/public/brain.mjs
+apps/web/public/brain.mjs.sha256
 .DS_Store
 .next-build/
 

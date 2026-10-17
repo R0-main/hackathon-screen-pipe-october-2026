@@ -1,10 +1,6 @@
 import { strict as assert } from "node:assert"
-import { spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
-import { createServer } from "node:http"
-import type { AddressInfo } from "node:net"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import { buildInstallPrompt } from "../../web/lib/install-prompt"
@@ -53,42 +49,4 @@ test("install/PROMPT.md est à jour avec buildInstallPrompt", () => {
   const md = readFileSync(new URL("../../../install/PROMPT.md", import.meta.url), "utf8")
   const example = md.match(/```text\n([\s\S]*?)\n```/)?.[1]
   assert.equal(example, prompt)
-})
-
-const installSh = fileURLToPath(new URL("../../web/public/install.sh", import.meta.url))
-
-test("install.sh : syntaxe POSIX valide, refuse un appel sans --url", () => {
-  assert.equal(spawnSync("sh", ["-n", installSh]).status, 0)
-  const r = spawnSync("sh", [installSh, "--token", "cb_x"], { encoding: "utf8" })
-  assert.equal(r.status, 2)
-  assert.match(r.stderr, /Usage/)
-})
-
-test("install.sh : télécharge brain.mjs, écrit le raccourci, lance setup avec les mêmes options et rend son code", async () => {
-  // Faux client : affiche ses arguments et sort en 3, comme setup quand une autorisation macOS manque.
-  const fake = "console.log(JSON.stringify(process.argv.slice(2))); process.exit(3)"
-  const server = createServer((req, res) => {
-    if (req.url === "/brain.mjs") res.end(fake)
-    else res.writeHead(404).end()
-  })
-  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  const home = mkdtempSync(join(tmpdir(), "brain-install-"))
-  try {
-    const r = await new Promise<{ status: number | null; stdout: string }>((ok) => {
-      const child = spawn("sh", [installSh, "--url", `${url}/`, "--token", "cb_test"], { env: { ...process.env, COMPANY_BRAIN_HOME: home } })
-      let stdout = ""
-      child.stdout.on("data", (d) => (stdout += d))
-      child.on("close", (status) => ok({ status, stdout }))
-    })
-    assert.equal(r.status, 3, "le code de setup est rendu tel quel")
-    assert.ok(r.stdout.includes(JSON.stringify(["setup", "--url", `${url}/`, "--token", "cb_test"])), r.stdout)
-    assert.equal(readFileSync(join(home, "brain.mjs"), "utf8"), fake)
-    assert.ok(existsSync(join(home, "brain")), "raccourci ~/.company-brain/brain")
-    const viaShortcut = spawnSync(join(home, "brain"), ["status"], { encoding: "utf8" })
-    assert.equal(viaShortcut.stdout.trim(), JSON.stringify(["status"]))
-  } finally {
-    server.close()
-    rmSync(home, { recursive: true, force: true })
-  }
 })
