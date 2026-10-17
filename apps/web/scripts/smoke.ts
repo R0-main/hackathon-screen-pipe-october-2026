@@ -69,6 +69,8 @@ import * as adminTeamRoute from "../app/api/admin/team/route"
 import * as itemRoute from "../app/api/items/[id]/route"
 import * as joinRoute from "../app/api/join/route"
 import * as onboardingAgentRoute from "../app/api/onboarding/agent/route"
+import * as onboardingToolsRoute from "../app/api/onboarding/tools/route"
+import * as onboardingToolsCallRoute from "../app/api/onboarding/tools/call/route"
 import * as onboardingImportRoute from "../app/api/onboarding/import/route"
 import * as onboardingProgressRoute from "../app/api/onboarding/progress/route"
 import * as onboardingApplyRoute from "../app/api/onboarding/apply/route"
@@ -1031,6 +1033,17 @@ async function main() {
       const agent = await call(onboardingAgentRoute.POST, "/api/onboarding/agent", { method: "POST", session: cookie })
       const sendCode = agent.data.prompt.match(/Bearer (co_[A-Za-z0-9_-]+)/)?.[1] as string
       assert(agent.status === 200 && sendCode && agent.data.prompt.includes("~/.codex/sessions"), "onboarding prompt with an upload code")
+      assert(agent.data.prompt.includes("/api/onboarding/tools"), "the prompt also explores the tools connected while it reads")
+      assert(agent.data.prompt.length <= 5000, `prompt short enough for a claude-cli link (${agent.data.prompt.length} characters)`)
+      const tools = (code: string) => onboardingToolsRoute.GET(new Request("http://smoke.test/api/onboarding/tools", { headers: { authorization: `Bearer ${code}` } }))
+      assert((await tools(`co_${"A".repeat(40)}`)).status === 401, "connected tools: a made-up code is refused")
+      const noTools = await tools(sendCode)
+      const noToolsBody = (await noTools.json()) as { connectors: unknown[]; hint?: string }
+      assert(noTools.status === 200 && noToolsBody.connectors.length === 0 && /No tool connected yet/.test(noToolsBody.hint ?? ""), "connected tools: none yet, the agent is told to check again later")
+      const toolCall = (code: string, body: unknown) =>
+        onboardingToolsCallRoute.POST(new Request("http://smoke.test/api/onboarding/tools/call", { method: "POST", headers: { authorization: `Bearer ${code}`, "content-type": "application/json" }, body: JSON.stringify(body) }))
+      assert((await toolCall(sendCode, { connector: "notion", tool: "search" })).status === 404, "tool call on a connector not connected: 404")
+      assert((await toolCall(sendCode, { tool: "search" })).status === 400, "malformed tool call: 400")
       const upload = (code: string, body: unknown) =>
         onboardingImportRoute.POST(new Request("http://smoke.test/api/onboarding/import", { method: "POST", headers: { authorization: `Bearer ${code}`, "content-type": "application/json" }, body: JSON.stringify(body) }))
       const proposal = {
