@@ -3,8 +3,13 @@
 Le dashboard le génère pour chaque employé (`/admin` → « Inviter quelqu'un » ou « Nouveau prompt »), avec son jeton
 personnel (affiché une seule fois) et l'URL du cerveau. Source : [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
 
-L'employé le colle dans Claude Code. Claude prévient des autorisations à venir, lance **une seule commande**, lit la
-sortie et dépanne si besoin. Toute la mécanique est dans `brain.mjs setup` (`apps/client/src/setup.ts`) :
+L'employé le colle dans Claude Code. Claude prévient des autorisations à venir, lance **une seule commande**, lit son
+code de sortie et dépanne si besoin. Le prompt reste court parce que le travail est dans notre CLI (pourquoi : [docs/CLI.md](../docs/CLI.md)) :
+
+- `install.sh` (servi sur `/install.sh`, source `apps/web/public/install.sh`) trouve Node.js ≥ 20 ou en installe une copie
+  privée dans `~/.company-brain/node` (sans droits admin, empreinte SHA-256 vérifiée), télécharge `brain.mjs`, écrit le
+  raccourci `~/.company-brain/brain`, puis lance `brain setup` avec les mêmes options et rend son code de sortie ;
+- `brain setup` (`apps/client/src/setup.ts`) fait le reste :
 
 1. **Cerveau** : enregistre l'URL et le jeton (`~/.company-brain/config.json`, mode 600) et teste la connexion.
 2. **Screenpipe** : s'il tourne déjà (application ou CLI), on le garde. Sinon l'application si elle est installée, sinon le
@@ -40,38 +45,14 @@ géré. En entreprise, un profil MDM (PPPC) peut pré-accorder l'Accessibilité 
 ## Exemple (jeton fictif)
 
 ```text
-Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois.
-Tout tient en une commande : lance-la telle quelle, en un seul appel (une seule autorisation à me demander), puis lis sa sortie. Sois bref.
+Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois, zones : compta.
+Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
 
-Paramètres :
-- URL du cerveau : https://cerveau.example.com
-- Mon jeton personnel (secret : ne l'affiche jamais en entier, ne l'écris nulle part ailleurs que dans la commande) : cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-- Zones auxquelles j'ai accès : compta
-(Cette conversation contient mon jeton : brain-sync la reconnaît et ne l'envoie jamais au cerveau.)
-
-1. Prérequis : Node.js ≥ 20 (`node -v`). S'il manque, propose-moi de l'installer (Mac : `brew install node`, sinon https://nodejs.org) et attends mon accord.
-
-2. Préviens-moi en une phrase avant de lancer : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans
-   « Enregistrement de l'écran », puis dans « Accessibilité » ; la commande attend et continue toute seule dès que c'est coché. Pas de micro.
-
-3. Lance cette commande avec un délai de 10 minutes (elle attend mes autorisations) :
-   curl -fsSL --create-dirs https://cerveau.example.com/brain.mjs -o ~/.company-brain/brain.mjs && node ~/.company-brain/brain.mjs setup --url https://cerveau.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-   Elle installe et lance Screenpipe (capture locale de l'écran, micro coupé), enregistre ma config, branche le MCP company-brain et les
-   hooks Claude Code, planifie la synchro toutes les 15 minutes (seulement l'activité à venir : aucun historique n'est envoyé), allume
-   mon néon et ouvre le cerveau dans mon navigateur, déjà connecté. Si le bac à sable de Claude Code la bloque (elle écrit dans
-   ~/.company-brain, ~/.claude et les tâches de fond du système), relance-la hors du bac à sable.
-
-4. Lis la sortie :
-   - code 0 : c'est fini ;
-   - code 3 (« EN ATTENTE ») : l'autorisation d'enregistrer l'écran manque encore ; redis-moi où cliquer, puis relance `node ~/.company-brain/brain.mjs setup`
-     (sans paramètres, la config est gardée) ;
-   - autre erreur : explique-la simplement, corrige ce que tu peux sans droits administrateur (demande-moi avant sinon) et relance
-     `node ~/.company-brain/brain.mjs setup`, qui reprend là où ça s'est arrêté. `node ~/.company-brain/brain.mjs status` donne l'état complet.
-
-5. Termine en quatre lignes au plus : ce qui tourne, le lien du cerveau, ce qui part (des connaissances distillées, jamais l'écran brut ;
-   secrets et données perso masqués sur le poste) et comment tout retirer (`node ~/.company-brain/brain.mjs uninstall`). Propose-moi enfin, si je veux que le
-   cerveau apprenne aussi de mes dernières 24 h : `node ~/.company-brain/brain.mjs sync --dry-run --full --since 24h`, que tu me montres en entier ; rien ne part
-   avant mon accord explicite, puis `node ~/.company-brain/brain.mjs sync --confirm` envoie exactement ce que j'ai relu.
+1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
+2. Lance cette commande telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
+   curl -fsSL --create-dirs https://cerveau.example.com/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url https://cerveau.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance `~/.company-brain/brain setup`. Autre erreur : explique-la simplement et relance `~/.company-brain/brain setup`, qui reprend où il s'était arrêté (`~/.company-brain/brain status` donne l'état).
+4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (`~/.company-brain/brain uninstall`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord `~/.company-brain/brain sync --dry-run --full --since 24h` en entier ; rien ne part avant mon accord explicite, puis `~/.company-brain/brain sync --confirm` envoie exactement ce que j'ai relu.
 ```
 
 ## Options de `setup`
@@ -84,5 +65,19 @@ Paramètres :
 | `--no-open` | N'ouvre pas le navigateur. |
 | `--skip-screenpipe` | Sans Screenpipe : brain-sync lit seulement les sessions Claude Code et Codex. |
 
-Tout retirer : `node ~/.company-brain/brain.mjs uninstall` (hooks, MCP, synchro, service Screenpipe ; `--purge` efface aussi
+Tout retirer : `node ~/.company-brain/brain.mjs uninstall` (hooks, MCP, skills de l'entreprise, synchro, service Screenpipe ; `--purge` efface aussi
 `~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
+
+## Le message d'équipe (rejoindre sur demande)
+
+Second moyen d'ajouter quelqu'un, à côté du prompt personnel : un message unique par entreprise (`/admin` → Demandes,
+ou la dernière étape de `/creer`), source `buildJoinPrompt` dans [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
+Il contient un code d'équipe (`cj_…`), pas de jeton : à envoyer aux collègues seulement, il ne permet que de demander.
+
+1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà (git config, mémoire, CLAUDE.md),
+   sans poser de question ni rien inventer : une valeur inconnue est omise, l'admin la complétera.
+2. `install.sh --join` lance `brain join` (`apps/client/src/join.ts`) : le jeton du poste est créé localement, la demande
+   part avec son empreinte seulement, puis la commande attend l'acceptation (8 min).
+3. Un admin complète et accepte la demande : le compte est créé avec cette empreinte, et `join` enchaîne sur `setup`.
+   Code 5 : toujours en attente (`brain join` reprend la même demande, état dans `~/.company-brain/join.json`) ; 6 : refusée.
+

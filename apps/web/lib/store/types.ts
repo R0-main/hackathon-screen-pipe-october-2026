@@ -12,17 +12,49 @@ import type {
   Profile,
   Role,
   ScoredItem,
+  Skill,
+  SkillFile,
   Task,
   TaskStatus,
   Zone,
   ZoneAccess,
 } from "@brain/core"
 
-export type NewProfile = { name: string; email?: string; title?: string; role: Role; manager_id?: string | null; token_hash: string }
+export type NewProfile = {
+  name: string
+  email?: string
+  title?: string
+  role: Role
+  manager_id?: string | null
+  can_publish_skills?: boolean
+  token_hash: string
+}
 export type ProfilePatch = Partial<NewProfile>
 export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: string }
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">
 export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created_at?: string }
+
+/** Nouvelle entreprise créée depuis la page d'accueil (/creer) : un cerveau à part, à côté de celui de la base. */
+export type NewTenantOrg = { name: string; description: string; zones: Zone[] }
+
+export type JoinStatus = "pending" | "accepted" | "rejected"
+/** Demande pour rejoindre l'entreprise, envoyée par le message d'équipe. Les champs que le Claude du demandeur ne connaissait pas restent null. */
+export type JoinRequest = {
+  id: string
+  org_id: string
+  name: string | null
+  title: string | null
+  email: string | null
+  hostname: string | null
+  status: JoinStatus
+  profile_id: string | null
+  created_at: string
+  decided_at: string | null
+}
+export type NewJoinRequest = { name?: string; title?: string; email?: string; hostname?: string; token_hash: string }
+
+/** Publication d'un skill : nouveau nom → version 1, nom existant → version suivante (l'auteur d'origine est gardé). */
+export type NewSkill = { name: string; description: string; zone: string | null; files: SkillFile[]; publisher_id: string }
 
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
@@ -30,6 +62,29 @@ export type EntityStat = { type: EntityType; name: string; count: number; zones:
 /** Contrat de stockage du cerveau : implémenté en fichier JSON (démo) et en Postgres (Supabase). */
 export interface BrainStore {
   readonly kind: "file" | "postgres"
+
+  /**
+   * Multi-entreprise. Le stockage racine sert l'organisation « de la base » (la démo, le cerveau déployé) ; chaque
+   * entreprise créée depuis /creer est une organisation « tenant », servie par `forOrg`. Les méthodes ci-dessous
+   * n'ont de sens que sur le stockage racine.
+   */
+  forOrg(orgId: string): BrainStore
+  createTenantOrg(o: NewTenantOrg): Promise<Org>
+  countTenantOrgs(): Promise<number>
+  /** Organisation d'un compte, toutes entreprises confondues (connexion par jeton ou par session). */
+  findUserOrg(by: { id: string } | { tokenHash: string }): Promise<string | null>
+  /** Entreprise d'un code d'équipe, ou d'une demande pour la rejoindre (stockage racine). */
+  findOrgByJoinCode(code: string): Promise<string | null>
+  findJoinRequestOrg(id: string): Promise<string | null>
+
+  /** Code du message d'équipe de cette entreprise (créé au premier appel) ; `rotateJoinCode` invalide l'ancien message. */
+  getJoinCode(): Promise<string>
+  rotateJoinCode(): Promise<string>
+  createJoinRequest(r: NewJoinRequest): Promise<JoinRequest>
+  /** Les plus récentes d'abord. */
+  listJoinRequests(f?: { status?: JoinStatus; limit?: number }): Promise<JoinRequest[]>
+  getJoinRequest(id: string): Promise<(JoinRequest & { token_hash: string }) | null>
+  decideJoinRequest(id: string, d: { status: Exclude<JoinStatus, "pending">; profile_id?: string }): Promise<JoinRequest | null>
 
   getOrg(): Promise<Org>
   updateOrg(patch: Partial<Pick<Org, "name" | "description">>): Promise<Org>
@@ -69,6 +124,13 @@ export interface BrainStore {
   /** Insère ou met à jour par `key`, en conservant le statut (accepté / écarté) déjà choisi. */
   upsertAutomations(c: AutomationCandidate[]): Promise<AutomationSuggestion[]>
   updateAutomation(id: string, patch: { status: AutomationStatus }): Promise<AutomationSuggestion | null>
+
+  listSkills(): Promise<Skill[]>
+  getSkill(id: string): Promise<Skill | null>
+  getSkillByName(name: string): Promise<Skill | null>
+  publishSkill(s: NewSkill): Promise<Skill>
+  updateSkill(id: string, patch: { zone: string | null }): Promise<Skill | null>
+  deleteSkill(id: string): Promise<boolean>
 
   getStatus(): Promise<CompanyStatus | null>
   setStatus(s: CompanyStatus): Promise<void>

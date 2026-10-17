@@ -12,6 +12,6 @@ export async function getPageViewer(): Promise<Viewer | null> {
 export async function requirePageViewer(opts: { admin?: boolean } = {}): Promise<Viewer> {
   const viewer = await getPageViewer()
   if (!viewer) redirect("/login")
-  if (opts.admin && viewer.real.role !== "admin") redirect("/")
+  if (opts.admin && viewer.real.role !== "admin") redirect("/dashboard")
   return viewer
 }

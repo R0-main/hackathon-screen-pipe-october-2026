@@ -25,11 +25,12 @@ import {
   type ZoneStatus,
 } from "@brain/core"
 import { summarizeStatus } from "@brain/core/claude"
-import { getStore } from "./store"
+import { getStore, isStoreSetupError } from "./store"
 import type { NewItem } from "./store/types"
 import { canRead, canSeeEventContent, redactEvent } from "./access"
 import type { Viewer } from "./auth"
 import { getClaude } from "./ai"
+import { canPublishSkills, canSeeSkill } from "./skills"
 
 const store = () => getStore()
 
@@ -204,7 +205,7 @@ export type ZoneView = Zone & {
 /** GET /api/state — instantané du dashboard, filtré selon les droits du spectateur. */
 export async function getState(viewer: Viewer) {
   const s = store()
-  const [org, zones, stats, profiles, events, status, automations, entities] = await Promise.all([
+  const [org, zones, stats, profiles, events, status, automations, entities, skills] = await Promise.all([
     s.getOrg(),
     s.listZones(),
     s.zoneStats(),
@@ -213,6 +214,12 @@ export async function getState(viewer: Viewer) {
     s.getStatus(),
     s.listAutomations(),
     s.topEntities({ limit: 250 }),
+    // Base pas encore migrée (table skills absente) : le cerveau reste utilisable, sans skills.
+    s.listSkills().catch((err) => {
+      if (!isStoreSetupError(err)) throw err
+      console.error("[skills]", err.message)
+      return []
+    }),
   ])
   const { access, profile } = viewer
   const readable = access.readable
@@ -272,8 +279,10 @@ export async function getState(viewer: Viewer) {
     automations: automations.filter((a) => access.isAdmin || a.user_id === profile.id),
     tasks: tasks.slice(0, 40),
     items: recentItems,
+    can_publish_skills: canPublishSkills(viewer),
     totals: {
       items: stats.reduce((n, x) => n + x.count, 0),
+      skills: skills.filter((sk) => canSeeSkill(viewer, sk)).length,
       contributors: new Set(profiles.map((p) => p.id)).size,
       active_24h: activeUsers.size,
     },

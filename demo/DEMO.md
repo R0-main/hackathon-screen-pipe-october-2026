@@ -10,7 +10,7 @@ BRAIN_DEMO=1 npm run dev         # ou l'URL déployée
 npm run simulate -- --speed 1.5  # 2e terminal, à lancer au moment voulu (Ctrl-C pour arrêter)
 ```
 
-Onglets à préparer : le dashboard connecté en **Claire (CEO, admin)**, `/admin`, et un terminal avec Claude Code sur un vrai projet si un poste est branché.
+Onglets à préparer : le dashboard (`/dashboard`, entrée par `/demo`) connecté en **Claire (CEO, admin)**, `/admin`, et un terminal avec Claude Code sur un vrai projet si un poste est branché.
 
 Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données fictives, amorcées automatiquement sur une base vide).
 
@@ -29,7 +29,9 @@ Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données f
 
 6. **L'automatisation (45 s).** La carte verte : « Jean-Marc lance ce prompt presque chaque jour vers 9h07 (6 jours sur 6) → l'exécuter automatiquement à 9h02 ». Détectée à partir des empreintes de prompts envoyées par les hooks, sans stocker le texte brut. « Mettre en place ».
 
-7. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, la personne qui remplace Hugo récupère ça. »
+7. **Les skills (30 s).** Onglet « Skills » : les savoir-faire de Fournil prêts pour Claude Code, avec leurs scripts (`deployer-fournil` et son `release.sh`). « Voir en tant que : Jean-Marc » : il ne reçoit que le skill de toute l'entreprise et ceux du cortex Compta, et son poste les installe tout seul. Dans `/admin`, la colonne « Publie des skills » : pousser un skill demande une autorisation.
+
+8. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, la personne qui remplace Hugo récupère ça. »
 
 ## Phrases clés
 

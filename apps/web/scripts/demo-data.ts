@@ -1,6 +1,6 @@
 // Entreprise fictive pour la démo : Fournil, SaaS de gestion pour boulangeries artisanales.
 
-import type { Entity, KnowledgeKind, Role } from "@brain/core"
+import type { Entity, KnowledgeKind, Role, SkillFile } from "@brain/core"
 
 export const DEMO_ORG = {
   name: "Fournil",
@@ -8,14 +8,26 @@ export const DEMO_ORG = {
     "Fournil édite un logiciel de caisse, de stocks et de précommandes pour les boulangeries artisanales. 85 boulangeries clientes, 6 personnes, basée à Paris.",
 }
 
-/** `manager` : clé de la personne à qui le poste est rattaché (déclarée avant dans la liste). */
-export type DemoUser = { key: string; name: string; title: string; role: Role; zones: string[]; email: string; manager?: string }
+/**
+ * `manager` : clé de la personne à qui le poste est rattaché (déclarée avant dans la liste).
+ * `publishSkills` : peut pousser des skills dans le cerveau (les admins le peuvent toujours).
+ */
+export type DemoUser = {
+  key: string
+  name: string
+  title: string
+  role: Role
+  zones: string[]
+  email: string
+  manager?: string
+  publishSkills?: boolean
+}
 
 export const DEMO_USERS: DemoUser[] = [
   { key: "claire", name: "Claire Martin", title: "CEO", role: "admin", zones: [], email: "claire@fournil.example" },
-  { key: "hugo", name: "Hugo Bernard", title: "Lead dev", role: "member", zones: ["dev", "produit", "support"], email: "hugo@fournil.example", manager: "claire" },
+  { key: "hugo", name: "Hugo Bernard", title: "Lead dev", role: "member", zones: ["dev", "produit", "support"], email: "hugo@fournil.example", manager: "claire", publishSkills: true },
   { key: "ines", name: "Inès Lefèvre", title: "Développeuse full-stack", role: "member", zones: ["dev", "produit"], email: "ines@fournil.example", manager: "hugo" },
-  { key: "jeanmarc", name: "Jean-Marc Dubois", title: "Responsable compta", role: "member", zones: ["compta"], email: "jean-marc@fournil.example", manager: "claire" },
+  { key: "jeanmarc", name: "Jean-Marc Dubois", title: "Responsable compta", role: "member", zones: ["compta"], email: "jean-marc@fournil.example", manager: "claire", publishSkills: true },
   { key: "sarah", name: "Sarah Cohen", title: "Head of Sales", role: "member", zones: ["sales", "support", "produit"], email: "sarah@fournil.example", manager: "claire" },
   { key: "leo", name: "Léo Petit", title: "Product manager", role: "member", zones: ["produit", "dev", "support", "sales"], email: "leo@fournil.example", manager: "claire" },
 ]
@@ -282,3 +294,158 @@ export const DEMO_PROMPTS: Record<string, { user: string; text: string }[]> = {
 
 /** Le prompt que Jean-Marc lance chaque matin vers 9 h : la suggestion d'automatisation de la démo. */
 export const JEANMARC_DAILY_PROMPT = "Rapproche les relevés Qonto d'hier avec les factures Pennylane et liste les écarts"
+
+/** Skills de Fournil : `zone` est le cortex qui les reçoit (null : toute l'entreprise). */
+export type DemoSkill = { author: string; name: string; description: string; zone: string | null; daysAgo: number; version?: number; files: SkillFile[] }
+
+export const DEMO_SKILLS: DemoSkill[] = [
+  {
+    author: "claire", name: "ton-fournil", zone: null, daysAgo: 9,
+    description: "Rédiger un email, un post ou une réponse client dans le ton de Fournil. À utiliser pour tout texte destiné à un boulanger.",
+    files: [
+      {
+        path: "SKILL.md",
+        content: `# Le ton de Fournil
+
+Nos clients sont des artisans boulangers : ils lisent entre deux fournées, souvent sur leur téléphone.
+
+- Vouvoyer, phrases courtes, un message = une idée.
+- Parler de leur métier (fournée, vitrine, précommandes), jamais de « solution » ou de « plateforme ».
+- Pas d'emoji, pas de point d'exclamation.
+- Finir par une action claire et une date quand il y en a une.
+- Signer avec le prénom de la personne, suivi de « l'équipe Fournil ».
+`,
+      },
+    ],
+  },
+  {
+    author: "hugo", name: "deployer-fournil", zone: "dev", daysAgo: 8, version: 3,
+    description: "Déployer Fournil en production (tag, Vercel, surveillance Sentry) et revenir en arrière si besoin.",
+    files: [
+      {
+        path: "SKILL.md",
+        content: `# Déployer Fournil en production
+
+1. Vérifier que main est verte : \`gh run list --branch main --limit 1\`.
+2. Lancer \`scripts/release.sh <version>\` : il crée le tag vX.Y.Z, Vercel déploie la prod.
+3. Surveiller Sentry 15 minutes (\`scripts/release.sh --watch\`).
+4. En cas d'erreur nouvelle : « Promote » de la release précédente sur Vercel, puis prévenir #dev.
+
+Les migrations Supabase sont appliquées par la CI sur staging avant le tag : ne jamais les lancer à la main en prod.
+`,
+      },
+      {
+        path: "scripts/release.sh",
+        content: `#!/usr/bin/env bash
+# Crée le tag de release (Vercel déploie la prod sur le tag), ou surveille Sentry avec --watch.
+set -euo pipefail
+
+if [[ "\${1:-}" == "--watch" ]]; then
+  echo "Nouvelles erreurs Sentry des 15 dernières minutes :"
+  sentry-cli issues list --project fournil-web --query "firstSeen:-15m" --status unresolved
+  exit 0
+fi
+
+version="\${1:?usage : release.sh 1.42.0}"
+git fetch origin main --tags
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+  echo "Placez-vous sur origin/main à jour avant de taguer." >&2
+  exit 1
+fi
+git tag -a "v$version" -m "Release v$version"
+git push origin "v$version"
+echo "Tag v$version poussé : Vercel déploie la prod. Lancez ensuite : $0 --watch"
+`,
+      },
+    ],
+  },
+  {
+    author: "jeanmarc", name: "rapprochement-qonto-pennylane", zone: "compta", daysAgo: 5, version: 2,
+    description: "Rapprocher les transactions Qonto de la veille avec les factures Pennylane et lister les écarts à relancer.",
+    files: [
+      {
+        path: "SKILL.md",
+        content: `# Rapprochement Qonto ↔ Pennylane
+
+Chaque matin, pour la veille :
+
+1. Lancer \`python3 scripts/ecarts.py --jour hier\` : il lit l'export Qonto (CSV) et l'export des factures Pennylane.
+2. Relire les écarts : paiement sans facture, facture non payée à J+30, versement Stripe incomplet.
+3. Envoyer la liste des factures à relancer à Sarah (sales).
+
+Les versements Stripe arrivent sur Qonto à J+7 : un écart Stripe de moins de 7 jours n'en est pas un.
+`,
+      },
+      {
+        path: "scripts/ecarts.py",
+        content: `#!/usr/bin/env python3
+"""Écarts entre l'export Qonto et les factures Pennylane (CSV exportés dans ~/Compta/exports)."""
+import argparse
+import csv
+import datetime as dt
+from pathlib import Path
+
+EXPORTS = Path.home() / "Compta" / "exports"
+
+
+def lire(fichier):
+    with open(EXPORTS / fichier, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f, delimiter=";"))
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--jour", default="hier", help="hier, ou une date AAAA-MM-JJ")
+    args = p.parse_args()
+    jour = dt.date.today() - dt.timedelta(days=1) if args.jour == "hier" else dt.date.fromisoformat(args.jour)
+    transactions = [t for t in lire(f"qonto-{jour}.csv") if t["sens"] == "credit"]
+    factures = {f["numero"]: f for f in lire("pennylane-factures.csv")}
+    for t in transactions:
+        numero = t["reference"].strip()
+        if numero not in factures:
+            print(f"Paiement sans facture : {t['montant']} € ({t['libelle']})")
+    for f in factures.values():
+        echeance = dt.date.fromisoformat(f["echeance"])
+        if f["statut"] != "payee" and (jour - echeance).days > 30:
+            print(f"À relancer : facture {f['numero']} ({f['client']}, {f['montant']} €)")
+
+
+if __name__ == "__main__":
+    main()
+`,
+      },
+    ],
+  },
+  {
+    author: "claire", name: "preparer-demo-client", zone: "sales", daysAgo: 4,
+    description: "Préparer la démo de Fournil pour un prospect : boulangerie de démo, catalogue type, déroulé en 20 minutes.",
+    files: [
+      {
+        path: "SKILL.md",
+        content: `# Préparer une démo client
+
+1. Créer une boulangerie de démo depuis l'admin (bouton « Démo »), au nom du prospect.
+2. Importer le catalogue type (pains, viennoiseries, pâtisseries).
+3. Déroulé : fournée du matin, caisse, export des ventes, puis précommandes.
+4. Noter dans le cerveau ce que le prospect a demandé (zone Sales), avec la prochaine étape et sa date.
+`,
+      },
+    ],
+  },
+  {
+    author: "hugo", name: "depanner-imprimante", zone: "support", daysAgo: 3,
+    description: "Guider un boulanger dont l'imprimante de tickets Bluetooth ne répond plus.",
+    files: [
+      {
+        path: "SKILL.md",
+        content: `# Dépanner l'imprimante de tickets
+
+1. Éteindre l'imprimante 10 secondes.
+2. Dans l'app : Réglages > Périphériques > Oublier l'imprimante.
+3. Ré-appairer en Bluetooth en maintenant le bouton FEED.
+4. Imprimer un ticket test. Si rien ne sort : ouvrir un ticket « matériel » avec le numéro de série.
+`,
+      },
+    ],
+  },
+]

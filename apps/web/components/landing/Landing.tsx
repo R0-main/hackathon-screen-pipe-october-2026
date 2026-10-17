@@ -7,6 +7,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
 import { BrainIcon, ZoneTag, zoneColor } from "../ui"
+import { InstallActions } from "./InstallActions"
 import { ScrollBrain } from "./ScrollBrain"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
 
@@ -31,7 +32,7 @@ const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!
  * il passe en plein écran et tourne pendant trois chapitres, puis la page reprend son cours.
  * Sans JavaScript ou sous `prefers-reduced-motion`, les chapitres se lisent à la suite, cerveau immobile.
  */
-export function Landing({ demo }: { demo: boolean }) {
+export function Landing({ demo, signup, signedIn = false }: { demo: boolean; signup: boolean; signedIn?: boolean }) {
   const stageRef = useRef<HTMLElement>(null)
   const heroRef = useRef<HTMLDivElement>(null)
   const chapterRefs = useRef<(HTMLDivElement | null)[]>([])
@@ -106,7 +107,12 @@ export function Landing({ demo }: { demo: boolean }) {
     lenis.scrollTo(st.start + (st.end - st.start) * 0.2, { duration: 1.6 })
   }
 
-  const primary = demo ? "Ouvrir la démo" : "Se connecter"
+  // Déjà connecté : droit au dashboard. Sinon créer son entreprise, et à côté la démo (mode démo) ou la connexion par jeton.
+  const visit = demo ? { href: "/demo", label: "Ouvrir la démo" } : { href: "/login", label: "Se connecter" }
+  const create = { href: "/creer", label: "Créer mon entreprise" }
+  const cta = signedIn ? { href: "/dashboard", label: "Ouvrir le dashboard" } : signup ? create : visit
+  const second = !signedIn && signup ? visit : null
+  const primary = cta.label
 
   return (
     <main className="landing">
@@ -118,15 +124,20 @@ export function Landing({ demo }: { demo: boolean }) {
             <nav className="landing-wrap flex items-center justify-between py-4" aria-label="Principal">
               <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
                 <BrainIcon size={26} />
-                <span className="text-[15px] font-medium">Cerveau d'entreprise</span>
+                <span className="text-[15px] font-medium">NOS Brainer</span>
               </Link>
               <div className="flex items-center gap-2">
-                {demo && (
+                {demo && !signedIn && (
                   <Link href="/login" className="btn btn-ghost hidden sm:inline-flex">
                     Se connecter
                   </Link>
                 )}
-                <Link href="/login" className="btn btn-primary">
+                {second && demo && (
+                  <Link href={second.href} className="btn btn-ghost hidden md:inline-flex">
+                    {second.label}
+                  </Link>
+                )}
+                <Link href={cta.href} className="btn btn-primary">
                   {primary}
                 </Link>
               </div>
@@ -142,9 +153,14 @@ export function Landing({ demo }: { demo: boolean }) {
                 Chaque employé travaille déjà avec Claude Code ou Codex. Screenpipe capte ces sessions sur son poste, et le cerveau en garde l'essentiel pour tous les agents de l'entreprise.
               </p>
               <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
-                <Link href="/login" className="btn btn-primary btn-lg">
+                <Link href={cta.href} className="btn btn-primary btn-lg">
                   {primary}
                 </Link>
+                {second && (
+                  <Link href={second.href} className="btn btn-lg">
+                    {second.label}
+                  </Link>
+                )}
                 <a href="#chapitres" onClick={toChapters} className="landing-link text-[15px]">
                   Voir comment ça marche
                 </a>
@@ -193,9 +209,9 @@ export function Landing({ demo }: { demo: boolean }) {
       </section>
 
       <Dashboard />
-      <Install />
+      <Install demo={demo} signup={signup} />
       <Privacy />
-      <Close primary={primary} demo={demo} />
+      <Close cta={cta} second={second} demo={demo} signup={signup && !signedIn} />
     </main>
   )
 }
@@ -256,22 +272,7 @@ function Dashboard() {
   )
 }
 
-const PROMPT_EXCERPT = `Tu vas connecter ce poste au cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois.
-Fais chaque étape dans l'ordre, vérifie qu'elle a marché, et explique-moi brièvement ce que tu fais.
-
-Paramètres :
-- URL du cerveau : https://cerveau.example.com
-- Mon jeton personnel : cb_XXXXXXXXXXXXXXXXXXXXXXXX
-- Zones auxquelles j'ai accès : compta
-
-1. Prérequis : vérifie que Node.js ≥ 20 est installé.
-2. Client du cerveau : télécharge brain.mjs et lance init.
-3. Test de connexion : brain.mjs hello, mon néon doit s'allumer.
-4. Screenpipe : vérifie qu'il tourne, sinon installe-le.
-5. MCP company-brain, pour que mes agents interrogent le cerveau.
-6. Hooks Claude Code, pour que le cerveau s'allume quand je travaille.`
-
-function Install() {
+function Install({ demo, signup }: { demo: boolean; signup: boolean }) {
   return (
     <section className="landing-section border-t border-line" aria-labelledby="installer">
       <div className="landing-wrap">
@@ -280,13 +281,13 @@ function Install() {
         </h2>
         <div className="mt-12 grid gap-10 lg:mt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
           <div className="max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-            <p>L'admin invite quelqu'un et le dashboard génère son prompt, avec son jeton personnel. Claude Code installe le client, Screenpipe, le MCP et les hooks en expliquant chaque étape.</p>
-            <p className="mt-4">Rien ne part avant que la personne ait relu exactement ce qui serait envoyé et dit oui. Ensuite, elle n'a plus rien à faire.</p>
+            <p>
+              Le prompt contient votre jeton personnel. Claude Code lance une seule commande : elle installe Screenpipe, branche le MCP et les hooks, puis ouvre le
+              cerveau déjà connecté.
+            </p>
+            <p className="mt-4">Aucun historique n'est envoyé : le cerveau apprend à partir de l'installation. Ensuite, il n'y a plus rien à faire.</p>
           </div>
-          <figure>
-            <pre className="landing-prompt mono">{PROMPT_EXCERPT}</pre>
-            <figcaption className="mt-3 text-[12px] text-trace">Extrait du prompt d'installation, jeton fictif.</figcaption>
-          </figure>
+          <InstallActions demo={demo} signup={signup} />
         </div>
       </div>
     </section>
@@ -371,24 +372,35 @@ function RawToDistilled() {
   )
 }
 
-function Close({ primary, demo }: { primary: string; demo: boolean }) {
+type Cta = { href: string; label: string }
+
+function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; demo: boolean; signup: boolean }) {
   return (
     <section className="landing-section !pb-10 border-t border-line" aria-labelledby="fin">
       <div className="landing-wrap">
         <h2 id="fin" className="landing-display max-w-[10em]">
-          Ouvrez le cerveau de Fournil.
+          {signup ? "Donnez un cerveau à votre entreprise." : "Ouvrez le cerveau de Fournil."}
         </h2>
         <p className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-          {demo ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta." : "Connectez-vous avec le jeton que votre admin vous a remis."}
+          {signup
+            ? "Quatre questions pour créer votre dashboard, un prompt à coller dans Claude Code pour brancher votre poste, puis un prompt par collègue pour les inviter."
+            : demo
+              ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta."
+              : "Connectez-vous avec le jeton que votre admin vous a remis."}
         </p>
-        <div className="mt-8">
-          <Link href="/login" className="btn btn-primary btn-lg">
-            {primary}
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href={cta.href} className="btn btn-primary btn-lg">
+            {cta.label}
           </Link>
+          {second && (
+            <Link href={second.href} className="btn btn-lg">
+              {second.label}
+            </Link>
+          )}
         </div>
       </div>
       <footer className="landing-wrap mt-[clamp(96px,12vw,160px)] flex flex-col gap-2 border-t border-line pt-6 text-[13px] text-trace sm:flex-row sm:justify-between">
-        <span>Cerveau d'entreprise</span>
+        <span>NOS Brainer</span>
         <span>Fait à 42 Paris pendant le hackathon Screenpipe, octobre 2026.</span>
       </footer>
     </section>

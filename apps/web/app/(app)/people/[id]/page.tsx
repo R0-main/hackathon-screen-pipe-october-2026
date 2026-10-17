@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { getPersonContext } from "@/lib/brain"
 import { canRead } from "@/lib/access"
-import { getStore } from "@/lib/store"
+import { runInOrg, storeForOrg } from "@/lib/store"
 import { requirePageViewer } from "@/lib/session"
 import { PageScroll } from "@/components/AppShell"
 import { PersonItems } from "@/components/PersonItems"
@@ -13,10 +13,10 @@ export const dynamic = "force-dynamic"
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const viewer = await requirePageViewer()
-  if (viewer.real.role !== "admin" && viewer.real.id !== id) redirect("/")
-  const ctx = await getPersonContext(viewer, id)
+  if (viewer.real.role !== "admin" && viewer.real.id !== id) redirect("/dashboard")
+  const ctx = await runInOrg(viewer.real.org_id, () => getPersonContext(viewer, id))
   if (!ctx) notFound()
-  const zones = await getStore().listZones()
+  const zones = await storeForOrg(viewer.real.org_id).listZones()
   const zone = (zid: string) => zones.find((z) => z.id === zid)
   const isSelf = viewer.real.id === id
   const maxWeight = Math.max(1, ...ctx.zones.map((z) => z.weight))

@@ -5,9 +5,12 @@ import { usePathname } from "next/navigation"
 import { useEffect, useState, type ComponentType, type ReactNode } from "react"
 import { useBrainLive } from "./BrainLive"
 import { api, errorMessage, initials } from "./format"
-import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LogoutIcon, MenuIcon, NavBrainIcon, PulseIcon, StackIcon, TaskIcon, UsersIcon } from "./ui"
+import { usePendingJoins } from "./TeamJoin"
+import { ADMIN_VIEWS } from "./admin-views"
+import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LogoutIcon, MenuIcon, NavBrainIcon, PulseIcon, SkillIcon, StackIcon, TaskIcon, UsersIcon } from "./ui"
 
-type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number }
+type SubItem = { href: string; label: string; count?: number }
+type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number; children?: SubItem[] }
 
 /**
  * Gabarit de l'application : la barre latérale à gauche, la page à droite. La fenêtre ne défile jamais :
@@ -58,20 +61,28 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const isAdmin = state.real.role === "admin"
+  const pendingJoins = usePendingJoins(isAdmin)
 
   const openTasks = state.tasks.filter((t) => t.status === "open").length
   const proposed = state.automations.filter((a) => a.status === "proposed").length
   const main: NavItem[] = [
-    { href: "/", label: "Cerveau", icon: NavBrainIcon },
+    { href: "/dashboard", label: "Cerveau", icon: NavBrainIcon },
     { href: "/activite", label: "Agents en direct", icon: PulseIcon },
     { href: "/etat", label: "Où en est la boîte", icon: DocIcon },
     { href: "/connaissances", label: "Connaissances", icon: StackIcon, count: state.totals.items },
+    { href: "/skills", label: "Skills", icon: SkillIcon, count: state.totals.skills },
     { href: "/taches", label: "Tâches", icon: TaskIcon, count: openTasks },
     { href: "/automatisations", label: "Automatisations", icon: BoltIcon, count: proposed },
   ]
   const config: NavItem[] = isAdmin
     ? [
-        { href: "/admin", label: "Équipe et accès", icon: UsersIcon },
+        {
+          href: "/admin",
+          label: "Équipe et accès",
+          icon: UsersIcon,
+          count: pendingJoins,
+          children: ADMIN_VIEWS.map((v) => ({ href: v.href, label: v.label, count: v.id === "requests" ? pendingJoins : undefined })),
+        },
         { href: "/onboarding", label: "Onboarding", icon: ChatIcon },
       ]
     : []
@@ -103,7 +114,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     window.location.replace("/login")
   }
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`))
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
   const meHref = `/people/${state.me.id}`
 
   return (
@@ -114,7 +125,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       aria-label="Barre latérale"
     >
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-[6px]">
+        <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-[6px]">
           <BrainIcon size={26} className="shrink-0" />
           <span className="min-w-0 truncate text-[14px] font-medium leading-tight">Le cerveau de {state.org.name}</span>
         </Link>
@@ -137,11 +148,11 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       </div>
 
       <nav className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 py-3" aria-label="Navigation">
-        <NavList items={main} isActive={isActive} />
+        <NavList items={main} isActive={isActive} pathname={pathname} />
         {config.length > 0 && (
           <>
             <p className="mb-1 mt-5 px-2.5 text-[12px] text-trace">Configuration</p>
-            <NavList items={config} isActive={isActive} />
+            <NavList items={config} isActive={isActive} pathname={pathname} />
           </>
         )}
       </nav>
@@ -194,28 +205,68 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   )
 }
 
-function NavList({ items, isActive }: { items: NavItem[]; isActive: (href: string) => boolean }) {
+function NavList({ items, isActive, pathname }: { items: NavItem[]; isActive: (href: string) => boolean; pathname: string }) {
   return (
     <ul className="space-y-0.5">
       {items.map((it) => {
         const active = isActive(it.href)
         const Icon = it.icon
+        // Rubrique à sous-pages : ouverte quand on y est ; la page courante est marquée dans le sous-menu, pas sur la rubrique.
+        const open = Boolean(it.children) && active
         return (
           <li key={it.href}>
             <Link
               href={it.href}
-              aria-current={active ? "page" : undefined}
+              aria-current={active && !it.children ? "page" : undefined}
+              aria-expanded={it.children ? open : undefined}
               className={`flex items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-[13px] transition-colors duration-150 ease-out ${
-                active ? "bg-ink text-surface" : "hover:bg-surface"
+                open ? "bg-surface font-medium" : active ? "bg-ink text-surface" : "hover:bg-surface"
               }`}
             >
               <Icon size={16} />
               <span className="min-w-0 flex-1 truncate">{it.label}</span>
-              {it.count !== undefined && it.count > 0 && <span className={`text-[12px] tabular-nums ${active ? "text-line-strong" : "text-trace"}`}>{it.count}</span>}
+              {!open && it.count !== undefined && it.count > 0 && (
+                <span className={`text-[12px] tabular-nums ${active ? "text-line-strong" : "text-trace"}`}>{it.count}</span>
+              )}
             </Link>
+            {it.children && <SubNav items={it.children} open={open} current={pathname} />}
           </li>
         )
       })}
     </ul>
+  )
+}
+
+/**
+ * Sous-menu d'une rubrique : un fil vertical aligné sur l'icône, et une barre d'encre qui glisse le long du fil
+ * jusqu'à la page courante. S'ouvre en hauteur (grille 0fr → 1fr), sans chevron ; fermé, il est inerte.
+ */
+function SubNav({ items, open, current }: { items: SubItem[]; open: boolean; current: string }) {
+  const index = items.findIndex((c) => c.href === current)
+  return (
+    <div className={`nav-sub ${open ? "is-open" : ""}`} inert={!open}>
+      <div className="min-h-0 overflow-hidden">
+        <ul className="relative mb-1.5 ml-[17px] mt-1 border-l border-line" aria-label="Sous-pages">
+          {index >= 0 && <span className="nav-sub-mark" style={{ transform: `translateY(${index * 32}px)` }} aria-hidden />}
+          {items.map((c) => {
+            const here = c.href === current
+            return (
+              <li key={c.href}>
+                <Link
+                  href={c.href}
+                  aria-current={here ? "page" : undefined}
+                  className={`flex h-8 items-center gap-2 pl-3.5 pr-2.5 text-[13px] transition-colors duration-150 ease-out ${
+                    here ? "font-medium text-ink" : "text-trace hover:text-ink"
+                  }`}
+                >
+                  <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                  {c.count !== undefined && c.count > 0 && <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-ink px-1.5 text-[11px] tabular-nums text-surface">{c.count}</span>}
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>
   )
 }

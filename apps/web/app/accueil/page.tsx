@@ -1,15 +1,6 @@
-import type { Metadata } from "next"
-import { Landing } from "@/components/landing/Landing"
-import { isDemoMode } from "@/lib/auth"
+import { permanentRedirect } from "next/navigation"
 
-export const dynamic = "force-dynamic"
-
-export const metadata: Metadata = {
-  title: "Cerveau d'entreprise",
-  description: "Tout ce que votre équipe apprend avec l'IA, dans un seul cerveau. Screenpipe capte les sessions de chaque poste, le cerveau en garde l'essentiel.",
-}
-
-/** Page d'accueil publique. Le middleware y envoie `/` quand personne n'est connecté. */
+/** Ancienne adresse de la page d'accueil, qui vit maintenant sur `/`. */
 export default function AccueilPage() {
-  return <Landing demo={isDemoMode()} />
+  permanentRedirect("/")
 }

@@ -5,12 +5,13 @@ import type { Config } from "./config"
 
 /**
  * Première phrase du prompt d'installation (apps/web/lib/install-prompt.ts) : la session qui le contient est ignorée.
- * Les deux formes : NOS Brainer (actuelle) et « cerveau d'entreprise » (prompts déjà distribués).
+ * Les deux formes : NOS Brainer (actuelle) et « cerveau d'entreprise » (prompts déjà distribués), plus le message
+ * d'équipe (apps/web/lib/install-prompt.ts, buildJoinPrompt), qui contient le code de l'entreprise.
  */
-export const INSTALL_PROMPT_RE = /Tu vas connecter ce poste (?:à NOS Brainer|au cerveau d'entreprise)/
+export const INSTALL_PROMPT_RE = /Tu vas connecter ce poste (?:à NOS Brainer|au cerveau d'entreprise)|Tu vas demander à rejoindre NOS Brainer/
 
-/** Forme des jetons personnels du cerveau (cb_ + 32 caractères base64url). */
-const BRAIN_TOKEN_RE = /\bcb_[A-Za-z0-9_-]{20,}/g
+/** Forme des jetons personnels du cerveau (cb_ + 32 caractères base64url) et des codes d'équipe (cj_…). */
+const BRAIN_TOKEN_RE = /\bc[bj]_[A-Za-z0-9_-]{20,}/g
 
 const JETON = "[jeton masqué]"
 

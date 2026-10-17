@@ -42,7 +42,7 @@ async function main() {
     fs.writeFileSync(tokenFile, JSON.stringify(tokens, null, 2), { mode: 0o600 })
 
     console.log(
-      `✓ ${counts.users} comptes, ${counts.items} connaissances, ${counts.tasks} tâches, ${counts.events} événements, ${counts.automations} automatisation(s) détectée(s).`,
+      `✓ ${counts.users} comptes, ${counts.skills} skills, ${counts.items} connaissances, ${counts.tasks} tâches, ${counts.events} événements, ${counts.automations} automatisation(s) détectée(s).`,
     )
     console.log(`\nJetons de démo (aussi dans ${tokenFile}) :`)
     for (const u of DEMO_USERS) console.log(`  ${u.name.padEnd(18)} ${u.role === "admin" ? "[admin]" : "       "} ${tokens[u.key].token}`)

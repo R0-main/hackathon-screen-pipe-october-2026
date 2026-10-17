@@ -24,3 +24,6 @@ export function missingTable(err: unknown): boolean {
 
 export const SETTINGS_MISSING_MESSAGE =
   "Base de données à mettre à jour : la table brain_settings est absente. Appliquez les migrations (npm run db:migrate) ou définissez BRAIN_SESSION_SECRET."
+
+export const JOIN_MISSING_MESSAGE =
+  "Base de données à mettre à jour : la table join_requests est absente. Appliquez les migrations (npm run db:migrate)."

@@ -14,13 +14,16 @@ import {
   type Org,
   type Profile,
   type ScoredItem,
+  type Skill,
   type Task,
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, ProfilePatch, ZoneStat } from "./types"
+import type { BrainStore, EntityStat, JoinRequest, JoinStatus, NewEvent, NewItem, NewJoinRequest, NewProfile, NewSkill, NewTask, NewTenantOrg, ProfilePatch, ZoneStat } from "./types"
+import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
+type StoredJoinRequest = JoinRequest & { token_hash: string }
 
 type Data = {
   version: 1
@@ -32,11 +35,17 @@ type Data = {
   events: AgentEvent[]
   tasks: Task[]
   automations: AutomationSuggestion[]
+  /** Absent des fichiers écrits avant les skills. */
+  skills?: Skill[]
   status: CompanyStatus | null
   seq: { event: number }
+  /** Ajoutés avec le message d'équipe : absents des fichiers plus anciens. */
+  join_code?: string
+  join_requests?: StoredJoinRequest[]
 }
 
 const MAX_EVENTS = 20000
+const ORG_ID_RE = /^[0-9a-f-]{36}$/i
 const LOCK_STALE_MS = 15_000
 const LOCK_WAIT_MS = 10_000
 
@@ -61,6 +70,7 @@ function emptyData(org?: { name: string; description: string }): Data {
     events: [],
     tasks: [],
     automations: [],
+    skills: [],
     status: null,
     seq: { event: 0 },
   }
@@ -79,6 +89,8 @@ export class FileStore implements BrainStore {
   private version = ""
   private locked = false
   private secret: string | null = null
+  /** Entreprises créées depuis /creer : un dossier chacune, sous <dir>/orgs/<id>/ (stockage racine seulement). */
+  private tenants = new Map<string, FileStore>()
 
   constructor(dir: string) {
     fs.mkdirSync(dir, { recursive: true })
@@ -187,6 +199,127 @@ export class FileStore implements BrainStore {
     })
   }
 
+  private get tenantsDir() {
+    return path.join(this.dir, "orgs")
+  }
+
+  private tenantIds(): string[] {
+    try {
+      return fs.readdirSync(this.tenantsDir).filter((id) => ORG_ID_RE.test(id) && fs.existsSync(path.join(this.tenantsDir, id, "brain.json")))
+    } catch {
+      return []
+    }
+  }
+
+  forOrg(orgId: string): BrainStore {
+    if (orgId === this.load().org.id) return this
+    let t = this.tenants.get(orgId)
+    if (!t) {
+      // Jamais de dossier créé pour un identifiant inconnu : seul createTenantOrg en crée.
+      if (!ORG_ID_RE.test(orgId) || !fs.existsSync(path.join(this.tenantsDir, orgId, "brain.json"))) throw new Error("Entreprise introuvable.")
+      t = new FileStore(path.join(this.tenantsDir, orgId))
+      this.tenants.set(orgId, t)
+    }
+    return t
+  }
+
+  async createTenantOrg(o: NewTenantOrg) {
+    const id = randomUUID()
+    const t = new FileStore(path.join(this.tenantsDir, id))
+    const org: Org = { id, name: o.name, description: o.description, created_at: new Date().toISOString() }
+    t.withLock(() => {
+      t.data = { ...emptyData(), org, zones: o.zones }
+      t.save()
+    })
+    this.tenants.set(id, t)
+    return org
+  }
+
+  async countTenantOrgs() {
+    return this.tenantIds().length
+  }
+
+  async findUserOrg(by: { id: string } | { tokenHash: string }) {
+    const match = (p: StoredProfile) => ("id" in by ? p.id === by.id : p.token_hash === by.tokenHash)
+    const root = this.load()
+    if (root.profiles.some(match)) return root.org.id
+    for (const id of this.tenantIds()) {
+      const t = this.forOrg(id) as FileStore
+      if (t.load().profiles.some(match)) return id
+    }
+    return null
+  }
+
+  async findOrgByJoinCode(code: string) {
+    const root = this.load()
+    if (root.join_code === code) return root.org.id
+    for (const id of this.tenantIds()) if ((this.forOrg(id) as FileStore).load().join_code === code) return id
+    return null
+  }
+
+  async findJoinRequestOrg(id: string) {
+    const has = (d: Data) => (d.join_requests ?? []).some((r) => r.id === id)
+    const root = this.load()
+    if (has(root)) return root.org.id
+    for (const org of this.tenantIds()) if (has((this.forOrg(org) as FileStore).load())) return org
+    return null
+  }
+
+  async getJoinCode() {
+    const current = this.load().join_code
+    if (current) return current
+    return this.mutate((d) => (d.join_code ??= newJoinCode()))
+  }
+
+  async rotateJoinCode() {
+    return this.mutate((d) => (d.join_code = newJoinCode()))
+  }
+
+  async createJoinRequest(r: NewJoinRequest) {
+    return this.mutate((d) => {
+      const req: StoredJoinRequest = {
+        id: randomUUID(),
+        org_id: d.org.id,
+        name: r.name ?? null,
+        title: r.title ?? null,
+        email: r.email ?? null,
+        hostname: r.hostname ?? null,
+        token_hash: r.token_hash,
+        status: "pending",
+        profile_id: null,
+        created_at: new Date().toISOString(),
+        decided_at: null,
+      }
+      ;(d.join_requests ??= []).push(req)
+      const { token_hash: _t, ...out } = req
+      return out
+    })
+  }
+
+  async listJoinRequests(f: { status?: JoinStatus; limit?: number } = {}) {
+    return (this.load().join_requests ?? [])
+      .filter((r) => !f.status || r.status === f.status)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, f.limit ?? 100)
+      .map(({ token_hash: _t, ...r }) => r)
+  }
+
+  async getJoinRequest(id: string) {
+    return (this.load().join_requests ?? []).find((r) => r.id === id) ?? null
+  }
+
+  async decideJoinRequest(id: string, dec: { status: Exclude<JoinStatus, "pending">; profile_id?: string }) {
+    return this.mutate((d) => {
+      const r = (d.join_requests ?? []).find((x) => x.id === id && x.status === "pending")
+      if (!r) return null
+      r.status = dec.status
+      r.profile_id = dec.profile_id ?? null
+      r.decided_at = new Date().toISOString()
+      const { token_hash: _t, ...out } = r
+      return out
+    })
+  }
+
   async getOrg() {
     return this.load().org
   }
@@ -210,7 +343,7 @@ export class FileStore implements BrainStore {
   }
   async createProfile(p: NewProfile) {
     return this.mutate((d) => {
-      const prof: StoredProfile = { id: randomUUID(), org_id: d.org.id, created_at: new Date().toISOString(), ...p }
+      const prof: StoredProfile = { id: randomUUID(), org_id: d.org.id, created_at: new Date().toISOString(), ...p, can_publish_skills: p.can_publish_skills ?? false }
       d.profiles.push(prof)
       return strip(prof)
     })
@@ -401,6 +534,57 @@ export class FileStore implements BrainStore {
       if (!a) return null
       a.status = patch.status
       return a
+    })
+  }
+
+  async listSkills() {
+    return [...(this.load().skills ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+  }
+  async getSkill(id: string) {
+    return this.load().skills?.find((x) => x.id === id) ?? null
+  }
+  async getSkillByName(name: string) {
+    return this.load().skills?.find((x) => x.name === name) ?? null
+  }
+  async publishSkill(s: NewSkill) {
+    return this.mutate((d) => {
+      const skills = (d.skills ??= [])
+      const now = new Date().toISOString()
+      const existing = skills.find((x) => x.name === s.name)
+      if (existing) {
+        Object.assign(existing, { description: s.description, zone: s.zone, files: s.files, updated_by: s.publisher_id, version: existing.version + 1, updated_at: now })
+        return existing
+      }
+      const skill: Skill = {
+        id: randomUUID(),
+        name: s.name,
+        description: s.description,
+        zone: s.zone,
+        files: s.files,
+        author_id: s.publisher_id,
+        updated_by: s.publisher_id,
+        version: 1,
+        created_at: now,
+        updated_at: now,
+      }
+      skills.push(skill)
+      return skill
+    })
+  }
+  async updateSkill(id: string, patch: { zone: string | null }) {
+    return this.mutate((d) => {
+      const skill = d.skills?.find((x) => x.id === id)
+      if (!skill) return null
+      skill.zone = patch.zone
+      skill.updated_at = new Date().toISOString()
+      return skill
+    })
+  }
+  async deleteSkill(id: string) {
+    return this.mutate((d) => {
+      const before = d.skills?.length ?? 0
+      d.skills = (d.skills ?? []).filter((x) => x.id !== id)
+      return d.skills.length < before
     })
   }
 

@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   const userId = await verifyLoginCode(new URL(req.url).searchParams.get("code"))
   if (!userId) return NextResponse.redirect(new URL("/login", req.url), 303)
-  const res = NextResponse.redirect(new URL("/?bienvenue=1", req.url), 303)
+  const res = NextResponse.redirect(new URL("/dashboard?bienvenue=1", req.url), 303)
   res.cookies.set(SESSION_COOKIE, await createSessionValue(userId), sessionCookieOptions)
   res.cookies.delete(VIEW_AS_COOKIE)
   return res
