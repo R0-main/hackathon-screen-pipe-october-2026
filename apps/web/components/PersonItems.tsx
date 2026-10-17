@@ -1,10 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import type { KnowledgeItem } from "@brain/core"
+import type { KnowledgeItem, KnowledgeKind } from "@brain/core"
 import { KnowledgeCard } from "./KnowledgeList"
 import { api, errorMessage, firstName } from "./format"
+import { useT } from "./I18n"
 import { ErrorText } from "./ui"
+
+/** Order of the type filters: what a handover needs first. */
+const KIND_ORDER: KnowledgeKind[] = ["decision", "procedure", "fact", "task", "question"]
 
 /**
  * Knowledge coming from a workstation. `unreadableZones` (getPersonContext): zones of the person's own items that they
@@ -26,7 +30,9 @@ export function PersonItems({
   unreadableZones?: string[]
   personName?: string
 }) {
+  const { t } = useT()
   const [list, setList] = useState(items)
+  const [kind, setKind] = useState<KnowledgeKind | null>(null)
   const [pending, setPending] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const unreadable = new Set(unreadableZones)
@@ -44,6 +50,8 @@ export function PersonItems({
         } that ${who ? `${who} doesn't` : "you don't"} read ("zone not readable" badge): ${many ? "they stay" : "it stays"} visible here because ${
           many ? "they come" : "it comes"
         } from ${who ? "this" : "your"} workstation${canDelete ? ` and can be deleted` : ""}.`
+  const kinds = KIND_ORDER.map((k) => ({ kind: k, count: list.filter((i) => i.kind === k).length })).filter((k) => k.count > 0)
+  const shown = kind ? list.filter((i) => i.kind === kind) : list
 
   async function remove(id: string) {
     if (!confirm("Permanently delete this item from the brain?")) return
@@ -59,32 +67,51 @@ export function PersonItems({
     }
   }
   return (
-    <section className="panel p-5">
-      <h2 className="panel-title">
-        Knowledge from this workstation (<span className="tabular-nums">{list.length}</span>)
-      </h2>
+    <section className="panel min-w-0 p-5">
+      <h2 className="panel-title">Knowledge from this workstation</h2>
       {notice && <p className="mt-2 text-[13px] leading-relaxed text-trace">{notice}</p>}
-      {err && <ErrorText className="mt-2">{err}</ErrorText>}
-      <div className="mt-3 grid gap-2.5 md:grid-cols-2">
-        {list.map((i) => (
-          <div key={i.id} className="min-w-0">
-            <KnowledgeCard item={i} zone={zones.find((z) => z.id === i.zone)} now={now} unreadableNote={unreadable.has(i.zone) ? note : undefined} />
-            {canDelete && (
-              <div className="mt-1 pr-2 text-right">
-                <button
-                  type="button"
-                  className="text-[12px] text-trace underline underline-offset-2 hover:text-danger disabled:no-underline"
-                  onClick={() => remove(i.id)}
-                  disabled={pending === i.id}
-                >
+      {kinds.length > 1 && (
+        <div className="mt-4 flex flex-wrap gap-1.5" role="group" aria-label="Filter by type">
+          <button type="button" className={`chip ${kind === null ? "chip-on" : ""}`} aria-pressed={kind === null} onClick={() => setKind(null)}>
+            All <span className="tabular-nums opacity-60">{list.length}</span>
+          </button>
+          {kinds.map((k) => (
+            <button
+              key={k.kind}
+              type="button"
+              className={`chip ${kind === k.kind ? "chip-on" : ""}`}
+              aria-pressed={kind === k.kind}
+              onClick={() => setKind(kind === k.kind ? null : k.kind)}
+            >
+              {t.kindsPlural[k.kind]} <span className="tabular-nums opacity-60">{k.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {err && <ErrorText className="mt-3">{err}</ErrorText>}
+      <div className="mt-4 grid items-start gap-2.5 xl:grid-cols-2">
+        {shown.map((i) => (
+          <KnowledgeCard
+            key={i.id}
+            item={i}
+            zone={zones.find((z) => z.id === i.zone)}
+            now={now}
+            unreadableNote={unreadable.has(i.zone) ? note : undefined}
+            action={
+              canDelete && (
+                <button type="button" className="btn btn-sm hover:!border-danger hover:text-danger" onClick={() => remove(i.id)} disabled={pending === i.id}>
                   {pending === i.id ? "Deleting" : "Delete from the brain"}
                 </button>
-              </div>
-            )}
-          </div>
+              )
+            }
+          />
         ))}
-        {list.length === 0 && <p className="text-[13px] text-trace">No visible knowledge.</p>}
       </div>
+      {list.length === 0 && (
+        <p className="inset mt-4 px-4 py-6 text-center text-[13px] text-trace">
+          {who ? `Nothing distilled from ${who}'s workstation yet.` : "Nothing distilled from your workstation yet."}
+        </p>
+      )}
     </section>
   )
 }

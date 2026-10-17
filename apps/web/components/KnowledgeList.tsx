@@ -13,19 +13,24 @@ import { CloseIcon, Dot, SearchIcon, ZoneBead, ZoneTag, zoneColor } from "./ui"
 
 type ZoneLike = { name: string; color: string; position?: number }
 
-/** `unreadableNote`: the item's zone is not readable by the viewer (their own item); text of the badge's tooltip. */
+/**
+ * `unreadableNote`: the item's zone is not readable by the viewer (their own item); text of the badge's tooltip.
+ * `action`: shown at the bottom of the unfolded card (deleting one's item, for example).
+ */
 export function KnowledgeCard({
   item,
   author,
   zone,
   now,
   unreadableNote,
+  action,
 }: {
   item: KnowledgeItem
   author?: string
   zone?: ZoneView | ZoneLike
   now?: number
   unreadableNote?: string
+  action?: ReactNode
 }) {
   const { t } = useT()
   const [open, setOpen] = useState(false)
@@ -71,6 +76,7 @@ export function KnowledgeCard({
             </span>
             <span className="chip tabular-nums text-trace">{fmt(t.knowledge.confidence, { pct: Math.round(item.confidence * 100) })}</span>
           </div>
+          {action && <div className="flex justify-end pt-1">{action}</div>}
         </div>
       )}
     </article>
