@@ -47,6 +47,19 @@ process.stdin.on("end", () => {
   if (mode === "limit") { out({ type: "result", subtype: "success", is_error: true, api_error_status: 429, duration_ms: 640, result: limit }); process.exit(1) }
   if (mode === "limit-text") { process.stderr.write("You've hit your weekly limit · resets Oct 20, 3pm\\n"); process.exit(1) }
   if (mode === "limit-ok") { out({ type: "result", subtype: "success", is_error: false, result: limit }); return }
+  // Modérateur (brain moderate) : retire ce qui porte QZXPERSO, corrige ce qui porte QZXFIX, garde le reste.
+  if (input.includes('{"verdicts"')) {
+    const refs = [...input.matchAll(/<connaissance ref="(\\d+)"[^>]*>\\ntitle: ([^\\n]*)/g)].map((m) => ({ ref: Number(m[1]), title: m[2] }))
+    const verdicts = refs.map(({ ref, title }) =>
+      title.includes("QZXPERSO")
+        ? { ref, decision: "reject", category: "personnel", reason: "Vie privée." }
+        : title.includes("QZXFIX")
+          ? { ref, decision: "edit", zone: "compta", title: "Titre corrigé" }
+          : { ref, decision: "publish", category: null, reason: "ok" },
+    )
+    out({ type: "result", is_error: false, result: JSON.stringify({ verdicts }) })
+    return
+  }
   if (process.argv.includes("--mcp-config")) {
     const items = [
       { zone: "dev", kind: "fact", title: "Ticket FOUR-42 : litige facture Boulangerie Martin", body: "Le client conteste la facture 2026-118, relance prévue.", entities: [], confidence: 0.8 },

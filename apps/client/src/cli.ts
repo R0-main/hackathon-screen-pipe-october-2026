@@ -7,7 +7,7 @@ import type { DistillerKind } from "./distill"
 import type { SyncSummary } from "./sync"
 
 const VERSION = "0.1.0"
-const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json"])
+const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json", "refresh-status"])
 
 export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string | boolean>; positional: string[] } {
   const flags: Record<string, string | boolean> = {}
@@ -92,6 +92,12 @@ Commandes :
                      Admins : passage « nouvelles zones » fait ici par Claude Code (\`claude -p\`, votre abonnement ;
                      en CI, CLAUDE_CODE_OAUTH_TOKEN de \`claude setup-token\`). Le cerveau crée les zones qui manquent
                      et y range leurs connaissances. --dry-run : affiche les propositions sans rien envoyer.
+  moderate [--dry-run] [--refresh-status]
+                     Admins : passage du modérateur fait ici par Claude Code (\`claude -p\`, Sonnet, votre abonnement ;
+                     en CI toutes les 15 min, CLAUDE_CODE_OAUTH_TOKEN du CEO). Claude relit ce qui est arrivé depuis le
+                     passage précédent, puis le cerveau garde, corrige ou retire chaque connaissance.
+                     --refresh-status : s'il y avait du nouveau, refait ensuite le résumé « où en est la boîte ».
+                     --dry-run : affiche les décisions sans rien appliquer.
   status             État du client en bref : connexion, dernière synchro, Screenpipe, hooks, planification (détail : doctor).
   mcp                Serveur MCP stdio « company-brain » (branché par setup dans Claude Code, portée utilisateur).
   hook               Gestionnaire des hooks Claude Code (lit le JSON du hook sur l'entrée standard).
@@ -221,6 +227,10 @@ async function main(argv: string[]): Promise<number> {
     case "refresh-zones": {
       const { cmdRefreshZones } = await import("./refresh-zones")
       return cmdRefreshZones({ dryRun: Boolean(flags["dry-run"]) })
+    }
+    case "moderate": {
+      const { cmdModerate } = await import("./moderate")
+      return cmdModerate({ dryRun: Boolean(flags["dry-run"]), refreshStatus: Boolean(flags["refresh-status"]) })
     }
     case "mcp": {
       const { runMcpServer } = await import("./mcp")

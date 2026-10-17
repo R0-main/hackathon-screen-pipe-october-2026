@@ -1,6 +1,25 @@
 // Client HTTP de l'API du cerveau (jeton Bearer personnel).
 
-import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, NewZonesInput, Profile, Skill, SkillFile, StatusInput, SyncReport, Zone, ZoneStatus } from "@brain/core"
+import type {
+  AgentEventInput,
+  AgentName,
+  Entity,
+  KnowledgeItemInput,
+  KnowledgeKind,
+  ModerationInput,
+  ModerationVerdict,
+  NewZonesInput,
+  Profile,
+  Skill,
+  SkillFile,
+  StatusInput,
+  SyncReport,
+  Zone,
+  ZoneStatus,
+} from "@brain/core"
+
+/** Bilan d'un passage du modérateur (POST /api/admin/moderation). */
+export type ModerationRunResult = { status: string; reviewed: number; edited: number; rejected: number; remaining?: number }
 
 export class ApiError extends Error {
   constructor(
@@ -174,6 +193,14 @@ export class BrainApi {
   /** Admins : applique les zones proposées par Claude sur ce poste (mêmes garde-fous qu'un passage du serveur). */
   applyNewZones(zones: { name: string; description: string; keywords: string[]; item_ids: string[] }[]) {
     return this.request<NewZonesRunResult>("POST", "/api/admin/zones/auto", { zones }, 60000)
+  }
+  /** Admins : connaissances arrivées depuis le dernier passage du modérateur, ou `{skipped}` s'il n'y a rien à relire. */
+  moderationInput() {
+    return this.request<{ input: ModerationInput; remaining: number } | { skipped: string }>("GET", "/api/admin/moderation/input", undefined, 30000)
+  }
+  /** Admins : applique les décisions prises ici par Claude (`ids` : les connaissances relues, dans l'ordre). */
+  applyModeration(ids: string[], verdicts: (Omit<ModerationVerdict, "ref"> & { id: string })[]) {
+    return this.request<ModerationRunResult>("POST", "/api/admin/moderation", { ids, verdicts }, 120000)
   }
   query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
     return this.request<QueryResult>("POST", "/api/query", input)

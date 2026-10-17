@@ -793,6 +793,23 @@ export class PostgresStore implements BrainStore {
     const rows = await this.sql`delete from knowledge_items where id = ${id} and org_id = ${await this.orgId()} returning id`
     return rows.length > 0
   }
+  async updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }) {
+    if (!UUID_RE.test(id)) return false
+    const org = await this.orgId()
+    const quality = await this.hasQuality()
+    return this.sql.begin(async (tx: any) => {
+      const [cur] = await tx`select entities from knowledge_items where id = ${id} and org_id = ${org}`
+      if (!cur) return false
+      const entities = (cur.entities ?? []) as { name: string }[]
+      const searchTitle = normalize(patch.title)
+      const searchBody = normalize(`${patch.body} ${entities.map((e) => e.name).join(" ")}`)
+      await tx`update knowledge_items set title = ${patch.title}, body = ${patch.body}, kind = ${patch.kind}, zone = ${patch.zone},
+        search_title = ${searchTitle}, search_body = ${searchBody} where id = ${id} and org_id = ${org}`
+      if (quality) await tx`update knowledge_items set embedding = null, embedding_model = null where id = ${id} and org_id = ${org}`
+      await tx`update tasks set zone = ${patch.zone}, updated_at = now() where org_id = ${org} and source_item_id = ${id} and zone <> ${patch.zone}`
+      return true
+    }) as Promise<boolean>
+  }
   async moveItems(ids: string[], zone: string) {
     const valid = ids.filter((id) => UUID_RE.test(id))
     if (valid.length === 0) return 0

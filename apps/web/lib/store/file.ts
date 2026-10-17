@@ -541,6 +541,21 @@ export class FileStore implements BrainStore {
       return d.items.length < before
     })
   }
+  async updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }) {
+    return this.mutate((d) => {
+      const i = (d.items as StoredItem[]).find((x) => x.id === id)
+      if (!i) return false
+      const moved = i.zone !== patch.zone
+      Object.assign(i, patch)
+      delete i.embedding
+      delete i.embedding_model
+      if (moved) {
+        const now = new Date().toISOString()
+        for (const t of d.tasks) if (t.source_item_id === id) Object.assign(t, { zone: patch.zone, updated_at: now })
+      }
+      return true
+    })
+  }
   async moveItems(ids: string[], zone: string) {
     const wanted = new Set(ids)
     return this.mutate((d) => {
