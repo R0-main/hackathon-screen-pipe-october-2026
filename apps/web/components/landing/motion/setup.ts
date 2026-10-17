@@ -209,13 +209,21 @@ function sections(root: HTMLElement, holds: Holds) {
    * From the section's arrival on screen to the end of its hold. With `centred`, nothing moves before the
    * section is snapped to the screen: you read the title and the text first, then the illustration plays during
    * the hold. On a small screen (section taller than the screen, held on its bottom), the illustration would already
-   * have left through the top at the start of the hold: it then starts earlier, when you see it.
+   * have left through the top at the start of the hold: it then starts earlier, when you see it. A panel followed
+   * by other content (connectors) likewise ends there once its own bottom is on screen, before the hold.
    */
   const throughHold = (el: Element, centred = false): ScrollTrigger.Vars => {
     const sec = section(el)
     const hold = sec && holds.get(sec)
     if (!hold || !sec) return at(el, { start: "top 80%", end: "bottom 40%", scrub: true })
-    return { trigger: sec, start: centred ? () => (fits(sec) ? hold.start : "top 40%") : "top 40%", end: () => hold.end, scrub: true, invalidateOnRefresh: true }
+    return {
+      trigger: sec,
+      endTrigger: el,
+      start: centred ? () => (fits(sec) ? hold.start : "top 40%") : "top 40%",
+      end: () => (centred || fits(sec) ? hold.end : "bottom bottom"),
+      scrub: true,
+      invalidateOnRefresh: true,
+    }
   }
 
   // The panel fills row by row, then Jean-Marc's prompt types itself character by character.
