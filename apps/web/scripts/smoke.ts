@@ -76,6 +76,10 @@ import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
 import * as skillsRoute from "../app/api/skills/route"
 import * as skillRoute from "../app/api/skills/[id]/route"
 import * as mcpRoute from "../app/api/mcp/[orgId]/[token]/route"
+import * as mcpConnectorsRoute from "../app/api/connectors/mcp/route"
+import * as mcpConnectorRoute from "../app/api/connectors/mcp/[id]/route"
+import * as mcpConnectorTestRoute from "../app/api/connectors/mcp/[id]/test/route"
+import * as mcpCallbackRoute from "../app/api/connectors/mcp/callback/route"
 import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceLegacyDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
 import { DEMO_ITEMS, DEMO_ORG, LEGACY_DEMO_NAMES } from "./demo-data"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
@@ -100,11 +104,11 @@ function item(zone: string, title: string, kind: KnowledgeItemInput["kind"] = "f
 type Handler = (req: Request, ctx: any) => Promise<Response>
 
 /** Appelle une route de l'API comme le ferait Next (cookie de session du dashboard). */
-async function call(handler: Handler, url: string, opts: { method?: string; session?: string; body?: unknown; raw?: string } = {}) {
+async function call(handler: Handler, url: string, opts: { method?: string; session?: string; body?: unknown; raw?: string; params?: Record<string, string> } = {}) {
   const headers: Record<string, string> = { "content-type": "application/json" }
   if (opts.session) headers.cookie = `brain_session=${opts.session}`
   const body = opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined)
-  const res = await handler(new Request(`http://smoke.test${url}`, { method: opts.method ?? "GET", headers, body }), { params: Promise.resolve({}) })
+  const res = await handler(new Request(`http://smoke.test${url}`, { method: opts.method ?? "GET", headers, body }), { params: Promise.resolve(opts.params ?? {}) })
   return { status: res.status, data: (await res.json().catch(() => null)) as any }
 }
 
@@ -547,6 +551,25 @@ async function main() {
   const edited = (await store.listZones()).find((z) => z.id === existing.id)!
   assert(edit.status === 200 && edited.keywords.length === existing.keywords.length && edited.description === existing.description, "avec son identifiant : mise à jour, mots-clés et description conservés")
   assert((await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: hugoSession, body: { name: `Smoke ${run}` } })).status === 403, "réservé aux admins (403)")
+
+  console.log("\n— API : serveurs MCP (catalogue, client OAuth manuel, secrets jamais renvoyés)")
+  assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: hugoSession })).status === 403, "serveurs MCP : réservé aux admins (403)")
+  const mcpLinear = await call(mcpConnectorsRoute.POST, "/api/connectors/mcp", { method: "POST", session: claireSession, body: { catalog_id: "linear" } })
+  assert(mcpLinear.status === 201 && mcpLinear.data?.status === "needs_auth" && mcpLinear.data?.auth === "dynamic", `Linear ajouté depuis le catalogue, à connecter (${mcpLinear.status} ${mcpLinear.data?.status})`)
+  assert((await call(mcpConnectorsRoute.POST, "/api/connectors/mcp", { method: "POST", session: claireSession, body: { catalog_id: "inconnu" } })).status === 400, "entrée hors catalogue : 400")
+  const mcpGithub = await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/github", { method: "PUT", session: claireSession, params: { id: "github" }, body: { client_id: `cid-${run}`, client_secret: "SECRET-SMOKE-MCP" } })
+  assert(mcpGithub.status === 200 && mcpGithub.data?.has_client === true && mcpGithub.data?.auth === "manual", "GitHub : client OAuth déclaré à la main enregistré")
+  const mcpList = await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: claireSession })
+  assert(mcpList.status === 200 && ["linear", "github"].every((id) => mcpList.data.connectors.some((c: { id: string }) => c.id === id)), "liste : Linear et GitHub")
+  assert(!JSON.stringify(mcpList.data).includes("SECRET-SMOKE-MCP") && mcpList.data.redirect_uri.endsWith("/api/connectors/mcp/callback"), "liste : secret jamais renvoyé, adresse de retour fournie")
+  const mcpTest = await call(mcpConnectorTestRoute.POST, "/api/connectors/mcp/linear/test", { method: "POST", session: claireSession, params: { id: "linear" } })
+  assert(mcpTest.status === 200 && mcpTest.data?.last_check?.ok === false && mcpTest.data?.status === "needs_auth", "test sans connexion : échec noté, sans appel réseau")
+  const cb = await mcpCallbackRoute.GET(new Request("http://smoke.test/api/connectors/mcp/callback?state=inconnu&code=x", { headers: { cookie: `brain_session=${claireSession}` } }))
+  assert(cb.status === 303 && /\/connecteurs\?mcp=error/.test(cb.headers.get("location") ?? ""), "retour OAuth avec un état inconnu : renvoi vers /connecteurs avec l'erreur")
+  const cbAnon = await mcpCallbackRoute.GET(new Request("http://smoke.test/api/connectors/mcp/callback?state=x&code=x"))
+  assert(cbAnon.status === 303 && /\/login$/.test(cbAnon.headers.get("location") ?? ""), "retour OAuth sans session : vers la connexion")
+  for (const id of ["linear", "github"]) await call(mcpConnectorRoute.DELETE, `/api/connectors/mcp/${id}`, { method: "DELETE", session: claireSession, params: { id } })
+  assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: claireSession })).data.connectors.length === mcpList.data.connectors.length - 2, "retrait : les deux serveurs sont partis")
 
   console.log("\n— État de l'entreprise produit sur un poste (E4)")
   const originalStatus = await store.getStatus()
