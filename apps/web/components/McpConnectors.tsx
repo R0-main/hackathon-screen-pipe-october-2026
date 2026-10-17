@@ -284,7 +284,7 @@ function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connect
         <span className="ml-auto text-[12px] text-trace">
           {check ? (
             <>
-              {k.lastCheck} : <RelTime iso={check.at} />
+              {k.lastCheck}: <RelTime iso={check.at} />
             </>
           ) : (
             k.neverChecked
@@ -510,7 +510,7 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
       <p className="text-trace">
         {last ? (
           <>
-            {k.lastImport} : <RelTime iso={last.at} /> ({last.ok ? fmt(k.importDone, { n: last.imported }) : fmt(k.importFailed, { error: last.error ?? "?" })})
+            {k.lastImport}: <RelTime iso={last.at} /> ({last.ok ? fmt(k.importDone, { n: last.imported }) : fmt(k.importFailed, { error: last.error ?? "?" })})
           </>
         ) : (
           k.importHelp
