@@ -9,6 +9,7 @@ import Lenis from "lenis"
 import { BrainIcon, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
 import { MotionSwitcher } from "./MotionSwitcher"
+import { PrivacyFlow } from "./PrivacyFlow"
 import { ScrollBrain } from "./ScrollBrain"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
 import { setupLandingMotion } from "./motion/setup"
@@ -316,7 +317,7 @@ function Install({ demo }: { demo: boolean }) {
   )
 }
 
-/** Le brut reste sur le poste : un schéma de billes et de traits, dans la langue du cerveau. */
+/** Le brut reste sur le poste : le parcours des captures, du poste au cerveau (PrivacyFlow). */
 function Privacy() {
   const facts = [
     { term: "Liste blanche d'applications", def: "brain-sync ne lit que les applications de travail autorisées." },
@@ -336,7 +337,7 @@ function Privacy() {
               Screenpipe enregistre environ 19{"\u00a0"}Go en deux semaines sur un poste. Rien de cela ne quitte le PC : seules les connaissances distillées montent au cerveau.
             </p>
           </div>
-          <RawToDistilled />
+          <PrivacyFlow />
         </div>
         <div data-rule className="mt-16 h-px bg-ink" />
         <dl data-facts className="grid sm:grid-cols-3">
@@ -349,52 +350,6 @@ function Privacy() {
         </dl>
       </div>
     </section>
-  )
-}
-
-function RawToDistilled() {
-  // Poussière brute à gauche (le poste), quelques billes reliées à droite (le cerveau). Positions fixes.
-  const raw = Array.from({ length: 64 }, (_, i) => {
-    const a = i * 2.399963
-    const r = 6 + Math.sqrt(i) * 9.5
-    return { x: 120 + Math.cos(a) * r, y: 110 + Math.sin(a) * r * 0.86, r: 1.6 + ((i * 7) % 5) * 0.35 }
-  })
-  const kept = [
-    { x: 468, y: 74 },
-    { x: 566, y: 66 },
-    { x: 458, y: 148 },
-    { x: 516, y: 170 },
-    { x: 578, y: 136 },
-  ]
-  const hub = { x: 520, y: 108 }
-  return (
-    <figure className="flex flex-col justify-center">
-      <svg data-privacy viewBox="0 0 640 220" className="h-auto w-full overflow-visible" role="img" aria-label="Sur le poste, beaucoup de données brutes ; vers le cerveau, quelques connaissances seulement.">
-        <g data-raw-group>
-          {raw.map((p, i) => (
-            <circle key={i} data-raw cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r={p.r.toFixed(2)} fill="var(--color-line-strong)" />
-          ))}
-        </g>
-        <line data-filter x1="250" y1="110" x2="410" y2="110" stroke="var(--color-ink)" strokeWidth="1" />
-        <line data-filter x1="330" y1="92" x2="330" y2="128" stroke="var(--color-ink)" strokeWidth="1" />
-        {kept.map((p, i) => (
-          <line key={`l${i}`} data-link x1={hub.x} y1={hub.y} x2={p.x} y2={p.y} stroke="var(--color-line-strong)" strokeWidth="1" />
-        ))}
-        {kept.map((p, i) => (
-          <circle key={`k${i}`} data-kept cx={p.x} cy={p.y} r="4.5" fill="var(--color-ink)" />
-        ))}
-        <circle data-hub cx={hub.x} cy={hub.y} r="7" fill="var(--color-surface)" stroke="var(--color-ink)" strokeWidth="1.5" />
-        <text data-label x="120" y="210" textAnchor="middle" className="fill-trace text-[13px]">
-          Le poste
-        </text>
-        <text data-label x="330" y="150" textAnchor="middle" className="fill-trace text-[13px]">
-          filtre local
-        </text>
-        <text data-label x="515" y="210" textAnchor="middle" className="fill-trace text-[13px]">
-          Le cerveau
-        </text>
-      </svg>
-    </figure>
   )
 }
 

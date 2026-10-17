@@ -527,6 +527,78 @@ html.lenis body {
   background: var(--text);
 }
 
+/* « Le brut reste sur le poste » (components/landing/PrivacyFlow.tsx). L'état décrit ici est l'état final :
+   captures perso écartées, secret masqué, connaissances arrivées. Large écran : poste, rail du filtre, cerveau. */
+.privacy-flow {
+  display: grid;
+  gap: 16px;
+  align-items: center;
+}
+@media (min-width: 1024px) {
+  .privacy-flow {
+    grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+.privacy-row [data-pf-dim] {
+  opacity: 0.4;
+}
+.privacy-strike {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 50%;
+  height: 1px;
+  background: var(--text);
+  transform-origin: 0% 50%;
+}
+.privacy-mask {
+  position: absolute;
+  inset: 1px -2px;
+  border-radius: 2px;
+  background: var(--text);
+  transform-origin: 0% 50%;
+}
+/* Rail vertical : entre les deux panneaux sur grand écran, entre le poste et le cerveau quand ils s'empilent. */
+.privacy-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 4px 2px;
+}
+@media (min-width: 1024px) {
+  .privacy-rail {
+    gap: 32px;
+  }
+}
+.privacy-rail-line {
+  position: absolute;
+  left: 7px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--text);
+  transform-origin: 50% 0%;
+}
+.privacy-node {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  background: var(--bg);
+}
+.privacy-node > span {
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: var(--text);
+}
+
 /* Boutons magnétiques (Récit, Cinétique) : GSAP pilote leur transform, la transition CSS ne doit pas s'en mêler. */
 .landing[data-motion="recit"] [data-magnetic],
 .landing[data-motion="cinetique"] [data-magnetic] {

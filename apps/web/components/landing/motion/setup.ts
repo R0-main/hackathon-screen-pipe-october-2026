@@ -1,12 +1,11 @@
 import { gsap } from "gsap"
 import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { SplitText } from "gsap/SplitText"
-import { DrawSVGPlugin } from "gsap/DrawSVGPlugin"
 import { ScrambleTextPlugin } from "gsap/ScrambleTextPlugin"
 import type Lenis from "lenis"
 import type { MotionVariant } from "./variants"
 
-gsap.registerPlugin(ScrollTrigger, SplitText, DrawSVGPlugin, ScrambleTextPlugin)
+gsap.registerPlugin(ScrollTrigger, SplitText, ScrambleTextPlugin)
 
 /*
   Motion de la page d'accueil, hors scène du cerveau (pilotée dans Landing et ScrollBrain).
@@ -14,7 +13,7 @@ gsap.registerPlugin(ScrollTrigger, SplitText, DrawSVGPlugin, ScrambleTextPlugin)
   - data-hero="nav|title|sub|cta|note"  premier écran ;
   - data-reveal="title|text|panel"       titres, paragraphes et panneaux des sections ;
   - data-rows, data-type                 lignes de « Où en est Fournil » et prompt de Jean-Marc ;
-  - data-privacy (+ data-raw, data-filter, data-link, data-kept, data-hub, data-label) le schéma vie privée ;
+  - data-privacy (+ data-pf-*)           le parcours des captures, du poste au cerveau (PrivacyFlow) ;
   - data-rule, data-facts                trait encre et trois engagements ;
   - data-after, data-thread, data-bead   fil de billes (version Récit) ;
   - data-parallax, data-magnetic         cerveau et boutons (version Cinétique).
@@ -42,14 +41,11 @@ type Ctx = {
 type Holds = Map<Element, ScrollTrigger>
 
 const all = <T extends Element = HTMLElement>(root: ParentNode, sel: string) => Array.from(root.querySelectorAll<T>(sel))
-const num = (el: Element, attr: string) => Number(el.getAttribute(attr) ?? 0)
 const section = (el: Element) => el.closest(".landing-section") ?? undefined
 
 /** Déclencheur d'un élément dans une section. `pinnedContainer` : les positions tiennent compte de l'arrêt. */
 const at = (trigger: Element, vars: ScrollTrigger.Vars = {}): ScrollTrigger.Vars => ({ trigger, pinnedContainer: section(trigger), ...vars })
 
-/** Centre du filtre local dans le schéma vie privée (viewBox 640 × 220). */
-const FILTER = { x: 330, y: 110 }
 /** Durée de l'arrêt de chaque section, en fraction de la hauteur d'écran. */
 const HOLD = 0.6
 
@@ -162,7 +158,7 @@ function sectionTimelines(holds: Holds) {
 }
 
 /** Valeur d'arrivée de chaque propriété de départ : l'élément revient à sa place, visible. */
-const NEUTRAL: Record<string, string | number> = { autoAlpha: 1, opacity: 1, x: 0, y: 0, xPercent: 0, yPercent: 0, rotation: 0, rotate: 0, scale: 1, scaleX: 1, scaleY: 1, drawSVG: "100%" }
+const NEUTRAL: Record<string, string | number> = { autoAlpha: 1, opacity: 1, x: 0, y: 0, xPercent: 0, yPercent: 0, rotation: 0, rotate: 0, scale: 1, scaleX: 1, scaleY: 1 }
 
 /**
  * Animation d'entrée : l'état de départ est posé tout de suite (sinon un élément décalé dans une animation en
@@ -193,6 +189,43 @@ function splitInto(tl: gsap.core.Timeline, el: HTMLElement, type: "lines" | "wor
       return tween
     },
   })
+}
+
+/* ---------- « Le brut reste sur le poste » ---------- */
+
+/**
+ * Le parcours des captures (PrivacyFlow), placé dans une timeline entre `at` et `at + span` :
+ * le poste et ses captures, puis les trois étapes du filtre (perso écarté, secret masqué, distillé),
+ * enfin le cerveau qui reçoit trois connaissances. Les captures, elles, restent sur le poste.
+ */
+function privacyStory(fig: Element, tl: gsap.core.Timeline, at: number, span: number) {
+  const t = (p: number) => at + p * span
+  const d = (p: number) => p * span
+  const poste = fig.querySelector("[data-pf-poste]")
+  const brain = fig.querySelector("[data-pf-brain]")
+  const rail = fig.querySelector("[data-pf-rail]")
+
+  if (poste) enter(tl, poste, { autoAlpha: 0, y: 24 }, { duration: d(0.12), ease: "power1.out" }, t(0))
+  enter(tl, all(fig, "[data-pf-row]"), { autoAlpha: 0, x: -12 }, { duration: d(0.06), stagger: d(0.025), ease: "power1.out" }, t(0.05))
+
+  // Le rail se trace d'une étape à l'autre ; chaque étape s'affiche, puis sa bille se remplit quand elle agit.
+  if (rail) enter(tl, rail, { scaleY: 0 }, { duration: d(0.36) }, t(0.22))
+  enter(tl, all(fig, "[data-pf-step]"), { autoAlpha: 0, x: -8 }, { duration: d(0.05), stagger: d(0.14), ease: "power1.out" }, t(0.22))
+  all(fig, "[data-pf-node]").forEach((node, i) => enter(tl, node, { scale: 0 }, { duration: d(0.04), ease: "power2.out" }, t(0.27 + i * 0.14)))
+
+  // 1. Apps de travail seulement : WhatsApp et la banque perso sont barrés et pâlissent, sans quitter le poste.
+  const dim = all(fig, "[data-pf-dim]")
+  gsap.set(dim, { opacity: 1 })
+  tl.add(gsap.to(dim, { opacity: 0.4, duration: d(0.06) }), t(0.29))
+  enter(tl, all(fig, "[data-pf-strike]"), { scaleX: 0 }, { duration: d(0.06), stagger: d(0.02), ease: "power1.inOut" }, t(0.29))
+  // 2. Secrets masqués : la clé Stripe disparaît sous une barre.
+  enter(tl, all(fig, "[data-pf-mask]"), { scaleX: 0 }, { duration: d(0.06), ease: "power2.out" }, t(0.43))
+  // 3. Distillé sur le poste : les captures de travail sont retenues.
+  enter(tl, all(fig, "[data-pf-pass]"), { scale: 0 }, { duration: d(0.04), stagger: d(0.02), ease: "power2.out" }, t(0.57))
+
+  // Le cerveau reçoit trois connaissances, une à une.
+  if (brain) enter(tl, brain, { autoAlpha: 0, x: -16 }, { duration: d(0.1), ease: "power1.out" }, t(0.66))
+  enter(tl, all(fig, "[data-pf-chip]"), { autoAlpha: 0, x: -24 }, { duration: d(0.08), stagger: d(0.07), ease: "power2.out" }, t(0.72))
 }
 
 /* ---------- Boutons magnétiques (Récit, Cinétique) ---------- */
@@ -309,15 +342,8 @@ function epure(root: HTMLElement, holds: Holds) {
     if (typed) enter(tl, typed, { autoAlpha: 0 }, { duration: 0.12 }, 0.66)
   }
 
-  const svg = root.querySelector("[data-privacy]")
-  if (svg) {
-    const tl = timeline(svg)
-    enter(tl, all(svg, "[data-raw]"), { opacity: 0 }, { duration: 0.14, stagger: { amount: 0.12, from: "random" } }, 0.3)
-    enter(tl, all(svg, "[data-filter]"), { opacity: 0 }, { duration: 0.08 }, 0.48)
-    enter(tl, all(svg, "[data-label]"), { opacity: 0 }, { duration: 0.1 }, 0.5)
-    enter(tl, all(svg, "[data-link]"), { drawSVG: "0%" }, { duration: 0.12, stagger: 0.02 }, 0.56)
-    enter(tl, all(svg, "[data-kept], [data-hub]"), { opacity: 0, scale: 0.6, transformOrigin: "50% 50%" }, { duration: 0.1, stagger: 0.02 }, 0.6)
-  }
+  const fig = root.querySelector("[data-privacy]")
+  if (fig) privacyStory(fig, timeline(fig), 0.28, 0.44)
 
   for (const el of all(root, "[data-rule]")) enter(timeline(el), el, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.14 }, 0.72)
   const facts = root.querySelector("[data-facts]")
@@ -378,36 +404,11 @@ function recit(root: HTMLElement, holds: Holds) {
     tl.to({}, { duration: 0.15 })
   }
 
-  // Le brut reste sur le poste ; seules cinq connaissances en partent, passent le filtre et rejoignent le cerveau.
-  const svg = root.querySelector("[data-privacy]")
-  if (svg) {
-    const raw = all(svg, "[data-raw]")
-    const kept = all(svg, "[data-kept]")
-    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(svg) })
-    enter(tl, all(svg, "[data-label]"), { opacity: 0 }, { duration: 0.1, stagger: 0.1, ease: "none" }, 0)
-    enter(tl, raw, { opacity: 0 }, { duration: 0.15, stagger: { amount: 0.15, from: "center" }, ease: "none" }, 0)
-    enter(tl, all(svg, "[data-filter]"), { opacity: 0 }, { duration: 0.1, ease: "none" }, 0.15)
-    kept.forEach((el, i) => {
-      // Chaque connaissance naît d'une bille brute, traverse le filtre puis se pose côté cerveau.
-      const src = raw[Math.round(((i + 0.5) / kept.length) * (raw.length - 1))]
-      const kx = num(el, "cx")
-      const ky = num(el, "cy")
-      gsap.set(el, { x: num(src, "cx") - kx, y: num(src, "cy") - ky, opacity: 0, scale: 0.5, transformOrigin: "50% 50%" })
-      tl.to(
-        el,
-        {
-          keyframes: [
-            { opacity: 1, scale: 0.7, duration: 0.04 },
-            { x: FILTER.x - kx, y: FILTER.y - ky, duration: 0.18, ease: "power1.inOut" },
-            { x: 0, y: 0, scale: 1, duration: 0.18, ease: "power2.out" },
-          ],
-        },
-        0.3 + i * 0.05,
-      )
-    })
-    tl.to(raw, { opacity: 0.55, duration: 0.3 }, 0.35)
-    enter(tl, all(svg, "[data-hub]"), { opacity: 0, scale: 0.6, transformOrigin: "50% 50%" }, { duration: 0.1, ease: "none" }, 0.62)
-    enter(tl, all(svg, "[data-link]"), { drawSVG: "0%" }, { duration: 0.2, stagger: 0.03, ease: "none" }, 0.72)
+  // Le brut reste sur le poste : le filtre écarte, masque, distille, et seules trois connaissances montent.
+  const fig = root.querySelector("[data-privacy]")
+  if (fig) {
+    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(fig) })
+    privacyStory(fig, tl, 0, 0.78)
     // Le trait encre et les engagements, à la suite, toujours pendant l'arrêt.
     for (const rule of all(root, "[data-rule]")) enter(tl, rule, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.2, ease: "none" }, 0.8)
     const facts = root.querySelector("[data-facts]")
@@ -491,18 +492,8 @@ function cinetique(root: HTMLElement, holds: Holds): () => void {
     }
   }
 
-  // Le brut tourbillonne sur le poste, puis les connaissances ressortent du filtre.
-  const svg = root.querySelector("[data-privacy]")
-  if (svg) {
-    const tl = timeline(svg)
-    const group = svg.querySelector("[data-raw-group]")
-    if (group) tl.to(group, { rotation: -120, svgOrigin: "120 110", duration: 0.35 }, 0.3)
-    tl.to(all(svg, "[data-raw]"), { opacity: 0.15, duration: 0.3, stagger: { amount: 0.1, from: "random" } }, 0.3)
-    enter(tl, all(svg, "[data-filter]"), { opacity: 0, scaleY: 0.2, transformOrigin: "50% 50%" }, { duration: 0.1 }, 0.4)
-    enter(tl, all(svg, "[data-label]"), { opacity: 0 }, { duration: 0.1 }, 0.45)
-    enter(tl, all(svg, "[data-kept], [data-hub]"), { opacity: 0, scale: 0.3, transformOrigin: "50% 50%" }, { duration: 0.1, ease: "back.out(2.2)", stagger: 0.02 }, 0.58)
-    enter(tl, all(svg, "[data-link]"), { drawSVG: "0%" }, { duration: 0.12, ease: "power2.out", stagger: 0.02 }, 0.62)
-  }
+  const fig = root.querySelector("[data-privacy]")
+  if (fig) privacyStory(fig, timeline(fig), 0.28, 0.44)
 
   for (const el of all(root, "[data-rule]")) enter(timeline(el), el, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.14, ease: "power2.out" }, 0.72)
   const facts = root.querySelector("[data-facts]")
