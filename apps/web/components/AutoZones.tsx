@@ -7,7 +7,7 @@ import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 import { CheckIcon, ErrorText } from "./ui"
 
-type Mode = "subscription" | "api"
+type Mode = "included" | "subscription" | "api"
 
 const SKIPPED: Record<string, string> = {
   no_claude: "pas de clé Claude",
@@ -62,9 +62,19 @@ jobs:
 `
 }
 
+type ReviewSummary = { automations: { count: number; reviewed: boolean }; status: "claude" | "skipped" }
+
+function reviewLine(r: ReviewSummary): string {
+  const autos = r.automations.count
+    ? `${r.automations.count} suggestion${r.automations.count > 1 ? "s" : ""} d'automatisation${r.automations.reviewed ? " relue" + (r.automations.count > 1 ? "s" : "") + " par Claude" : ""}`
+    : "aucune automatisation à proposer"
+  return `Revue faite : ${autos}${r.status === "claude" ? ", « où en est la boîte » rédigé par Claude" : ""}.`
+}
+
 /**
- * Zones automatiques : qui fait l'analyse quotidienne (le Claude Code de l'entreprise avec son abonnement, en CI, ou
- * le serveur avec la clé API de l'entreprise), et l'historique des passages. `onZonesChanged` relit la liste des zones.
+ * Revue quotidienne : qui fait l'analyse (le serveur avec sa propre clé, inclus ; le serveur avec la clé de
+ * l'entreprise ; ou le Claude Code de l'entreprise avec son abonnement, en CI), et l'historique des passages.
+ * `onZonesChanged` relit la liste des zones.
  */
 export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
   const [info, setInfo] = useState<ClaudeKeyInfo | null>(null)
@@ -73,6 +83,7 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
   const [mode, setMode] = useState<Mode | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([api<ClaudeKeyInfo>("/api/admin/claude"), api<{ runs: NewZonesRun[]; base_url: string }>("/api/admin/zones/auto")])
@@ -80,8 +91,8 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
         setInfo(i)
         setRuns(r.runs)
         setBaseUrl(r.base_url)
-        // Une clé déjà enregistrée : on montre ce mode ; sinon l'abonnement Claude Code, sans clé API.
-        setMode((m) => m ?? (i.source === "org" ? "api" : "subscription"))
+        // Clé de l'entreprise : ce mode ; sinon, inclus si le serveur a sa clé ; sinon l'abonnement Claude Code (CI).
+        setMode((m) => m ?? (i.source === "org" ? "api" : i.server ? "included" : "subscription"))
       })
       .catch((e) => setErr(errorMessage(e)))
   }, [])
@@ -89,9 +100,11 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
   async function runNow() {
     setBusy(true)
     setErr(null)
+    setDone(null)
     try {
-      const run = await api<NewZonesRun>("/api/admin/zones/auto", { method: "POST" })
+      const run = await api<NewZonesRun & { review?: ReviewSummary }>("/api/admin/zones/auto", { method: "POST" })
       setRuns((prev) => [run, ...prev])
+      if (run.review) setDone(reviewLine(run.review))
       if (run.status === "created") onZonesChanged()
     } catch (e) {
       setErr(`Passage impossible : ${errorMessage(e)}`)
@@ -103,14 +116,20 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
   return (
     <section className="panel space-y-4 p-4 sm:p-5">
       <div className="space-y-1">
-        <h2 className="panel-title">Zones automatiques</h2>
+        <h2 className="panel-title">Revue quotidienne par Claude</h2>
         <p className="text-[13px] text-trace">
-          Chaque jour à 10 h, Claude relit les connaissances des 30 derniers jours et crée la zone d&apos;un domaine qui revient sans avoir la sienne. Ses
-          connaissances y sont rangées, et ceux qui les lisaient la lisent aussi.
+          Chaque jour à 10 h, Claude relit les connaissances des 30 derniers jours. Il crée la zone d&apos;un domaine qui revient sans avoir la sienne (ses
+          connaissances y sont rangées, et ceux qui les lisaient la lisent aussi), relit les suggestions d&apos;automatisation et met à jour « où en est
+          la boîte ».
         </p>
       </div>
 
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Qui fait l'analyse">
+        {info?.server && (
+          <button type="button" className={`chip ${mode === "included" ? "chip-on" : ""}`} aria-pressed={mode === "included"} onClick={() => setMode("included")}>
+            Inclus (Claude du cerveau)
+          </button>
+        )}
         <button type="button" className={`chip ${mode === "subscription" ? "chip-on" : ""}`} aria-pressed={mode === "subscription"} onClick={() => setMode("subscription")}>
           Abonnement Claude (Claude Code)
         </button>
@@ -119,15 +138,27 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
         </button>
       </div>
 
+      {mode === "included" && (
+        <p className="text-[13px]">
+          {info?.source === "org"
+            ? "Votre entreprise a sa propre clé Claude : c'est elle qui est utilisée. Retirez-la (Clé API Claude) pour revenir au Claude du cerveau."
+            : "Le cerveau s'en charge sur ses serveurs, avec sa propre clé Claude : rien à configurer."}
+        </p>
+      )}
       {mode === "subscription" && <SubscriptionSetup baseUrl={baseUrl} />}
       {mode === "api" && info && <ApiKeySetup info={info} onInfo={setInfo} />}
 
       {err && <ErrorText>{err}</ErrorText>}
+      {done && (
+        <p role="status" className="inline-flex items-center gap-1.5 text-[13px]">
+          <CheckIcon size={14} /> {done}
+        </p>
+      )}
 
       <div className="space-y-2 border-t border-line pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-[13px] font-medium">Derniers passages</h3>
-          {mode === "api" && (
+          {(mode === "api" || mode === "included") && (
             <button type="button" className="btn btn-sm" onClick={runNow} disabled={busy || !info?.source} title={info?.source ? undefined : "Ajoutez d'abord une clé Claude."}>
               {busy ? "Claude relit le cerveau…" : "Lancer maintenant"}
             </button>

@@ -2,6 +2,8 @@
 
 import {
   DEFAULT_TIMEZONE,
+  applyAutomationReviews,
+  buildAutomationReviewInput,
   STATUS_MAX_ITEMS,
   STATUS_WINDOW_DAYS,
   buildStatusInput,
@@ -20,6 +22,8 @@ import {
   strongEnough,
   truncate,
   type AgentEvent,
+  type AutomationReview,
+  type AutomationReviewInput,
   type AgentEventInput,
   type AgentName,
   type CompanyStatus,
@@ -31,7 +35,7 @@ import {
   type Zone,
   type ZoneStatus,
 } from "@brain/core"
-import { summarizeStatus } from "@brain/core/claude"
+import { reviewAutomations, summarizeStatus } from "@brain/core/claude"
 import { getStore, isStoreSetupError } from "./store"
 import type { AuthorZoneStat, NewItem } from "./store/types"
 import { canRead, canSeeEventContent, redactEvent } from "./access"
@@ -554,12 +558,28 @@ export async function saveExternalStatus(viewer: Viewer, input: ExternalStatus):
   return status
 }
 
-/** Détecte les tâches répétitives et met à jour les suggestions d'automatisation. */
-export async function runAutomationDetection() {
+type ReviewAutomations = (input: AutomationReviewInput) => Promise<AutomationReview[] | null>
+
+/**
+ * Détecte les tâches répétitives et met à jour les suggestions d'automatisation. Avec Claude (clé de l'entreprise ou
+ * du serveur), chaque suggestion est relue : écartée si elle n'a pas de sens, réécrite en proposition concrète sinon.
+ * `review` remplace l'appel à Claude (tests). Sans Claude, ou s'il ne répond pas, le texte de l'heuristique reste.
+ */
+export async function runAutomationDetection(opts: { review?: ReviewAutomations } = {}) {
   const s = store()
   const since = new Date(Date.now() - 21 * 86400_000).toISOString()
   const [events, profiles] = await Promise.all([s.listEvents({ sinceIso: since, type: "query", limit: 20000 }), s.listProfiles()])
-  const candidates = detectAutomations(events, profiles, { timeZone: process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE })
+  let candidates = detectAutomations(events, profiles, { timeZone: process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE })
+  if (candidates.length === 0) return []
+  const claude = opts.review ? null : await getClaude()
+  const review: ReviewAutomations | null = opts.review ?? (claude ? (input) => reviewAutomations(claude, input) : null)
+  if (review) {
+    const [zones, items, org] = await Promise.all([s.listZones(), s.listItems({ sinceIso: since, limit: 300, excludeSuperseded: true }), s.getOrg()])
+    const reviews = await review(buildAutomationReviewInput({ companyName: org.name, candidates, zones, profiles, items }))
+    if (reviews) {
+      candidates = applyAutomationReviews(candidates, reviews).map((c) => ({ ...c, title: redactText(c.title), description: redactText(c.description) }))
+    }
+  }
   return candidates.length ? s.upsertAutomations(candidates) : []
 }
 

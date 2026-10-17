@@ -8,10 +8,12 @@ import type { Conversation, ZoneHint } from "./distill"
 import type { CompanyStatus, KnowledgeItem, KnowledgeItemInput, Profile, Task, Zone } from "./types"
 import { ENTITY_TYPES, KNOWLEDGE_KINDS } from "./types"
 import {
+  AUTOMATION_REVIEW_SYSTEM,
   DISTILL_SYSTEM,
   NEW_ZONES_SYSTEM,
   ONBOARDING_SYSTEM,
   STATUS_SYSTEM,
+  buildAutomationReviewPrompt,
   buildExtractionPrompt,
   buildNewZonesPrompt,
   buildStatusPrompt,
@@ -20,6 +22,7 @@ import {
 } from "./prompts"
 import { buildStatusInput, type StatusInput } from "./status"
 import type { NewZoneProposal, NewZonesInput } from "./new-zones"
+import type { AutomationReview, AutomationReviewInput } from "./automation-review"
 import { classifyZones, slugify } from "./zones"
 import { truncate } from "./text"
 
@@ -269,6 +272,22 @@ export async function proposeNewZones(client: Anthropic, input: NewZonesInput): 
     return parsed ? parsed.zones : null
   } catch (err) {
     logError("nouvelles zones", err)
+    return null
+  }
+}
+
+const AutomationReviewSchema = z.object({
+  reviews: z.array(z.object({ ref: z.number(), keep: z.boolean(), title: z.string(), description: z.string() })),
+})
+
+/** Avis de Claude sur les suggestions d'automatisation (une par numéro). Null si Claude n'a pas répondu. */
+export async function reviewAutomations(client: Anthropic, input: AutomationReviewInput): Promise<AutomationReview[] | null> {
+  if (input.candidates.length === 0) return []
+  try {
+    const parsed = await parseWithSonnet(client, AutomationReviewSchema, AUTOMATION_REVIEW_SYSTEM, buildAutomationReviewPrompt(input), "low")
+    return parsed ? parsed.reviews : null
+  } catch (err) {
+    logError("revue des automatisations", err)
     return null
   }
 }

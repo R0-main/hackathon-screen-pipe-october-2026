@@ -124,6 +124,7 @@ Chaque appel passe par `/query` (RLS appliquée avec le token de l'utilisateur) 
 ### 5. Jobs planifiés (cloud)
 - **État de l'entreprise** (quotidien + bouton « rafraîchir ») : Sonnet résume par zone les objectifs, l'avancement, les prochaines étapes et qui a fait quoi.
 - **Nouvelles zones** (chaque jour à 10 h : Vercel Cron avec la clé API Claude de l'entreprise, ou `brain refresh-zones` dans la CI GitHub de l'entreprise avec son abonnement Claude Code) : Claude relit les connaissances des 30 derniers jours de chaque entreprise et crée, sans validation, la zone d'un domaine récurrent qui n'en a pas ; ses connaissances y sont rangées et les droits de lecture suivent (`apps/web/lib/new-zones.ts`).
+- **Revue des automatisations** (même passage quotidien) : Claude écarte les suggestions sans intérêt et réécrit les autres en proposition concrète (`packages/core/src/automation-review.ts`).
 - **Automatisations** : remonte les workflows détectés par Screenpipe + heuristique « même prompt, même personne, même créneau, ≥ 3 jours » → `automation_suggestions` affichées aux dirigeants.
 
 ## Découpage pour l'équipe (4 personnes, adaptable à 3)
