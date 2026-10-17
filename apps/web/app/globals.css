@@ -361,18 +361,13 @@ button.chip:hover:not(.chip-on) {
   transform: translateX(-50%);
   white-space: nowrap;
   border-radius: 4px;
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
   padding: 0 4px;
   font-size: 11px;
   line-height: 1.4;
   color: var(--color-ink);
   opacity: 0;
   transition: opacity 0.15s ease-out;
-}
-/* Votre propre dot : son prénom (« Vous ») toujours affiché, cerné d'un trait pour se détacher du réseau. */
-.brain-dot[data-me] .brain-dot-name {
-  border: 1px solid var(--color-line-strong);
-  font-weight: 500;
 }
 .brain-dot:hover .brain-dot-name,
 .brain-dot:focus-visible .brain-dot-name,

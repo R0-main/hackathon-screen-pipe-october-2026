@@ -61,7 +61,6 @@ const DOT_GAP = 26
 const DOT_SPACING = 34
 /** Rayon d'un dot dans la scène : une dizaine de pixels au zoom de départ. */
 const DOT_R = 0.039
-const TETHER = 0x9a9a92
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
@@ -439,22 +438,16 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   /** Position affichée de chaque dot, lissée d'une image à l'autre (une zone qui passe face caméra ne le fait pas sauter). */
   const dotPos = new Map<string, { x: number; y: number }>()
   // Les dots vivent hors du cerveau (dans la scène, pas dans le groupe qui tourne) : ils font toujours face à
-  // l'écran. Seuls eux sont éclairés, en feutrine ; un fil en pointillé relie chacun au centre de sa zone.
+  // l'écran. Seuls eux sont éclairés, en feutrine.
   const kit = dotKit(T)
-  const dots = new Map<string, { model: THREE.Group; line: THREE.Line<THREE.BufferGeometry, THREE.LineDashedMaterial>; zone: ZoneGfx; phase: number }>()
+  const dots = new Map<string, { model: THREE.Group; zone: ZoneGfx; phase: number }>()
   for (const { zone, members } of dotGroups)
     for (const p of members) {
       const model = kit.make(zone.locked ? NEUTRAL : zone.color, p.look)
       model.scale.setScalar(DOT_R)
       model.visible = false
-      const lineGeo = new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3()])
-      const lineMat = new T.LineDashedMaterial({ color: TETHER, dashSize: 0.028, gapSize: 0.022, transparent: true, opacity: 0.9 })
-      const line = new T.Line(lineGeo, lineMat)
-      line.frustumCulled = false
-      scene.add(model, line)
-      geometries.push(lineGeo)
-      materials.push(lineMat)
-      dots.set(p.id, { model, line, zone, phase: (hashString(p.id) % 1000) / 160 })
+      scene.add(model)
+      dots.set(p.id, { model, zone, phase: (hashString(p.id) % 1000) / 160 })
     }
   if (dots.size) {
     const key = new T.DirectionalLight(0xffffff, 1.6)
@@ -462,8 +455,6 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     scene.add(new T.HemisphereLight(0xffffff, 0xd8d4ca, 2.4), key)
   }
   const dotWorld = new T.Vector3()
-  const lineFrom = new T.Vector3()
-  const lineDir = new T.Vector3()
   const zoneWorld = new T.Vector3()
 
   // Taille : le canvas suit son conteneur.
@@ -746,21 +737,6 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       d.model.rotateY(clamp((zoneWorld.x - dotWorld.x) * 1.2, -0.6, 0.6))
       d.model.scale.set(DOT_R * (1 - breathe * 0.5), DOT_R * (1 + breathe), DOT_R * (1 - breathe * 0.5))
       d.model.visible = true
-
-      // Le fil : du bord du dot (jamais par-dessus) au centre de sa zone, à l'encre quand son agent touche le cerveau.
-      // Il part dans la direction de la zone vue à l'écran, juste hors de la silhouette du dot.
-      camera.getWorldDirection(lineFrom)
-      lineDir.subVectors(zoneWorld, dotWorld)
-      lineDir.addScaledVector(lineFrom, -lineDir.dot(lineFrom))
-      if (lineDir.lengthSq() < 1e-8) lineDir.set(0, -1, 0)
-      lineFrom.copy(dotWorld).addScaledVector(lineDir.normalize(), DOT_R * 1.3)
-      lineFrom.y += hop
-      const pts = d.line.geometry.attributes.position as THREE.BufferAttribute
-      pts.setXYZ(0, lineFrom.x, lineFrom.y, lineFrom.z)
-      pts.setXYZ(1, zoneWorld.x, zoneWorld.y, zoneWorld.z)
-      pts.needsUpdate = true
-      d.line.computeLineDistances()
-      d.line.material.color.setHex(who?.live ? INK : TETHER)
 
       const el = refs.dotsRef.current.get(t.id)
       if (!el) continue
