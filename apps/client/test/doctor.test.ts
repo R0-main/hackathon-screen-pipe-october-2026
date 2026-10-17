@@ -117,8 +117,10 @@ test("doctor : poste bien branché → aucun KO, code 0, chaque groupe vérifié
     assert.match(byId(r, "connexion")!.detail, /Hugo Bernard chez Fournil/)
     assert.match(byId(r, "capture")!.detail, /capture de l'écran active.*micro : coupé/)
     // Aucun jeton, même en partie, ni en texte ni en JSON (la sortie finit dans la session de Claude Code).
+    // Le début du jeton, ou sa fin derrière « … » (forme de maskSecret). Pas la fin seule : « 3456 » peut faire partie
+    // du port aléatoire du faux cerveau ou d'un dossier temporaire.
     for (const out of [formatDoctor(r), JSON.stringify(r)]) {
-      for (const secret of [TOKEN, SP_TOKEN]) assert.ok(!out.includes(secret.slice(0, 6)) && !out.includes(secret.slice(-4)), `fragment de ${secret.slice(0, 3)}… affiché`)
+      for (const secret of [TOKEN, SP_TOKEN]) assert.ok(!out.includes(secret.slice(0, 6)) && !out.includes(`…${secret.slice(-4)}`), `fragment de ${secret.slice(0, 3)}… affiché`)
     }
     assert.match(formatDoctor(r), /^Bilan : \d+ OK, \d+ à surveiller, 0 KO/m)
   } finally {
