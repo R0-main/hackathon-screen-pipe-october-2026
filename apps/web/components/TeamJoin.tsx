@@ -7,6 +7,7 @@ import { copyText } from "./PromptActions"
 import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 import { CheckIcon, Dot, ErrorText, zoneColor } from "./ui"
+import { deNom } from "@/lib/install-prompt"
 
 type ZoneLite = { id: string; name: string; color: string; position: number }
 type Person = { id: string; name: string }
@@ -27,7 +28,7 @@ const POLL_MS = 4000
  * envoie une demande préremplie ; un admin la complète (rôle, zones, rattachement) et l'accepte, et le poste termine
  * son installation tout seul. Les demandes en attente sont relues régulièrement.
  */
-export function TeamJoin(props: { zones: ZoneLite[]; people?: Person[]; defaultManager?: string | null; onAccepted?: (p: Accepted) => void; compact?: boolean }) {
+export function TeamJoin(props: { orgName: string; zones: ZoneLite[]; people?: Person[]; defaultManager?: string | null; onAccepted?: (p: Accepted) => void; compact?: boolean }) {
   const [prompt, setPrompt] = useState<string | null>(null)
   const [requests, setRequests] = useState<JoinRequest[] | null>(null)
   const [copied, setCopied] = useState(false)
@@ -78,10 +79,10 @@ export function TeamJoin(props: { zones: ZoneLite[]; people?: Person[]; defaultM
   return (
     <div className="space-y-5">
       <div className={props.compact ? "" : "panel px-5 py-5"}>
-        {!props.compact && <h2 className="panel-title">Un message pour toute l'équipe</h2>}
+        {!props.compact && <h2 className="panel-title">Un message pour toute l'équipe {deNom(props.orgName)}</h2>}
         <p className={`${props.compact ? "" : "mt-1.5"} max-w-[40em] text-[14px] leading-relaxed text-trace`}>
-          Le même message pour tout le monde : chacun le colle dans Claude Code ou Codex, qui envoie une demande avec ce qu'il sait déjà (nom, poste, email). Vous la complétez
-          et l'acceptez ici, et son poste s'installe tout seul.
+          Le même message pour tout le monde : chacun le colle dans Claude Code ou Codex, qui demande à rejoindre {props.orgName} avec ce qu'il sait déjà de la personne
+          (nom, poste, email). Vous complétez la demande et l'acceptez ici, et son ordinateur s'installe tout seul.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button type="button" className="btn" onClick={copy} disabled={busy}>

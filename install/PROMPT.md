@@ -90,6 +90,10 @@ géré. En entreprise, un profil MDM (PPPC) peut pré-accorder l'Accessibilité 
 
 ## Exemple (jeton fictif)
 
+Quand l'entreprise a une description (saisie dans `/creer` ou à l'onboarding), la première ligne la reprend après le
+nom de l'entreprise (`L'entreprise, en deux mots : « … ».`), sur une ligne et coupée à 300 caractères. Le message
+d'équipe fait de même. Sans description, la ligne reste celle de l'exemple.
+
 ```text
 Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Butine. Je suis Jean-Marc Dubois, zones : compta.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi en une phrase de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`). Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire, sans liste ni explication, puis attends.
@@ -144,8 +148,9 @@ Second moyen d'ajouter quelqu'un, à côté du prompt personnel : un message uni
 ou la dernière étape de `/creer`), source `buildJoinPrompt` dans [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
 Il contient un code d'équipe (`cj_…`), pas de jeton : à envoyer aux collègues seulement, il ne permet que de demander.
 
-1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà (git config, mémoire, CLAUDE.md),
-   sans poser de question ni rien inventer : une valeur inconnue est omise, l'admin la complétera.
+1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà de la personne (son compte,
+   sa mémoire, leurs échanges), sans poser de question, sans lancer de commande pour chercher ni rien inventer : une
+   valeur inconnue est omise, l'admin la complétera.
 2. La commande de son système (`install.sh --join` sur macOS / Linux / Git Bash, `install.ps1 --join` sous Windows) lance
    `brain join` (`apps/client/src/join.ts`) : le jeton du poste est créé localement, la demande part avec son empreinte
    seulement, puis la commande attend l'acceptation (8 min).

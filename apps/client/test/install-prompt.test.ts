@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands } from "../../web/lib/install-prompt"
+import { ABOUT_ORG_MAX, EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands } from "../../web/lib/install-prompt"
 import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
 import { EXIT_JOIN_PENDING, EXIT_JOIN_REJECTED } from "../src/join"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
@@ -95,6 +95,24 @@ test("message d'équipe : une commande par système (install.sh ou install.ps1 -
   assert.match(joinPrompt, /brain doctor --json`/)
   assert.match(joinPrompt, /d'entreprise d'Atelier Lumen/, "élision")
   assert.ok(joinPrompt.length < 3200, `message court (${joinPrompt.length} caractères)`)
+})
+
+test("prompts : l'entreprise présentée en deux mots quand elle a une description, rien sinon", () => {
+  const about = "Butine fabrique des balances connectées pour ruches.\n6 personnes, basée à Lyon."
+  const withAbout = buildInstallPrompt({ ...EXAMPLE, orgDescription: about })
+  assert.ok(withAbout.startsWith("Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Butine. L'entreprise, en deux mots : « Butine fabrique des balances connectées pour ruches. 6 personnes, basée à Lyon ». Je suis Jean-Marc Dubois"))
+  assert.ok(INSTALL_PROMPT_RE.test(withAbout))
+  const join = buildJoinPrompt({ ...JOIN, orgDescription: about })
+  assert.match(join, /^Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise d'Atelier Lumen\. L'entreprise, en deux mots : « Butine/)
+  assert.ok(INSTALL_PROMPT_RE.test(join))
+  for (const empty of [undefined, "", "  \n "]) {
+    assert.equal(buildInstallPrompt({ ...EXAMPLE, orgDescription: empty }), prompt)
+    assert.equal(buildJoinPrompt({ ...JOIN, orgDescription: empty }), joinPrompt)
+  }
+  // Une longue description est coupée au dernier mot entier.
+  const long = buildInstallPrompt({ ...EXAMPLE, orgDescription: "ruche ".repeat(100) })
+  const quoted = long.match(/« (.*?) »/)?.[1] ?? ""
+  assert.ok(quoted.length <= ABOUT_ORG_MAX + 1 && quoted.endsWith("ruche…"), quoted)
 })
 
 test("codes de sortie : un code, un sens, pour les scripts, setup et join", () => {

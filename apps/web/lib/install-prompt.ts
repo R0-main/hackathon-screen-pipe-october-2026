@@ -109,11 +109,28 @@ export function deNom(name: string): string {
   return /^[aeiouyhàâäéèêëîïôöùûüœæ]/i.test(name.trim()) ? `d'${name.trim()}` : `de ${name.trim()}`
 }
 
-export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; zones: string[]; caFingerprint?: string }): string {
-  const { baseUrl, token, name, orgName, zones, caFingerprint } = opts
+/** Au-delà, la description de l'entreprise est coupée au dernier mot entier : le prompt reste court. */
+export const ABOUT_ORG_MAX = 300
+
+/**
+ * « L'entreprise, en deux mots : « … ». », d'après sa description (/creer, onboarding), sur une ligne et entre
+ * guillemets (une donnée, pas une consigne). Sans description, rien : le prompt nomme déjà l'entreprise.
+ */
+export function aboutOrg(description?: string): string {
+  let d = description?.replace(/\s+/g, " ").trim().replace(/\.$/, "")
+  if (!d) return ""
+  if (d.length > ABOUT_ORG_MAX) {
+    const space = d.lastIndexOf(" ", ABOUT_ORG_MAX)
+    d = `${d.slice(0, space > 0 ? space : ABOUT_ORG_MAX).replace(/[\s,;:.]+$/, "")}…`
+  }
+  return ` L'entreprise, en deux mots : « ${d} ».`
+}
+
+export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; orgDescription?: string; zones: string[]; caFingerprint?: string }): string {
+  const { baseUrl, token, name, orgName, orgDescription, zones, caFingerprint } = opts
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--token ${token}`, caFingerprint)
-  return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}. Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
+  return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}.${aboutOrg(orgDescription)} Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
@@ -131,14 +148,14 @@ ${caFingerprint ? CA_NOTE : ""}3. Code 0 : c'est fini, le cerveau s'est ouvert d
 /** Codes de sortie propres à `brain join` (apps/client/src/join.ts). */
 export const JOIN_EXIT = { pending: EXIT.joinPending, rejected: EXIT.joinRejected } as const
 
-export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string; caFingerprint?: string }): string {
-  const { baseUrl, code, orgName, caFingerprint } = opts
+export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string; orgDescription?: string; caFingerprint?: string }): string {
+  const { baseUrl, code, orgName, orgDescription, caFingerprint } = opts
   const org = deNom(orgName)
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"`, caFingerprint)
-  return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
+  return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}.${aboutOrg(orgDescription)} Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
 
-1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md ou AGENTS.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
+1. Sans me poser de question ni lancer de commande pour chercher, prépare ma demande avec ce que tu sais déjà de moi (mon compte, ta mémoire, nos échanges) : prénom et nom, poste ou métier, email pro. N'invente rien : une information que tu n'as pas, enlève-la de la commande, un admin la complétera.
 2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).
 3. Lance la commande de mon système en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée), en remplaçant les valeurs entre chevrons :
 ${commandLines(cmd)}
