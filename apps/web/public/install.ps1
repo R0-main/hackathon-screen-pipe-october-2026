@@ -210,7 +210,7 @@ function Install-PrivateNode {
     }
     if (-not (Move-Directory $newDir $PrivateDir)) {
       if (Test-Path -LiteralPath $old) { [void](Move-Directory $old $PrivateDir) }
-      return @{ Code = 4; Message = "Cannot install Node.js in $PrivateDir: check the disk space, then run the same command again." }
+      return @{ Code = 4; Message = "Cannot install Node.js in ${PrivateDir}: check the disk space, then run the same command again." }
     }
     Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
     return $null
@@ -392,7 +392,7 @@ try {
   Remove-Item -LiteralPath $NewMjs -Force -ErrorAction SilentlyContinue
 }
 
-Say "Brain client installed: $(Join-Path $BrainHome 'brain.cmd') (Node.js v$NodeVer: $Node)."
+Say "Brain client installed: $(Join-Path $BrainHome 'brain.cmd') (Node.js v${NodeVer}: $Node)."
 # setup output in UTF-8 if PowerShell relays it (otherwise it goes straight to the console).
 $ErrorActionPreference = 'Continue'
 $savedEncoding = $null
