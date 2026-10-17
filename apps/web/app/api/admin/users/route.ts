@@ -2,7 +2,7 @@ import { z } from "zod"
 import { getStore } from "@/lib/store"
 import { hashToken, newToken } from "@/lib/auth"
 import { buildInstallPrompt } from "@/lib/install-prompt"
-import { json, parseBody, publicBaseUrl, withViewer } from "@/lib/http"
+import { error, json, parseBody, publicBaseUrl, withViewer } from "@/lib/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -25,6 +25,7 @@ const Schema = z.object({
   title: z.string().max(80).optional(),
   role: z.enum(["admin", "member"]).default("member"),
   zones: z.array(z.string().max(64)).max(30).default([]),
+  manager_id: z.string().max(64).nullable().optional(),
 })
 
 /** Invite un membre : crée son compte, ses accès, et renvoie son prompt d'installation (jeton affiché une seule fois). */
@@ -33,6 +34,7 @@ export const POST = withViewer(
     const body = await parseBody(req, Schema)
     if ("response" in body) return body.response
     const store = getStore()
+    if (body.data.manager_id && !(await store.getProfile(body.data.manager_id))) return error(400, "La personne de rattachement n'existe pas.")
     const known = new Set((await store.listZones()).map((z) => z.id))
     const zones = body.data.zones.filter((z) => known.has(z))
     const token = newToken()
@@ -41,6 +43,7 @@ export const POST = withViewer(
       email: body.data.email,
       title: body.data.title,
       role: body.data.role,
+      manager_id: body.data.manager_id ?? null,
       token_hash: hashToken(token),
     })
     await store.setZoneAccess(profile.id, zones.map((zone_id) => ({ zone_id, can_write: true })))

@@ -80,6 +80,8 @@ export type Profile = {
   email?: string
   title?: string
   role: Role
+  /** Personne à qui ce poste est rattaché dans l'organigramme ; absent pour la tête (ou les têtes). */
+  manager_id?: string | null
   created_at: string
 }
 
