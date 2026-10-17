@@ -5,17 +5,12 @@ import { useState } from "react"
 import type { KnowledgeItem } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { fmt } from "@/lib/i18n"
-import { firstName } from "./format"
+import { entityHref, firstName } from "./format"
 import { useT } from "./I18n"
 import { RelTime } from "./RelTime"
 import { Dot, ZoneTag, zoneColor } from "./ui"
 
 type ZoneLike = { name: string; color: string; position?: number }
-
-/** Lien vers la page d'une entité (tout ce qui la concerne). */
-export function entityHref(type: string, name: string): string {
-  return `/entites/${encodeURIComponent(type)}/${encodeURIComponent(name)}`
-}
 
 /** `unreadableNote` : la zone de l'item n'est pas lisible par le spectateur (son propre item) ; texte de l'infobulle du badge. */
 export function KnowledgeCard({
