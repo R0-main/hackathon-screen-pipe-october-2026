@@ -8,16 +8,16 @@ export const dynamic = "force-dynamic"
 
 const Schema = z.object({ key: z.string().trim().max(300) })
 
-/** Admins : d'où vient Claude pour l'entreprise (sa clé, celle du serveur, ou aucune), sans jamais la clé elle-même. */
+/** Admins: where the company's Claude comes from (its key, the server's, or none), never the key itself. */
 export const GET = withViewer(async () => json(await claudeKeyInfo(getStore())), { admin: true })
 
-/** Admins : enregistre la clé API de l'entreprise, après l'avoir essayée auprès d'Anthropic. */
+/** Admins: saves the company's API key, after trying it against Anthropic. */
 export const PUT = withViewer(
   async (req, viewer) => {
     const body = await parseBody(req, Schema)
     if ("response" in body) return body.response
     const key = body.data.key
-    if (!CLAUDE_KEY_RE.test(key)) return error(400, "Ce n'est pas une clé API Claude : elle commence par « sk-ant- » (Console Anthropic, rubrique API Keys).")
+    if (!CLAUDE_KEY_RE.test(key)) return error(400, "This is not a Claude API key: it starts with \"sk-ant-\" (Anthropic Console, API Keys section).")
     const check = await verifyClaudeKey(key)
     if (!check.ok) return error(check.reason === "invalid" ? 400 : 502, check.message)
     return json(await setOrgClaudeKey(getStore(), key, viewer.real.id))
@@ -25,7 +25,7 @@ export const PUT = withViewer(
   { admin: true },
 )
 
-/** Admins : retire la clé de l'entreprise (le serveur retombe sur ANTHROPIC_API_KEY s'il en a une). */
+/** Admins: removes the company's key (the server falls back to ANTHROPIC_API_KEY if it has one). */
 export const DELETE = withViewer(
   async () => {
     await clearOrgClaudeKey(getStore())

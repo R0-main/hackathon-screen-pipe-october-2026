@@ -2,10 +2,10 @@ import { DEFAULT_ZONES } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 
 /**
- * Le cerveau de Butine (entreprise fictive de la démo) tel que la page d'accueil le montre : mêmes zones et
- * mêmes volumes que `scripts/demo-data.ts`, sans appel au serveur puisque le visiteur n'est pas connecté.
+ * Butine's brain (the demo's fictional company) as the home page shows it: same zones and
+ * same volumes as `scripts/demo-data.ts`, without a server call since the visitor is not signed in.
  */
-const COUNTS: Record<string, number> = { dev: 9, produit: 6, sales: 6, compta: 6, support: 3, direction: 4 }
+const COUNTS: Record<string, number> = { dev: 9, product: 6, sales: 6, finance: 6, support: 3, leadership: 4 }
 
 export const LANDING_ZONES: ZoneView[] = DEFAULT_ZONES.map((z) => ({
   ...z,
@@ -18,22 +18,22 @@ export const LANDING_ZONES: ZoneView[] = DEFAULT_ZONES.map((z) => ({
 
 export const LANDING_TOTAL = LANDING_ZONES.reduce((n, z) => n + z.count, 0)
 
-/** Zones qui partagent des entités dans la démo (client, outil, projet). */
+/** Zones that share entities in the demo (customer, tool, project). */
 export const LANDING_SYNAPSES = [
-  { a: "dev", b: "produit", weight: 4, via: ["alerte essaimage"] },
-  { a: "sales", b: "produit", weight: 3, via: ["Miellerie Roussel"] },
-  { a: "compta", b: "sales", weight: 2, via: ["Stripe"] },
-  { a: "dev", b: "support", weight: 3, via: ["balance B2"] },
-  { a: "compta", b: "direction", weight: 2, via: ["runway"] },
-  { a: "sales", b: "direction", weight: 1, via: ["MRR"] },
+  { a: "dev", b: "product", weight: 4, via: ["swarm alert"] },
+  { a: "sales", b: "product", weight: 3, via: ["Miellerie Roussel"] },
+  { a: "finance", b: "sales", weight: 2, via: ["Stripe"] },
+  { a: "dev", b: "support", weight: 3, via: ["B2 scale"] },
+  { a: "finance", b: "leadership", weight: 2, via: ["runway"] },
+  { a: "sales", b: "leadership", weight: 1, via: ["MRR"] },
 ]
 
 /**
- * Trois agents qui vont chercher du contexte pendant le dernier chapitre. `from`/`to` sont des fractions de la
- * scène épinglée ; les requêtes visent de vraies connaissances de la démo.
+ * Three agents that fetch context during the last chapter. `from`/`to` are fractions of the
+ * pinned scene; the queries target real knowledge of the demo.
  */
 export const LANDING_AGENTS = [
-  { zone: "dev", from: 0.6, to: 0.69, label: "Claude Code de Hugo cherche «\u00a0déployer en production\u00a0»" },
-  { zone: "compta", from: 0.68, to: 0.77, label: "Codex de Jean-Marc cherche «\u00a0rapprochement Qonto\u00a0»" },
-  { zone: "sales", from: 0.76, to: 0.85, label: "Claude de Sarah cherche «\u00a0prix par ruche\u00a0»" },
+  { zone: "dev", from: 0.6, to: 0.69, label: "Hugo's Claude Code is searching “deploy to production”" },
+  { zone: "finance", from: 0.68, to: 0.77, label: "Jean-Marc's Codex is searching “Qonto reconciliation”" },
+  { zone: "sales", from: 0.76, to: 0.85, label: "Sarah's Claude is searching “price per hive”" },
 ]

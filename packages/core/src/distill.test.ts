@@ -23,7 +23,7 @@ const conv = (messages: ConversationMessage[], extra: Partial<Conversation> = {}
   ...extra,
 })
 
-/** Plus longue sous-chaîne commune (en caractères) : sert à vérifier qu'aucun texte brut long n'est recopié. */
+/** Longest common substring (in characters): checks that no long raw text is copied. */
 function longestCommon(a: string, b: string): number {
   let best = 0
   const prev = new Array(b.length + 1).fill(0)
@@ -39,43 +39,46 @@ function longestCommon(a: string, b: string): number {
   return best
 }
 
-test("heuristique : pas de demande brute ni de longues phrases recopiées, extraits courts et re-masqués", () => {
+const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
+const wrongTools = (cases: [string, string[]][]) =>
+  cases.map(([t, want]) => [t, tools(t), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
+
+test("heuristic: no raw ask and no long copied sentences, short re-redacted excerpts", () => {
   const prompt =
-    "Je dois migrer la facturation de Fournil vers Stripe Billing avant la fin du mois. Les abonnements annuels des boulangeries " +
-    "partenaires doivent garder leur prix actuel jusqu'au renouvellement, et les mensuels basculent tout de suite. Le client " +
-    "Maison Kayser a un contrat spécifique avec une remise de 15 % qu'il faut conserver, et on doit prévenir la compta du changement."
+    "I need to move Fournil's billing to Stripe Billing before the end of the month. The annual subscriptions of the partner bakeries " +
+    "must keep their current price until renewal, and the monthly ones switch right away. The customer " +
+    "Maison Kayser has a specific contract with a 15% discount we must keep, and we need to tell finance about the change."
   const answer =
-    "On part sur Stripe Billing avec des prix annuels distincts pour chaque boulangerie partenaire, parce que la proration native évite de recalculer à la main les remises négociées au cas par cas. " +
-    "La remise de Maison Kayser reste un coupon permanent. La clé de test est sk_test_abcdefghij1234567890 dans le .env.\n" +
-    "1. Créer les prix annuels\n2. Migrer les clients actifs\n3. Activer le portail client\nTODO: prévenir la compta du changement de facturation"
+    "We're going with Stripe Billing with separate annual prices for each partner bakery, because native proration avoids recomputing by hand the discounts negotiated case by case. " +
+    "Maison Kayser's discount stays a permanent coupon. The test key is sk_test_abcdefghij1234567890 in the .env.\n" +
+    "1. Create the annual prices\n2. Migrate the active customers\n3. Turn on the customer portal\nTODO: tell finance about the billing change"
   const items = distillHeuristic(conv([{ role: "user", text: prompt }, { role: "assistant", text: answer }], { cwd: "/home/hugo/fournil" }), DEFAULT_ZONES)
   assert.ok(items.length >= 3, JSON.stringify(items, null, 1))
   for (const i of items) {
-    assert.ok(!i.body.includes("Demande :"), "la demande brute n'est plus recopiée")
     assert.ok(i.title.length <= 140, i.title)
-    assert.ok(i.body.length <= 400, `${i.kind} : ${i.body.length} caractères`)
-    assert.ok(longestCommon(prompt, `${i.title}\n${i.body}`) <= MAX_PROMPT_VERBATIM, `${i.kind} recopie la demande : ${i.body}`)
-    assert.ok(longestCommon(answer, i.body) <= 200, `${i.kind} recopie la réponse : ${i.body}`)
-    assert.ok(!`${i.title} ${i.body}`.includes("sk_test_"), "les extraits sont re-masqués")
+    assert.ok(i.body.length <= 400, `${i.kind}: ${i.body.length} characters`)
+    assert.ok(longestCommon(prompt, `${i.title}\n${i.body}`) <= MAX_PROMPT_VERBATIM, `${i.kind} copies the ask: ${i.body}`)
+    assert.ok(longestCommon(answer, i.body) <= 200, `${i.kind} copies the answer: ${i.body}`)
+    assert.ok(!`${i.title} ${i.body}`.includes("sk_test_"), "excerpts are re-redacted")
   }
   const fact = items.find((i) => i.kind === "fact")
-  assert.ok(fact && /^Ce qui en est ressorti \(claude-code, projet fournil\) : /.test(fact.body), fact?.body)
+  assert.ok(fact && /^Outcome \(claude-code, project fournil\): /.test(fact.body), fact?.body)
   const procedure = items.find((i) => i.kind === "procedure")
   assert.ok(procedure && procedure.body.split("\n").length <= 8)
 })
 
-test("heuristique : rien pour une session personnelle, et les phrases perso d'une session de travail sont ignorées", () => {
-  const perso = conv([
-    { role: "user", text: "Aide-moi à écrire un mail à mon médecin traitant : je suis en arrêt pour burn-out depuis lundi." },
-    { role: "assistant", text: "Voici une proposition de mail pour votre médecin traitant concernant votre arrêt maladie. On garde un ton sobre." },
+test("heuristic: nothing for a personal session, and personal sentences of a work session are ignored", () => {
+  const personal = conv([
+    { role: "user", text: "Help me write an email to my doctor: I've been on sick leave for burnout since Monday." },
+    { role: "assistant", text: "Here is a draft email to your doctor about your sick leave. We'll keep a sober tone." },
   ])
-  assert.deepEqual(distillHeuristic(perso, DEFAULT_ZONES), [])
-  // Un sujet perso glissé dans une session de travail ne doit jamais ressortir dans un item.
+  assert.deepEqual(distillHeuristic(personal, DEFAULT_ZONES), [])
+  // A personal topic slipped into a work session must never come out in an item.
   const mixed = conv([
-    { role: "user", text: "Corrige le bug du webhook Stripe en production." },
+    { role: "user", text: "Fix the Stripe webhook bug in production." },
     {
       role: "assistant",
-      text: "On garde la vérification de signature sur le endpoint du webhook.\nOn garde aussi la séance chez Netflix pour ce soir.\nTODO: ajouter un test sur le webhook",
+      text: "We decided to keep the signature check on the webhook endpoint.\nWe decided to keep the Netflix night for tonight too.\nTODO: add a test on the webhook",
     },
   ])
   const items = distillHeuristic(mixed, DEFAULT_ZONES)
@@ -83,155 +86,139 @@ test("heuristique : rien pour une session personnelle, et les phrases perso d'un
   assert.ok(items.every((i) => !/netflix/i.test(`${i.title} ${i.body}`)), JSON.stringify(items, null, 1))
 })
 
-test("heuristique : la zone de la conversation sert de contexte, une égalité ne bascule jamais vers Dev", () => {
-  const compta = conv([
-    { role: "user", text: "Prépare la déclaration de TVA de septembre à partir de Pennylane et des relevés Qonto" },
+test("heuristic: the conversation's zone is the context, a tie never switches to Dev", () => {
+  const finance = conv([
+    { role: "user", text: "Prepare the September VAT return from Pennylane and the Qonto statements" },
     {
       role: "assistant",
       text:
-        "La TVA collectée de septembre s'élève à 18 240 €, la déclaration CA3 est prête dans Pennylane.\n" +
-        "On a décidé de relancer par email à J+15.\n" +
-        "TODO: corriger l'erreur sur la facture Boulangerie Martin\n" +
-        "TODO: relancer Maison Kayser pour les 2 virements de ce mois-ci\n" +
-        "TODO: corriger le bug de l'endpoint API d'export Pennylane en production",
+        "September's collected VAT is €18,240, the VAT return is ready in Pennylane.\n" +
+        "We decided to send reminders by email at D+15.\n" +
+        "TODO: fix the error on the Boulangerie Martin invoice\n" +
+        "TODO: chase Maison Kayser for this month's 2 transfers\n" +
+        "TODO: fix the bug in the Pennylane export API endpoint in production",
     },
   ])
-  const items = distillHeuristic(compta, DEFAULT_ZONES)
+  const items = distillHeuristic(finance, DEFAULT_ZONES)
   const zoneOf = (needle: string) => items.find((i) => i.title.includes(needle))?.zone
-  assert.equal(zoneOf("Boulangerie Martin"), "compta", "dev 1 / compta 1 : égalité → zone de la conversation")
-  assert.equal(zoneOf("Maison Kayser"), "compta", "« ce mois-ci » n'est pas le sigle CI")
-  assert.equal(zoneOf("relancer par email"), "compta")
-  assert.equal(zoneOf("endpoint API"), "dev", "un indice net (bug, endpoint, api, production) déplace l'item")
-  assert.ok(items.filter((i) => i.kind === "fact").every((i) => i.zone === "compta"))
+  assert.equal(zoneOf("Boulangerie Martin"), "finance", "dev 1 / finance 1: tie → the conversation's zone")
+  assert.equal(zoneOf("Maison Kayser"), "finance")
+  assert.equal(zoneOf("send reminders by email"), "finance")
+  assert.equal(zoneOf("export API endpoint"), "dev", "a clear cue (bug, endpoint, api, production) moves the item")
+  assert.ok(items.filter((i) => i.kind === "fact").every((i) => i.zone === "finance"))
 })
 
-test("décisions : ni « retenue à la source », ni une décision encore à prendre", () => {
-  const paie = conv([
-    { role: "user", text: "Calcule la retenue à la source sur le salaire d'octobre de Léo." },
+test("decisions: neither a computed label nor a decision still to be made", () => {
+  const payroll = conv([
+    { role: "user", text: "Compute the tax withholding on Léo's October salary." },
     {
       role: "assistant",
       text:
-        "Le taux de prélèvement retenu par l'administration est de 7,5 %. La retenue à la source s'élève donc à 187 €. " +
-        "Il faudra une décision de Claire sur la prime avant la paie. Solution retenue : versement en deux fois.",
+        "The withholding rate set by the tax office is 7.5%. The withholding therefore comes to €187. " +
+        "We'll need a decision from Claire on the bonus before payroll. Chosen option: pay it in two installments.",
     },
   ])
-  const items = distillHeuristic(paie, DEFAULT_ZONES)
+  const items = distillHeuristic(payroll, DEFAULT_ZONES)
   const decisions = items.filter((i) => i.kind === "decision")
-  assert.deepEqual(decisions.map((i) => i.title), ["Solution retenue : versement en deux fois."], JSON.stringify(items, null, 1))
-  assert.ok(items.some((i) => i.kind === "question" && i.title.startsWith("Il faudra une décision de Claire")))
+  assert.deepEqual(decisions.map((i) => i.title), ["Chosen option: pay it in two installments."], JSON.stringify(items, null, 1))
+  assert.ok(items.some((i) => i.kind === "question" && i.title.startsWith("We'll need a decision from Claire")))
 })
 
-test("découpage : une longue session agentique garde ses décisions et tâches finales (segments sans message utilisateur)", () => {
-  const filler = "J'ai lu le fichier src/payments/webhook.ts et vérifié la gestion des erreurs du endpoint, la signature est contrôlée correctement. ".repeat(12)
+test("chunking: a long agentic session keeps its final decisions and tasks (segments without a user message)", () => {
+  const filler = "I read the file src/payments/webhook.ts and checked the endpoint's error handling, the signature is verified correctly. ".repeat(12)
   const longAnswer =
-    Array.from({ length: 25 }, (_, i) => `Étape ${i} : ${filler}`).join("\n\n") +
-    "\n\nTerminé. On part sur la version 2026-09 de l'API Stripe pour tous les webhooks.\nTODO: mettre à jour la clé de signature en production\nTODO: prévenir le support du changement"
-  const c = conv([{ role: "user", text: "Migre le webhook Stripe vers la nouvelle API et corrige les tests" }, { role: "assistant", text: longAnswer }], { id: "long" })
+    Array.from({ length: 25 }, (_, i) => `Pass ${i}: ${filler}`).join("\n\n") +
+    "\n\nDone. We're going with the 2026-09 version of the Stripe API for all webhooks.\nTODO: update the signing key in production\nTODO: tell support about the change"
+  const c = conv([{ role: "user", text: "Migrate the Stripe webhook to the new API and fix the tests" }, { role: "assistant", text: longAnswer }], { id: "long" })
   const chunks = chunkConversation(c)
   assert.ok(chunks.length >= 2)
-  assert.equal(chunks.map((ch) => ch.messages.map((m) => m.text).join("")).join("").replace(/\s/g, "").length, (c.messages[0].text + longAnswer).replace(/\s/g, "").length, "rien n'est tronqué")
+  assert.equal(chunks.map((ch) => ch.messages.map((m) => m.text).join("")).join("").replace(/\s/g, "").length, (c.messages[0].text + longAnswer).replace(/\s/g, "").length, "nothing is truncated")
   assert.ok(chunks.every((ch) => ch.messages.every((m) => m.text.length <= 24000)))
-  assert.equal(chunks[0].ask, undefined, "le premier segment contient déjà la demande")
-  assert.ok(chunks.slice(1).every((ch) => ch.ask === "Migre le webhook Stripe vers la nouvelle API et corrige les tests"))
-  assert.match(renderConversation(chunks[1]), /Demande initiale \(rappel, hors de ce segment\) : Migre le webhook/)
+  assert.equal(chunks[0].ask, undefined, "the first segment already contains the ask")
+  assert.ok(chunks.slice(1).every((ch) => ch.ask === "Migrate the Stripe webhook to the new API and fix the tests"))
+  assert.match(renderConversation(chunks[1]), /Initial ask \(reminder, outside this segment\): Migrate the Stripe webhook/)
   const items = chunks.flatMap((ch) => distillHeuristic(ch, DEFAULT_ZONES))
-  assert.ok(items.some((i) => i.kind === "decision" && i.title.includes("version 2026-09")), JSON.stringify(items.map((i) => i.title)))
+  assert.ok(items.some((i) => i.kind === "decision" && i.title.includes("2026-09 version")), JSON.stringify(items.map((i) => i.title)))
   assert.equal(items.filter((i) => i.kind === "task").length, 2)
-  // Synchro incrémentale : seulement la fin de la réponse, sans nouveau prompt.
+  // Incremental sync: only the end of the answer, without a new prompt.
   const tail = distillHeuristic(conv([{ role: "assistant", text: longAnswer.slice(-600) }], { id: "inc" }), DEFAULT_ZONES)
   assert.deepEqual(tail.map((i) => i.kind).sort(), ["decision", "task", "task"])
-  // Une conversation courte n'est pas découpée et garde son identifiant.
-  const short = chunkConversation(conv([{ role: "user", text: "Salut" }, { role: "assistant", text: "Bonjour" }], { id: "court" }))
-  assert.deepEqual(short.map((ch) => [ch.id, ch.ask]), [["court", undefined]])
+  // A short conversation is not split and keeps its id.
+  const short = chunkConversation(conv([{ role: "user", text: "Hi" }, { role: "assistant", text: "Hello" }], { id: "short" }))
+  assert.deepEqual(short.map((ch) => [ch.id, ch.ask]), [["short", undefined]])
 })
 
-test("outils : les mots courants ne deviennent pas des outils", () => {
-  const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
-  assert.deepEqual(tools("Fais-moi une vue d'ensemble de la trésorerie du mois"), [])
-  assert.deepEqual(tools("Vue d'ensemble de la trésorerie"), [])
-  assert.deepEqual(tools("De mon point de vue, on garde le prix actuel"), [])
-  assert.deepEqual(tools("Je n'ai aucune notion de la TVA intracommunautaire"), [])
+test("tools: common words do not become tools", () => {
+  assert.deepEqual(tools("Give me a notion of this month's cash"), [])
+  assert.deepEqual(tools("I have no notion of intra-EU VAT"), [])
   assert.deepEqual(tools("make sure the build passes. Make sure it is green"), [])
-  assert.deepEqual(tools("Envoie le récap à Alan avant midi"), [])
-  assert.deepEqual(tools("On documente la procédure dans Notion et on suit les tickets dans Linear"), ["Linear", "Notion"])
-  assert.deepEqual(tools("Le front passe en vue.js 3 et le back sur Node 22"), ["Vue", "Node"])
-  assert.deepEqual(tools("On a migré la base postgres et le webhook stripe"), ["Stripe", "Postgres"])
-  assert.deepEqual(tools("La mutuelle passe chez Alan au 1er janvier"), ["Alan"])
-  assert.deepEqual(tools("Le scénario Make relance les factures"), ["Make"])
+  assert.deepEqual(tools("Send the recap to Alan before noon"), [])
+  assert.deepEqual(tools("We document the procedure in Notion and track the tickets in Linear"), ["Linear", "Notion"])
+  assert.deepEqual(tools("The front end moves to vue.js 3 and the back end to Node 22"), ["Vue", "Node"])
+  assert.deepEqual(tools("We migrated the postgres database and the stripe webhook"), ["Stripe", "Postgres"])
+  assert.deepEqual(tools("Our health insurance moves to Alan on January 1st"), ["Alan"])
+  assert.deepEqual(tools("The scenario in Make chases the invoices"), ["Make"])
 })
 
-// --- Deuxième passe de revue -------------------------------------------------------------------------------------------
-
-test("outils (2e passe) : un mot en début de ligne, de titre ou de cellule n'est pas un outil", () => {
-  const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
-  // [texte, outils attendus] — sonde verify-core/c5.ts
+test("tools: a word at the start of a line, a heading or a cell is not a tool", () => {
   const cases: [string, string[]][] = [
-    ["# Rapport de trésorerie\n\n## Vue d'ensemble\nLa trésorerie est saine.", []],
-    ["Voici le point demandé\n\nVue d'ensemble : 3 factures impayées", []],
-    ["- Vue d'ensemble des ventes\n- Détail par client", []],
-    ["| Vue | Montant |\n|---|---|", []],
-    ["| Poste | Vue |\n|---|---|", []],
-    ["**Vue d'ensemble** : tout va bien", []],
-    ["1. Vue d'ensemble\n2. Détails", []],
-    ["En bref, Vue d'ensemble du trimestre", []],
-    ["Résumé\nNotion de marge brute : le chiffre d'affaires moins les achats", []],
-    ["Plan\nLinear regression sur les ventes", []],
-    ["Points clés\nSlack : une marge de 2 jours dans le planning", []],
-    ["Contexte\nAlan, le nouveau boulanger, commence lundi; mutuelle à prévoir", []],
+    ["# Cash report\n\n## Linear growth\nCash is healthy.", []],
+    ["Here is the update\n\nMake sure: 3 unpaid invoices", []],
+    ["- Make sure the sales are right\n- Detail per customer", []],
+    ["| Notion | Amount |\n|---|---|", []],
+    ["Summary\nNotion of gross margin: revenue minus purchases", []],
+    ["Plan\nLinear regression on sales", []],
+    ["Key points\nSlack of 2 days in the schedule", []],
     ["Make sure the tests pass\nMake it work", []],
-    // vraies mentions
-    ["on migre de vue 2 à Vue 3", ["Vue"]],
-    ["La doc est dans Notion et les tickets dans Linear", ["Linear", "Notion"]],
-    ["Résumé\nLa procédure est dans Notion depuis hier", ["Notion"]],
-    ["- on poste l'alerte dans Slack quand le build casse", ["Slack"]],
+    // real mentions
+    ["we move from vue 2 to Vue 3", ["Vue"]],
+    ["The docs are in Notion and the tickets in Linear", ["Linear", "Notion"]],
+    ["Summary\nThe procedure has been in Notion since yesterday", ["Notion"]],
+    ["- we post the alert in Slack when the build breaks", ["Slack"]],
   ]
-  const wrong = cases.map(([t, want]) => [t, tools(t), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
-  assert.deepEqual(wrong, [])
-  // Bout en bout : une réponse compta avec un titre « ## Vue d'ensemble » ne tague plus ses items avec l'outil Vue.
+  assert.deepEqual(wrongTools(cases), [])
+  // End to end: a finance answer with a "## Linear growth" heading no longer tags its items with the Linear tool.
   const items = distillHeuristic(
     conv([
-      { role: "user", text: "Fais le point sur la trésorerie d'octobre" },
-      { role: "assistant", text: "## Vue d'ensemble\nLa trésorerie est de 42 000 €. On garde la réserve de deux mois de charges.\nTODO: relancer les impayés" },
+      { role: "user", text: "Give me the October cash update" },
+      { role: "assistant", text: "## Linear growth\nCash is €42,000. We decided to keep a two-month reserve of expenses.\nTODO: chase the unpaid invoices" },
     ]),
     DEFAULT_ZONES,
   )
-  assert.ok(items.length > 0 && items.every((i) => !i.entities.some((e) => e.name === "Vue")), JSON.stringify(items.map((i) => i.entities)))
+  assert.ok(items.length > 0 && items.every((i) => !i.entities.some((e) => e.name === "Linear")), JSON.stringify(items.map((i) => i.entities)))
 })
 
-test("décisions (2e passe) : libellés de calcul, retenues chiffrées et hypothèses ne sont pas des décisions", () => {
+test("decisions: computed labels and hypotheses are not decisions", () => {
   const decisions = (answer: string) =>
-    distillHeuristic(conv([{ role: "user", text: "Point paie d'octobre" }, { role: "assistant", text: answer }]), DEFAULT_ZONES)
+    distillHeuristic(conv([{ role: "user", text: "October payroll update" }, { role: "assistant", text: answer }]), DEFAULT_ZONES)
       .filter((i) => i.kind === "decision")
       .map((i) => i.title)
-  // [réponse, décisions attendues] — sonde verify-core/c6.ts
   const cases: [string, string[]][] = [
-    ["Voici le calcul pour octobre :\n- Salaire brut : 2 500 €\n- Taux retenu : 7,5 %\n- Montant retenu : 187 €\nLa retenue s'élève donc à 187 €.", []],
-    ["Le taux personnalisé retenu : 7,5 %. La retenue sera prélevée sur la paie.", []],
-    ["Sur le salaire d'octobre, on retient 187 € au titre du prélèvement à la source.", []],
-    ["Si on garde ce rythme d'heures sup, la paie de novembre sera plus haute.", []],
-    ["Si on choisit le taux neutre, la retenue sera de 4 %.", []],
-    ["Au cas où on opte pour le versement trimestriel, il faudra prévenir la banque.", []],
-    // vraies décisions
-    ["On a décidé de garder Stripe pour les paiements en ligne, même si on perd la proration.", ["On a décidé de garder Stripe pour les paiements en ligne, même si on perd la proration."]],
-    ["Option retenue : expert-comptable externe.", ["Option retenue : expert-comptable externe."]],
-    ["On retient la solution B pour la clôture.", ["On retient la solution B pour la clôture."]],
-    ["Choix retenu : Qonto pour les virements.", ["Choix retenu : Qonto pour les virements."]],
+    ["Here is the computation for October:\n- Gross salary: €2,500\n- Rate applied: 7.5%\n- Amount withheld: €187\nThe withholding therefore comes to €187.", []],
+    ["If we keep this overtime pace, November's payroll will be higher.", []],
+    ["If we choose the neutral rate, the withholding will be 4%.", []],
+    ["In case we opt for quarterly payments, we'll have to tell the bank.", []],
+    // real decisions
+    ["We decided to keep Stripe for online payments, even if we lose proration.", ["We decided to keep Stripe for online payments, even if we lose proration."]],
+    ["Chosen option: an external accountant.", ["Chosen option: an external accountant."]],
+    ["We're going with option B for the closing.", ["We're going with option B for the closing."]],
+    ["Selected vendor: Qonto for transfers.", ["Selected vendor: Qonto for transfers."]],
   ]
   const wrong = cases.map(([a, want]) => [a, decisions(a), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
   assert.deepEqual(wrong, [])
 })
 
-test("heuristique (2e passe) : aucun passage de plus de 80 caractères de la demande dans un champ envoyé, plus de « Contexte : »", () => {
+test("heuristic: no passage of more than 80 characters of the ask in a field sent", () => {
   const prompt =
-    "Le client Boulangerie Martin conteste la facture F-2026-118 de 1 240 € : il dit que la livraison du 3 octobre était incomplète " +
-    "et menace de partir chez Maison Kayser si on ne fait pas un geste commercial. On a décidé de lui proposer un avoir de 15 % sur cette " +
-    "facture et de garder ses livraisons du matin en priorité. TODO: appeler le gérant de la Boulangerie Martin avant vendredi pour s'excuser du retard."
+    "The customer Boulangerie Martin disputes invoice F-2026-118 of €1,240: they say the October 3rd delivery was incomplete " +
+    "and threaten to move to Maison Kayser unless we make a commercial gesture. We decided to offer them a 15% credit note on this " +
+    "invoice and to keep their morning deliveries as a priority. TODO: call the manager of Boulangerie Martin before Friday to apologize for the delay."
   const answer =
-    "Je te propose de répondre au client Boulangerie Martin en reconnaissant le problème de livraison du 3 octobre et en proposant un avoir " +
-    "de 15 % sur la facture F-2026-118, soit 186 € à déduire du prochain règlement. Il faudra aussi vérifier avec l'équipe de livraison ce qui " +
-    "s'est passé ce jour-là. On a décidé de garder le client Boulangerie Martin en priorité pour les tournées du matin.\n" +
-    "TODO: envoyer l'avoir de 186 € au client Boulangerie Martin avant vendredi\n1. Créer l'avoir\n2. L'envoyer\n3. Prévenir la livraison"
-  // La demande arrive aussi par le titre de session et par le rappel d'un segment de fin.
+    "I suggest answering the customer Boulangerie Martin by acknowledging the October 3rd delivery problem and offering a credit note " +
+    "of 15% on invoice F-2026-118, that is €186 to deduct from the next payment. We'll also need to check with the delivery team what " +
+    "happened that day. We decided to keep the customer Boulangerie Martin as a priority for the morning rounds.\n" +
+    "TODO: send the €186 credit note to the customer Boulangerie Martin before Friday\n1. Create the credit note\n2. Send it\n3. Tell the delivery team"
+  // The ask also arrives through the session title and the reminder of a trailing segment.
   const variants = [
     conv([{ role: "user", text: prompt }, { role: "assistant", text: answer }], { cwd: "/Users/hugo/fournil" }),
     conv([{ role: "user", text: prompt }, { role: "assistant", text: answer }], { title: prompt }),
@@ -242,203 +229,102 @@ test("heuristique (2e passe) : aucun passage de plus de 80 caractères de la dem
     assert.ok(items.some((i) => i.kind === "fact") && items.some((i) => i.kind === "decision") && items.some((i) => i.kind === "task"), JSON.stringify(items.map((i) => i.kind)))
     for (const i of items) {
       for (const [field, text] of [["title", i.title], ["body", i.body]] as const) {
-        assert.ok(longestCommon(prompt, text) <= MAX_PROMPT_VERBATIM, `${i.kind}.${field} recopie ${longestCommon(prompt, text)} caractères de la demande : ${text}`)
-        assert.ok(longestCommon(answer, text) <= 200, `${i.kind}.${field} recopie ${longestCommon(answer, text)} caractères de la réponse`)
+        assert.ok(longestCommon(prompt, text) <= MAX_PROMPT_VERBATIM, `${i.kind}.${field} copies ${longestCommon(prompt, text)} characters of the ask: ${text}`)
+        assert.ok(longestCommon(answer, text) <= 200, `${i.kind}.${field} copies ${longestCommon(answer, text)} characters of the answer`)
       }
-      assert.ok(!/Contexte :/.test(i.body), i.body)
     }
   }
-  // Les items restent utiles : la décision et la tâche de l'employé sont là, en extrait court.
+  // Items stay useful: the employee's decision and task are there, as a short excerpt.
   const items = distillHeuristic(variants[0], DEFAULT_ZONES)
-  assert.ok(items.some((i) => i.kind === "decision" && /avoir de 15 %/.test(i.title)), JSON.stringify(items.map((i) => i.title)))
+  assert.ok(items.some((i) => i.kind === "decision" && /15% credit note/.test(i.title)), JSON.stringify(items.map((i) => i.title)))
   assert.ok(items.some((i) => i.kind === "task" && /Boulangerie Martin/.test(i.title)))
-  assert.ok(items.every((i) => i.zone === "sales"), JSON.stringify(items.map((i) => i.zone)))
+  assert.ok(new Set(items.map((i) => i.zone)).size === 1, JSON.stringify(items.map((i) => i.zone)))
 })
 
-test("heuristique (2e passe) : une session santé dictée au milieu d'un mail n'est pas distillée", () => {
+test("heuristic: a health session dictated in the middle of an email is not distilled", () => {
   const items = distillHeuristic(
     conv([
-      { role: "user", text: "Rédige un mail à mon ostéopathe pour décaler la séance de jeudi : ma hernie discale me bloque." },
-      { role: "assistant", text: "Voici un mail pour votre ostéopathe. On a décidé de proposer vendredi 9h comme nouveau créneau." },
+      { role: "user", text: "Write an email to my physio to move Thursday's session: my herniated disc is acting up." },
+      { role: "assistant", text: "Here is an email for your physio. We decided to suggest Friday 9am as the new slot." },
     ]),
     DEFAULT_ZONES,
   )
   assert.deepEqual(items, [])
 })
 
-// --- Troisième passe de revue ------------------------------------------------------------------------------------------
-
-test("outils (3e passe) : une puce ou un sujet de phrase est un outil sur indice ; un titre, un tiret ou un article, non", () => {
-  const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
-  // [texte, outils attendus] — sondes r2-verify-core/ent.ts et ent2.ts
+test("tools: a bullet or a sentence subject is a tool on a cue; a heading, a dash or an article is not", () => {
   const cases: [string, string[]][] = [
-    // vraies mentions : liste d'outils, verbe après le nom, énumération, préposition + article
-    ["Outils recommandés :\n- Notion pour la doc\n- Slack pour les alertes\n- Linear pour les tickets", ["Linear", "Notion", "Slack"]],
-    ["Pour la doc :\n- Stripe pour les paiements\n- Notion pour la doc", ["Stripe", "Notion"]],
-    ["Sentry est déployé en prod", ["Sentry"]],
-    ["Notion est notre wiki interne.", ["Notion"]],
-    ["On utilise Notion et Slack", ["Notion", "Slack"]],
-    ["Poste le récap sur le Slack de l'équipe", ["Slack"]],
-    ["Le fichier Excel est prêt", ["Excel"]],
-    ["Stack :\n- Vue 3\n- Node 22", ["Vue", "Node"]],
-    // titres, tirets, emoji, parenthèses, cellules, articles : des mots courants
-    ["## 📊 Vue mensuelle", []],
-    ["### 🔎 Vue par client\nMartin : 1 200 €", []],
-    ["1️⃣ Vue globale", []],
-    ["## 1 – Vue globale", []],
-    ["Trésorerie – Vue globale", []],
-    ["Tableau de bord — Vue mensuelle des ventes", []],
-    ["Trésorerie (Vue mensuelle)", []],
-    ["Rappel — Notion de seuil de rentabilité", []],
-    ["**📌 Notion de marge** : CA - achats", []],
+    // real mentions: tool list, verb after the name, enumeration, preposition + article
+    ["Recommended tools:\n- Notion for the docs\n- Slack for alerts\n- Linear for tickets", ["Linear", "Notion", "Slack"]],
+    ["For the docs:\n- Stripe for payments\n- Notion for the docs", ["Stripe", "Notion"]],
+    ["Sentry is deployed in prod", ["Sentry"]],
+    ["Notion is our internal wiki.", ["Notion"]],
+    ["We use Notion and Slack", ["Notion", "Slack"]],
+    ["Post the recap on the Slack of the team", ["Slack"]],
+    ["Export the report to Excel", ["Excel"]],
+    ["Stack:\n- Vue 3\n- Node 22", ["Vue", "Node"]],
+    // headings, dashes, emoji, parentheses, cells, articles: common words
+    ["## 📊 Linear growth", []],
+    ["1️⃣ Make sure", []],
+    ["## 1 – Make it simple", []],
+    ["Cash – Linear forecast", []],
+    ["Reminder — Notion of break-even point", []],
+    ["**📌 Notion of margin**: revenue - purchases", []],
     ["<td>Notion</td>", []],
-    ["La Notion de marge brute est essentielle", []],
-    ["Il reste du Slack dans le planning", []],
-    ["Planning — Slack de 2 jours", []],
-    ["- Vue mensuelle\n- Notion de marge", []],
-    ["Léo et Alan ont parlé de la mutuelle d'Alan", []],
+    ["The notion of gross margin is essential", []],
+    ["Planning — Slack of 2 days", []],
+    ["- Linear growth\n- Notion of margin", []],
+    ["Léo and Alan talked about Alan's health insurance", []],
   ]
-  const wrong = cases.map(([t, want]) => [t, tools(t), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
-  assert.deepEqual(wrong, [])
-  // Bout en bout : des titres « ## Trésorerie — Vue mensuelle » ne taguent plus les items avec l'outil Vue.
-  const items = distillHeuristic(
-    conv([
-      { role: "user", text: "Fais le point sur la trésorerie d'octobre et les factures impayées." },
-      {
-        role: "assistant",
-        text: "## Trésorerie — Vue mensuelle\n\nLa trésorerie est de 42 000 €. On a décidé de relancer les factures impayées à J+15.\n\n## Factures — Vue par client\n\n| Client | Montant |\n|---|---|\n| Martin | 1 200 € |",
-      },
-    ]),
-    DEFAULT_ZONES,
-  )
-  assert.ok(items.length > 0 && items.every((i) => !i.entities.some((e) => e.type === "tool")), JSON.stringify(items.map((i) => i.entities)))
+  assert.deepEqual(wrongTools(cases), [])
 })
 
-test("décisions (3e passe) : « on retient … sur le salaire » est une retenue, « on retient Stripe Billing » une décision", () => {
-  const decisions = (answer: string) =>
-    distillHeuristic(conv([{ role: "user", text: "Calcule la paie d'octobre de Léo." }, { role: "assistant", text: `Voici le calcul.\n${answer}\nVoilà.` }]), DEFAULT_ZONES)
-      .filter((i) => i.kind === "decision")
-      .map((i) => i.title)
-  // sonde r2-verify-core/dec.ts
-  const none = [
-    "On retient donc 187 € sur le salaire de Léo.",
-    "On retient le prélèvement à la source chaque mois sur le salaire.",
-    "Nous retenons la retenue à la source de 7,5 %.",
-    "On retient la TVA à 20 % sur la facture.",
-    "On retient environ 187 € par mois sur le salaire.",
-    "On a retenu 187 € sur la paie d'octobre.",
-    "Quand on garde trop de stock, la marge baisse.",
-    "Lorsqu'on choisit le taux neutre, l'employeur ne connaît pas les revenus.",
-    "Imaginons qu'on garde Stripe : les frais restent à 1,4 %.",
-    "On garde un œil sur la trésorerie.",
-    "On garde à l'esprit que la TVA baisse en 2027.",
-  ]
-  const real = [
-    "On retient Stripe Billing pour les abonnements.",
-    "On part sur Supabase pour la base de données.",
-    "On retient la solution B pour la clôture.",
-    "Nous avons retenu Qonto pour les virements.",
-    "On a décidé de garder Stripe pour les paiements en ligne.",
-  ]
-  assert.deepEqual(none.filter((s) => decisions(s).length > 0), [])
-  assert.deepEqual(real.filter((s) => decisions(s).length !== 1), [])
-})
-
-test("heuristique (3e passe) : capture d'écran (OCR) — aucun champ ne recopie plus de 80 caractères du texte capturé", () => {
-  // Screenpipe : la demande tapée par l'employé est dans le texte OCR, donc côté « assistant » (sonde r2-verify-core/ocr.ts).
-  const prompt =
-    "Le client Boulangerie Martin conteste la facture F-2026-118 de 1 240 € car la livraison du 3 octobre est arrivée avec deux " +
-    "heures de retard et il menace de passer chez un concurrent. Aide-moi à lui répondre."
-  const ocr =
-    `Nouvelle conversation\n${prompt}\n` +
-    "Je te propose de répondre au client en reconnaissant le retard de livraison du 3 octobre, puis de lui proposer un geste commercial clair et chiffré pour le garder.\n" +
-    "On a décidé de proposer un avoir de 15 % sur la facture F-2026-118 au client Boulangerie Martin, à déduire du prochain règlement.\n" +
-    "TODO: envoyer l'avoir au client Boulangerie Martin avant vendredi et prévenir l'équipe de livraison du matin\n" +
-    "1. Créer l'avoir de 15 % dans Pennylane pour la facture F-2026-118 du client Boulangerie Martin\n2. L'envoyer\n3. Prévenir la livraison"
-  const base = { started_at: "2026-10-16T09:00:00Z", ended_at: "2026-10-16T09:05:00Z" }
-  const variants: Conversation[] = [
-    {
-      ...base, id: "screenpipe:1", tool: "claude", app: "Google Chrome", title: "Litige facture Boulangerie Martin - Claude", screenpipe_ref: "1",
-      messages: [{ role: "user", text: "Session capturée à l'écran : Google Chrome — Litige facture Boulangerie Martin - Claude" }, { role: "assistant", text: ocr }],
-    },
-    // Messages structurés d'un assistant web (ChatGPT) : même règle.
-    { ...base, id: "web", tool: "chatgpt", app: "Arc", messages: [{ role: "user", text: prompt }, { role: "assistant", text: ocr }] },
-  ]
-  for (const c of variants) {
-    const items = distillHeuristic(c, DEFAULT_ZONES)
-    assert.ok(items.some((i) => i.kind === "decision") && items.some((i) => i.kind === "task"), JSON.stringify(items.map((i) => i.kind)))
-    for (const i of items) {
-      for (const [field, text] of [["title", i.title], ["body", i.body]] as const) {
-        const n = longestCommon(ocr.replace(/\s+/g, " "), text.replace(/\s+/g, " "))
-        assert.ok(n <= MAX_PROMPT_VERBATIM, `${c.id} ${i.kind}.${field} recopie ${n} caractères du texte capturé : ${text}`)
-      }
-    }
-  }
-  // Les journaux Claude Code gardent des extraits de réponse plus longs (200 caractères) : l'assistant n'y recopie pas la demande.
-  const cc = distillHeuristic(conv([{ role: "user", text: "Point litige Martin" }, { role: "assistant", text: ocr.split("\n").slice(2).join("\n") }]), DEFAULT_ZONES)
-  assert.ok(cc.some((i) => i.kind === "decision" && i.body.length > MAX_PROMPT_VERBATIM + 20), JSON.stringify(cc.map((i) => i.body)))
-})
-
-// --- Quatrième passe de revue ------------------------------------------------------------------------------------------
-
-test("outils (4e passe) : une puce « - Qonto : … » ne fait pas de la liste une liste d'outils ; « Vue mensuelle » est un nom commun", () => {
-  const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
-  // [texte, outils attendus] — sondes r3-verify-core/ent3.ts et ent4.ts
+test("tools: a \"- Qonto: …\" bullet does not make the list a tool list; \"Make sure\" is a common phrase", () => {
   const cases: [string, string[]][] = [
-    ["Synthèse de trésorerie :\n- Vue globale : trésorerie saine\n- Qonto : 12 300 € disponibles\n- Pennylane : 3 factures à rapprocher", ["Pennylane", "Qonto"]],
-    ["Voici le point :\n- Vue mensuelle : CA en hausse de 8 %\n- Stripe : 4 200 € encaissés", ["Stripe"]],
-    ["Récap :\n- Notion de marge brute : CA - achats\n- Pennylane : export prêt", ["Pennylane"]],
-    ["Plan :\n- Make un point avec Léo\n- Zapier pour l'automatisation", ["Zapier"]],
-    ["Résumé :\n- Vue mensuelle : +3 %\n- Vue annuelle : +12 %\n- Stripe : 4 200 €", ["Stripe"]],
-    ["Tableau de bord Vue mensuelle des ventes", []],
-    ["Ouvre l'onglet Vue mensuelle du fichier", []],
-    ["Synthèse Vue globale", []],
-    ["Section Vue client", []],
-    ["Bouton Vue liste / Vue grille", []],
-    ["Demande à Alan de vérifier la mutuelle de Léo", []],
-    ["Claude a validé la facture de Martin", []],
-    // vraies mentions : en-tête d'outils, chaque puce est un outil (dont un sans ambiguïté), verbe, version, énumération, complément
-    ["Outils recommandés :\n- Notion pour la doc\n- Slack pour les alertes\n- Linear pour les tickets", ["Linear", "Notion", "Slack"]],
-    ["- **Stripe** : les paiements\n- **Notion** : la doc\n- **Slack** : les alertes", ["Stripe", "Notion", "Slack"]],
-    ["Pour la doc :\n- Stripe pour les paiements\n- Notion pour la doc", ["Stripe", "Notion"]],
-    ["Sentry est déployé en prod", ["Sentry"]],
-    ["Notion est notre wiki interne.", ["Notion"]],
-    ["on migre de vue 2 à Vue 3", ["Vue"]],
-    ["On utilise Notion et Slack", ["Notion", "Slack"]],
-    ["Poste le récap sur le Slack de l'équipe", ["Slack"]],
-    ["Le scénario Make relance les factures", ["Make"]],
+    ["Cash summary:\n- Linear growth: cash is healthy\n- Qonto: €12,300 available\n- Pennylane: 3 invoices to reconcile", ["Pennylane", "Qonto"]],
+    ["Here is the update:\n- Linear trend: revenue up 8%\n- Stripe: €4,200 collected", ["Stripe"]],
+    ["Recap:\n- Notion of gross margin: revenue - purchases\n- Pennylane: export ready", ["Pennylane"]],
+    ["Plan:\n- Make a call with Léo\n- Zapier for automation", ["Zapier"]],
+    ["Ask Alan to check Léo's benefits", []],
+    ["Claude approved Martin's invoice", []],
+    // real mentions: tools header, every bullet a tool (one of them unambiguous), verb, version, enumeration, complement
+    ["Recommended tools:\n- Notion for the docs\n- Slack for alerts\n- Linear for tickets", ["Linear", "Notion", "Slack"]],
+    ["- **Stripe**: payments\n- **Notion**: the docs\n- **Slack**: alerts", ["Stripe", "Notion", "Slack"]],
+    ["Sentry is deployed in prod", ["Sentry"]],
+    ["we move from vue 2 to Vue 3", ["Vue"]],
+    ["Post the recap on the Slack of the team", ["Slack"]],
+    ["The scenario in Make chases the invoices", ["Make"]],
     ["The module may import Node built-ins", ["Node"]],
   ]
-  const wrong = cases.map(([t, want]) => [t, tools(t), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
-  assert.deepEqual(wrong, [])
+  assert.deepEqual(wrongTools(cases), [])
 })
 
-test("heuristique (4e passe) : un champ sur plusieurs lignes ne recopie pas non plus plus de 80 caractères de la source", () => {
-  // Le garde-fou compare espaces normalisés : des étapes jointes par « \n » sont vues comme dans la source.
-  const source = "Voici la procédure :\n1. Ouvre Pennylane et va dans Banque.\n2. Sélectionne le compte Qonto de la boulangerie.\n3. Filtre les transactions de septembre."
-  const field = "1. Ouvre Pennylane et va dans Banque.\n2. Sélectionne le compte Qonto de la boulangerie.\n3. Filtre les transactions de septembre."
+test("heuristic: a multi-line field does not copy more than 80 characters of the source either", () => {
+  // The safety net compares with normalized whitespace: steps joined by "\n" are seen as in the source.
+  const source = "Here is the procedure:\n1. Open Pennylane and go to Bank.\n2. Select the bakery's Qonto account.\n3. Filter September's transactions."
+  const field = "1. Open Pennylane and go to Bank.\n2. Select the bakery's Qonto account.\n3. Filter September's transactions."
   const clipped = clipVerbatim(field, verbatimWindows([source], MAX_PROMPT_VERBATIM), MAX_PROMPT_VERBATIM)
   assert.ok(longestCommon(source.replace(/\s+/g, " "), clipped.replace(/\s+/g, " ")) <= MAX_PROMPT_VERBATIM, clipped)
-  assert.ok(clipped.startsWith("1. Ouvre Pennylane et va dans Banque.\n2. "), clipped)
+  assert.ok(clipped.startsWith("1. Open Pennylane and go to Bank.\n2. "), clipped)
 
-  // Bout en bout : capture Screenpipe d'une réponse en 8 étapes (sonde r3-verify-core/ocr3.ts), et procédure tapée par
-  // l'employé puis reprise par l'assistant (ocr4.ts). La procédure garde ses étapes, sans recopier le bloc de la source.
+  // End to end: Screenpipe capture of an 8-step answer, and a procedure typed by the employee then repeated by the
+  // assistant. The procedure keeps its steps, without copying the source block.
   const steps = [
-    "1. Ouvre Pennylane et va dans Banque.", "2. Sélectionne le compte Qonto de la boulangerie.", "3. Filtre les transactions de septembre.",
-    "4. Associe chaque transaction à sa facture.", "5. Crée les justificatifs manquants.", "6. Vérifie le solde avec le relevé Qonto.",
-    "7. Marque le mois comme rapproché.", "8. Envoie le récapitulatif au comptable.",
+    "1. Open Pennylane and go to Bank.", "2. Select the bakery's Qonto account.", "3. Filter September's transactions.",
+    "4. Match each transaction with its invoice.", "5. Create the missing receipts.", "6. Check the balance against the Qonto statement.",
+    "7. Mark the month as reconciled.", "8. Send the summary to the accountant.",
   ].join("\n")
-  const prompt = "Explique-moi comment faire le rapprochement bancaire Qonto dans Pennylane pour la clôture de septembre, étape par étape."
+  const prompt = "Explain step by step how to do the Qonto bank reconciliation in Pennylane for the September close."
   const base = { started_at: "2026-10-16T09:00:00Z", ended_at: "2026-10-16T09:05:00Z" }
   const variants: [Conversation, string][] = [
     [
       {
-        ...base, id: "screenpipe:1", tool: "claude", app: "Google Chrome", title: "Rapprochement Qonto - Claude", screenpipe_ref: "1",
-        messages: [{ role: "user", text: "Session capturée à l'écran" }, { role: "assistant", text: `Nouvelle conversation\n${prompt}\nVoici la procédure :\n${steps}` }],
+        ...base, id: "screenpipe:1", tool: "claude", app: "Google Chrome", title: "Qonto reconciliation - Claude", screenpipe_ref: "1",
+        messages: [{ role: "user", text: "Session captured on screen" }, { role: "assistant", text: `New chat\n${prompt}\nHere is the procedure:\n${steps}` }],
       },
-      `Nouvelle conversation\n${prompt}\nVoici la procédure :\n${steps}`,
+      `New chat\n${prompt}\nHere is the procedure:\n${steps}`,
     ],
-    [conv([{ role: "user", text: `Voici ma procédure de clôture, reformule-la :\n${steps}` }, { role: "assistant", text: `Voici ta procédure :\n${steps}` }]), steps],
+    [conv([{ role: "user", text: `Here is my closing procedure, rephrase it:\n${steps}` }, { role: "assistant", text: `Here is your procedure:\n${steps}` }]), steps],
   ]
   for (const [c, captured] of variants) {
     const items = distillHeuristic(c, DEFAULT_ZONES)
@@ -447,44 +333,73 @@ test("heuristique (4e passe) : un champ sur plusieurs lignes ne recopie pas non 
     for (const i of items) {
       for (const text of [i.title, i.body]) {
         const n = longestCommon(captured.replace(/\s+/g, " "), text.replace(/\s+/g, " "))
-        assert.ok(n <= MAX_PROMPT_VERBATIM, `${c.id} ${i.kind} recopie ${n} caractères : ${text}`)
+        assert.ok(n <= MAX_PROMPT_VERBATIM, `${c.id} ${i.kind} copies ${n} characters: ${text}`)
       }
     }
   }
 })
 
-// --- Cinquième passe de revue ------------------------------------------------------------------------------------------
-
-test("outils (5e passe) : une liste de noms seulement ambigus n'est pas une liste d'outils ; « le Notion de Fournil », « Le Sentry est déployé »", () => {
-  const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
-  // [texte, outils attendus] — sondes r4-verify-core/ent.mts et ent2.mts
-  const cases: [string, string[]][] = [
-    // chaque puce commence par un nom d'outil ambigu, aucune par un outil sans ambiguïté : des personnes ou des mots
-    ["Équipe :\n- Claude : gérant, valide les devis\n- Alan : comptable, suit la mutuelle", []],
-    ["Topologie :\n- Node A : 3 connexions\n- Node B : 2 connexions", []],
-    ["Je te recommande :\n- Notion pour la doc\n- Slack pour les alertes\n- Linear pour les tickets", []],
-    // avec un outil sans ambiguïté, la liste reste une liste d'outils
-    ["Je te recommande :\n- Stripe pour les paiements\n- Notion pour la doc\n- Slack pour les alertes", ["Stripe", "Notion", "Slack"]],
-    // « de » + nom propre : un complément, pas un nom commun (« Notion de marge »)
-    ["Dans le Notion de Fournil, page Process, ajoute la procédure", ["Notion"]],
-    ["Ajoute-le dans l'espace Notion de Fournil", ["Notion"]],
-    ["Récap :\n- Notion de marge brute : CA - achats\n- Pennylane : export prêt", ["Pennylane"]],
-    // déterminant + outil + verbe ; « et » + outil + verbe
-    ["Le Sentry est déployé en prod depuis lundi", ["Sentry"]],
-    ["Notre Notion est notre wiki", ["Notion"]],
-    ["Ce Slack sert aux alertes", ["Slack"]],
-    ["Sentry remonte les erreurs et Slack envoie les alertes", ["Slack", "Sentry"]],
-    ["Qonto synchronise les paiements et Notion stocke la doc", ["Notion", "Qonto"]],
-    // Vue, Make, Linear restent des mots ordinaires derrière un déterminant ; « Alan de vérifier », « Claude a validé » des personnes
-    ["Dans le tableau, la Vue est claire", []],
-    ["Demande à Alan de vérifier la mutuelle de Léo", []],
-    ["Claude a validé la facture de Martin", []],
+test("heuristic: screen capture (OCR) — no field copies more than 80 characters of the captured text", () => {
+  // Screenpipe: the ask typed by the employee is in the OCR text, hence on the "assistant" side.
+  const prompt =
+    "The customer Boulangerie Martin disputes invoice F-2026-118 of €1,240 because the October 3rd delivery arrived two " +
+    "hours late and they threaten to switch to a competitor. Help me answer them."
+  const ocr =
+    `New chat\n${prompt}\n` +
+    "I suggest answering the customer by acknowledging the October 3rd delivery delay, then offering a clear, quantified commercial gesture to keep them.\n" +
+    "We decided to offer a 15% credit note on invoice F-2026-118 to the customer Boulangerie Martin, to deduct from the next payment.\n" +
+    "TODO: send the credit note to the customer Boulangerie Martin before Friday and tell the morning delivery team\n" +
+    "1. Create the 15% credit note in Pennylane for invoice F-2026-118 of the customer Boulangerie Martin\n2. Send it\n3. Tell the delivery team"
+  const base = { started_at: "2026-10-16T09:00:00Z", ended_at: "2026-10-16T09:05:00Z" }
+  const variants: Conversation[] = [
+    {
+      ...base, id: "screenpipe:1", tool: "claude", app: "Google Chrome", title: "Boulangerie Martin invoice dispute - Claude", screenpipe_ref: "1",
+      messages: [{ role: "user", text: "Session captured on screen: Google Chrome — Boulangerie Martin invoice dispute - Claude" }, { role: "assistant", text: ocr }],
+    },
+    // Structured messages from a web assistant (ChatGPT): same rule.
+    { ...base, id: "web", tool: "chatgpt", app: "Arc", messages: [{ role: "user", text: prompt }, { role: "assistant", text: ocr }] },
   ]
-  const wrong = cases.map(([t, want]) => [t, tools(t), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
-  assert.deepEqual(wrong, [])
+  for (const c of variants) {
+    const items = distillHeuristic(c, DEFAULT_ZONES)
+    assert.ok(items.some((i) => i.kind === "decision") && items.some((i) => i.kind === "task"), JSON.stringify(items.map((i) => i.kind)))
+    for (const i of items) {
+      for (const [field, text] of [["title", i.title], ["body", i.body]] as const) {
+        const n = longestCommon(ocr.replace(/\s+/g, " "), text.replace(/\s+/g, " "))
+        assert.ok(n <= MAX_PROMPT_VERBATIM, `${c.id} ${i.kind}.${field} copies ${n} characters of the captured text: ${text}`)
+      }
+    }
+  }
+  // Claude Code logs keep longer answer excerpts (200 characters): there the assistant does not repeat the ask.
+  const cc = distillHeuristic(conv([{ role: "user", text: "Martin dispute update" }, { role: "assistant", text: ocr.split("\n").slice(2).join("\n") }]), DEFAULT_ZONES)
+  assert.ok(cc.some((i) => i.kind === "decision" && i.body.length > MAX_PROMPT_VERBATIM + 20), JSON.stringify(cc.map((i) => i.body)))
 })
 
-/** Meilleur de trois mesures (le ramasse-miettes peut ralentir une mesure isolée). */
+test("tools: a list of only ambiguous names is not a tool list; \"the Notion of Fournil\", \"The Sentry is deployed\"", () => {
+  const cases: [string, string[]][] = [
+    // every bullet starts with an ambiguous tool name, none with an unambiguous tool: people or words
+    ["Team:\n- Claude: manager, approves quotes\n- Alan: accountant, handles benefits", []],
+    ["Topology:\n- Node A: 3 connections\n- Node B: 2 connections", []],
+    ["I recommend:\n- Notion for the docs\n- Slack for alerts\n- Linear for tickets", []],
+    // with an unambiguous tool, the list stays a tool list
+    ["I recommend:\n- Stripe for payments\n- Notion for the docs\n- Slack for alerts", ["Stripe", "Notion", "Slack"]],
+    // "of" + proper noun: a complement, not a common noun ("Notion of margin")
+    ["In the Notion of Fournil, on the Process page, add the procedure", ["Notion"]],
+    ["Recap:\n- Notion of gross margin: revenue - purchases\n- Pennylane: export ready", ["Pennylane"]],
+    // determiner + tool + verb; "and" + tool + verb
+    ["The Sentry is deployed in prod since Monday", ["Sentry"]],
+    ["Our Notion is our wiki", ["Notion"]],
+    ["This Slack is for alerts", ["Slack"]],
+    ["Sentry reports the errors and Slack sends the alerts", ["Slack", "Sentry"]],
+    ["Qonto syncs the payments and Notion stores the docs", ["Notion", "Qonto"]],
+    // Make and Linear stay ordinary words after a determiner; "Ask Alan to check", "Claude approved" are people
+    ["In the table, the Linear trend is clear", []],
+    ["Ask Alan to check Léo's benefits", []],
+    ["Claude approved Martin's invoice", []],
+  ]
+  assert.deepEqual(wrongTools(cases), [])
+})
+
+/** Best of three measurements (garbage collection can slow down a single one). */
 function bestMs(f: () => unknown): number {
   f()
   return Math.min(...[0, 1, 2].map(() => {
@@ -495,44 +410,41 @@ function bestMs(f: () => unknown): number {
 }
 const repeatTo = (unit: string, n: number) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n)
 
-test("outils (5e passe) : linéaire sur une longue ligne de « Vue mensuelle » / « Notion de marge » et une longue liste de « - Notion »", () => {
-  // Sondes r4-redos/ent-big.mts et ent-lines.mts : chaque occurrence relisait sa ligne jusqu'au « \n » suivant (988 ms à 1 Mo),
-  // et une liste de noms ambigus relisait ses 60 puces à chaque occurrence.
+test("tools: linear on a long line of \"Make sure\" / \"Notion of margin\" and a long list of \"- Notion\"", () => {
   const slow: string[] = []
-  for (const [unit, n, limit] of [["Vue mensuelle ", 1_000_000, 400], ["Notion de marge ", 1_000_000, 400], ["- Notion\n", 320_000, 400], ["- la Notion\n", 320_000, 400]] as const) {
+  for (const [unit, n, limit] of [["Make sure ", 1_000_000, 400], ["Notion of margin ", 1_000_000, 400], ["- Notion\n", 320_000, 400], ["- the Notion\n", 320_000, 400]] as const) {
     const ms = bestMs(() => extractEntities(repeatTo(unit, n)))
-    if (ms > limit) slow.push(`${JSON.stringify(unit)} × ${n} : ${ms.toFixed(0)} ms`)
+    if (ms > limit) slow.push(`${JSON.stringify(unit)} × ${n}: ${ms.toFixed(0)} ms`)
   }
   assert.deepEqual(slow, [])
 })
 
-test("heuristique (5e passe) : 320 Ko distillés en moins de 400 ms (tâches, capture d'écran, étapes numérotées)", () => {
-  // Sondes r4-redos/final.mts (F7) et distuniq.mts : 856 ms (tâches) et 1 035 ms (capture d'écran) avant le correctif.
+test("heuristic: 320 KB distilled in under 400 ms (tasks, screen capture, numbered steps)", () => {
   const unique = (f: (i: number) => string) => {
     let s = ""
     for (let i = 1; s.length < 320_000; i++) s += f(i)
     return s
   }
-  const tasks = unique((i) => `- [ ] relancer le client numéro ${i} pour la facture\n`)
-  const stepsText = unique((i) => `${i}. Ouvrir Pennylane et exporter le journal ${i}\n`)
+  const tasks = unique((i) => `- [ ] chase customer number ${i} about the invoice\n`)
+  const stepsText = unique((i) => `${i}. Open Pennylane and export journal ${i}\n`)
   const runs: [string, Conversation][] = [
-    ["tâches", conv([{ role: "user", text: "Peux-tu m'aider sur la compta ?" }, { role: "assistant", text: tasks }])],
-    ["tâches (écran)", conv([{ role: "user", text: "Session capturée" }, { role: "assistant", text: tasks }], { id: "screenpipe:1", tool: "chatgpt", app: "Google Chrome" })],
-    ["étapes (écran)", conv([{ role: "user", text: "Session capturée" }, { role: "assistant", text: stepsText }], { id: "screenpipe:2", tool: "chatgpt", app: "Google Chrome" })],
+    ["tasks", conv([{ role: "user", text: "Can you help me with the accounting?" }, { role: "assistant", text: tasks }])],
+    ["tasks (screen)", conv([{ role: "user", text: "Captured session" }, { role: "assistant", text: tasks }], { id: "screenpipe:1", tool: "chatgpt", app: "Google Chrome" })],
+    ["steps (screen)", conv([{ role: "user", text: "Captured session" }, { role: "assistant", text: stepsText }], { id: "screenpipe:2", tool: "chatgpt", app: "Google Chrome" })],
   ]
   const slow: string[] = []
   for (const [name, c] of runs) {
     const ms = bestMs(() => distillHeuristic(c, DEFAULT_ZONES))
-    if (ms > 400) slow.push(`${name} : ${ms.toFixed(0)} ms`)
+    if (ms > 400) slow.push(`${name}: ${ms.toFixed(0)} ms`)
   }
   assert.deepEqual(slow, [])
-  // Le résultat est le même qu'avant l'arrêt anticipé : six items au plus, les premiers trouvés.
+  // The result is the same as without the early stop: six items at most, the first ones found.
   const items = distillHeuristic(runs[0][1], DEFAULT_ZONES)
   assert.equal(items.length, 6)
   assert.deepEqual(items.map((i) => i.kind), ["fact", "task", "task", "task", "task", "task"])
 })
 
-test("verbatimWindows (5e passe) : l'index par empreinte répond comme un Set des fenêtres", () => {
+test("verbatimWindows: the hash index answers like a Set of the windows", () => {
   let seed = 11
   const rnd = (n: number) => (seed = (seed * 1103515245 + 12345) % 2147483648) % n
   const alphabet = ["a", "b", " ", "\n", "é", "ab", "  "]
@@ -547,7 +459,7 @@ test("verbatimWindows (5e passe) : l'index par empreinte répond comme un Set de
     const index = verbatimWindows(texts, max)
     assert.equal(index.size === 0, expected.size === 0)
     for (const w of expected) assert.ok(index.has(w), JSON.stringify(w))
-    // Fenêtres absentes, dont celles qui enjambent deux textes.
+    // Missing windows, including those spanning two texts.
     const joined = texts.map((t) => t.replace(/\s+/g, " ").trim()).join(" ")
     for (let i = 0; i + max < joined.length; i++) {
       const w = joined.slice(i, i + max + 1)
@@ -556,39 +468,36 @@ test("verbatimWindows (5e passe) : l'index par empreinte répond comme un Set de
   }
 })
 
-test("procédure (5e passe) : « Étape N/M : », une étape par ligne, sans reprendre le format tapé par l'employé", () => {
-  // Sonde r4-verify-core/ocr.mts, cas B : l'employé tape « Étape N : … », l'assistant reprend « N. … ». Réécrites
-  // « Étape N : … », les étapes recopiaient la demande et le garde-fou coupait la procédure après 1,5 étape.
-  const steps = ["Ouvre Pennylane et va dans Banque.", "Sélectionne le compte Qonto pro.", "Filtre les transactions de septembre.", "Associe chaque transaction à sa facture.", "Vérifie le solde avec le relevé."]
-  const typed = `Voici ma procédure, reformule-la :\n${steps.map((s, i) => `Étape ${i + 1} : ${s}`).join("\n")}`
-  const echoed = `Voici ta procédure :\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+test("procedure: \"Step N/M: \", one step per line, without reusing the format typed by the employee", () => {
+  // The employee types "Step N: …", the assistant repeats "N. …". Rewritten as "Step N: …", the steps would copy
+  // the ask and the safety net would cut the procedure after 1.5 steps.
+  const steps = ["Open Pennylane and go to Bank.", "Select the business Qonto account.", "Filter September's transactions.", "Match each transaction with its invoice.", "Check the balance against the statement."]
+  const typed = `Here is my procedure, rephrase it:\n${steps.map((s, i) => `Step ${i + 1}: ${s}`).join("\n")}`
+  const echoed = `Here is your procedure:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
   const b = distillHeuristic(conv([{ role: "user", text: typed }, { role: "assistant", text: echoed }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
   assert.equal(
     b?.body,
-    "Étape 1/5 : Ouvre Pennylane et va dans Banque.\nÉtape 2/5 : Sélectionne le compte Qonto pro.\nÉtape 3/5 : Filtre les transactions de septembre.\nÉtape 4/5 : Associe chaque transaction à sa facture.\nÉtape 5/5 : Vérifie le solde avec le relevé.",
+    "Step 1/5: Open Pennylane and go to Bank.\nStep 2/5: Select the business Qonto account.\nStep 3/5: Filter September's transactions.\nStep 4/5: Match each transaction with its invoice.\nStep 5/5: Check the balance against the statement.",
   )
 
-  // Cas C : de longues étapes tapées puis reprises. Chaque étape est raccourcie, et reste sur sa ligne.
+  // Long steps typed then repeated. Each step is shortened, and stays on its own line.
   const long = [
-    "1. Ouvre Pennylane, va dans le menu Banque puis sélectionne le compte Qonto de la boulangerie pour le mois de septembre.",
-    "2. Filtre les transactions non rapprochées, puis associe chacune à sa facture fournisseur ou client correspondante.",
-    "3. Pour chaque transaction sans justificatif, crée une demande de pièce et relance le fournisseur par mail le jour même.",
-    "4. Vérifie que le solde affiché dans Pennylane correspond exactement au relevé Qonto de fin de mois, sinon note l'écart.",
+    "1. Open Pennylane, go to the Bank menu then select the bakery's Qonto account for the month of September.",
+    "2. Filter the unreconciled transactions, then match each one with its corresponding supplier or customer invoice.",
+    "3. For each transaction without a receipt, create a document request and email the supplier a reminder that same day.",
+    "4. Check that the balance shown in Pennylane matches the month-end Qonto statement exactly, otherwise note the difference.",
   ].join("\n")
-  const expected =
-    "Étape 1/4 : Ouvre Pennylane, va dans le menu Banque puis sélectionne le compte Qonto de la…\n" +
-    "Étape 2/4 : Filtre les transactions non rapprochées, puis associe chacune à sa facture fou…\n" +
-    "Étape 3/4 : Pour chaque transaction sans justificatif, crée une demande de pièce et relanc…\n" +
-    "Étape 4/4 : Vérifie que le solde affiché dans Pennylane correspond exactement au relevé Qo…"
-  const c = distillHeuristic(conv([{ role: "user", text: `Reformule ma procédure :\n${long}` }, { role: "assistant", text: `D'accord :\n${long}` }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
-  assert.equal(c?.body, expected)
+  const c = distillHeuristic(conv([{ role: "user", text: `Rephrase my procedure:\n${long}` }, { role: "assistant", text: `Sure:\n${long}` }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
+  const lines = (c?.body ?? "").split("\n")
+  assert.equal(lines.length, 4, c?.body)
+  lines.forEach((l, i) => assert.ok(l.startsWith(`Step ${i + 1}/4: `) && l.endsWith("…"), l))
   assert.ok(longestCommon(long.replace(/\s+/g, " "), (c?.body ?? "").replace(/\s+/g, " ")) <= MAX_PROMPT_VERBATIM)
-  // Directement : une coupe qui enjambe la fin d'une étape garde le retour à la ligne (avant : « …de la… Étape 2/4 : … »).
-  const field = long.split("\n").map((l, i) => `Étape ${i + 1}/4 : ${l.replace(/^\d+\. /, "")}`).join("\n")
-  assert.equal(clipVerbatim(field, verbatimWindows([long], MAX_PROMPT_VERBATIM), MAX_PROMPT_VERBATIM), expected)
+  // Directly: a cut spanning the end of a step keeps the line break.
+  const field = long.split("\n").map((l, i) => `Step ${i + 1}/4: ${l.replace(/^\d+\. /, "")}`).join("\n")
+  assert.equal(clipVerbatim(field, verbatimWindows([long], MAX_PROMPT_VERBATIM), MAX_PROMPT_VERBATIM), c?.body)
 
-  // Une étape qui se nomme déjà n'est pas renumérotée (avant : « Étape 1 : Étape 1 du runbook »).
-  const runbook = "Voici :\n1. Étape 1 du runbook : vérifier les logs\n2. Étape 2 du runbook : redémarrer le service\n3. Étape 3 du runbook : prévenir l'équipe"
-  const r = distillHeuristic(conv([{ role: "user", text: "Rappelle-moi le runbook de redémarrage" }, { role: "assistant", text: runbook }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
-  assert.equal(r?.body, "Étape 1 du runbook : vérifier les logs\nÉtape 2 du runbook : redémarrer le service\nÉtape 3 du runbook : prévenir l'équipe")
+  // A step that already names itself is not renumbered (otherwise: "Step 1: Step 1 of the runbook").
+  const runbook = "Here:\n1. Step 1 of the runbook: check the logs\n2. Step 2 of the runbook: restart the service\n3. Step 3 of the runbook: tell the team"
+  const r = distillHeuristic(conv([{ role: "user", text: "Remind me of the restart runbook" }, { role: "assistant", text: runbook }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
+  assert.equal(r?.body, "Step 1 of the runbook: check the logs\nStep 2 of the runbook: restart the service\nStep 3 of the runbook: tell the team")
 })

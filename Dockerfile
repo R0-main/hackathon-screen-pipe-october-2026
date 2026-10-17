@@ -1,18 +1,18 @@
 # syntax=docker/dockerfile:1
-# Cerveau d'entreprise auto-hébergé : dashboard Next.js + API + client brain.mjs (servi sur /brain.mjs), dans une image.
-# Lancé par compose.yaml derrière Caddy (HTTPS local) avec Postgres ; voir docs/LOCAL.md.
+# Self-hosted company brain: Next.js dashboard + API + brain.mjs client (served on /brain.mjs), in one image.
+# Run by compose.yaml behind Caddy (local HTTPS) with Postgres; see docs/LOCAL.md.
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-# Les manifestes d'abord (cache Docker), puis npm ci depuis la racine du monorepo (workspaces).
+# The manifests first (Docker cache), then npm ci from the monorepo root (workspaces).
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/
 COPY apps/client/package.json apps/client/
 COPY packages/core/package.json packages/core/
 RUN npm ci --no-audit --no-fund
 COPY . .
-# `next build` construit aussi brain.mjs (prebuild de @brain/web). Les polices Google sont récupérées au build.
+# `next build` also builds brain.mjs (prebuild of @brain/web). The Google fonts are fetched at build time.
 RUN npm run build
 
 FROM node:22-bookworm-slim

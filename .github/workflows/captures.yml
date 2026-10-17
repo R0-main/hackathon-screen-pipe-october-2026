@@ -1,8 +1,8 @@
-name: Captures du front
+name: Front-end screenshots
 
-# Construit le front, lance la démo (stockage fichier, mode démo, simulateur d'agents) et commite des
-# captures d'écran dans docs/captures/ pour valider la direction artistique sans poste local.
-# Lancement manuel : Actions → « Captures du front » → Run workflow (sur la branche à capturer).
+# Builds the front end, runs the demo (file storage, demo mode, agent simulator) and commits
+# screenshots in docs/captures/ to validate the art direction without a local computer.
+# Manual run: Actions → "Front-end screenshots" → Run workflow (on the branch to capture).
 on:
   workflow_dispatch:
 
@@ -30,7 +30,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Dépendances
+      - name: Dependencies
         run: npm install --no-audit --no-fund
 
       - name: Typecheck
@@ -39,7 +39,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Données de démo (Butine)
+      - name: Demo data (Butine)
         run: npm run seed -w @brain/web -- --force
 
       - name: Playwright
@@ -47,21 +47,21 @@ jobs:
           npm install --no-save --no-audit --no-fund playwright
           npx playwright install --with-deps chromium
 
-      - name: Serveur, simulateur et captures
+      - name: Server, simulator and screenshots
         run: |
           nohup npm run start -w @brain/web > server.log 2>&1 &
           for i in $(seq 1 90); do curl -sf http://localhost:3000/login > /dev/null && break; sleep 1; done
-          curl -sf http://localhost:3000/login > /dev/null || { echo "serveur injoignable"; tail -n 50 server.log; exit 1; }
+          curl -sf http://localhost:3000/login > /dev/null || { echo "server unreachable"; tail -n 50 server.log; exit 1; }
           nohup npm run simulate -w @brain/web -- --speed 3 > simulate.log 2>&1 &
           node apps/web/scripts/captures.mjs http://localhost:3000 docs/captures
 
-      - name: Logs en cas d'échec
+      - name: Logs on failure
         if: failure()
         run: |
           echo "::group::server.log"; tail -n 200 server.log || true; echo "::endgroup::"
           echo "::group::simulate.log"; tail -n 100 simulate.log || true; echo "::endgroup::"
 
-      - name: Captures en artefact
+      - name: Screenshots as an artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -69,14 +69,14 @@ jobs:
           path: docs/captures
           if-no-files-found: ignore
 
-      - name: Commit des captures et du lockfile
+      - name: Commit the screenshots and the lockfile
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A docs/captures package-lock.json
-          if git diff --cached --quiet; then echo "rien à committer"; exit 0; fi
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
           git commit -q -F - <<'MSG'
-          chore(captures): captures d'écran du front et lockfile (CI)
+          chore(captures): front-end screenshots and lockfile (CI)
 
           Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
           Claude-Session: https://claude.ai/code/session_012cKbX3kEDKUmkkfcuhyrEf

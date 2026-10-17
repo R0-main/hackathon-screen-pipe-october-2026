@@ -1,6 +1,6 @@
-// Cerveau auto-hébergé en HTTPS local : le certificat de son autorité privée (BRAIN_CA_FILE, en PEM) est servi sur
-// /ca.crt et son empreinte SHA-256 est épinglée dans les prompts d'installation, pour que chaque poste vérifie ce
-// qu'il récupère avant de lui faire confiance. Sans BRAIN_CA_FILE (cloud, certificat public) : rien ne change.
+// Self-hosted brain over local HTTPS: the certificate of its private authority (BRAIN_CA_FILE, in PEM) is served on
+// /ca.crt and its SHA-256 fingerprint is pinned in the install prompts, so that each workstation checks what
+// it downloads before trusting it. Without BRAIN_CA_FILE (cloud, public certificate): nothing changes.
 
 import { X509Certificate } from "node:crypto"
 import { readFileSync, statSync } from "node:fs"
@@ -8,7 +8,7 @@ import { readFileSync, statSync } from "node:fs"
 type Loaded = { mtime: number; pem: string; fingerprint: string }
 let cache: Loaded | null = null
 
-/** Empreinte SHA-256 du premier certificat, hexadécimal majuscule sans « : » (comme `openssl x509 -fingerprint -sha256`). */
+/** SHA-256 fingerprint of the first certificate, uppercase hex without ":" (like `openssl x509 -fingerprint -sha256`). */
 export function fingerprintOf(pem: string): string | null {
   const first = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/.exec(pem)?.[0]
   if (!first) return null
@@ -19,7 +19,7 @@ export function fingerprintOf(pem: string): string | null {
   }
 }
 
-/** Le certificat configuré, relu quand le fichier change ; null si absent ou pas encore créé (Caddy démarre). */
+/** The configured certificate, re-read when the file changes; null if missing or not created yet (Caddy starting). */
 export function brainCa(): { pem: string; fingerprint: string } | null {
   const file = process.env.BRAIN_CA_FILE
   if (!file) return null

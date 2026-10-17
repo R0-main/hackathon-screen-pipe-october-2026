@@ -1,14 +1,14 @@
-// Accès par zone : la règle « RLS » appliquée par l'API (équivalent des politiques de supabase/migrations/*_rls.sql).
+// Per-zone access: the "RLS" rule applied by the API (equivalent of the policies in supabase/migrations/*_rls.sql).
 //
-// Lecture : restreinte aux zones de zone_access (les admins lisent tout).
-// Écriture : NON restreinte. Tout le monde nourrit le cerveau, dans n'importe quelle zone existante ;
-// `zone_access.can_write` (et donc `writable`) est conservé mais réservé, aucune route ne l'applique.
-// En contrepartie, l'auteur d'une connaissance la voit et peut la supprimer même s'il ne lit pas sa zone (droit de regard).
+// Reading: restricted to the zones in zone_access (admins read everything).
+// Writing: NOT restricted. Everyone feeds the brain, in any existing zone;
+// `zone_access.can_write` (and hence `writable`) is kept but reserved, no route applies it.
+// In return, the author of a piece of knowledge sees it and can delete it even without reading its zone (right of review).
 
 import type { AgentEvent, Profile } from "@brain/core"
 import { storeForOrg } from "./store"
 
-/** `writable` est informatif (réservé) : l'écriture n'est pas restreinte par zone. */
+/** `writable` is informational (reserved): writing is not restricted by zone. */
 export type Access = { isAdmin: boolean; readable: string[]; writable: string[] }
 
 export async function getAccess(profile: Profile): Promise<Access> {
@@ -29,14 +29,14 @@ export function canRead(access: Access, zone: string): boolean {
   return access.isAdmin || access.readable.includes(zone)
 }
 
-/** Vrai si le spectateur lit toutes les zones données (et qu'il y en a au moins une). */
+/** True if the viewer reads all the given zones (and there is at least one). */
 export function canReadAll(access: Access, zones: string[]): boolean {
   return access.isAdmin || (zones.length > 0 && zones.every((z) => access.readable.includes(z)))
 }
 
 /**
- * Contenu d'un événement (résumé, empreinte, session) : visible de son auteur, des admins, ou de qui lit TOUTES ses zones.
- * Un événement sans zone (prompt personnel, recherche sans résultat lisible…) ne montre jamais son contenu aux autres.
+ * Content of an event (summary, fingerprint, session): visible to its author, admins, or whoever reads ALL its zones.
+ * An event without a zone (personal prompt, search with no readable result…) never shows its content to others.
  */
 export function canSeeEventContent(e: Pick<AgentEvent, "user_id" | "zones">, access: Access, viewerId: string): boolean {
   return access.isAdmin || e.user_id === viewerId || canReadAll(access, e.zones)
@@ -45,9 +45,9 @@ export function canSeeEventContent(e: Pick<AgentEvent, "user_id" | "zones">, acc
 export type RedactedEvent = AgentEvent & { restricted?: boolean; restricted_reason?: "zone" | "private" }
 
 /**
- * Ce qu'un membre voit d'un événement : la zone s'allume pour tout le monde (l'entreprise est vivante),
- * mais le contenu n'est donné que selon canSeeEventContent.
- * `restricted_reason` : « zone » (une des zones n'est pas lisible) ou « private » (événement sans zone).
+ * What a member sees of an event: the zone lights up for everyone (the company is alive),
+ * but the content is only given according to canSeeEventContent.
+ * `restricted_reason`: "zone" (one of the zones is not readable) or "private" (event without a zone).
  */
 export function redactEvent(e: AgentEvent, access: Access, viewerId: string): RedactedEvent {
   if (canSeeEventContent(e, access, viewerId)) return e

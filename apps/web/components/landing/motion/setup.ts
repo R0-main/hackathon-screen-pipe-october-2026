@@ -6,33 +6,33 @@ import type Lenis from "lenis"
 gsap.registerPlugin(ScrollTrigger, SplitText)
 
 /*
-  Motion de la page d'accueil, hors scène du cerveau (pilotée dans Landing et ScrollBrain).
-  Le balisage porte des attributs que ce module anime :
-  - data-hero="nav|title|sub|cta|note"  premier écran ;
-  - data-reveal="title|text|panel|cards" titres, paragraphes, panneaux et cartes (hébergement, tarifs) des sections ;
-  - data-rows, data-type                 lignes de « Où en est Butine » et prompt de Jean-Marc ;
-  - data-privacy (+ data-pf-*)           le parcours des captures, du poste au cerveau (PrivacyFlow) ;
-  - data-rule, data-facts                trait encre et trois engagements ;
-  - data-after, data-thread, data-bead   fil de billes qui relie les sections ;
-  - .btn                                 boutons magnétiques (data-magnetic est posé ici).
+  Motion of the home page, outside the brain scene (driven in Landing and ScrollBrain).
+  The markup carries attributes this module animates:
+  - data-hero="nav|title|sub|cta|note"  first screen;
+  - data-reveal="title|text|panel|cards" section titles, paragraphs, panels and cards (hosting, pricing);
+  - data-rows, data-type                 rows of "Where Butine stands" and Jean-Marc's prompt;
+  - data-privacy (+ data-pf-*)           the path of the captures, from the computer to the brain (PrivacyFlow);
+  - data-rule, data-facts                ink rule and three commitments;
+  - data-after, data-thread, data-bead   thread of beads linking the sections;
+  - .btn                                 magnetic buttons (data-magnetic is set here).
 
-  Rythme : chaque section occupe un écran (CSS) et s'arrête alignée sur lui pendant une partie du scroll ; quand
-  on lâche le scroll tout près d'un chapitre ou d'une section, la page s'y cale.
+  Rhythm: each section fills one screen (CSS) and holds aligned with it for part of the scroll; when
+  you let go of the scroll very close to a chapter or a section, the page snaps to it.
 
-  Toutes les animations des sections suivent le scroll (scrub) : elles avancent quand on descend, s'arrêtent
-  quand on s'arrête et se rejouent à l'envers quand on remonte. On ne peut donc pas les rater. Seule l'entrée du
-  premier écran se joue au chargement.
+  All section animations follow the scroll (scrub): they move forward when you scroll down, stop
+  when you stop and replay backwards when you scroll up. So they cannot be missed. Only the entrance of the
+  first screen plays on load.
 
-  Tout est créé dans le contexte useGSAP de Landing : animations, SplitText et ScrollTrigger sont annulés au
-  démontage. Les écouteurs (pointeur, Lenis) sont rendus par la fonction de nettoyage.
-  Appelé uniquement quand le mouvement est autorisé (pas sous prefers-reduced-motion).
+  Everything is created in Landing's useGSAP context: animations, SplitText and ScrollTrigger are reverted on
+  unmount. Listeners (pointer, Lenis) are returned by the cleanup function.
+  Only called when motion is allowed (not under prefers-reduced-motion).
 */
 
 type Ctx = {
   lenis: Lenis
-  /** Déclencheur de la scène épinglée du cerveau. */
+  /** Trigger of the pinned brain scene. */
   scene: ScrollTrigger
-  /** Milieu de chaque chapitre de la scène, en fraction de sa progression. */
+  /** Middle of each chapter of the scene, as a fraction of its progress. */
   stops: number[]
 }
 
@@ -41,14 +41,14 @@ type Holds = Map<Element, ScrollTrigger>
 const all = <T extends Element = HTMLElement>(root: ParentNode, sel: string) => Array.from(root.querySelectorAll<T>(sel))
 const section = (el: Element) => el.closest<HTMLElement>(".landing-section") ?? undefined
 
-/** Déclencheur d'un élément dans une section. `pinnedContainer` : les positions tiennent compte de l'arrêt. */
+/** Trigger of an element inside a section. `pinnedContainer`: positions account for the hold. */
 const at = (trigger: Element, vars: ScrollTrigger.Vars = {}): ScrollTrigger.Vars => ({ trigger, pinnedContainer: section(trigger), ...vars })
 
-/** Durée de l'arrêt de chaque section, en fraction de la hauteur d'écran. */
+/** Duration of each section's hold, as a fraction of the screen height. */
 const HOLD = 0.6
 
 export function setupLandingMotion(root: HTMLElement, ctx: Ctx): () => void {
-  // Les arrêts d'abord : les déclencheurs créés ensuite à l'intérieur des sections en tiennent compte.
+  // Holds first: the triggers created afterwards inside the sections account for them.
   const holds = holdSections(root)
   heroIn(root)
   thread(root)
@@ -57,15 +57,15 @@ export function setupLandingMotion(root: HTMLElement, ctx: Ctx): () => void {
   return () => cleanups.forEach((fn) => fn())
 }
 
-/* ---------- Rythme : arrêts et calage ---------- */
+/* ---------- Rhythm: holds and snapping ---------- */
 
-/** La section tient dans l'écran : elle s'arrête alignée dessus (sinon, quand on voit son bas). */
+/** The section fits in the screen: it holds aligned with it (otherwise, when you see its bottom). */
 const fits = (el: HTMLElement) => el.offsetHeight <= window.innerHeight + 2
 
 /**
- * Chaque section (sauf la dernière) s'arrête alignée sur l'écran pendant `HOLD` hauteur d'écran de scroll, ou
- * pendant la durée donnée par son attribut `data-hold` (une section qui a plus à montrer s'arrête plus longtemps).
- * Si son contenu dépasse l'écran (petit écran), elle s'arrête quand on voit son bas.
+ * Each section (except the last) holds aligned with the screen for `HOLD` screen height of scroll, or
+ * for the duration given by its `data-hold` attribute (a section with more to show holds longer).
+ * If its content is taller than the screen (small screen), it holds when you see its bottom.
  */
 function holdSections(root: HTMLElement): Holds {
   const holds: Holds = new Map()
@@ -87,9 +87,9 @@ function holdSections(root: HTMLElement): Holds {
 }
 
 /**
- * Quand on lâche le scroll tout près d'un chapitre de la scène ou d'une section, la page glisse jusqu'à lui : la
- * section se retrouve exactement alignée sur l'écran. La portée reste courte, pour que le calage ne fasse pas
- * avancer à notre place une animation liée au scroll. Déjà dans un arrêt ou loin de tout, rien ne bouge.
+ * When you let go of the scroll very close to a chapter of the scene or a section, the page slides to it: the
+ * section ends up exactly aligned with the screen. The reach stays short, so that snapping does not move
+ * a scroll-driven animation forward on our behalf. Already in a hold or far from everything, nothing moves.
  */
 function settle(root: HTMLElement, { lenis, scene, stops }: Ctx, holds: Holds): () => void {
   const targets = () => {
@@ -126,15 +126,15 @@ function settle(root: HTMLElement, { lenis, scene, stops }: Ctx, holds: Holds): 
   }
 }
 
-/* ---------- Outils d'animation ---------- */
+/* ---------- Animation tools ---------- */
 
-/** Valeur d'arrivée de chaque propriété de départ : l'élément revient à sa place, visible. */
+/** Arrival value of each starting property: the element comes back to its place, visible. */
 const NEUTRAL: Record<string, string | number> = { autoAlpha: 1, opacity: 1, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1 }
 
 /**
- * Animation d'entrée placée dans une timeline (à la suite si `pos` est omis). L'état de départ est posé tout de
- * suite, sinon un élément décalé dans une animation en cascade reste visible jusqu'à ce que le scroll atteigne son
- * tour ; puis on anime vers sa place.
+ * Entrance animation placed in a timeline (after the previous one if `pos` is omitted). The starting state is set right
+ * away, otherwise an element offset in a staggered animation stays visible until the scroll reaches its
+ * turn; then it animates to its place.
  */
 function enter(tl: gsap.core.Timeline, targets: gsap.TweenTarget, from: gsap.TweenVars, vars: gsap.TweenVars, pos?: gsap.Position) {
   gsap.set(targets, from)
@@ -143,9 +143,9 @@ function enter(tl: gsap.core.Timeline, targets: gsap.TweenTarget, from: gsap.Twe
   return tl.add(gsap.to(targets, to), pos)
 }
 
-/* ---------- Premier écran ---------- */
+/* ---------- First screen ---------- */
 
-/** Au chargement : les mots du titre arrivent un à un, puis le sous-titre, les boutons et la note. */
+/** On load: the title's words arrive one by one, then the subtitle, the buttons and the note. */
 function heroIn(root: HTMLElement) {
   const title = root.querySelector<HTMLElement>('[data-hero="title"]')
   if (title) {
@@ -166,9 +166,9 @@ function heroIn(root: HTMLElement) {
   fade("note", 1.01, 0)
 }
 
-/* ---------- Le fil ---------- */
+/* ---------- The thread ---------- */
 
-/** Un trait encre qui descend le long des sections, et une bille qui se remplit à l'arrivée sur chacune. */
+/** An ink line going down along the sections, and a bead that fills on arriving at each one. */
 function thread(root: HTMLElement) {
   const after = root.querySelector("[data-after]")
   const line = root.querySelector("[data-thread]")
@@ -184,9 +184,9 @@ function thread(root: HTMLElement) {
 /* ---------- Sections ---------- */
 
 /**
- * On lit la page comme on lit le cerveau. Les titres passent de pâle à encre et les textes montent au rythme du
- * scroll ; le panneau « Où en est Butine » et le schéma vie privée se jouent pendant l'arrêt de leur section :
- * la page tient, l'histoire avance sous les yeux.
+ * You read the page the way you read the brain. Titles go from pale to ink and texts rise to the rhythm of the
+ * scroll; the "Where Butine stands" panel and the privacy diagram play during their section's hold:
+ * the page holds still, the story moves on before your eyes.
  */
 function sections(root: HTMLElement, holds: Holds) {
   for (const el of all(root, '[data-reveal="title"]')) {
@@ -199,17 +199,17 @@ function sections(root: HTMLElement, holds: Holds) {
   for (const el of all(root, '[data-reveal="text"]')) {
     gsap.from(el, { autoAlpha: 0, y: 24, ease: "none", scrollTrigger: at(el, { start: "top 90%", end: "top 55%", scrub: true }) })
   }
-  // Cartes côte à côte (hébergement, tarifs) : elles montent une à une et sont en place avant l'arrêt, pour qu'on
-  // puisse les comparer dès qu'on arrive sur la section (par le scroll ou par le lien « Tarifs »).
+  // Side-by-side cards (hosting, pricing): they rise one by one and are in place before the hold, so that
+  // you can compare them as soon as you reach the section (by scrolling or through the "Pricing" link).
   for (const el of all(root, '[data-reveal="cards"]')) {
     gsap.fromTo(el.children, { autoAlpha: 0, y: 32 }, { autoAlpha: 1, y: 0, ease: "none", stagger: 0.12, scrollTrigger: at(el, { start: "top 95%", end: "top 45%", scrub: true }) })
   }
 
   /**
-   * De l'arrivée de la section à l'écran jusqu'à la fin de son arrêt. Avec `centred`, rien ne bouge avant que la
-   * section soit calée sur l'écran : on lit d'abord le titre et le texte, puis l'illustration se joue pendant
-   * l'arrêt. Sur petit écran (section plus haute que l'écran, arrêtée sur son bas), l'illustration serait déjà
-   * sortie par le haut au début de l'arrêt : elle démarre alors plus tôt, quand on la voit.
+   * From the section's arrival on screen to the end of its hold. With `centred`, nothing moves before the
+   * section is snapped to the screen: you read the title and the text first, then the illustration plays during
+   * the hold. On a small screen (section taller than the screen, held on its bottom), the illustration would already
+   * have left through the top at the start of the hold: it then starts earlier, when you see it.
    */
   const throughHold = (el: Element, centred = false): ScrollTrigger.Vars => {
     const sec = section(el)
@@ -218,7 +218,7 @@ function sections(root: HTMLElement, holds: Holds) {
     return { trigger: sec, start: centred ? () => (fits(sec) ? hold.start : "top 40%") : "top 40%", end: () => hold.end, scrub: true, invalidateOnRefresh: true }
   }
 
-  // Le panneau se remplit ligne par ligne, puis le prompt de Jean-Marc s'écrit caractère par caractère.
+  // The panel fills row by row, then Jean-Marc's prompt types itself character by character.
   for (const panel of all(root, '[data-reveal="panel"]')) {
     const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(panel) })
     enter(tl, panel, { autoAlpha: 0, y: 40 }, { duration: 0.2, ease: "none" })
@@ -232,12 +232,12 @@ function sections(root: HTMLElement, holds: Holds) {
     tl.to({}, { duration: 0.15 })
   }
 
-  // Le brut reste sur le poste : le filtre écarte, masque, distille, et seules trois connaissances montent.
+  // The raw data stays on the computer: the filter drops, redacts, distills, and only three items go up.
   const fig = root.querySelector("[data-privacy]")
   if (fig) {
     const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(fig, true) })
     privacyStory(fig, tl, 0, 0.78)
-    // Le trait encre et les engagements, à la suite, toujours pendant l'arrêt.
+    // The ink rule and the commitments, right after, still during the hold.
     for (const rule of all(root, "[data-rule]")) enter(tl, rule, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.2, ease: "none" }, 0.8)
     const facts = root.querySelector("[data-facts]")
     if (facts) enter(tl, facts.children, { autoAlpha: 0, y: 20 }, { duration: 0.12, stagger: 0.06, ease: "none" }, 0.9)
@@ -246,49 +246,49 @@ function sections(root: HTMLElement, holds: Holds) {
 }
 
 /**
- * Le parcours des captures (PrivacyFlow), placé dans une timeline entre `at` et `at + span` :
- * le poste et ses captures, puis les trois étapes du filtre (perso écarté, secret masqué, distillé),
- * enfin le cerveau qui reçoit trois connaissances. Les captures, elles, restent sur le poste.
+ * The path of the captures (PrivacyFlow), placed in a timeline between `at` and `at + span`:
+ * the computer and its captures, then the three filter steps (personal dropped, secret redacted, distilled),
+ * finally the brain receiving three items. The captures themselves stay on the computer.
  */
 function privacyStory(fig: Element, tl: gsap.core.Timeline, at: number, span: number) {
   const t = (p: number) => at + p * span
   const d = (p: number) => p * span
-  const poste = fig.querySelector("[data-pf-poste]")
+  const workstation = fig.querySelector("[data-pf-workstation]")
   const brain = fig.querySelector("[data-pf-brain]")
   const rail = fig.querySelector("[data-pf-rail]")
 
-  if (poste) enter(tl, poste, { autoAlpha: 0, y: 24 }, { duration: d(0.12), ease: "power1.out" }, t(0))
+  if (workstation) enter(tl, workstation, { autoAlpha: 0, y: 24 }, { duration: d(0.12), ease: "power1.out" }, t(0))
   enter(tl, all(fig, "[data-pf-row]"), { autoAlpha: 0, x: -12 }, { duration: d(0.06), stagger: d(0.025), ease: "power1.out" }, t(0.05))
 
-  // Le rail se trace d'une étape à l'autre ; chaque étape s'affiche, puis sa bille se remplit quand elle agit.
+  // The rail draws itself from one step to the next; each step appears, then its bead fills when it acts.
   if (rail) enter(tl, rail, { scaleY: 0 }, { duration: d(0.36) }, t(0.22))
   enter(tl, all(fig, "[data-pf-step]"), { autoAlpha: 0, x: -8 }, { duration: d(0.05), stagger: d(0.14), ease: "power1.out" }, t(0.22))
   all(fig, "[data-pf-node]").forEach((node, i) => enter(tl, node, { scale: 0 }, { duration: d(0.04), ease: "power2.out" }, t(0.27 + i * 0.14)))
 
-  // 1. Apps de travail seulement : WhatsApp et la banque perso sont barrés et pâlissent, sans quitter le poste.
+  // 1. Work apps only: WhatsApp and the personal bank are struck through and fade, without leaving the computer.
   const dim = all(fig, "[data-pf-dim]")
   gsap.set(dim, { opacity: 1 })
   tl.add(gsap.to(dim, { opacity: 0.4, duration: d(0.06) }), t(0.29))
   enter(tl, all(fig, "[data-pf-strike]"), { scaleX: 0 }, { duration: d(0.06), stagger: d(0.02), ease: "power1.inOut" }, t(0.29))
-  // 2. Secrets masqués : la clé Stripe disparaît sous une barre.
+  // 2. Secrets redacted: the Stripe key disappears under a bar.
   enter(tl, all(fig, "[data-pf-mask]"), { scaleX: 0 }, { duration: d(0.06), ease: "power2.out" }, t(0.43))
-  // 3. Distillé sur le poste : les captures de travail sont retenues.
+  // 3. Distilled on the computer: the work captures are kept.
   enter(tl, all(fig, "[data-pf-pass]"), { scale: 0 }, { duration: d(0.04), stagger: d(0.02), ease: "power2.out" }, t(0.57))
 
-  // Le cerveau reçoit trois connaissances, une à une.
+  // The brain receives three items, one by one.
   if (brain) enter(tl, brain, { autoAlpha: 0, x: -16 }, { duration: d(0.1), ease: "power1.out" }, t(0.66))
   enter(tl, all(fig, "[data-pf-chip]"), { autoAlpha: 0, x: -24 }, { duration: d(0.08), stagger: d(0.07), ease: "power2.out" }, t(0.72))
 }
 
-/* ---------- Boutons magnétiques ---------- */
+/* ---------- Magnetic buttons ---------- */
 
 /**
- * Chaque bouton de la page glisse vers le pointeur quand on le survole, revient en place avec un léger rebond
- * quand on le quitte, et s'enfonce un peu au clic. Souris seulement (pas au doigt).
+ * Each button on the page slides toward the pointer when hovered, comes back in place with a slight bounce
+ * when left, and sinks in a bit on click. Mouse only (not touch).
  *
- * Le suivi (quickTo) est recréé à chaque entrée : l'animation de retour le remplace, et un quickTo remplacé
- * ne bouge plus. La transition CSS sur transform des boutons est retirée ici (data-magnetic, globals.css),
- * sinon elle se bat avec GSAP.
+ * The follower (quickTo) is recreated on each entry: the return animation replaces it, and a replaced quickTo
+ * no longer moves. The CSS transition on the buttons' transform is removed here (data-magnetic, globals.css),
+ * otherwise it fights with GSAP.
  */
 function magnetic(root: HTMLElement): () => void {
   if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return () => {}
@@ -303,13 +303,13 @@ function magnetic(root: HTMLElement): () => void {
     const move = (e: PointerEvent) => {
       if (!follow) enterButton()
       const r = el.getBoundingClientRect()
-      // Le rectangle inclut le décalage en cours : on vise le centre d'origine du bouton.
+      // The rectangle includes the current offset: aim at the button's original center.
       const cx = r.left + r.width / 2 - Number(gsap.getProperty(el, "x"))
       const cy = r.top + r.height / 2 - Number(gsap.getProperty(el, "y"))
       follow!.x((e.clientX - cx) * 0.3)
       follow!.y((e.clientY - cy) * 0.4)
     }
-    // Pas d'overwrite : on coupe nous-mêmes ce qui tourne, sinon le suivi et le retour se disputent x et y.
+    // No overwrite: we kill what is running ourselves, otherwise the follower and the return fight over x and y.
     const leave = () => {
       follow?.x.tween.kill()
       follow?.y.tween.kill()

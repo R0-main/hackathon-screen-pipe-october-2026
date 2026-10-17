@@ -1,6 +1,6 @@
-// Parcours complet d'un connecteur MCP contre un faux fournisseur local (serveur MCP + serveur d'autorisation) :
-// découverte, enregistrement dynamique, page de connexion, échange du code avec PKCE, liste des outils en SSE avec
-// pagination, jeton révoqué puis rafraîchi. Et la protection SSRF : sans dépendances de test, 127.0.0.1 est refusé.
+// Full journey of an MCP connector against a fake local provider (MCP server + authorization server): discovery,
+// dynamic registration, sign-in page, code exchange with PKCE, list of tools over SSE with pagination, token revoked
+// then refreshed. And the SSRF protection: without test dependencies, 127.0.0.1 is refused.
 
 import { test, before, after } from "node:test"
 import assert from "node:assert/strict"
@@ -61,7 +61,7 @@ before(async () => {
       return send(res, 201, { client_id: id, token_endpoint_auth_method: "none", redirect_uris: b.redirect_uris })
     }
     if (url.pathname === "/auth/authorize") {
-      // Page de connexion du fournisseur : ici l'utilisateur accepte tout de suite.
+      // The provider's sign-in page: here the user accepts right away.
       const q = url.searchParams
       const client = clients.get(q.get("client_id") ?? "")
       if (!client || !client.redirect_uris.includes(q.get("redirect_uri") ?? "") || q.get("code_challenge_method") !== "S256") return send(res, 400, { error: "invalid_request" })
@@ -80,7 +80,7 @@ before(async () => {
         return send(res, 200, issue())
       }
       if (f.get("grant_type") === "refresh_token" && refresh.delete(f.get("refresh_token") ?? "")) return send(res, 200, issue())
-      return send(res, 400, { error: "invalid_grant", error_description: "jeton de rafraîchissement inconnu" })
+      return send(res, 400, { error: "invalid_grant", error_description: "unknown refresh token" })
     }
     if (url.pathname === "/mcp") {
       const bearer = req.headers.authorization?.replace(/^Bearer /, "")
@@ -95,7 +95,7 @@ before(async () => {
       }
       const msg = JSON.parse(body) as { id?: number; method: string; params?: { cursor?: string } }
       if (msg.method === "initialize") {
-        // Réponse en SSE, flux laissé ouvert : le client doit s'arrêter dès la réponse reçue.
+        // Response over SSE, stream left open: the client must stop as soon as the response is received.
         res.writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "sess-1" })
         res.write(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake-mcp", version: "1.0" } } })}\n\n`)
         return
@@ -112,20 +112,20 @@ before(async () => {
           jsonrpc: "2.0",
           id: msg.id,
           result: {
-            tools: page.map((name) => ({ name, description: `outil ${name}`, inputSchema: { type: "object", properties: { q: { type: "string" } } }, ...(name === "fetch" ? { annotations: { readOnlyHint: true } } : {}) })),
+            tools: page.map((name) => ({ name, description: `tool ${name}`, inputSchema: { type: "object", properties: { q: { type: "string" } } }, ...(name === "fetch" ? { annotations: { readOnlyHint: true } } : {}) })),
             ...(msg.params?.cursor ? {} : { nextCursor: "p2" }),
           },
         })
       }
       if (msg.method === "tools/call") {
         const p = (msg.params ?? {}) as { name?: string; arguments?: { q?: string } }
-        // Réponse en SSE, précédée d'une notification de progression.
+        // SSE response, preceded by a progress notification.
         res.writeHead(200, { "content-type": "text/event-stream" })
         res.write(`data: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } })}\n\n`)
-        res.write(`data: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: `${p.name} : ${p.arguments?.q ?? ""}` }], isError: p.name === "create_issue" } })}\n\n`)
+        res.write(`data: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: `${p.name}: ${p.arguments?.q ?? ""}` }], isError: p.name === "create_issue" } })}\n\n`)
         return
       }
-      return send(res, 200, { jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "méthode inconnue" } })
+      return send(res, 200, { jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "unknown method" } })
     }
     if (url.pathname === "/callback") return send(res, 200, { ok: true })
     send(res, 404, { error: "not_found" })
@@ -139,7 +139,7 @@ after(() => {
   server.close()
 })
 
-test("MCP distant : découverte, enregistrement, connexion, code PKCE, outils, rafraîchissement", async () => {
+test("remote MCP: discovery, registration, sign-in, PKCE code, tools, refresh", async () => {
   const serverUrl = `${base}/mcp`
   const redirectUri = `${base}/callback`
 
@@ -155,51 +155,51 @@ test("MCP distant : découverte, enregistrement, connexion, code PKCE, outils, r
   assert.equal(client.client_id, "client_1")
   assert.equal(client.dynamic, true)
 
-  // Le navigateur suit l'adresse de connexion ; le fournisseur redirige vers notre adresse de retour avec le code.
+  // The browser follows the sign-in address; the provider redirects to our redirect URI with the code.
   const { verifier, challenge } = pkcePair()
-  const authorize = await guardedRequest(buildAuthorizeUrl(meta, { client_id: client.client_id, redirect_uri: redirectUri, state: "etat-1", code_challenge: challenge }), { redirects: 0 }, deps)
+  const authorize = await guardedRequest(buildAuthorizeUrl(meta, { client_id: client.client_id, redirect_uri: redirectUri, state: "state-1", code_challenge: challenge }), { redirects: 0 }, deps)
   assert.equal(authorize.status, 302)
   const back = new URL(authorize.headers.location)
-  assert.equal(back.searchParams.get("state"), "etat-1")
+  assert.equal(back.searchParams.get("state"), "state-1")
   const code = back.searchParams.get("code")!
 
-  await assert.rejects(exchangeCode(meta, client, { code, verifier: "mauvais-verificateur", redirect_uri: redirectUri }, deps), /invalid_grant/, "PKCE : mauvais vérificateur refusé")
-  // Le code a été consommé par la tentative ratée : on en redemande un.
-  const again = await guardedRequest(buildAuthorizeUrl(meta, { client_id: client.client_id, redirect_uri: redirectUri, state: "etat-2", code_challenge: challenge }), { redirects: 0 }, deps)
+  await assert.rejects(exchangeCode(meta, client, { code, verifier: "wrong-verifier", redirect_uri: redirectUri }, deps), /invalid_grant/, "PKCE: wrong verifier refused")
+  // The code was used up by the failed attempt: ask for another one.
+  const again = await guardedRequest(buildAuthorizeUrl(meta, { client_id: client.client_id, redirect_uri: redirectUri, state: "state-2", code_challenge: challenge }), { redirects: 0 }, deps)
   const tokens = await exchangeCode(meta, client, { code: new URL(again.headers.location).searchParams.get("code")!, verifier, redirect_uri: redirectUri }, deps)
   assert.ok(tokens.access_token.startsWith("at_"))
   assert.ok(tokens.expires_at && tokens.expires_at > Date.now())
 
   await assert.rejects(listTools(serverUrl, undefined, deps), McpAuthError)
   const result = await listTools(serverUrl, tokens.access_token, deps)
-  assert.deepEqual(result.tools.map((t) => t.name), TOOLS, "deux pages d'outils")
+  assert.deepEqual(result.tools.map((t) => t.name), TOOLS, "two pages of tools")
   assert.deepEqual(
     result.tools.map((t) => t.read_only),
     [true, true, false],
-    "search (verbe de lecture), fetch (annotation), create_issue (écriture)",
+    "search (read verb), fetch (annotation), create_issue (write)",
   )
   assert.deepEqual(result.tools[0].input_schema, { type: "object", properties: { q: { type: "string" } } })
-  assert.deepEqual(await callTool(serverUrl, tokens.access_token, "search", { q: "budget" }, deps), { content: [{ type: "text", text: "search : budget" }], isError: false })
+  assert.deepEqual(await callTool(serverUrl, tokens.access_token, "search", { q: "budget" }, deps), { content: [{ type: "text", text: "search: budget" }], isError: false })
   assert.equal(result.server, "fake-mcp 1.0")
-  assert.equal(seen.sessionHeader, "sess-1", "identifiant de session renvoyé")
+  assert.equal(seen.sessionHeader, "sess-1", "session id sent back")
   assert.equal(seen.initializedNotification, true)
 
-  // Jeton révoqué côté fournisseur : 401, puis rafraîchissement.
+  // Token revoked on the provider's side: 401, then refresh.
   access.delete(tokens.access_token)
   await assert.rejects(listTools(serverUrl, tokens.access_token, deps), McpAuthError)
   const next = await refreshTokens(meta, client, tokens, deps)
   assert.notEqual(next.access_token, tokens.access_token)
   assert.deepEqual((await listTools(serverUrl, next.access_token, deps)).tools.map((t) => t.name), TOOLS)
-  await assert.rejects(refreshTokens(meta, client, tokens, deps), /jeton de rafraîchissement inconnu/, "ancien jeton de rafraîchissement consommé")
+  await assert.rejects(refreshTokens(meta, client, tokens, deps), /unknown refresh token/, "old refresh token used up")
 })
 
-test("MCP distant : adresses internes refusées sans dépendances de test (SSRF)", async () => {
-  await assert.rejects(guardedRequest(`${base}/mcp`, { method: "POST", body: "{}" }), /adresse interne refusée/)
-  await assert.rejects(guardedRequest("http://localhost:1/x"), /adresse interne refusée/)
-  await assert.rejects(discover("http://169.254.169.254/latest/meta-data"), /adresse interne refusée/)
+test("remote MCP: internal addresses refused without test dependencies (SSRF)", async () => {
+  await assert.rejects(guardedRequest(`${base}/mcp`, { method: "POST", body: "{}" }), /internal address refused/)
+  await assert.rejects(guardedRequest("http://localhost:1/x"), /internal address refused/)
+  await assert.rejects(discover("http://169.254.169.254/latest/meta-data"), /internal address refused/)
 })
 
-test("portées : celles du défi, sinon une liste courte annoncée ; une longue liste n'est pas demandée en bloc", () => {
+test("scopes: those of the challenge, otherwise a short advertised list; a long list is not requested wholesale", () => {
   const many = Array.from({ length: MAX_DEFAULT_SCOPES + 1 }, (_, i) => `scope${i}:write`)
   assert.deepEqual(pickScopes("read write", many), ["read", "write"])
   assert.deepEqual(pickScopes(undefined, ["read", "none", 3]), ["read"])
@@ -208,11 +208,11 @@ test("portées : celles du défi, sinon une liste courte annoncée ; une longue 
   assert.equal(pickScopes(undefined, undefined), undefined)
 })
 
-test("import : Claude explore en lecture seule puis enregistre des connaissances (Claude simulé)", async () => {
+test("import: Claude explores read-only then saves knowledge (simulated Claude)", async () => {
   type Req = { tools: { name: string }[]; messages: { role: string; content: unknown }[]; model: string }
   const seen: Req[] = []
   const script = [
-    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "notion-search", input: { q: "décisions" } }, { type: "tool_use", id: "t2", name: "inconnu", input: {} }] },
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "notion-search", input: { q: "decisions" } }, { type: "tool_use", id: "t2", name: "unknown", input: {} }] },
     {
       stop_reason: "tool_use",
       content: [
@@ -222,9 +222,9 @@ test("import : Claude explore en lecture seule puis enregistre des connaissances
           name: "save_knowledge",
           input: {
             items: [
-              { title: "Déploiement le mardi", body: "On déploie le mardi pour avoir la semaine pour corriger.", kind: "decision", zone: "dev", url: "https://notion.so/p1" },
-              { title: "", body: "vide", kind: "fact" },
-              { title: "Client Acme", body: "Acme paie à 60 jours.", kind: "inconnu", zone: "zone-absente" },
+              { title: "Deploy on Tuesdays", body: "We deploy on Tuesdays to have the week to fix things.", kind: "decision", zone: "dev", url: "https://notion.so/p1" },
+              { title: "", body: "empty", kind: "fact" },
+              { title: "Acme customer", body: "Acme pays the invoice at 60 days.", kind: "unknown", zone: "missing-zone" },
             ],
           },
         },
@@ -235,43 +235,43 @@ test("import : Claude explore en lecture seule puis enregistre des connaissances
   const claude = { beta: { messages: { create: async (req: Req) => (seen.push(structuredClone(req)), script[seen.length - 1]) } } }
   const calls: [string, Record<string, unknown>][] = []
   const zones = [
-    { id: "dev", name: "Dev", description: "", color: "#000", keywords: ["déploiement"], position: 0 },
-    { id: "compta", name: "Compta", description: "", color: "#000", keywords: ["paie", "client"], position: 1 },
+    { id: "dev", name: "Dev", description: "", color: "#000", keywords: ["deploy"], position: 0 },
+    { id: "finance", name: "Finance", description: "", color: "#000", keywords: ["invoice", "customer"], position: 1 },
   ]
   const out = await exploreConnector(
     { id: "notion", name: "Notion" },
     {
       claude: claude as never,
       tools: [{ name: "notion-search", input_schema: { type: "object" }, read_only: true }],
-      callTool: async (name, args) => (calls.push([name, args]), { content: [{ type: "text", text: "Page « Déploiement » : le mardi." }] }),
+      callTool: async (name, args) => (calls.push([name, args]), { content: [{ type: "text", text: "Page \"Deploy\": on Tuesdays." }] }),
       zones,
       org: { name: "Butine" },
       now: () => Date.parse("2026-10-17T12:00:00Z"),
     },
   )
-  assert.deepEqual(calls, [["notion-search", { q: "décisions" }]], "seul l'outil connu est appelé")
+  assert.deepEqual(calls, [["notion-search", { q: "decisions" }]], "only the known tool is called")
   assert.deepEqual(seen[0].tools.map((t) => t.name), ["notion-search", "save_knowledge"])
   const firstResults = seen[1].messages.at(-1)!.content as { tool_use_id: string; is_error?: boolean; content: string }[]
-  assert.equal(firstResults.length, 2, "les deux résultats dans un seul message")
+  assert.equal(firstResults.length, 2, "both results in a single message")
   assert.equal(firstResults[1].is_error, true)
-  assert.equal(out.items.length, 2, "l'élément vide est écarté")
+  assert.equal(out.items.length, 2, "the empty item is skipped")
   assert.equal(out.items[0].zone, "dev")
   assert.equal(out.items[0].kind, "decision")
   assert.equal(out.items[0].source.tool, "connector")
   assert.equal(out.items[0].source.app, "Notion")
   assert.equal(out.items[0].source.screenpipe_ref, "https://notion.so/p1")
   assert.match(out.items[0].source.session_id ?? "", /^mcp:notion:[0-9a-f]{16}$/)
-  assert.equal(out.items[1].kind, "fact", "type inconnu : fait")
-  assert.equal(out.items[1].zone, "compta", "zone absente : classement par mots-clés")
+  assert.equal(out.items[1].kind, "fact", "unknown kind: fact")
+  assert.equal(out.items[1].zone, "finance", "missing zone: classified by keywords")
   assert.equal(out.calls, 1)
   assert.equal(out.turns, 3)
 
-  // La zone du connecteur l'emporte ; pas d'outil en lecture seule : erreur claire.
+  // The connector's zone wins; no read-only tool: clear error.
   const fixed = await exploreConnector(
-    { id: "notion", name: "Notion", zone: "compta" },
+    { id: "notion", name: "Notion", zone: "finance" },
     { claude: { beta: { messages: { create: async () => script[1] } } } as never, tools: [{ name: "search", input_schema: { type: "object" }, read_only: true }], callTool: async () => ({}), zones, org: { name: "Butine" } },
   )
-  assert.ok(fixed.items.every((i) => i.zone === "compta"))
+  assert.ok(fixed.items.every((i) => i.zone === "finance"))
   assert.ok(IMPORT_LIMITS.calls > 0)
-  await assert.rejects(exploreConnector({ id: "x", name: "X" }, { claude: claude as never, tools: [], callTool: async () => ({}), zones, org: { name: "Butine" } }), /aucun outil en lecture seule/)
+  await assert.rejects(exploreConnector({ id: "x", name: "X" }, { claude: claude as never, tools: [], callTool: async () => ({}), zones, org: { name: "Butine" } }), /no read-only tool/)
 })

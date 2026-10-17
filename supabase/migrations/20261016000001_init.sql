@@ -1,5 +1,5 @@
--- Cerveau d'entreprise — schéma initial.
--- Compatible Supabase et Postgres « nu » (les parties propres à Supabase sont dans la migration RLS suivante).
+-- Company brain — initial schema.
+-- Works on Supabase and on plain Postgres (the Supabase-specific parts are in the next migration, RLS).
 
 create extension if not exists pgcrypto;
 
@@ -13,13 +13,13 @@ create table if not exists orgs (
 create table if not exists profiles (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references orgs(id) on delete cascade,
-  -- Lien optionnel vers auth.users (Supabase Auth) pour un accès direct au cerveau via RLS.
+  -- Optional link to auth.users (Supabase Auth) for direct access to the brain through RLS.
   auth_user_id uuid unique,
   name text not null,
   email text,
   title text,
   role text not null default 'member' check (role in ('admin', 'member')),
-  -- SHA-256 du jeton personnel (utilisé par brain-sync, le MCP et les hooks). Le jeton clair n'est jamais stocké.
+  -- SHA-256 of the personal token (used by brain-sync, the MCP and the hooks). The plain token is never stored.
   token_hash text not null unique,
   created_at timestamptz not null default now()
 );
@@ -56,7 +56,7 @@ create table if not exists knowledge_items (
   entities jsonb not null default '[]',
   source jsonb not null default '{}',
   confidence real not null default 0.6,
-  -- Texte normalisé (minuscules, sans accents) calculé par l'API, pour une recherche insensible aux accents.
+  -- Normalized text (lowercase, without accents) computed by the API, for an accent-insensitive search.
   search_title text not null default '',
   search_body text not null default '',
   search tsvector generated always as (
@@ -68,7 +68,7 @@ create index if not exists knowledge_items_zone_idx on knowledge_items (org_id, 
 create index if not exists knowledge_items_author_idx on knowledge_items (author_id, created_at desc);
 create index if not exists knowledge_items_search_idx on knowledge_items using gin (search);
 
--- Graphe de connaissance : entités et liens (item ↔ entité).
+-- Knowledge graph: entities and links (item ↔ entity).
 create table if not exists entities (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references orgs(id) on delete cascade,
@@ -97,7 +97,7 @@ create table if not exists agent_events (
   type text not null check (type in ('started', 'query', 'write', 'stopped')),
   zones text[] not null default '{}',
   summary text,
-  -- Empreinte du prompt normalisé (détection d'automatisations sans stocker le prompt brut).
+  -- Fingerprint of the normalized prompt (automation detection without storing the raw prompt).
   fingerprint text,
   session_id text,
   at timestamptz not null default now()

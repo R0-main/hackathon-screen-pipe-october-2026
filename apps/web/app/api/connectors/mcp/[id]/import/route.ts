@@ -8,8 +8,8 @@ export const maxDuration = 120
 type Ctx = { params: Promise<{ id: string }> }
 
 /**
- * POST /api/connectors/mcp/:id/import — importe maintenant le contenu du connecteur dans le cerveau (Claude l'explore en
- * lecture seule). Renvoie le compte rendu de l'import, réussi ou non. Admins.
+ * POST /api/connectors/mcp/:id/import — imports the connector's content into the brain now (Claude explores it
+ * read-only). Returns the import report, successful or not. Admins.
  */
 export const POST = withViewer<Ctx>(
   async (_req, viewer, { params }) => {

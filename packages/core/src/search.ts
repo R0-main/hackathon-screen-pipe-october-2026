@@ -1,48 +1,48 @@
-// Qualité de la recherche : synonymes FR/EN, similarité entre connaissances, fusion de classements.
+// Search quality: synonyms, similarity between items, rank fusion.
 
 import { tokenize } from "./text"
 
 /**
- * Familles de termes équivalents (sans accents, minuscules). Une requête qui contient l'un d'eux est étendue aux autres,
- * pour que « deploy » trouve « mise en prod » et « invoice » trouve « facture ». Chaque famille reste courte : trop
- * de synonymes ramènent du bruit.
+ * Families of equivalent terms (without accents, lowercase). A query containing one of them is expanded to the others,
+ * so that "deploy" finds "ship to prod" and "invoice" finds "billing". Each family stays short: too many
+ * synonyms bring noise.
  */
 export const SYNONYMS: string[][] = [
-  ["deploy", "deployer", "deploiement", "mise en prod", "mep", "release", "livrer", "livraison"],
+  ["deploy", "deploys", "deployment", "ship to prod", "go live", "release", "ship", "rollout"],
   ["prod", "production"],
-  ["facture", "factures", "facturation", "invoice", "invoices", "billing"],
-  ["paiement", "paiements", "payment", "payments", "reglement"],
-  ["client", "clients", "customer", "customers", "compte client"],
+  ["invoice", "invoices", "invoicing", "billing", "bill"],
+  ["payment", "payments", "pay", "settlement"],
+  ["client", "clients", "customer", "customers"],
   ["prospect", "prospects", "lead", "leads"],
-  ["devis", "quote", "quotes", "proposition commerciale"],
-  ["tva", "vat"],
-  ["cloture", "closing", "cloture mensuelle", "month end"],
-  ["rapprochement", "reconciliation", "rapprochement bancaire"],
-  ["note de frais", "notes de frais", "expense", "expenses"],
-  ["salaire", "salaires", "paie", "payroll"],
-  ["recrutement", "recruter", "hiring", "recruiting", "embauche"],
-  ["reunion", "reunions", "meeting", "meetings", "call", "point"],
-  ["bug", "bugs", "incident", "incidents", "panne", "erreur", "erreurs"],
-  ["test", "tests", "e2e", "recette", "qa"],
-  ["migration", "migrations", "migrer"],
-  ["sauvegarde", "backup", "backups", "restauration", "restore", "restaurer"],
-  ["mot de passe", "password", "credentials", "identifiants"],
-  ["cle api", "api key", "token", "jeton"],
-  ["base de donnees", "database", "db", "bdd", "postgres", "sql"],
-  ["serveur", "server", "hebergement", "hosting", "infra"],
-  ["tarif", "tarifs", "prix", "pricing", "price", "abonnement", "subscription"],
-  ["contrat", "contrats", "contract", "contracts", "cgv"],
-  ["support", "ticket", "tickets", "sav", "helpdesk"],
-  ["roadmap", "feuille de route", "priorites", "priorite"],
-  ["objectif", "objectifs", "goal", "goals", "okr", "kpi"],
-  ["tresorerie", "cash", "runway", "burn"],
-  ["onboarding", "integration", "arrivee"],
-  ["procedure", "procedures", "process", "runbook", "checklist", "how to", "comment faire"],
-  ["decision", "decisions", "arbitrage", "choix"],
-  ["imprimante", "printer", "ticket de caisse"],
-  ["stock", "stocks", "inventaire", "inventory"],
-  ["commande", "commandes", "order", "orders", "precommande", "precommandes"],
-  ["livraison", "livraisons", "delivery", "shipping"],
+  ["quote", "quotes", "estimate", "proposal"],
+  ["vat", "sales tax"],
+  ["closing", "month end", "month-end close", "close"],
+  ["reconciliation", "reconcile", "bank reconciliation"],
+  ["expense", "expenses", "expense report", "receipts"],
+  ["salary", "salaries", "payroll", "wages"],
+  ["hiring", "recruiting", "recruitment", "hire"],
+  ["meeting", "meetings", "call", "standup"],
+  ["bug", "bugs", "incident", "incidents", "outage", "error", "errors"],
+  ["test", "tests", "e2e", "qa"],
+  ["migration", "migrations", "migrate"],
+  ["backup", "backups", "restore", "restoring"],
+  ["password", "passwords", "credentials", "login"],
+  ["api key", "token", "secret"],
+  ["database", "db", "postgres", "sql"],
+  ["server", "servers", "hosting", "infra", "infrastructure"],
+  ["price", "prices", "pricing", "subscription"],
+  ["contract", "contracts", "terms", "agreement"],
+  ["support", "ticket", "tickets", "helpdesk"],
+  ["roadmap", "priorities", "priority"],
+  ["goal", "goals", "objective", "objectives", "okr", "kpi"],
+  ["cash", "treasury", "runway", "burn"],
+  ["onboarding", "ramp up", "first week"],
+  ["procedure", "procedures", "process", "runbook", "checklist", "how to"],
+  ["decision", "decisions", "trade off", "choice"],
+  ["printer", "receipt printer"],
+  ["stock", "inventory"],
+  ["order", "orders", "preorder", "preorders"],
+  ["delivery", "deliveries", "shipping"],
 ]
 
 const family = new Map<string, Set<string>>()
@@ -56,9 +56,9 @@ for (const group of SYNONYMS) {
 }
 
 /**
- * Tokens d'une requête, étendus à leurs synonymes. Les expressions à plusieurs mots (« mise en prod ») sont
- * reconnues sur la suite de tokens ; chaque synonyme ajouté devient un ou plusieurs tokens. Les tokens d'origine
- * sont renvoyés en premier (sans doublon), les ajouts ensuite.
+ * Tokens of a query, expanded to their synonyms. Multi-word expressions ("ship to prod") are
+ * recognized on the token sequence; each added synonym becomes one or more tokens. The original tokens
+ * come first (no duplicates), the additions after.
  */
 export function expandQuery(query: string): { tokens: string[]; added: string[] } {
   const tokens = [...new Set(tokenize(query))]
@@ -67,20 +67,21 @@ export function expandQuery(query: string): { tokens: string[]; added: string[] 
   for (const [term, set] of family) {
     const present = term.includes(" ") ? ` ${joined} `.includes(` ${term} `) : tokens.includes(term)
     if (!present) continue
-    for (const syn of set) for (const tok of syn.split(" ")) if (!tokens.includes(tok)) added.add(tok)
+    // A short word taken out of an expression ("go" from "go live", "up" from "ramp up") would match anything.
+    for (const syn of set) for (const tok of syn.split(" ")) if (!tokens.includes(tok) && (tok.length >= 3 || !syn.includes(" "))) added.add(tok)
   }
   return { tokens, added: [...added] }
 }
 
-/** Même règle que les stockages : un token de requête vaut tel quel, ou comme préfixe à partir de 4 caractères. */
+/** Same rule as the stores: a query token matches as is, or as a prefix from 4 characters. */
 function tokenMatches(queryToken: string, itemToken: string): boolean {
   return itemToken === queryToken || (queryToken.length >= 4 && itemToken.startsWith(queryToken))
 }
 
 /**
- * Force de la correspondance entre une requête (tokens déjà étendus) et une connaissance : nombre de tokens de la
- * requête trouvés, et combien dans le titre ou les entités. Sert à écarter les résultats que seuls les synonymes
- * ramènent sur un mot isolé du corps (« prod » qui attrape « produit »).
+ * Strength of the match between a query (tokens already expanded) and an item: number of query tokens
+ * found, and how many in the title or the entities. Used to drop results that only synonyms
+ * bring back on an isolated word of the body ("prod" catching "product").
  */
 export function matchStrength(queryTokens: string[], item: { title: string; body: string; entities?: { name: string }[] }): { total: number; title: number } {
   const title = [...tokenize(item.title), ...(item.entities ?? []).flatMap((e) => tokenize(e.name))]
@@ -95,12 +96,12 @@ export function matchStrength(queryTokens: string[], item: { title: string; body
   return { total, title: inTitle }
 }
 
-/** Un résultat obtenu seulement grâce aux synonymes n'est gardé que s'il tient à plus d'un mot isolé du corps. */
+/** A result obtained only through synonyms is kept only if it rests on more than one isolated word of the body. */
 export function strongEnough(s: { total: number; title: number }): boolean {
   return s.title >= 1 || s.total >= 2
 }
 
-/** Similarité de Jaccard entre deux ensembles de tokens (0 à 1). */
+/** Jaccard similarity between two token sets (0 to 1). */
 export function jaccard(a: Iterable<string>, b: Iterable<string>): number {
   const A = new Set(a)
   const B = new Set(b)
@@ -110,7 +111,7 @@ export function jaccard(a: Iterable<string>, b: Iterable<string>): number {
   return inter / (A.size + B.size - inter)
 }
 
-/** Tokens d'une connaissance (titre, corps, entités), pour comparer deux connaissances. */
+/** Tokens of an item (title, body, entities), to compare two items. */
 export function itemTokens(item: { title: string; body: string; entities?: { name: string }[] }): Set<string> {
   return new Set([...tokenize(item.title), ...tokenize(item.body), ...(item.entities ?? []).flatMap((e) => tokenize(e.name))])
 }
@@ -121,11 +122,11 @@ export const SUPERSEDE_TITLE_THRESHOLD = 0.6
 export type Likeness = "duplicate" | "supersedes" | "different"
 
 /**
- * Rapport entre une connaissance qui arrive et une déjà en place, dans la même zone :
- * - `duplicate` : même contenu à peu de chose près (Jaccard ≥ 0,8) ;
- * - `supersedes` : même sujet (titres proches, même type « décision », « procédure » ou « fait ») mais contenu différent :
- *   la nouvelle remplace l'ancienne, qui reste consultable mais n'est plus proposée ;
- * - `different` : sans rapport.
+ * Relationship between an incoming item and one already in place, in the same zone:
+ * - `duplicate`: nearly the same content (Jaccard ≥ 0.8);
+ * - `supersedes`: same subject (close titles, same "decision", "procedure" or "fact" kind) but different content:
+ *   the new one replaces the old one, which stays viewable but is no longer suggested;
+ * - `different`: unrelated.
  */
 export function likeness(
   incoming: { kind: string; title: string; body: string; entities?: { name: string }[] },
@@ -140,8 +141,8 @@ export function likeness(
 }
 
 /**
- * Fusion de classements (Reciprocal Rank Fusion) : chaque liste vote pour ses résultats selon leur rang, sans
- * dépendre de l'échelle de ses scores. `k` = 60 (valeur classique). Renvoie les identifiants par score décroissant.
+ * Rank fusion (Reciprocal Rank Fusion): each list votes for its results by rank, without
+ * depending on the scale of its scores. `k` = 60 (classic value). Returns the ids by decreasing score.
  */
 export function rrf(lists: string[][], k = 60): { id: string; score: number }[] {
   const scores = new Map<string, number>()
@@ -149,7 +150,7 @@ export function rrf(lists: string[][], k = 60): { id: string; score: number }[] 
   return [...scores.entries()].map(([id, score]) => ({ id, score })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
 }
 
-/** Similarité cosinus entre deux vecteurs de même dimension (0 si l'un est nul ou si les tailles diffèrent). */
+/** Cosine similarity between two vectors of the same dimension (0 if one is zero or the sizes differ). */
 export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
   if (a.length !== b.length || a.length === 0) return 0
   let dot = 0

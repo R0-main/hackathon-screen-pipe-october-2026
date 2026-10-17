@@ -10,7 +10,7 @@ import { peopleLooks } from "./PersonDot"
 import { TasksPanel } from "./TasksPanel"
 import { AutomationsPanel } from "./AutomationsPanel"
 
-/** Pages secondaires : chacune lit l'état vivant partagé par le layout (flux SSE déjà ouvert) et porte le titre de son panneau. */
+/** Secondary pages: each reads the live state shared by the layout (SSE stream already open) and carries its panel's title. */
 
 export function StatusView() {
   const { state, now, refresh } = useBrainLive()
@@ -31,8 +31,8 @@ export function StatusView() {
 }
 
 /**
- * `items` : les connaissances lues par la page (bien plus que les 30 de l'état vivant) ; celles qui arrivent ensuite
- * par l'état vivant s'y ajoutent en tête.
+ * `items`: the knowledge read by the page (far more than the live state's 30); those that arrive afterwards through
+ * the live state are added at the top.
  */
 export function KnowledgeView({ items, limit, initial }: { items: KnowledgeItem[]; limit: number; initial?: KnowledgeFilters }) {
   const { state, now } = useBrainLive()

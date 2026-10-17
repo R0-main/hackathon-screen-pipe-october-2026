@@ -5,36 +5,36 @@ import { getStore, runInOrg } from "@/lib/store"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Relecture la plus rapprochée (après un événement, ou sans notification). */
+/** Closest re-read (after an event, or without notification). */
 const BASE_POLL_MS = Number(process.env.BRAIN_STREAM_POLL_MS) || 800
-/** Relecture de sécurité au repos : espacée quand le stockage notifie, plus serrée sinon. */
+/** Safety re-read at rest: spaced out when storage notifies, tighter otherwise. */
 const IDLE_POLL_NOTIFY_MS = Number(process.env.BRAIN_STREAM_IDLE_POLL_MS) || 15_000
 const IDLE_POLL_PLAIN_MS = 4_000
-// L'EventSource du navigateur se reconnecte tout seul (Last-Event-ID) : sur Vercel, on reste sous la durée max d'une fonction.
+// The browser's EventSource reconnects on its own (Last-Event-ID): on Vercel, we stay under a function's max duration.
 const MAX_MS = Number(process.env.BRAIN_STREAM_MAX_MS) || (process.env.VERCEL ? 55_000 : 290_000)
 export const maxDuration = 60
-const ACCESS_REFRESH_MS = 5_000 // droits relus régulièrement : une zone retirée cesse d'être visible sans attendre la reconnexion
+const ACCESS_REFRESH_MS = 5_000 // permissions re-read regularly: a removed zone stops being visible without waiting for the reconnection
 const PING_MS = 15_000
-/** Regroupe les notifications qui arrivent en rafale (une par événement inséré) en une seule relecture. */
+/** Groups notifications arriving in bursts (one per inserted event) into a single re-read. */
 const WAKE_DEBOUNCE_MS = 30
 
-/** Identifiant d'événement fourni par le client (Last-Event-ID à la reconnexion, sinon ?after=). */
+/** Event id provided by the client (Last-Event-ID on reconnection, otherwise ?after=). */
 function parseId(raw: string | null): number | null {
   return raw !== null && /^\d{1,15}$/.test(raw.trim()) ? Number(raw.trim()) : null
 }
 
 /**
- * Flux temps réel des événements d'agents (Server-Sent Events).
- * Le stockage prévient dès qu'un événement est inséré (émetteur local en fichier, LISTEN/NOTIFY en Postgres) : la
- * relecture de agent_events se fait alors tout de suite. Entre deux notifications, une relecture de sécurité espacée
- * (backoff) couvre une notification perdue, une autre instance sans LISTEN, ou un pooler qui ne le transmet pas.
- * `?after=<id>` : le dashboard passe le plus grand identifiant de son état initial, pour ne rien manquer entre le rendu
- * serveur et la connexion.
+ * Real-time stream of agent events (Server-Sent Events).
+ * Storage notifies as soon as an event is inserted (local emitter for the file store, LISTEN/NOTIFY in Postgres): the
+ * re-read of agent_events then happens right away. Between two notifications, a spaced safety re-read
+ * (backoff) covers a lost notification, another instance without LISTEN, or a pooler that does not forward it.
+ * `?after=<id>`: the dashboard passes the largest id of its initial state, so nothing is missed between the server
+ * render and the connection.
  */
 export async function GET(req: Request) {
   const initial = await viewerFromRequest(req)
-  if (!initial) return new Response("Non authentifié", { status: 401 })
-  // Le lecteur d'événements et ses minuteries héritent du contexte : ils ne lisent que l'entreprise du compte.
+  if (!initial) return new Response("Not authenticated", { status: 401 })
+  // The event reader and its timers inherit the context: they only read the account's company.
   return runInOrg(initial.real.org_id, () => stream(req, initial))
 }
 
@@ -72,7 +72,7 @@ async function stream(req: Request, initial: Viewer) {
           controller.close()
         } catch {}
       }
-      // Notification du stockage : relecture immédiate (ou dès la fin de celle en cours).
+      // Storage notification: immediate re-read (or as soon as the current one ends).
       unsubscribe = store.onEvents(orgId, () => {
         if (closed) return
         clearTimeout(debounce)
@@ -81,7 +81,7 @@ async function stream(req: Request, initial: Viewer) {
           wake?.()
         }, WAKE_DEBOUNCE_MS)
       })
-      // Un « id: » seul fixe le Last-Event-ID du navigateur : une reconnexion reprend ici, même sans événement reçu.
+      // A lone "id:" sets the browser's Last-Event-ID: a reconnection resumes here, even without an event received.
       send(`retry: 1500\nid: ${poller.cursor}\n\n`)
 
       const sleep = (ms: number) =>
@@ -114,7 +114,7 @@ async function stream(req: Request, initial: Viewer) {
             }
             const events = await poller.poll()
             for (const e of events) send(`id: ${e.id}\nevent: agent\ndata: ${JSON.stringify(visibleEvent(viewer, e))}\n\n`)
-            // Backoff : rapide tant qu'il se passe quelque chose, espacé au repos (la notification réveille avant).
+            // Backoff: fast while something is happening, spaced out at rest (the notification wakes up earlier).
             interval = events.length || notified ? BASE_POLL_MS : Math.min(interval * 2, idleMax)
             if (now - lastPing > PING_MS) {
               lastPing = now

@@ -1,8 +1,8 @@
-// Connecteurs : Notion, Linear, Todoist et un calendrier ICS. Les réglages (jeton, zone) sont dans les réglages de
-// l'entreprise (clé `connectors`, lus et écrits par l'API seulement). Chaque synchro importe dans le cerveau au nom de
-// l'admin qui a branché l'outil, dans la zone choisie (ou classée automatiquement), puis note son résultat.
-// Les appels réseau vont vers des hôtes fixes (Notion, Linear, Todoist) ; l'adresse du calendrier, fournie par
-// l'utilisateur, passe par le récupérateur protégé contre le SSRF de l'onboarding.
+// Connectors: Notion, Linear, Todoist and an ICS calendar. The settings (token, zone) are in the company's
+// settings (`connectors` key, read and written by the API only). Each sync imports into the brain on behalf of
+// the admin who connected the tool, into the chosen zone (or classified automatically), then records its result.
+// Network calls go to fixed hosts (Notion, Linear, Todoist); the calendar URL, provided by
+// the user, goes through the onboarding's SSRF-protected fetcher.
 
 import {
   CONNECTOR_IDS,
@@ -35,7 +35,7 @@ import type { NewTask } from "../store/types"
 
 const SETTING = "connectors"
 const TIMEOUT_MS = 20_000
-/** Pages Notion relues par synchro (les plus récemment modifiées d'abord). */
+/** Notion pages re-read per sync (most recently edited first). */
 const NOTION_PAGES = 40
 const LINEAR_ISSUES = 100
 const ICS_MAX_CHARS = 2_000_000
@@ -62,7 +62,7 @@ export async function listConnectors(): Promise<ConnectorPublic[]> {
 
 export type ConnectorPatch = { token?: string; url?: string; zone?: string | null; enabled?: boolean }
 
-/** Met à jour les réglages d'un connecteur ; un jeton vide garde le jeton enregistré. */
+/** Updates a connector's settings; an empty token keeps the saved token. */
 export async function updateConnector(id: ConnectorId, patch: ConnectorPatch): Promise<ConnectorPublic> {
   const cfg = await loadConnectors()
   const prev: ConnectorConfig = cfg[id] ?? { enabled: true }
@@ -82,7 +82,7 @@ export async function removeConnector(id: ConnectorId): Promise<void> {
   await saveConnectors(cfg)
 }
 
-/** Zone d'un contenu importé : celle du connecteur si réglée, sinon classement par mots-clés, sinon la première zone. */
+/** Zone of imported content: the connector's if set, otherwise keyword classification, otherwise the first zone. */
 function zoneFor(text: string, zones: Zone[], fixed: string | undefined): string {
   if (fixed && zones.some((z) => z.id === fixed)) return fixed
   return classifyZones(text, zones, 1)[0] ?? zones[0]?.id ?? "general"
@@ -92,7 +92,7 @@ async function getJson<T>(url: string, headers: Record<string, string>, init: Re
   const res = await fetch(url, { ...init, headers: { accept: "application/json", ...headers, ...(init.headers as Record<string, string> | undefined) }, signal: AbortSignal.timeout(TIMEOUT_MS) })
   if (!res.ok) {
     const text = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 160)
-    if (res.status === 401 || res.status === 403) throw new Error(`jeton refusé (${res.status})`)
+    if (res.status === 401 || res.status === 403) throw new Error(`token refused (${res.status})`)
     throw new Error(`HTTP ${res.status}${text ? ` : ${text}` : ""}`)
   }
   return (await res.json()) as T
@@ -120,7 +120,7 @@ async function fetchNotion(c: ConnectorConfig, zones: Zone[]): Promise<Knowledge
 async function fetchCalendar(c: ConnectorConfig, zones: Zone[]): Promise<KnowledgeItemInput[]> {
   const page = await scrapeUrl(c.url ?? "", { maxChars: ICS_MAX_CHARS })
   if (page.error) throw new Error(page.error)
-  if (!/BEGIN:VCALENDAR/i.test(page.text)) throw new Error("ce n'est pas un flux iCalendar (BEGIN:VCALENDAR absent)")
+  if (!/BEGIN:VCALENDAR/i.test(page.text)) throw new Error("this is not an iCalendar feed (BEGIN:VCALENDAR missing)")
   return calendarWindow(parseIcs(page.text)).map((ev) => {
     const item = calendarEventToItem(ev, "")
     return { ...item, zone: zoneFor(`${ev.summary} ${ev.description}`, zones, c.zone) }
@@ -150,8 +150,8 @@ async function fetchTodoist(c: ConnectorConfig): Promise<ExternalTask[]> {
 export type RunResult = ConnectorRun & { id: ConnectorId }
 
 /**
- * Lance la synchro d'un connecteur au nom de `viewer` (l'admin qui l'a branché ou qui clique) : importe, note le
- * résultat dans les réglages, prévient par webhook en cas d'échec. Ne lève pas : le résultat dit si ça a marché.
+ * Runs a connector's sync on behalf of `viewer` (the admin who connected it or who clicks): imports, records the
+ * result in the settings, notifies by webhook on failure. Does not throw: the result says whether it worked.
  */
 export async function runConnector(viewer: Viewer, id: ConnectorId): Promise<RunResult> {
   const started = Date.now()
@@ -163,7 +163,7 @@ export async function runConnector(viewer: Viewer, id: ConnectorId): Promise<Run
     await saveConnectors(latest)
     return { id, ...run }
   }
-  if (!publicConnector(id, c).configured || !c) return finish({ at: new Date().toISOString(), ok: false, imported: 0, error: "connecteur non configuré", duration_ms: 0 })
+  if (!publicConnector(id, c).configured || !c) return finish({ at: new Date().toISOString(), ok: false, imported: 0, error: "connector not configured", duration_ms: 0 })
   try {
     const store = getStore()
     const zones = await store.listZones()
@@ -187,7 +187,7 @@ export async function runConnector(viewer: Viewer, id: ConnectorId): Promise<Run
   } catch (err) {
     const message = truncate((err instanceof Error ? err.message : String(err)).replace(/\s+/g, " "), 300)
     recordIncident(`connector:${id}`, err)
-    void sendAlert(`connector:${id}`, `Connecteur ${id} en échec : ${message}`)
+    void sendAlert(`connector:${id}`, `Connector ${id} failing: ${message}`)
     return finish({ at: new Date().toISOString(), ok: false, imported: 0, error: message, duration_ms: Date.now() - started })
   }
 }
@@ -195,8 +195,8 @@ export async function runConnector(viewer: Viewer, id: ConnectorId): Promise<Run
 const running = new Set<string>()
 
 /**
- * Synchros automatiques : appelé en arrière-plan quand un admin consulte l'état (GET /api/state) ; chaque connecteur
- * actif tourne au plus une fois par heure, une seule exécution à la fois par entreprise et par connecteur.
+ * Automatic syncs: called in the background when an admin views the state (GET /api/state); each active
+ * connector runs at most once an hour, one run at a time per company and per connector.
  */
 export async function runDueConnectors(viewer: Viewer): Promise<void> {
   if (viewer.real.role !== "admin") return

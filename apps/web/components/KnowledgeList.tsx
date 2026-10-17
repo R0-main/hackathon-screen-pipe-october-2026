@@ -13,7 +13,7 @@ import { CloseIcon, Dot, SearchIcon, ZoneBead, ZoneTag, zoneColor } from "./ui"
 
 type ZoneLike = { name: string; color: string; position?: number }
 
-/** `unreadableNote` : la zone de l'item n'est pas lisible par le spectateur (son propre item) ; texte de l'infobulle du badge. */
+/** `unreadableNote`: the item's zone is not readable by the viewer (their own item); text of the badge's tooltip. */
 export function KnowledgeCard({
   item,
   author,
@@ -80,9 +80,9 @@ export function KnowledgeCard({
 export type KnowledgeFilters = { zone?: string; kind?: string; q?: string }
 
 /**
- * Page Connaissances : tout ce que le cerveau a retenu dans les zones lisibles, en fil chronologique, un jour après
- * l'autre. Recherche, zone et type se combinent et s'écrivent dans l'adresse (?q=, ?zone=, ?type=) : la page « Où en
- * est l'entreprise » y renvoie pour une zone. Une ligne se déplie sur place.
+ * Knowledge page: everything the brain kept in the readable zones, as a chronological thread, one day after the
+ * other. Search, zone and type combine and are written in the address (?q=, ?zone=, ?type=): the "Where the company
+ * stands" page links there for a zone. A row unfolds in place.
  */
 export function KnowledgeList({
   items,
@@ -111,7 +111,7 @@ export function KnowledgeList({
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
 
   const zoneById = useMemo(() => new Map(zones.map((z) => [z.id, z])), [zones])
-  // Texte cherchable de chaque connaissance, sans accents ni majuscules : titre, contenu, entités, auteur, zone, appli.
+  // Searchable text of each knowledge item, without accents or capitals: title, content, entities, author, zone, app.
   const haystacks = useMemo(
     () =>
       new Map(
@@ -127,14 +127,14 @@ export function KnowledgeList({
     return terms.length === 0 ? items : items.filter((i) => terms.every((term) => haystacks.get(i.id)?.includes(term)))
   }, [items, haystacks, query])
 
-  // Chaque rangée de filtres compte ce que donnerait son choix, compte tenu des autres filtres.
+  // Each row of filters counts what its choice would give, given the other filters.
   const zoneCounts = useMemo(() => countBy(matched.filter((i) => kind === "all" || i.kind === kind), (i) => i.zone), [matched, kind])
   const kindCounts = useMemo(() => countBy(matched.filter((i) => zone === "all" || i.zone === zone), (i) => i.kind), [matched, zone])
   const presentKinds = useMemo(() => kinds.filter((k) => items.some((i) => i.kind === k)), [kinds, items])
   const shown = useMemo(() => matched.filter((i) => (zone === "all" || i.zone === zone) && (kind === "all" || i.kind === kind)), [matched, zone, kind])
   const days = useMemo(() => groupByDay(shown), [shown])
 
-  // L'adresse suit les filtres, sans nouvelle entrée d'historique.
+  // The address follows the filters, without a new history entry.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const set = (key: string, value: string | null) => (value ? params.set(key, value) : params.delete(key))
@@ -180,7 +180,7 @@ export function KnowledgeList({
         <p className="mt-8 max-w-[60ch] text-[14px] text-trace">{t.knowledge.empty}</p>
       ) : (
         <>
-          {/* Barre de filtres : reste en haut de la colonne pendant qu'on parcourt le fil. */}
+          {/* Filter bar: stays at the top of the column while browsing the thread. */}
           <div className="sticky top-0 z-10 -mx-4 mt-5 space-y-3 border-b border-line bg-bone px-4 py-3 sm:-mx-8 sm:px-8">
             <div className="relative max-w-xl">
               <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-trace" />
@@ -278,9 +278,9 @@ export function KnowledgeList({
 }
 
 /**
- * Une connaissance du fil : sa bille (couleur de sa zone) sur le fil du jour, le titre, le type et la zone, l'auteur et
- * l'heure. Dépliée, elle devient un panneau : le contenu, les entités citées, la source et la confiance.
- * Mémoïsée : l'horloge du layout (400 ms) ne la redessine pas.
+ * A knowledge item of the thread: its bead (its zone's color) on the day's thread, the title, the type and the zone, the
+ * author and the time. Unfolded, it becomes a panel: the content, the entities mentioned, the source and the confidence.
+ * Memoized: the layout's clock (400 ms) does not redraw it.
  */
 const KnowledgeRow = memo(function KnowledgeRow({
   item,
@@ -307,7 +307,7 @@ const KnowledgeRow = memo(function KnowledgeRow({
   const panel = `knowledge-${item.id}`
   return (
     <li className="flex gap-3">
-      {/* Le fil du jour : il relie les billes, de la première à la dernière connaissance. */}
+      {/* The day's thread: it links the beads, from the first to the last knowledge item. */}
       <div aria-hidden className="relative w-[11px] shrink-0">
         {!first && <span className="absolute left-[5px] top-0 h-[17px] w-px bg-line-strong" />}
         <ZoneBead color={zone ? zoneColor(zone.color, zone.position) : "var(--color-line-strong)"} className="absolute left-0 top-[17px]" />
@@ -373,7 +373,7 @@ const KnowledgeRow = memo(function KnowledgeRow({
 
 function ChipRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    // Petit écran : une rangée qui défile ; au-delà, elle passe à la ligne.
+    // Small screen: a row that scrolls; beyond that, it wraps.
     <div className="scroll-thin -mx-4 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0">
       <div className="flex w-max gap-1.5 sm:w-auto sm:flex-wrap" role="group" aria-label={label}>
         {children}
@@ -397,12 +397,12 @@ function countBy<T>(list: T[], key: (x: T) => string): Map<string, number> {
   return out
 }
 
-/** Minuscules sans accents : « Décision » se trouve en tapant « decision ». */
+/** Lowercase without accents: "Café" is found by typing "cafe". */
 function fold(s: string): string {
   return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()
 }
 
-/** Jour (AAAA-MM-JJ) dans le fuseau de l'entreprise : le serveur et le navigateur groupent pareil. */
+/** Day (YYYY-MM-DD) in the company's time zone: the server and the browser group the same way. */
 function dayKey(iso: string): string {
   const t = Date.parse(iso)
   return Number.isNaN(t) ? "" : new Date(t).toLocaleDateString("en-CA", { timeZone: DISPLAY_TIMEZONE })
@@ -419,7 +419,7 @@ function groupByDay(items: KnowledgeItem[]): { key: string; items: KnowledgeItem
   return out
 }
 
-/** « Mercredi 15 octobre » ; l'année seulement si ce n'est pas celle d'aujourd'hui. */
+/** "Wednesday, 15 October"; the year only if it is not the current one. */
 function dayLabel(key: string, today: string, locale: Locale): string {
   if (!key) return "—"
   const date = new Date(`${key}T12:00:00Z`)

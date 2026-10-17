@@ -1,5 +1,5 @@
-// Client MCP minimal en Streamable HTTP : ouvre une session (initialize), liste les outils ou en appelle un, referme
-// la session. Réponses en JSON ou en SSE ; l'identifiant de session (Mcp-Session-Id) est renvoyé à chaque appel.
+// Minimal MCP client over Streamable HTTP: opens a session (initialize), lists the tools or calls one, closes the
+// session. Responses in JSON or SSE; the session id (Mcp-Session-Id) is sent back on each call.
 
 import { findResponse, isReadOnlyTool, type JsonRpcMessage, type McpToolDef } from "@brain/core"
 import { guardedRequest, type NetDeps } from "./net"
@@ -8,22 +8,22 @@ import { DEFAULT_DEPS } from "../scrape"
 
 const PROTOCOL_VERSION = "2025-06-18"
 const MAX_TOOL_PAGES = 5
-/** Un appel d'outil peut être long (recherche, export) ; la liste des outils, non. */
+/** A tool call can be long (search, export); listing the tools cannot. */
 const CALL_TIMEOUT_MS = 45_000
 const CALL_MAX_BYTES = 4_000_000
-/** Schéma d'entrée gardé par outil (au-delà : schéma vide, l'agent lit la description). */
+/** Input schema kept per tool (beyond this: empty schema, the agent reads the description). */
 const MAX_SCHEMA_CHARS = 20_000
 
-/** 401/403 du serveur MCP : jeton absent, expiré ou révoqué. */
+/** 401/403 from the MCP server: token missing, expired or revoked. */
 export class McpAuthError extends Error {
   constructor(status: number) {
-    super(`accès refusé par le serveur MCP (HTTP ${status})`)
+    super(`access refused by the MCP server (HTTP ${status})`)
   }
 }
 
 type Session = { call: (method: string, params?: Record<string, unknown>, opts?: { timeoutMs?: number; maxBytes?: number }) => Promise<JsonRpcMessage>; server?: string; close: () => void }
 
-/** Ouvre une session MCP (initialize + notifications/initialized). */
+/** Opens an MCP session (initialize + notifications/initialized). */
 async function openSession(serverUrl: string, bearer: string | undefined, deps: NetDeps): Promise<Session> {
   let sessionId: string | undefined
   let protocol = PROTOCOL_VERSION
@@ -43,7 +43,7 @@ async function openSession(serverUrl: string, bearer: string | undefined, deps: 
           ...(sessionId ? { "mcp-session-id": sessionId } : {}),
         },
         body: JSON.stringify(notification ? { jsonrpc: "2.0", method, ...(params ? { params } : {}) } : { jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }),
-        // Un flux SSE peut rester ouvert après la réponse : on s'arrête dès qu'elle est là.
+        // An SSE stream can stay open after the response: stop as soon as it is there.
         until: notification ? undefined : (body) => findResponse(body, "text/event-stream", id) !== null,
         timeoutMs: opts.timeoutMs,
         maxBytes: opts.maxBytes,
@@ -52,11 +52,11 @@ async function openSession(serverUrl: string, bearer: string | undefined, deps: 
     )
     if (res.status === 401 || res.status === 403) throw new McpAuthError(res.status)
     if (notification) return null
-    if (res.status < 200 || res.status >= 300) throw new Error(`le serveur MCP répond HTTP ${res.status}${res.status === 404 ? " (adresse du serveur incorrecte ?)" : ""}`)
+    if (res.status < 200 || res.status >= 300) throw new Error(`the MCP server answers HTTP ${res.status}${res.status === 404 ? " (wrong server address?)" : ""}`)
     sessionId = res.headers["mcp-session-id"] ?? sessionId
     const msg = findResponse(res.body, res.headers["content-type"] ?? "", id)
-    if (!msg) throw new Error(res.truncated ? `réponse MCP trop volumineuse à « ${method} »` : `réponse MCP illisible à « ${method} »`)
-    if (msg.error) throw new Error(`erreur MCP à « ${method} » : ${msg.error.message}`)
+    if (!msg) throw new Error(res.truncated ? `MCP response too large for "${method}"` : `unreadable MCP response to "${method}"`)
+    if (msg.error) throw new Error(`MCP error on "${method}": ${msg.error.message}`)
     return msg
   }
 
@@ -69,7 +69,7 @@ async function openSession(serverUrl: string, bearer: string | undefined, deps: 
     server: info?.name ? `${info.name}${info.version ? ` ${info.version}` : ""}` : undefined,
     call: async (method, params, opts) => (await send(method, params ?? {}, false, opts))!,
     close: () => {
-      // Fin de session, sans attendre ni échouer.
+      // End of session, without waiting or failing.
       if (sessionId)
         void guardedRequest(serverUrl, { method: "DELETE", headers: { "mcp-session-id": sessionId, ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) }, timeoutMs: 5_000 }, deps).catch(() => null)
     },
@@ -101,7 +101,7 @@ function toDef(t: { name?: unknown; title?: unknown; description?: unknown; inpu
 
 export type ToolsResult = { server?: string; tools: McpToolDef[] }
 
-/** Outils du serveur (toutes les pages, bornées), avec leur schéma et leur caractère lecture seule. */
+/** The server's tools (all pages, bounded), with their schema and whether they are read-only. */
 export async function listTools(serverUrl: string, bearer: string | undefined, deps: NetDeps = DEFAULT_DEPS): Promise<ToolsResult> {
   return withSession(serverUrl, bearer, deps, async (s) => {
     const tools: McpToolDef[] = []
@@ -120,7 +120,7 @@ export async function listTools(serverUrl: string, bearer: string | undefined, d
   })
 }
 
-/** Appelle l'outil `name` ; renvoie le résultat MCP brut (`content`, `isError`, `structuredContent`). */
+/** Calls the `name` tool; returns the raw MCP result (`content`, `isError`, `structuredContent`). */
 export async function callTool(serverUrl: string, bearer: string | undefined, name: string, args: Record<string, unknown>, deps: NetDeps = DEFAULT_DEPS): Promise<unknown> {
   return withSession(serverUrl, bearer, deps, async (s) => (await s.call("tools/call", { name, arguments: args }, { timeoutMs: CALL_TIMEOUT_MS, maxBytes: CALL_MAX_BYTES })).result)
 }

@@ -2,9 +2,9 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-// Dernière migration livrée avec ce code (supabase/migrations), figée au build : /api/health la compare à la dernière
-// migration appliquée en base, pour voir de l'extérieur si la base est à jour (les fichiers .sql ne sont pas embarqués
-// dans les fonctions Vercel, d'où la valeur figée ici).
+// Last migration shipped with this code (supabase/migrations), frozen at build time: /api/health compares it with the
+// last migration applied in the database, to see from outside whether the database is up to date (the .sql files are
+// not bundled into the Vercel functions, hence the value frozen here).
 function latestMigration() {
   try {
     const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../supabase/migrations")
@@ -14,14 +14,35 @@ function latestMigration() {
   }
 }
 
+/** Former French addresses, kept as permanent redirects so links and install prompts already shared keep working. */
+const LEGACY_PATHS = [
+  ["/accueil", "/"],
+  ["/creer", "/create"],
+  ["/activite", "/activity"],
+  ["/etat", "/status"],
+  ["/connaissances", "/knowledge"],
+  ["/entites", "/entities"],
+  ["/entites/:path*", "/entities/:path*"],
+  ["/taches", "/tasks"],
+  ["/automatisations", "/automations"],
+  ["/connecteurs", "/connectors"],
+  ["/supervision", "/monitoring"],
+  ["/admin/acces", "/admin/access"],
+  ["/admin/demandes", "/admin/requests"],
+  ["/reprise", "/resume"],
+]
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@brain/core"],
   serverExternalPackages: ["postgres"],
   poweredByHeader: false,
-  // Permet un build de vérification à côté d'un `next dev` en cours (NEXT_DIST_DIR=.next-build).
+  // Allows a verification build next to a running `next dev` (NEXT_DIST_DIR=.next-build).
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
   env: { BRAIN_EXPECTED_MIGRATION: latestMigration() },
+  async redirects() {
+    return LEGACY_PATHS.map(([source, destination]) => ({ source, destination, permanent: true }))
+  },
 }
 
 export default nextConfig

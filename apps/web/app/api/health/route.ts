@@ -5,10 +5,10 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * GET /api/health — sonde pour un superviseur externe (Uptime Kuma, Better Stack, cron…). 200 si le stockage répond,
- * 503 sinon ; aucune donnée d'entreprise. `stream` : comment le flux temps réel est prévenu (local, notify, poll).
- * `migrations` (Postgres) : dernière migration appliquée en base, dernière livrée avec ce code, et si la base est à
- * jour ; une base en retard ne fait pas échouer la sonde (le cerveau marche en mode dégradé), elle le signale.
+ * GET /api/health — probe for an external monitor (Uptime Kuma, Better Stack, cron…). 200 if storage answers,
+ * 503 otherwise; no company data. `stream`: how the real-time stream is notified (local, notify, poll).
+ * `migrations` (Postgres): last migration applied in the database, last one shipped with this code, and whether the
+ * database is up to date; a lagging database does not fail the probe (the brain works in degraded mode), it reports it.
  */
 export async function GET() {
   const store = getRootStore()

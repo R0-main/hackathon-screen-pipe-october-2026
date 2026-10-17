@@ -6,7 +6,7 @@ import { json, publicBaseUrl, withViewer } from "@/lib/http"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Admins : le prompt qui fait préparer l'onboarding par Claude Code ou Codex, avec un code d'envoi neuf (2 h). */
+/** Admins: the prompt that has Claude Code or Codex prepare the onboarding, with a fresh upload code (2 h). */
 export const POST = withViewer(
   async (req, viewer) => {
     const store = getStore()

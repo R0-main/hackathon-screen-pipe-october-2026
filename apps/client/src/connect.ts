@@ -1,7 +1,7 @@
-// `connect-claude` : le jeton Claude Code longue durée du poste, demandé à l'installation. `claude setup-token` ouvre la
-// connexion dans le navigateur et affiche le jeton ; on le colle ici (saisie masquée), il est essayé puis rangé dans
-// config.json (mode 600). La synchro planifiée (toutes les 15 min, sans session ouverte) le passe à chaque `claude -p` :
-// distillation, agent Screenpipe et, sur le poste d'un admin, modérateur. Il ne quitte jamais le poste.
+// `connect-claude`: the computer's long-lived Claude Code token, asked for at install. `claude setup-token` opens the
+// sign-in in the browser and shows the token; it is pasted here (hidden input), tried, then stored in config.json
+// (mode 600). The scheduled sync (every 15 min, with no session open) passes it to each `claude -p`: distillation,
+// Screenpipe agent and, on an admin's computer, the moderator. It never leaves the computer.
 
 import { spawnSync } from "node:child_process"
 import { createInterface } from "node:readline"
@@ -10,10 +10,10 @@ import { claudeAuthHelp, cliFailure, findOnPath, runClaudeCli, spawnTarget } fro
 
 type Log = (s: string) => void
 
-/** Un jeton de `claude setup-token` (sk-ant-oat01-…). */
+/** A token from `claude setup-token` (sk-ant-oat01-…). */
 export const CLAUDE_TOKEN_RE = /^sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,300}$/
 
-/** Saisie masquée dans le terminal (rien n'est affiché pendant qu'on colle). */
+/** Hidden input in the terminal (nothing is shown while pasting). */
 function readHidden(question: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
@@ -32,24 +32,24 @@ function readHidden(question: string): Promise<string> {
 export type ConnectDeps = {
   isTTY?: boolean
   claudePath?: string | null
-  /** Lance `claude setup-token` dans le terminal (connexion dans le navigateur). */
+  /** Runs `claude setup-token` in the terminal (sign-in in the browser). */
   runSetupToken?: (claudePath: string) => boolean
   readToken?: () => Promise<string>
 }
 
-/** Vrai si le poste a déjà de quoi faire tourner Claude sans session ouverte (jeton enregistré, ou clé API). */
+/** True if the computer can already run Claude with no session open (saved token, or API key). */
 export function hasScheduledClaude(cfg = loadPartialConfig()): boolean {
   return Boolean(cfg.claude_oauth_token || cfg.anthropic_api_key || process.env.ANTHROPIC_API_KEY)
 }
 
-/** `brain.mjs connect-claude` : jeton Claude Code du poste, demandé une fois, essayé, enregistré. Code 0 si enregistré. */
+/** `brain.mjs connect-claude`: the computer's Claude Code token, asked for once, tried, saved. Code 0 if saved. */
 export async function cmdConnectClaude(log: Log = console.log, deps: ConnectDeps = {}): Promise<number> {
   const claudePath = deps.claudePath !== undefined ? deps.claudePath : findOnPath("claude")
-  if (!claudePath) throw new UserError("CLI `claude` introuvable : installez Claude Code (`npm install -g @anthropic-ai/claude-code`), puis relancez connect-claude.")
+  if (!claudePath) throw new UserError("`claude` CLI not found: install Claude Code (`npm install -g @anthropic-ai/claude-code`), then rerun connect-claude.")
   if (!(deps.isTTY ?? (process.stdin.isTTY && process.stdout.isTTY))) {
-    throw new UserError("connect-claude se lance dans un terminal : connexion à Claude dans le navigateur, puis on colle le jeton affiché.")
+    throw new UserError("connect-claude runs in a terminal: sign in to Claude in the browser, then paste the token shown.")
   }
-  log("Connexion à Claude : le navigateur va s'ouvrir. Une fois connecté, copiez le jeton affiché (sk-ant-oat01-…).")
+  log("Signing in to Claude: the browser will open. Once signed in, copy the token shown (sk-ant-oat01-…).")
   const ran = (
     deps.runSetupToken ??
     ((p) => {
@@ -57,17 +57,17 @@ export async function cmdConnectClaude(log: Log = console.log, deps: ConnectDeps
       return spawnSync(t.cmd, t.args, { stdio: "inherit", shell: t.shell }).status === 0
     })
   )(claudePath)
-  if (!ran) log("`claude setup-token` ne s'est pas terminé normalement : si un jeton s'est affiché, collez-le quand même.")
-  const token = await (deps.readToken ?? (() => readHidden("Collez le jeton ici (rien ne s'affiche) : ")))()
-  if (!CLAUDE_TOKEN_RE.test(token)) throw new UserError("Ce n'est pas un jeton de `claude setup-token` (il commence par « sk-ant-oat »). Relancez connect-claude.")
+  if (!ran) log("`claude setup-token` did not finish normally: if a token was shown, paste it anyway.")
+  const token = await (deps.readToken ?? (() => readHidden("Paste the token here (nothing is shown): ")))()
+  if (!CLAUDE_TOKEN_RE.test(token)) throw new UserError("This is not a `claude setup-token` token (it starts with \"sk-ant-oat\"). Rerun connect-claude.")
 
-  log("Essai du jeton…")
-  const run = await runClaudeCli(claudePath, "Réponds seulement OK.", 60_000, { oauthToken: token })
+  log("Trying the token…")
+  const run = await runClaudeCli(claudePath, "Answer only OK.", 60_000, { oauthToken: token })
   const fail = cliFailure(run)
-  if (fail?.failure === "auth") throw new UserError(`${claudeAuthHelp(fail.error)} Le jeton n'a pas été enregistré.`)
-  if (fail) log(`Claude n'a pas pu être joint pour l'essai (${fail.error}) : le jeton est enregistré quand même.`)
+  if (fail?.failure === "auth") throw new UserError(`${claudeAuthHelp(fail.error)} The token was not saved.`)
+  if (fail) log(`Claude could not be reached for the test (${fail.error}): the token is saved anyway.`)
 
   saveConfig({ ...loadPartialConfig(), claude_oauth_token: token })
-  log(`Jeton Claude Code enregistré (${maskSecret(token)}) : la synchro des 15 min s'en sert, même sans session ouverte. Il reste sur ce poste.`)
+  log(`Claude Code token saved (${maskSecret(token)}): the 15-min sync uses it, even with no session open. It stays on this computer.`)
   return 0
 }

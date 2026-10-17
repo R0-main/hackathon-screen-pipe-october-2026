@@ -7,7 +7,7 @@ import type { RememberedAccount } from "@/lib/auth"
 import { fmt, plural } from "@/lib/i18n"
 import { useBrainLive } from "./BrainLive"
 import { api, errorMessage } from "./format"
-import { LanguageSwitch, useT } from "./I18n"
+import { useT } from "./I18n"
 import { PersonAvatar } from "./PersonDot"
 import { usePendingJoins } from "./TeamJoin"
 import { ADMIN_VIEWS } from "./admin-views"
@@ -37,8 +37,8 @@ type SubItem = { href: string; label: string; count?: number }
 type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number; children?: SubItem[] }
 
 /**
- * Gabarit de l'application : la barre latérale à gauche, la page à droite. La fenêtre ne défile jamais :
- * le cerveau occupe toute la hauteur, les autres pages défilent dans leur propre colonne.
+ * The app layout: the sidebar on the left, the page on the right. The window never scrolls:
+ * the brain takes the full height, the other pages scroll in their own column.
  */
 export function AppShell({ children, accounts = [], signup = false }: { children: ReactNode; accounts?: RememberedAccount[]; signup?: boolean }) {
   const [open, setOpen] = useState(false)
@@ -57,7 +57,7 @@ export function AppShell({ children, accounts = [], signup = false }: { children
   )
 }
 
-/** Colonne défilante d'une page secondaire (tout sauf le cerveau). */
+/** Scrolling column of a secondary page (everything but the brain). */
 export function PageScroll({ children, width = "max-w-[1100px]" }: { children: ReactNode; width?: string }) {
   return (
     <div className="scroll-thin h-full overflow-y-auto">
@@ -93,12 +93,12 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
   const proposed = state.automations.filter((a) => a.status === "proposed").length
   const main: NavItem[] = [
     { href: "/dashboard", label: t.nav.brain, icon: NavBrainIcon },
-    { href: "/etat", label: t.nav.status, icon: DocIcon },
-    { href: "/connaissances", label: t.nav.knowledge, icon: StackIcon, count: state.totals.items },
-    { href: "/entites", label: t.nav.entities, icon: TagIcon },
+    { href: "/status", label: t.nav.status, icon: DocIcon },
+    { href: "/knowledge", label: t.nav.knowledge, icon: StackIcon, count: state.totals.items },
+    { href: "/entities", label: t.nav.entities, icon: TagIcon },
     { href: "/skills", label: t.nav.skills, icon: SkillIcon, count: state.totals.skills },
-    { href: "/taches", label: t.nav.tasks, icon: TaskIcon, count: openTasks },
-    { href: "/automatisations", label: t.nav.automations, icon: BoltIcon, count: proposed },
+    { href: "/tasks", label: t.nav.tasks, icon: TaskIcon, count: openTasks },
+    { href: "/automations", label: t.nav.automations, icon: BoltIcon, count: proposed },
   ]
   const config: NavItem[] = isAdmin
     ? [
@@ -110,8 +110,8 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
           children: ADMIN_VIEWS.map((v) => ({ href: v.href, label: t.adminViews[v.id], count: v.id === "requests" ? pendingJoins : undefined })),
         },
         { href: "/onboarding", label: t.nav.onboarding, icon: ChatIcon },
-        { href: "/connecteurs", label: t.nav.connectors, icon: LinkIcon },
-        { href: "/supervision", label: t.nav.monitoring, icon: WatchIcon },
+        { href: "/connectors", label: t.nav.connectors, icon: LinkIcon },
+        { href: "/monitoring", label: t.nav.monitoring, icon: WatchIcon },
       ]
     : []
 
@@ -137,8 +137,8 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
       setBusy(false)
       return
     }
-    // Navigation complète (pas router.push) : le cache du routeur client, qui contient encore le cerveau de la
-    // personne connectée, est jeté, et l'entrée « / » est remplacée dans l'historique.
+    // Full navigation (not router.push): the client router cache, which still holds the signed-in person's
+    // brain, is thrown away, and the "/" entry is replaced in the history.
     window.location.replace("/login")
   }
 
@@ -219,7 +219,6 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
             <LogoutIcon />
           </button>
         </div>
-        <LanguageSwitch className="justify-end" />
       </div>
     </aside>
   )
@@ -231,7 +230,7 @@ function NavList({ items, isActive, pathname }: { items: NavItem[]; isActive: (h
       {items.map((it) => {
         const active = isActive(it.href)
         const Icon = it.icon
-        // Rubrique à sous-pages : ouverte quand on y est ; la page courante est marquée dans le sous-menu, pas sur la rubrique.
+        // Section with sub-pages: open while on it; the current page is marked in the sub-menu, not on the section.
         const open = Boolean(it.children) && active
         return (
           <li key={it.href}>
@@ -258,8 +257,8 @@ function NavList({ items, isActive, pathname }: { items: NavItem[]; isActive: (h
 }
 
 /**
- * Sous-menu d'une rubrique : un fil vertical aligné sur l'icône, et une barre d'encre qui glisse le long du fil
- * jusqu'à la page courante. S'ouvre en hauteur (grille 0fr → 1fr), sans chevron ; fermé, il est inerte.
+ * A section's sub-menu: a vertical thread aligned with the icon, and an ink bar that slides along the thread
+ * to the current page. Opens in height (grid 0fr → 1fr), without a chevron; closed, it is inert.
  */
 function SubNav({ items, open, current }: { items: SubItem[]; open: boolean; current: string }) {
   const { t } = useT()
@@ -293,8 +292,8 @@ function SubNav({ items, open, current }: { items: SubItem[]; open: boolean; cur
 }
 
 /**
- * En-tête de la barre latérale : l'entreprise ouverte. Un clic déroule les entreprises retenues par ce navigateur
- * (un clic de plus pour passer de l'une à l'autre), puis de quoi en ajouter une (son jeton) ou en créer une.
+ * Sidebar header: the open company. A click unfolds the companies remembered by this browser (one more click to switch
+ * from one to another), then a way to add one (its token) or create one.
  */
 function CompanySwitcher({ accounts, signup, onClose }: { accounts: RememberedAccount[]; signup: boolean; onClose: () => void }) {
   const { state } = useBrainLive()
@@ -302,7 +301,7 @@ function CompanySwitcher({ accounts, signup, onClose }: { accounts: RememberedAc
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  // Session ouverte avant que le navigateur ne retienne les entreprises : elle figure quand même dans la liste.
+  // Session opened before the browser remembered companies: it shows in the list anyway.
   const here = accounts.some((a) => a.org.id === state.org.id)
   const companies: RememberedAccount[] = here
     ? accounts
@@ -313,7 +312,7 @@ function CompanySwitcher({ accounts, signup, onClose }: { accounts: RememberedAc
     setErr(null)
     try {
       await api("/api/session/accounts", { method: "POST", json: { userId: a.userId } })
-      // Navigation complète : rien du cerveau de l'entreprise précédente ne reste dans le cache du routeur.
+      // Full navigation: nothing from the previous company's brain stays in the router cache.
       window.location.assign("/dashboard")
     } catch (e) {
       setErr(fmt(t.shell.switchError, { error: errorMessage(e) }))
@@ -376,12 +375,12 @@ function CompanySwitcher({ accounts, signup, onClose }: { accounts: RememberedAc
             </p>
           )}
           <div className="mt-1 border-t border-line pt-1">
-            <Link href="/login?ajouter=1" className={row}>
+            <Link href="/login?add=1" className={row}>
               <PlusIcon size={14} className="shrink-0" />
               {t.shell.addCompany}
             </Link>
             {signup && (
-              <Link href="/creer" className={`${row} text-trace hover:text-ink`}>
+              <Link href="/create" className={`${row} text-trace hover:text-ink`}>
                 <BrainIcon size={14} className="shrink-0" />
                 {t.shell.createCompany}
               </Link>

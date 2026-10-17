@@ -15,176 +15,177 @@ import { EXIT_NO_SCREENPIPE, EXIT_PERMISSIONS_PENDING } from "../src/setup"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const installSh = fileURLToPath(new URL("../../web/public/install.sh", import.meta.url))
-const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Butine", zones: ["compta"] }
+const EXAMPLE = { baseUrl: "https://brain.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Butine", zones: ["finance"] }
 const prompt = buildInstallPrompt(EXAMPLE)
 
-test("prompt d'installation : une seule commande par système (install.sh ou install.ps1, puis setup), une seule autorisation dans Claude Code", () => {
-  // Téléchargement raté : 5, jamais le code brut de curl (« curl: (6) » se lirait « branché sans Screenpipe »).
+test("install prompt: a single command per system (install.sh or install.ps1, then setup), a single permission in Claude Code", () => {
+  // Failed download: 5, never curl's raw code ("curl: (6)" would read as "connected without Screenpipe").
   const posix = `(curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
   const windows =
     `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.company-brain" | Out-Null; ` +
     `try { Invoke-WebRequest -UseBasicParsing ${EXAMPLE.baseUrl}/install.ps1 -OutFile "$env:USERPROFILE\\.company-brain\\install.ps1" -ErrorAction Stop } catch { exit 5 }; ` +
     `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.company-brain\\install.ps1" --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}; exit $LASTEXITCODE`
-  assert.ok(prompt.includes(`macOS, Linux, Git Bash : ${posix}\n`), "la commande macOS / Linux")
-  assert.ok(prompt.includes(`Windows, PowerShell : ${windows}\n`), "la commande Windows")
+  assert.ok(prompt.includes(`macOS, Linux, Git Bash: ${posix}\n`), "the macOS / Linux command")
+  assert.ok(prompt.includes(`Windows, PowerShell: ${windows}\n`), "the Windows command")
   assert.deepEqual(installCommands(EXAMPLE.baseUrl, `--token ${EXAMPLE.token}`), { posix, windows })
-  // Le jeton n'apparaît que dans ces deux commandes (une seule sera lancée).
+  // The token only appears in these two commands (only one will be run).
   assert.equal(prompt.split(EXAMPLE.token).length, 3)
-  assert.match(prompt, /Code 3 \(« EN ATTENTE »\)/)
-  assert.match(prompt, /Code 5 : réseau ou adresse, relance la même commande/)
-  assert.match(prompt, /brain doctor --json` et les corrections marquées « safe » \(même délai\), puis dis-moi en une phrase ce qui reste à faire/)
-  assert.match(prompt, /délai de 10 minutes/)
-  // Ni prérequis à vérifier à la main ni étapes séparées : les scripts et setup s'en chargent.
+  assert.match(prompt, /Code 3 \("WAITING"\)/)
+  assert.match(prompt, /Code 5: network or address, rerun the same command/)
+  assert.match(prompt, /brain doctor --json` and the fixes marked "safe" \(same timeout\), then tell me in one sentence what is left to do/)
+  assert.match(prompt, /10-minute timeout/)
+  // No prerequisites to check by hand and no separate steps: the scripts and setup take care of them.
   assert.ok(!/node -v|winget|install-schedule|install-hooks|claude mcp add/.test(prompt))
-  // Deux commandes (macOS / Linux, Windows) et la consigne « session cloud » : court, mais pas plus.
-  assert.ok(prompt.length < 2700, `prompt court (${prompt.length} caractères)`)
+  // Two commands (macOS / Linux, Windows) and the "cloud session" instruction: short, but no more.
+  assert.ok(prompt.length < 2700, `short prompt (${prompt.length} characters)`)
 })
 
-test("prompt d'installation : les codes de sortie cités sont ceux de setup et des scripts", () => {
+test("install prompt: the exit codes quoted are those of setup and the scripts", () => {
   assert.equal(EXIT_PERMISSIONS_PENDING, 3)
   assert.equal(EXIT_NO_SCREENPIPE, 6)
-  assert.match(prompt, new RegExp(`Code ${EXIT_PERMISSIONS_PENDING} \\(« EN ATTENTE »\\)`))
-  assert.match(prompt, new RegExp(`\\(${EXIT_NO_SCREENPIPE} : branché sans Screenpipe\\)`))
+  assert.match(prompt, new RegExp(`Code ${EXIT_PERMISSIONS_PENDING} \\("WAITING"\\)`))
+  assert.match(prompt, new RegExp(`\\(${EXIT_NO_SCREENPIPE}: connected without Screenpipe\\)`))
 })
 
-test("prompt d'installation : aucun historique ne part sans relecture complète et accord explicite", () => {
-  assert.match(prompt, /aucun historique n'est envoyé/)
+test("install prompt: no history goes without a full review and explicit approval", () => {
+  assert.match(prompt, /no history is sent/)
   const review = prompt.indexOf("brain sync --dry-run --full --since 24h")
   const send = prompt.indexOf("brain sync --confirm")
-  assert.ok(review > 0 && send > review, "simulation relue avant l'envoi")
-  assert.match(prompt, /rien ne part\s+avant mon accord explicite/)
-  assert.ok(!/brain sync --since/.test(prompt), "jamais d'envoi direct")
+  assert.ok(review > 0 && send > review, "dry run reviewed before sending")
+  assert.match(prompt, /nothing is sent\s+before my explicit approval/)
+  assert.ok(!/brain sync --since/.test(prompt), "never a direct send")
 })
 
-test("prompt d'installation : reconnu par brain-sync (session ignorée), ancienne formulation comprise", () => {
+test("install prompt: recognized by brain-sync (session ignored), old French wording included", () => {
   assert.ok(INSTALL_PROMPT_RE.test(prompt))
+  // Prompts handed out before the English switch (intentional French).
   assert.ok(INSTALL_PROMPT_RE.test("Tu vas connecter ce poste au cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois."))
 })
 
-test("prompt d'installation : chaque commande et option citée existe dans le client", () => {
+test("install prompt: every command and option quoted exists in the client", () => {
   const help = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "help"], { cwd: clientDir, encoding: "utf8" }).stdout
   const calls = [...prompt.matchAll(/company-brain\/brain ([a-z][a-z-]*)((?: --[a-z-]+(?: [^\s`-][^\s`]*)?)*)/g)]
   assert.ok(calls.length >= 5)
   for (const [, cmd, rest] of calls) {
-    assert.ok(new RegExp(`^  ${cmd}\\b`, "m").test(help), `commande inconnue : ${cmd}`)
-    for (const [flag] of rest.matchAll(/--[a-z-]+/g)) assert.ok(help.includes(flag), `option inconnue : ${cmd} ${flag}`)
+    assert.ok(new RegExp(`^  ${cmd}\\b`, "m").test(help), `unknown command: ${cmd}`)
+    for (const [flag] of rest.matchAll(/--[a-z-]+/g)) assert.ok(help.includes(flag), `unknown option: ${cmd} ${flag}`)
   }
 })
 
-test("install/PROMPT.md est à jour avec buildInstallPrompt", () => {
+test("install/PROMPT.md is up to date with buildInstallPrompt", () => {
   const md = readFileSync(new URL("../../../install/PROMPT.md", import.meta.url), "utf8")
   const example = md.match(/```text\n([\s\S]*?)\n```/)?.[1]
   assert.equal(example, prompt)
 })
 
-const JOIN = { baseUrl: "https://cerveau.example.com", code: "cj_XXXXXXXXXXXXXXXXXXXXXXXX", orgName: "Atelier Lumen" }
+const JOIN = { baseUrl: "https://brain.example.com", code: "cj_XXXXXXXXXXXXXXXXXXXXXXXX", orgName: "Atelier Lumen" }
 const joinPrompt = buildJoinPrompt(JOIN)
 
-test("message d'équipe : une commande par système (install.sh ou install.ps1 --join), champs inconnus laissés à l'admin", () => {
-  const options = `--join ${JOIN.code} --name "<prénom nom>" --title "<poste>" --email "<email>"`
+test("team message: one command per system (install.sh or install.ps1 --join), unknown fields left to the admin", () => {
+  const options = `--join ${JOIN.code} --name "<first last>" --title "<role>" --email "<email>"`
   const cmd = installCommands(JOIN.baseUrl, options)
-  assert.ok(joinPrompt.includes(`macOS, Linux, Git Bash : ${cmd.posix}\n`))
-  assert.ok(joinPrompt.includes(`Windows, PowerShell : ${cmd.windows}\n`))
-  assert.match(cmd.posix, /sh ~\/\.company-brain\/install\.sh --url https:\/\/cerveau\.example\.com --join cj_X+ --name "<prénom nom>"/)
-  assert.equal(joinPrompt.split(JOIN.code).length, 3, "le code n'apparaît que dans les deux commandes")
-  assert.match(joinPrompt, /N'invente rien/)
-  assert.match(joinPrompt, /ne le transmets pas hors de l'entreprise/)
-  assert.match(joinPrompt, /Code 7 \(« EN ATTENTE D'ACCEPTATION »\)/)
-  assert.match(joinPrompt, /Code 8 : la demande a été refusée/)
-  assert.match(joinPrompt, /Code 5 : réseau ou adresse, relance la même commande/)
+  assert.ok(joinPrompt.includes(`macOS, Linux, Git Bash: ${cmd.posix}\n`))
+  assert.ok(joinPrompt.includes(`Windows, PowerShell: ${cmd.windows}\n`))
+  assert.match(cmd.posix, /sh ~\/\.company-brain\/install\.sh --url https:\/\/brain\.example\.com --join cj_X+ --name "<first last>"/)
+  assert.equal(joinPrompt.split(JOIN.code).length, 3, "the code only appears in the two commands")
+  assert.match(joinPrompt, /Make nothing up/)
+  assert.match(joinPrompt, /never pass it on outside the company/)
+  assert.match(joinPrompt, /Code 7 \("WAITING FOR APPROVAL"\)/)
+  assert.match(joinPrompt, /Code 8: the request was declined/)
+  assert.match(joinPrompt, /Code 5: network or address, rerun the same command/)
   assert.match(joinPrompt, /brain doctor --json`/)
-  assert.match(joinPrompt, /d'entreprise d'Atelier Lumen/, "élision")
-  assert.ok(joinPrompt.length < 3200, `message court (${joinPrompt.length} caractères)`)
+  assert.match(joinPrompt, /Atelier Lumen's company brain/, "possessive")
+  assert.ok(joinPrompt.length < 3200, `short message (${joinPrompt.length} characters)`)
 })
 
-test("prompts : l'entreprise présentée en deux mots quand elle a une description, rien sinon", () => {
-  const about = "Butine fabrique des balances connectées pour ruches.\n6 personnes, basée à Lyon."
+test("prompts: the company introduced in a nutshell when it has a description, nothing otherwise", () => {
+  const about = "Butine makes connected scales for beehives.\n6 people, based in Lyon."
   const withAbout = buildInstallPrompt({ ...EXAMPLE, orgDescription: about })
-  assert.ok(withAbout.startsWith("Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Butine. L'entreprise, en deux mots : « Butine fabrique des balances connectées pour ruches. 6 personnes, basée à Lyon ». Je suis Jean-Marc Dubois"))
+  assert.ok(withAbout.startsWith('You are going to connect this computer to NOS Brainer, Butine\'s company brain. The company, in a nutshell: "Butine makes connected scales for beehives. 6 people, based in Lyon". I am Jean-Marc Dubois'))
   assert.ok(INSTALL_PROMPT_RE.test(withAbout))
   const join = buildJoinPrompt({ ...JOIN, orgDescription: about })
-  assert.match(join, /^Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise d'Atelier Lumen\. L'entreprise, en deux mots : « Butine/)
+  assert.match(join, /^You are going to ask to join NOS Brainer, Atelier Lumen's company brain\. The company, in a nutshell: "Butine/)
   assert.ok(INSTALL_PROMPT_RE.test(join))
   for (const empty of [undefined, "", "  \n "]) {
     assert.equal(buildInstallPrompt({ ...EXAMPLE, orgDescription: empty }), prompt)
     assert.equal(buildJoinPrompt({ ...JOIN, orgDescription: empty }), joinPrompt)
   }
-  // Une longue description est coupée au dernier mot entier.
-  const long = buildInstallPrompt({ ...EXAMPLE, orgDescription: "ruche ".repeat(100) })
-  const quoted = long.match(/« (.*?) »/)?.[1] ?? ""
-  assert.ok(quoted.length <= ABOUT_ORG_MAX + 1 && quoted.endsWith("ruche…"), quoted)
+  // A long description is cut at the last whole word.
+  const long = buildInstallPrompt({ ...EXAMPLE, orgDescription: "hive ".repeat(100) })
+  const quoted = long.match(/nutshell: "(.*?)"/)?.[1] ?? ""
+  assert.ok(quoted.length <= ABOUT_ORG_MAX + 1 && quoted.endsWith("hive…"), quoted)
 })
 
-test("codes de sortie : un code, un sens, pour les scripts, setup et join", () => {
+test("exit codes: one code, one meaning, for the scripts, setup and join", () => {
   assert.deepEqual(JOIN_EXIT, { pending: EXIT_JOIN_PENDING, rejected: EXIT_JOIN_REJECTED })
   assert.equal(EXIT.permissions, EXIT_PERMISSIONS_PENDING)
   assert.equal(EXIT.noScreenpipe, EXIT_NO_SCREENPIPE)
   const codes = Object.values(EXIT)
-  assert.equal(new Set(codes).size, codes.length, "deux sens pour un même code")
-  // Les scripts d'installation documentent le même tableau.
+  assert.equal(new Set(codes).size, codes.length, "two meanings for the same code")
+  // The install scripts document the same table.
   for (const file of ["install.sh", "install.ps1"]) {
     const text = readFileSync(new URL(`../../web/public/${file}`, import.meta.url), "utf8")
-    for (const c of [0, 1, 3, 6, 7, 8]) assert.match(text, new RegExp(`\\b${c} = `), `${file} : code ${c} non documenté`)
-    assert.match(text, /\n#\s+2\s+mauvais appel/)
-    assert.match(text, /\n#\s+5\s+t[ée]l[ée]chargement impossible/)
+    for (const c of [0, 1, 3, 6, 7, 8]) assert.match(text, new RegExp(`\\b${c} = `), `${file}: code ${c} not documented`)
+    assert.match(text, /\n#\s+2\s+bad call/)
+    assert.match(text, /\n#\s+5\s+download impossible/)
   }
 })
 
-test("message d'équipe : reconnu par brain-sync, et son code est masqué", () => {
+test("team message: recognized by brain-sync, and its code is redacted", () => {
   assert.ok(INSTALL_PROMPT_RE.test(joinPrompt))
   assert.ok(!maskOwnSecrets(joinPrompt).text.includes(JOIN.code))
 })
 
-test("prompt d'onboarding par un agent : lit l'historique, envoie sans rien appliquer, reconnu et masqué par brain-sync", () => {
+test("onboarding prompt for an agent: reads the history, sends without applying anything, recognized and redacted by brain-sync", () => {
   const code = `co_${"Y".repeat(80)}`
-  const p = buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code, orgName: "Atelier Lumen", zones: [{ id: "dev", name: "Dev" }] })
+  const p = buildOnboardingAgentPrompt({ baseUrl: "https://brain.example.com", code, orgName: "Atelier Lumen", zones: [{ id: "dev", name: "Dev" }] })
   assert.ok(INSTALL_PROMPT_RE.test(p))
   assert.ok(!maskOwnSecrets(p).text.includes(code))
-  assert.equal(p.split(code).length, 2, "le code n'apparaît qu'une fois, dans la commande")
+  assert.equal(p.split(code).length, 2, "the code only appears once, in the command")
   assert.match(p, /~\/\.claude\/projects/)
   assert.match(p, /~\/\.codex\/sessions/)
-  assert.match(p, /Jamais de secrets/)
-  assert.match(p, /Rien n'est appliqué : je relis et valide/)
-  const ask = p.indexOf("Acceptes-tu de donner accès à ces données à ce site ?")
-  assert.ok(ask > 0 && ask < p.indexOf("Historique : Claude Code"), "l'accord est demandé avant toute lecture")
-  assert.match(p, /Sans un oui clair, arrête-toi sans rien lire ni envoyer/)
-  assert.match(p, /envoyer à cerveau\.example\.com/, "le site qui reçoit est nommé")
-  assert.ok(p.includes(`curl -fsS -X POST https://cerveau.example.com/api/onboarding/import -H "Authorization: Bearer ${code}"`))
+  assert.match(p, /Never any secrets/)
+  assert.match(p, /Nothing is applied: I review and validate/)
+  const ask = p.indexOf("Do you agree to give this website access to that data?")
+  assert.ok(ask > 0 && ask < p.indexOf("History: Claude Code"), "consent is asked before any reading")
+  assert.match(p, /Without a clear yes, stop without reading or sending anything/)
+  assert.match(p, /send brain\.example\.com/, "the receiving website is named")
+  assert.ok(p.includes(`curl -fsS -X POST https://brain.example.com/api/onboarding/import -H "Authorization: Bearer ${code}"`))
 })
 
-test("prompts : une session Claude Code dans le cloud s'arrête au lieu d'agir hors du poste", () => {
-  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
-    assert.match(p, /Si tu ne tournes pas sur mon poste \(session cloud, conteneur distant\), arrête-toi/)
+test("prompts: a Claude Code session in the cloud stops instead of acting outside the computer", () => {
+  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://brain.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
+    assert.match(p, /If you are not running on my computer \(cloud session, remote container\), stop/)
   }
 })
 
-test("prompts : une action bloquée se règle en une phrase, sans contourner ni lister d'options", () => {
-  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
-    assert.match(p, /Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire/)
-    assert.match(p, /sans liste ni explication/)
+test("prompts: a blocked action is settled in one sentence, without working around it or listing options", () => {
+  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://brain.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
+    assert.match(p, /Action blocked or refused: work around nothing, tell me in one sentence what to do/)
+    assert.match(p, /with no list or explanation/)
   }
 })
 
-test("prompt d'onboarding : cadré par le nom et la description saisis, rien d'autre n'est appris", () => {
+test("onboarding prompt: framed by the name and description entered, nothing else is learned", () => {
   const p = buildOnboardingAgentPrompt({
-    baseUrl: "https://cerveau.example.com",
+    baseUrl: "https://brain.example.com",
     code: "co_x",
     orgName: "Atelier Lumen",
-    description: "Studio de design produit pour les start-up de la santé.",
+    description: "Product design studio for healthcare startups.",
     zones: [],
   })
   assert.match(
     p,
-    /Tu cherches UNIQUEMENT les projets et les conversations de l'entreprise « Atelier Lumen », qui se décrit ainsi : « Studio de design produit pour les start-up de la santé\. »/,
+    /You look ONLY for the projects and conversations of the company "Atelier Lumen", which describes itself as: "Product design studio for healthcare startups\."/,
   )
-  assert.match(p, /n'apprends rien d'autre : un projet perso, une autre entreprise, un autre client, une question générale ou un autre sujet ne se lit pas en détail/)
-  assert.match(p, /Dans le doute, laisse de côté\./)
-  const sansDescription = buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Orbite", zones: [] })
-  assert.match(sansDescription, /Tu cherches UNIQUEMENT les projets et les conversations de l'entreprise « Orbite »\. Repère d'abord/)
+  assert.match(p, /learn nothing else: a personal project, another company, another customer, a general question or another subject is not read in detail/)
+  assert.match(p, /When in doubt, leave it aside\./)
+  const noDescription = buildOnboardingAgentPrompt({ baseUrl: "https://brain.example.com", code: "co_x", orgName: "Orbite", zones: [] })
+  assert.match(noDescription, /You look ONLY for the projects and conversations of the company "Orbite"\. First spot/)
 })
-const FP = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49"
+const FP = "33483DC29874755818A10E941E52452421D5FF791FCF37578DB0E4EC570DF8F5"
 
-test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, empreinte vérifiée, puis tout passe par lui (macOS, Linux, Windows)", () => {
+test("install prompt, self-hosted brain: certificate fetched, fingerprint checked, then everything goes through it (macOS, Linux, Windows)", () => {
   const p = buildInstallPrompt({ ...EXAMPLE, caFingerprint: FP })
   const check = `[ "$(openssl x509 -in ~/.company-brain/ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "${FP}" ]`
   const posix =
@@ -192,10 +193,10 @@ test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, em
     `(curl -fsSL --cacert ~/.company-brain/ca.crt ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token} --ca ~/.company-brain/ca.crt`
   const cmd = installCommands(EXAMPLE.baseUrl, `--token ${EXAMPLE.token}`, FP)
   assert.equal(cmd.posix, posix)
-  assert.ok(p.includes(`macOS, Linux, Git Bash : ${posix}\n`), p)
-  assert.ok(p.includes(`Windows, PowerShell : ${cmd.windows}\n`), "la commande Windows")
-  // Windows : le certificat est récupéré sans vérification (PowerShell 5.1 et 7), vérifié par la même empreinte (9 sinon),
-  // ajouté au magasin de l'utilisateur s'il n'y est pas, puis install.ps1 est téléchargé normalement et reçoit --ca.
+  assert.ok(p.includes(`macOS, Linux, Git Bash: ${posix}\n`), p)
+  assert.ok(p.includes(`Windows, PowerShell: ${cmd.windows}\n`), "the Windows command")
+  // Windows: the certificate is fetched without verification (PowerShell 5.1 and 7), checked with the same fingerprint (9 otherwise),
+  // added to the user's store if it is not there, then install.ps1 is downloaded normally and receives --ca.
   const w = cmd.windows
   const order = [
     `$ca = "$env:USERPROFILE\\.company-brain\\ca.crt"; `,
@@ -210,22 +211,22 @@ test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, em
   let at = -1
   for (const part of order) {
     const i = w.indexOf(part)
-    assert.ok(i > at, `dans l'ordre : ${part}`)
+    assert.ok(i > at, `in order: ${part}`)
     at = i
   }
-  assert.equal(w.split("SkipCertificateCheck").length, 2, "la vérification n'est sautée que pour récupérer le certificat")
-  assert.equal(p.split(EXAMPLE.token).length, 3, "le jeton n'apparaît que dans les deux commandes")
-  assert.equal(p.split("curl -k").length, 2, "-k ne sert qu'à récupérer le certificat, jamais pour install.sh")
-  assert.match(p, /code 9 = empreinte différente, arrête-toi et préviens-moi/)
-  assert.match(p, /Sous Windows, une boîte de dialogue demande de confirmer l'ajout du certificat/)
+  assert.equal(w.split("SkipCertificateCheck").length, 2, "verification is only skipped to fetch the certificate")
+  assert.equal(p.split(EXAMPLE.token).length, 3, "the token only appears in the two commands")
+  assert.equal(p.split("curl -k").length, 2, "-k only serves to fetch the certificate, never for install.sh")
+  assert.match(p, /code 9 = different fingerprint, stop and tell me/)
+  assert.match(p, /On Windows, a dialog asks to confirm adding the certificate/)
   assert.ok(INSTALL_PROMPT_RE.test(p))
-  assert.ok(p.length < 4500, `prompt (${p.length} caractères)`)
+  assert.ok(p.length < 4500, `prompt (${p.length} characters)`)
   const j = buildJoinPrompt({ ...JOIN, caFingerprint: FP })
   assert.ok(j.includes(`(${check} || exit 9) && (curl -fsSL --cacert ~/.company-brain/ca.crt ${JOIN.baseUrl}/install.sh`))
-  assert.ok(j.includes(`--join ${JOIN.code} --name "<prénom nom>" --title "<poste>" --email "<email>" --ca ~/.company-brain/ca.crt`))
-  assert.ok(j.includes(`--join ${JOIN.code} --name "<prénom nom>" --title "<poste>" --email "<email>" --ca $ca; exit $LASTEXITCODE`))
-  assert.ok(!prompt.includes("ca.crt") && !joinPrompt.includes("ca.crt"), "sans empreinte (cloud) : rien ne change")
-  // Depuis un poste déjà branché (brain doctor) : le certificat du poste, sans jeton, sans nouvel ajout au magasin.
+  assert.ok(j.includes(`--join ${JOIN.code} --name "<first last>" --title "<role>" --email "<email>" --ca ~/.company-brain/ca.crt`))
+  assert.ok(j.includes(`--join ${JOIN.code} --name "<first last>" --title "<role>" --email "<email>" --ca $ca; exit $LASTEXITCODE`))
+  assert.ok(!prompt.includes("ca.crt") && !joinPrompt.includes("ca.crt"), "without a fingerprint (cloud): nothing changes")
+  // From a computer already connected (brain doctor): the computer's certificate, no token, no new addition to the store.
   const again = reinstallCommands(EXAMPLE.baseUrl, "/Users/jm/.company-brain/ca.crt")
   assert.equal(again.posix, `(curl -fsSL --cacert "/Users/jm/.company-brain/ca.crt" --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --ca "/Users/jm/.company-brain/ca.crt"`)
   const winAgain = reinstallCommands(EXAMPLE.baseUrl, "C:\\Users\\jm\\.company-brain\\ca.crt").windows
@@ -234,12 +235,12 @@ test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, em
   assert.deepEqual(reinstallCommands(EXAMPLE.baseUrl), installCommands(EXAMPLE.baseUrl))
 })
 
-test("install.sh --ca : brain.mjs téléchargé avec le certificat (HTTPS privé), option transmise à setup ; refusé sans", async (t) => {
+test("install.sh --ca: brain.mjs downloaded with the certificate (private HTTPS), option passed to setup; refused without", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "brain-install-ca-"))
   const cert = join(dir, "cert.pem")
   const key = join(dir, "key.pem")
   const gen = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "2", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"], { encoding: "utf8" })
-  if (gen.error || gen.status !== 0) return t.skip(`openssl indisponible (${gen.error?.message ?? gen.stderr.trim().split("\n")[0]})`)
+  if (gen.error || gen.status !== 0) return t.skip(`openssl unavailable (${gen.error?.message ?? gen.stderr.trim().split("\n")[0]})`)
   const fake = "console.log(JSON.stringify(process.argv.slice(2))); process.exit(3)"
   const server = createHttpsServer({ cert: readFileSync(cert), key: readFileSync(key) }, (req, res) => {
     if (req.url === "/brain.mjs") res.end(fake)
@@ -260,7 +261,7 @@ test("install.sh --ca : brain.mjs téléchargé avec le certificat (HTTPS privé
     assert.equal(ok.status, 3, ok.stdout)
     assert.ok(ok.stdout.includes(JSON.stringify(["setup", "--url", url, "--token", "cb_test", "--ca", cert])), ok.stdout)
     const ko = await run(["--token", "cb_test"])
-    assert.notEqual(ko.status, 3, "sans --ca, le certificat privé est refusé : rien n'est lancé")
+    assert.notEqual(ko.status, 3, "without --ca, the private certificate is refused: nothing is started")
     const absent = await run(["--token", "cb_test", "--ca", join(dir, "absent.pem")])
     assert.equal(absent.status, 2)
   } finally {

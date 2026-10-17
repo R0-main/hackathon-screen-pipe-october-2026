@@ -1,7 +1,7 @@
--- Alignement des politiques RLS sur les règles appliquées par l'API (lib/access.ts, lib/brain.ts).
+-- RLS policies aligned on the rules applied by the API (lib/access.ts, lib/brain.ts).
 
--- Droit de regard : l'auteur voit toujours ses connaissances, même rangées dans une zone qu'il ne lit pas
--- (tout le monde nourrit le cerveau : l'écriture n'est pas restreinte par zone).
+-- Oversight: authors always see their own knowledge, even filed in a zone they do not read
+-- (everyone feeds the brain: writing is not restricted by zone).
 drop policy if exists "lecture par zone" on knowledge_items;
 create policy "lecture par zone" on knowledge_items for select
   using (org_id = brain_org_id() and (brain_can_read_zone(zone) or author_id = brain_profile_id()));
@@ -13,9 +13,10 @@ create policy "liens des items lisibles" on edges for select
     where k.id = item_id and (brain_can_read_zone(k.zone) or k.author_id = brain_profile_id())
   ));
 
--- Événements : l'API montre à tout le monde qu'une zone s'allume, mais le contenu (résumé, empreinte, session)
--- n'est visible que de l'auteur, des admins, ou de qui lit TOUTES les zones de l'événement (jamais pour un événement
--- sans zone). Une politique ne masque pas de colonnes : en accès direct, seules ces lignes-là sont lisibles.
+-- Events: the API shows everyone that a zone lights up, but the content (summary, fingerprint, session)
+-- is only visible to the author, the admins, or whoever reads ALL the zones of the event (never for an event
+-- without a zone). A policy does not hide columns: with direct access, only these rows are readable.
+-- The column comment below is replaced by an English one in 20261018000001_english.sql.
 drop policy if exists "événements visibles" on agent_events;
 create policy "événements visibles" on agent_events for select
   using (org_id = brain_org_id() and (

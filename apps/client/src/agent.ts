@@ -1,7 +1,7 @@
-// Agent Screenpipe du poste : à chaque synchro, Claude Code (`claude -p`) ou Codex (`codex exec`) regarde lui-même
-// l'activité récente via le MCP Screenpipe (outils en lecture seule) et en tire les connaissances utiles à l'entreprise.
-// Ce qu'il propose repasse par les mêmes filtres que la distillation (masquage, contenu personnel, contrat) avant d'être
-// envoyé par la synchro.
+// The computer's Screenpipe agent: at each sync, Claude Code (`claude -p`) or Codex (`codex exec`) looks at the recent
+// activity itself through the Screenpipe MCP (read-only tools) and draws from it the knowledge useful to the company.
+// What it proposes goes through the same filters as distillation (redaction, personal content, contract) before being
+// sent by the sync.
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { delimiter, dirname, join } from "node:path"
@@ -10,24 +10,24 @@ import { brainHome, writeJson, type Config, type State } from "./config"
 import { claudeCliArgs, claudeCliOptions, cliFailure, findOnPath, parseCliOutput, runClaudeCli, unreadableFailure, type Failure } from "./distill"
 import type { CheckpointCommit } from "./sources/types"
 
-/** Version épinglée : la liste blanche ci-dessous dépend des noms d'outils du serveur. */
+/** Pinned version: the allowlist below depends on the server's tool names. */
 export const SCREENPIPE_MCP_PACKAGE = "screenpipe-mcp@0.20.3"
 
-/** Outils que l'agent peut appeler, tous en lecture seule (le serveur sait aussi piloter l'enregistrement, écrire, etc.). */
+/** Tools the agent may call, all read-only (the server can also drive recording, write, etc.). */
 export const SCREENPIPE_READ_TOOLS = ["activity-summary", "search-content", "keyword-search", "list-meetings", "get-meeting"]
 
-/** Claude Code : outils intégrés refusés, en plus de `--tools ""` (absent des vieilles CLI et sous Windows via claude.cmd). */
+/** Claude Code: built-in tools refused, on top of `--tools ""` (missing from old CLIs and on Windows via claude.cmd). */
 const CLAUDE_BUILTIN_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch"]
-/** Codex : fonctions coupées (shell, navigateur, apps, plugins) ; il ne garde que le MCP Screenpipe. */
+/** Codex: features turned off (shell, browser, apps, plugins); it keeps only the Screenpipe MCP. */
 const CODEX_DISABLED_FEATURES = ["shell_tool", "apps", "browser_use", "in_app_browser", "computer_use", "plugins"]
 
-/** Modèle par défaut côté Claude : Sonnet (le moins cher des deux qui suivent bien des outils), sauf `agent_model`. */
+/** Default model on the Claude side: Sonnet (the cheaper of the two that handle tools well), unless `agent_model`. */
 export const CLAUDE_AGENT_MODEL = "sonnet"
 
-/** Fenêtre regardée à chaque passage : depuis le précédent, 15 min la première fois, 60 min au plus (retour de veille). */
+/** Window looked at on each run: since the previous one, 15 min the first time, 60 min at most (waking from sleep). */
 export const AGENT_WINDOW_MS = 15 * 60_000
 export const AGENT_MAX_WINDOW_MS = 60 * 60_000
-/** En dessous, on attend le passage suivant (synchros manuelles rapprochées). */
+/** Below this, wait for the next run (manual syncs close together). */
 export const AGENT_MIN_WINDOW_MS = 5 * 60_000
 export const AGENT_TIMEOUT_MS = 5 * 60_000
 
@@ -36,7 +36,7 @@ export const AGENT_ENGINE_LABELS: Record<AgentEngine, string> = { claude: "Claud
 
 export type AgentWindow = { start: Date; end: Date }
 
-/** Fenêtre à regarder, ou null si elle est trop courte. `floor` : rien d'antérieur (mise en place de la synchro planifiée). */
+/** Window to look at, or null if it is too short. `floor`: nothing earlier (when the scheduled sync was set up). */
 export function agentWindow(state: State, now = new Date(), floor?: Date): AgentWindow | null {
   const end = now.getTime()
   const last = Date.parse(state.screenpipe?.agent_until ?? "")
@@ -46,8 +46,8 @@ export function agentWindow(state: State, now = new Date(), floor?: Date): Agent
 }
 
 /**
- * Qui fait tourner l'agent : celui que la config impose (`screenpipe_agent: "claude" | "codex"`), sinon Claude Code
- * (s'il n'est pas désactivé par use_claude_cli), sinon Codex. Null : agent coupé, ou aucune des deux CLI sur le poste.
+ * Who runs the agent: the one the config requires (`screenpipe_agent: "claude" | "codex"`), otherwise Claude Code
+ * (unless disabled by use_claude_cli), otherwise Codex. Null: agent off, or neither CLI on the computer.
  */
 export function pickAgentEngine(
   cfg: Partial<Pick<Config, "screenpipe_agent" | "use_claude_cli">>,
@@ -69,9 +69,9 @@ export function pickAgentEngine(
 }
 
 /**
- * Le serveur MCP Screenpipe tel que l'agent le lance (sans le jeton : chaque moteur le transmet à sa façon). npx est pris
- * à côté du Node.js en cours (copie privée hors du PATH comprise), et ce Node.js passe en tête du PATH pour le
- * `#!/usr/bin/env node` de npx.
+ * The Screenpipe MCP server as the agent launches it (without the token: each engine passes it its own way). npx is
+ * taken next to the running Node.js (private copy outside the PATH included), and that Node.js goes first in the PATH
+ * for npx's `#!/usr/bin/env node`.
  */
 export function screenpipeMcpServer(
   cfg: Pick<Config, "screenpipe_url">,
@@ -92,7 +92,7 @@ export function screenpipeMcpServer(
   return { command: existsSync(npx) ? npx : "npx", args, env }
 }
 
-/** `claude -p` : arguments de la distillation (modèle remplacé si demandé), plus le seul MCP Screenpipe et ses outils en lecture. */
+/** `claude -p`: the distillation's arguments (model replaced if asked), plus only the Screenpipe MCP and its read tools. */
 export function claudeAgentArgs(claudePath: string, mcpConfigFile: string, model?: string): string[] {
   const base = claudeCliArgs(claudePath)
   const m = base.indexOf("--model")
@@ -110,13 +110,12 @@ export function claudeAgentArgs(claudePath: string, mcpConfigFile: string, model
 }
 
 /**
- * `codex exec` : sans la config de l'utilisateur (ni ses autres MCP), sans session enregistrée, bac à sable en lecture,
- * shell et navigateur coupés, seul le MCP Screenpipe et ses outils en lecture (approuvés d'office), effort de
- * raisonnement bas. Le jeton Screenpipe passe par l'environnement (`env_vars`), jamais en argument. Prompt sur l'entrée
- * standard (`-`), réponse finale dans `outFile`.
+ * `codex exec`: without the user's config (nor their other MCPs), no saved session, read-only sandbox, shell and browser
+ * off, only the Screenpipe MCP and its read tools (approved up front), low reasoning effort. The Screenpipe token goes
+ * through the environment (`env_vars`), never as an argument. Prompt on standard input (`-`), final answer in `outFile`.
  */
 export function codexAgentArgs(server: { command: string; args: string[]; env: Record<string, string> }, dir: string, outFile: string, model?: string): string[] {
-  // Chaînes et tableaux de chaînes JSON sont aussi du TOML valide.
+  // JSON strings and string arrays are also valid TOML.
   const toml = (v: unknown) => JSON.stringify(v)
   const env = `{${Object.entries(server.env).map(([k, v]) => `${k}=${toml(v)}`).join(",")}}`
   const mcp = (k: string, v: string) => ["-c", `mcp_servers.screenpipe.${k}=${v}`]
@@ -167,7 +166,7 @@ export async function runScreenpipeAgent(opts: {
   const { window, cfg } = opts
   const start = window.start.toISOString()
   const end = window.end.toISOString()
-  // Dossier vide à part : la session de l'agent ne voit pas ~/.company-brain (config, jetons).
+  // Separate empty folder: the agent's session does not see ~/.company-brain (config, tokens).
   const dir = join(brainHome(), "agent")
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const prompt = buildAgentPrompt({ zones: opts.zones, start, end, who: opts.who })
@@ -193,17 +192,17 @@ export async function runScreenpipeAgent(opts: {
     try {
       last = readFileSync(outFile, "utf8")
     } catch {
-      // pas de réponse finale
+      // no final answer
     }
     rmSync(outFile, { force: true })
     stdout = last
   }
 
   const id = `screenpipe-agent:${end}`
-  const conv: Conversation = { id, tool: "agent", app: "Screenpipe", title: "Agent Screenpipe", started_at: start, ended_at: end, messages: [] }
+  const conv: Conversation = { id, tool: "agent", app: "Screenpipe", title: "Screenpipe agent", started_at: start, ended_at: end, messages: [] }
   const parsed = parseCliOutput(stdout, conv, opts.zones, opts.fallbackZone)
   if (!parsed) return { ok: false, window, ...unreadableFailure(stdout) }
-  // Filet après le jugement du modèle : une connaissance qui se lit comme personnelle ne part pas.
+  // Safety net after the model's judgment: knowledge that reads as personal is not sent.
   const items = parsed.filter((i) => !looksPersonal(`${i.title}\n${i.body}`))
   const commit: CheckpointCommit = {
     covers: [id],

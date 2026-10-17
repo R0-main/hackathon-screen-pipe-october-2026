@@ -1,5 +1,5 @@
-// brain doctor : diagnostic en lecture seule, sur un faux poste complet (faux cerveau, faux Screenpipe, faux `claude`,
-// faux crontab) monté dans un dossier temporaire. Rien n'est lu ni écrit hors de ce dossier.
+// brain doctor: read-only diagnosis, on a complete fake computer (fake brain, fake Screenpipe, fake `claude`,
+// fake crontab) set up in a temporary folder. Nothing is read or written outside that folder.
 
 import { strict as assert } from "node:assert"
 import { spawn } from "node:child_process"
@@ -24,17 +24,17 @@ const HEALTHY = {
   audio_capture_mode: "disabled",
 }
 
-type Post = { root: string; home: string; script: string; claudeDir: string; bin: string; env: Record<string, string> }
+type Station = { root: string; home: string; script: string; claudeDir: string; bin: string; env: Record<string, string> }
 
-/** Un poste branché comme le ferait setup : config, raccourci, hooks, MCP et synchro planifiée sur le client « actuel ». */
-function makePost(brainUrl: string, spUrl: string, opts: { token?: string } = {}): Post {
+/** A computer connected as setup would do it: config, shortcut, hooks, MCP and scheduled sync on the "current" client. */
+function makeStation(brainUrl: string, spUrl: string, opts: { token?: string } = {}): Station {
   const root = tempDir("brain-doctor-")
   const home = join(root, "brain")
   const claudeDir = join(root, "claude")
   const bin = join(root, "bin")
   for (const d of [home, claudeDir, bin]) mkdirSync(d, { recursive: true, mode: 0o700 })
   chmodSync(home, 0o700)
-  // Le « client » : répond à `_probe` comme brain.mjs.
+  // The "client": answers `_probe` like brain.mjs.
   const script = join(home, "brain.mjs")
   writeFileSync(
     script,
@@ -46,7 +46,7 @@ function makePost(brainUrl: string, spUrl: string, opts: { token?: string } = {}
     JSON.stringify({ url: brainUrl, token: opts.token ?? TOKEN, screenpipe_url: spUrl, screenpipe_token: SP_TOKEN, sources: ["claude", "codex", "screenpipe"], use_claude_cli: true }),
     { mode: 0o600 },
   )
-  // Faux `claude` (version) et faux crontab (notre ligne), seuls dans le PATH.
+  // Fake `claude` (version) and fake crontab (our line), alone in the PATH.
   writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "2.1.302 (Claude Code)"\n`, { mode: 0o755 })
   const env = { COMPANY_BRAIN_HOME: home, COMPANY_BRAIN_SCRIPT: script, CLAUDE_CONFIG_DIR: claudeDir, PATH: bin, HOME: root }
   withEnv(env, () => {
@@ -74,11 +74,11 @@ function withEnv<T>(env: Record<string, string>, fn: () => T): T {
   }
 }
 
-async function doctorIn(post: Post): Promise<DoctorReport> {
+async function doctorIn(station: Station): Promise<DoctorReport> {
   const saved: Record<string, string | undefined> = {}
-  for (const k of Object.keys(post.env)) {
+  for (const k of Object.keys(station.env)) {
     saved[k] = process.env[k]
-    process.env[k] = post.env[k]
+    process.env[k] = station.env[k]
   }
   try {
     return await runDoctor({ version: "0.1.0", platform: "linux" })
@@ -102,171 +102,171 @@ const byId = (r: DoctorReport, id: string) => r.checks.find((c) => c.id === id)
 
 const POSIX = process.platform !== "win32"
 
-test("doctor : poste bien branché → aucun KO, code 0, chaque groupe vérifié", { skip: !POSIX }, async () => {
+test("doctor: computer properly connected → no KO, code 0, every group checked", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
-  const post = makePost(brain.url, sp.url)
+  const station = makeStation(brain.url, sp.url)
   try {
-    const r = await doctorIn(post)
+    const r = await doctorIn(station)
     const fails = r.checks.filter((c) => c.status === "fail")
     assert.deepEqual(fails, [], formatDoctor(r))
     assert.equal(r.exit_code, 0)
-    for (const id of ["raccourci", "config", "connexion", "screenpipe", "capture", "screenpipe-jeton", "screenpipe-parsed", "claude", "mcp", "hooks", "planification", "distillation"]) {
-      assert.equal(byId(r, id)?.status, "ok", `${id} : ${JSON.stringify(byId(r, id))}`)
+    for (const id of ["shortcut", "config", "connection", "screenpipe", "capture", "screenpipe-token", "screenpipe-parsed", "claude", "mcp", "hooks", "schedule", "distillation"]) {
+      assert.equal(byId(r, id)?.status, "ok", `${id}: ${JSON.stringify(byId(r, id))}`)
     }
-    assert.match(byId(r, "connexion")!.detail, /Hugo Bernard chez Fournil/)
-    assert.match(byId(r, "capture")!.detail, /capture de l'écran active.*micro : coupé/)
-    // Aucun jeton, même en partie, ni en texte ni en JSON (la sortie finit dans la session de Claude Code).
-    // Le début du jeton, ou sa fin derrière « … » (forme de maskSecret). Pas la fin seule : « 3456 » peut faire partie
-    // du port aléatoire du faux cerveau ou d'un dossier temporaire.
+    assert.match(byId(r, "connection")!.detail, /Hugo Bernard at Fournil/)
+    assert.match(byId(r, "capture")!.detail, /screen capture active.*microphone: off/)
+    // No token, not even in part, in text or JSON (the output ends up in the Claude Code session).
+    // The start of the token, or its end behind "…" (maskSecret's form). Not the end alone: "3456" can be part
+    // of the fake brain's random port or of a temporary folder.
     for (const out of [formatDoctor(r), JSON.stringify(r)]) {
-      for (const secret of [TOKEN, SP_TOKEN]) assert.ok(!out.includes(secret.slice(0, 6)) && !out.includes(`…${secret.slice(-4)}`), `fragment de ${secret.slice(0, 3)}… affiché`)
+      for (const secret of [TOKEN, SP_TOKEN]) assert.ok(!out.includes(secret.slice(0, 6)) && !out.includes(`…${secret.slice(-4)}`), `fragment of ${secret.slice(0, 3)}… shown`)
     }
-    assert.match(formatDoctor(r), /^Bilan : \d+ OK, \d+ à surveiller, 0 KO/m)
+    assert.match(formatDoctor(r), /^Summary: \d+ OK, \d+ to watch, 0 KO/m)
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }
 })
 
-test("doctor : lecture seule (aucun fichier du poste créé ni modifié)", { skip: !POSIX }, async () => {
+test("doctor: read-only (no file of the computer created or changed)", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
-  const post = makePost(brain.url, sp.url)
+  const station = makeStation(brain.url, sp.url)
   const snapshot = () =>
-    [post.home, post.claudeDir]
+    [station.home, station.claudeDir]
       .flatMap((d) => readdirSync(d).map((f) => join(d, f)))
       .map((f) => `${f}:${statSync(f).mtimeMs}:${statSync(f).size}`)
       .sort()
   try {
     const before = snapshot()
-    await doctorIn(post)
+    await doctorIn(station)
     assert.deepEqual(snapshot(), before)
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }
 })
 
-test("doctor : jeton révoqué, branchements sur un ancien client, Screenpipe sans autorisation → KO avec la commande qui répare", { skip: !POSIX }, async () => {
+test("doctor: revoked token, connections to an old client, Screenpipe without permission → KO with the command that repairs", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe({ ...HEALTHY, status: "degraded", frame_status: "not_started", vision_reason: "permission_denied", last_frame_timestamp: null })
-  const post = makePost(brain.url, sp.url, { token: "cb_revoque_000000000000" })
+  const station = makeStation(brain.url, sp.url, { token: "cb_revoked_000000000000" })
   try {
-    // Hooks, MCP et crontab restés sur un client déplacé.
-    const old = join(post.root, "ancien", "brain.mjs")
-    withEnv(post.env, () => {
+    // Hooks, MCP and crontab left on a client that was moved.
+    const old = join(station.root, "old", "brain.mjs")
+    withEnv(station.env, () => {
       const { settings } = mergeHooks({}, hookEntry({ platform: "linux", script: old }))
-      writeFileSync(join(post.claudeDir, "settings.json"), JSON.stringify(settings))
-      writeFileSync(join(post.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: process.execPath, args: [old, "mcp"] } } }))
-      writeFileSync(join(post.bin, "crontab"), `#!/bin/sh\necho ${JSON.stringify(cronLine(process.execPath, old, post.home, {}))}\n`, { mode: 0o755 })
+      writeFileSync(join(station.claudeDir, "settings.json"), JSON.stringify(settings))
+      writeFileSync(join(station.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: process.execPath, args: [old, "mcp"] } } }))
+      writeFileSync(join(station.bin, "crontab"), `#!/bin/sh\necho ${JSON.stringify(cronLine(process.execPath, old, station.home, {}))}\n`, { mode: 0o755 })
     })
-    const r = await doctorIn(post)
+    const r = await doctorIn(station)
     assert.equal(r.exit_code, 1)
-    const conn = byId(r, "connexion")!
+    const conn = byId(r, "connection")!
     assert.equal(conn.status, "fail")
-    assert.match(conn.detail, /refuse le jeton de ce poste \(401\)/)
-    assert.match(conn.fix!, /nouveau prompt d'installation/)
-    assert.ok(!JSON.stringify(r).includes("cb_revoque_000000000000"))
+    assert.match(conn.detail, /refuses this computer's token \(401\)/)
+    assert.match(conn.fix!, /new install prompt/)
+    assert.ok(!JSON.stringify(r).includes("cb_revoked_000000000000"))
 
     const hooks = byId(r, "hooks")!
     assert.equal(hooks.status, "fail")
-    assert.match(hooks.detail, /ne démarre pas/)
+    assert.match(hooks.detail, /does not start/)
     assert.match(hooks.command!, /install-hooks$/)
     assert.equal(hooks.safe, true)
-    for (const id of ["mcp", "planification"]) {
+    for (const id of ["mcp", "schedule"]) {
       assert.equal(byId(r, id)?.status, "fail", id)
       assert.match(byId(r, id)!.command!, /setup$/)
       assert.equal(byId(r, id)!.safe, true)
     }
     const cap = byId(r, "capture")!
     assert.equal(cap.status, "fail")
-    assert.match(cap.detail, /refuse la capture/)
+    assert.match(cap.detail, /refuses screen capture/)
     assert.match(cap.command!, /setup$/)
-    // Le premier KO dans l'ordre du diagnostic : la connexion au cerveau.
-    assert.equal(r.next?.id, "connexion")
+    // The first KO in the order of the diagnosis: the connection to the brain.
+    assert.equal(r.next?.id, "connection")
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }
 })
 
-test("doctor : Screenpipe éteint, jeton Screenpipe refusé, hooks en double", { skip: !POSIX }, async () => {
+test("doctor: Screenpipe off, Screenpipe token refused, duplicated hooks", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
-  const post = makePost(brain.url, sp.url)
+  const station = makeStation(brain.url, sp.url)
   try {
-    const cfgFile = join(post.home, "config.json")
+    const cfgFile = join(station.home, "config.json")
     const cfg = JSON.parse(readFileSync(cfgFile, "utf8"))
-    writeFileSync(cfgFile, JSON.stringify({ ...cfg, screenpipe_token: "sp-mauvais-jeton" }), { mode: 0o600 })
-    const settingsFile = join(post.claudeDir, "settings.json")
+    writeFileSync(cfgFile, JSON.stringify({ ...cfg, screenpipe_token: "sp-wrong-token" }), { mode: 0o600 })
+    const settingsFile = join(station.claudeDir, "settings.json")
     const settings = JSON.parse(readFileSync(settingsFile, "utf8"))
     settings.hooks.Stop.push(structuredClone(settings.hooks.Stop[0]))
     writeFileSync(settingsFile, JSON.stringify(settings))
-    let r = await doctorIn(post)
-    assert.equal(byId(r, "screenpipe-jeton")?.status, "fail")
-    assert.match(byId(r, "screenpipe-jeton")!.detail, /est refusé/)
+    let r = await doctorIn(station)
+    assert.equal(byId(r, "screenpipe-token")?.status, "fail")
+    assert.match(byId(r, "screenpipe-token")!.detail, /is refused/)
     assert.equal(byId(r, "hooks")?.status, "warn")
-    assert.match(byId(r, "hooks")!.detail, /en double : Stop/)
+    assert.match(byId(r, "hooks")!.detail, /duplicated: Stop/)
 
     await sp.close()
-    r = await doctorIn(post)
+    r = await doctorIn(station)
     const s = byId(r, "screenpipe")!
     assert.equal(s.status, "fail")
-    assert.match(s.detail, /ne répond pas/)
+    assert.match(s.detail, /does not answer/)
     assert.match(s.command!, /setup$/)
-    assert.equal(byId(r, "capture"), undefined, "rien d'autre à vérifier sans Screenpipe")
+    assert.equal(byId(r, "capture"), undefined, "nothing else to check without Screenpipe")
 
-    // Pas de crontab : relancer setup n'y changerait rien, il faut installer cron.
-    unlinkSync(join(post.bin, "crontab"))
-    r = await doctorIn(post)
-    assert.equal(byId(r, "planification")?.status, "fail")
-    assert.match(byId(r, "planification")!.fix!, /Installe cron/)
-    assert.equal(byId(r, "planification")!.command, undefined)
+    // No crontab: running setup again would change nothing, cron must be installed.
+    unlinkSync(join(station.bin, "crontab"))
+    r = await doctorIn(station)
+    assert.equal(byId(r, "schedule")?.status, "fail")
+    assert.match(byId(r, "schedule")!.fix!, /Install cron/)
+    assert.equal(byId(r, "schedule")!.command, undefined)
   } finally {
     await brain.close()
   }
 })
 
-test("doctor : synchro planifiée en échec et Claude déconnecté, lus dans sync.log (masqués)", { skip: !POSIX }, async () => {
+test("doctor: scheduled sync failing and Claude signed out, read in sync.log (redacted)", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
-  const post = makePost(brain.url, sp.url)
+  const station = makeStation(brain.url, sp.url)
   try {
     const now = new Date()
-    const stamp = now.toLocaleString("fr-FR")
+    const stamp = now.toLocaleString("en-GB")
     writeFileSync(
-      join(post.home, "sync.log"),
+      join(station.home, "sync.log"),
       [
         `brain-sync — ${stamp}`,
-        "Sources :",
-        "  Claude Code n'est plus connecté sur ce poste : le jeton Claude a expiré ou a été révoqué. Lancez `claude setup-token`…",
-        "Envoyé : 0 connaissance au cerveau.",
-        `[${now.toISOString()}] hook : Impossible de joindre le cerveau (${brain.url}) : ECONNREFUSED ${TOKEN}`,
+        "Sources:",
+        "  Claude Code is no longer signed in on this computer: the Claude token has expired or was revoked. Run `claude setup-token`…",
+        "Sent: 0 knowledge items to the brain.",
+        `[${now.toISOString()}] hook: Cannot reach the brain (${brain.url}): ECONNREFUSED ${TOKEN}`,
         "",
       ].join("\n"),
     )
-    let r = await doctorIn(post)
-    const auth = byId(r, "claude-connexion")!
+    let r = await doctorIn(station)
+    const auth = byId(r, "claude-signin")!
     assert.equal(auth.status, "fail")
     assert.match(auth.command!, /connect-claude$/)
-    assert.equal(auth.safe, false, "jamais lancé sans l'employé")
-    const hookErr = byId(r, "hooks-erreurs")!
+    assert.equal(auth.safe, false, "never run without the employee")
+    const hookErr = byId(r, "hook-errors")!
     assert.equal(hookErr.status, "warn")
     assert.ok(!hookErr.detail.includes(TOKEN), hookErr.detail)
 
-    writeFileSync(join(post.home, "sync.log"), `brain-sync — ${stamp}\nImpossible de joindre le cerveau (${brain.url}) : fetch failed\n`)
-    r = await doctorIn(post)
-    assert.equal(byId(r, "journal")?.status, "fail")
-    assert.match(byId(r, "journal")!.detail, /a échoué : « Impossible de joindre le cerveau/)
+    writeFileSync(join(station.home, "sync.log"), `brain-sync — ${stamp}\nCannot reach the brain (${brain.url}): fetch failed\n`)
+    r = await doctorIn(station)
+    assert.equal(byId(r, "log")?.status, "fail")
+    assert.match(byId(r, "log")!.detail, /failed: "Cannot reach the brain/)
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }
 })
 
-test("doctor lancé avec un autre Node.js que celui du poste : pas de faux KO (référence : le raccourci)", { skip: !POSIX }, async () => {
+test("doctor run with another Node.js than the computer's: no false KO (reference: the shortcut)", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
-  const post = makePost(brain.url, sp.url)
-  // « Autre » Node.js : le même binaire sous un autre chemin (lien dur, sinon copie).
-  const otherNode = join(post.root, "node-du-poste")
+  const station = makeStation(brain.url, sp.url)
+  // "Other" Node.js: the same binary under another path (hard link, otherwise a copy).
+  const otherNode = join(station.root, "station-node")
   try {
     linkSync(process.execPath, otherNode)
   } catch {
@@ -274,63 +274,63 @@ test("doctor lancé avec un autre Node.js que celui du poste : pas de faux KO (r
     chmodSync(otherNode, 0o755)
   }
   try {
-    withEnv(post.env, () => {
-      writeFileSync(join(post.home, "brain"), `#!/bin/sh\nexec '${otherNode}' '${post.script}' "$@"\n`, { mode: 0o755 })
-      const { settings } = mergeHooks({}, hookEntry({ platform: "linux", execPath: otherNode, script: post.script }))
-      writeFileSync(join(post.claudeDir, "settings.json"), JSON.stringify(settings))
-      writeFileSync(join(post.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: otherNode, args: mcpArgs(post.script) } } }))
-      writeFileSync(join(post.bin, "crontab"), `#!/bin/sh\necho ${JSON.stringify(cronLine(otherNode, post.script, post.home, {}))}\n`, { mode: 0o755 })
+    withEnv(station.env, () => {
+      writeFileSync(join(station.home, "brain"), `#!/bin/sh\nexec '${otherNode}' '${station.script}' "$@"\n`, { mode: 0o755 })
+      const { settings } = mergeHooks({}, hookEntry({ platform: "linux", execPath: otherNode, script: station.script }))
+      writeFileSync(join(station.claudeDir, "settings.json"), JSON.stringify(settings))
+      writeFileSync(join(station.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: otherNode, args: mcpArgs(station.script) } } }))
+      writeFileSync(join(station.bin, "crontab"), `#!/bin/sh\necho ${JSON.stringify(cronLine(otherNode, station.script, station.home, {}))}\n`, { mode: 0o755 })
     })
-    const r = await doctorIn(post)
-    for (const id of ["raccourci", "mcp", "hooks", "planification"]) assert.equal(byId(r, id)?.status, "ok", `${id} : ${byId(r, id)?.detail}`)
+    const r = await doctorIn(station)
+    for (const id of ["shortcut", "mcp", "hooks", "schedule"]) assert.equal(byId(r, id)?.status, "ok", `${id}: ${byId(r, id)?.detail}`)
 
-    // Un hook resté sur le Node.js du processus (et non celui du raccourci) : signalé comme tel.
-    withEnv(post.env, () => {
-      const { settings } = mergeHooks({}, hookEntry({ platform: "linux", execPath: process.execPath, script: post.script }))
-      writeFileSync(join(post.claudeDir, "settings.json"), JSON.stringify(settings))
+    // A hook left on the process's Node.js (not the shortcut's): reported as such.
+    withEnv(station.env, () => {
+      const { settings } = mergeHooks({}, hookEntry({ platform: "linux", execPath: process.execPath, script: station.script }))
+      writeFileSync(join(station.claudeDir, "settings.json"), JSON.stringify(settings))
     })
-    const r2 = await doctorIn(post)
+    const r2 = await doctorIn(station)
     assert.equal(byId(r2, "hooks")?.status, "fail")
-    assert.match(byId(r2, "hooks")!.detail, /lance un autre Node\.js/)
+    assert.match(byId(r2, "hooks")!.detail, /starts another Node\.js/)
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }
 })
 
-test("doctor : un MCP « company-brain » qui n'est pas notre client n'est jamais lancé", { skip: !POSIX }, async () => {
+test("doctor: a \"company-brain\" MCP that is not our client is never started", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
-  const post = makePost(brain.url, sp.url)
-  const marker = join(post.root, "lance")
+  const station = makeStation(brain.url, sp.url)
+  const marker = join(station.root, "started")
   try {
-    writeFileSync(join(post.bin, "npx"), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 })
-    writeFileSync(join(post.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: join(post.bin, "npx"), args: ["-y", "un-autre-serveur"] } } }))
-    const r = await doctorIn(post)
+    writeFileSync(join(station.bin, "npx"), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 })
+    writeFileSync(join(station.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: join(station.bin, "npx"), args: ["-y", "another-server"] } } }))
+    const r = await doctorIn(station)
     assert.equal(byId(r, "mcp")?.status, "fail")
-    assert.match(byId(r, "mcp")!.detail, /pas le client du cerveau/)
-    assert.ok(!existsSync(marker), "la commande enregistrée a été lancée")
+    assert.match(byId(r, "mcp")!.detail, /not the brain client/)
+    assert.ok(!existsSync(marker), "the saved command was started")
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }
 })
 
-test("doctor sans config : KO config en premier, le reste vérifié quand même", { skip: !POSIX }, async () => {
+test("doctor without a config: config KO first, the rest checked anyway", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
-  const post = makePost(brain.url, sp.url)
+  const station = makeStation(brain.url, sp.url)
   try {
-    writeFileSync(join(post.home, "config.json"), "")
-    const r = await doctorIn(post)
+    writeFileSync(join(station.home, "config.json"), "")
+    const r = await doctorIn(station)
     assert.equal(byId(r, "config")?.status, "fail")
     assert.equal(r.next?.id, "config")
-    assert.equal(byId(r, "connexion")?.status, "skip")
+    assert.equal(byId(r, "connection")?.status, "skip")
     assert.equal(byId(r, "hooks")?.status, "ok")
 
-    // Message d'équipe en attente d'un admin : doctor le dit, et join est la commande qui reprend.
-    unlinkSync(join(post.home, "config.json"))
-    writeFileSync(join(post.home, "join.json"), JSON.stringify({ url: brain.url, id: "req-1", token: "cb_secret_join_token_000", org: "Fournil" }))
-    const p = await doctorIn(post)
-    assert.match(byId(p, "config")!.detail, /rejoindre Fournil pas encore acceptée/)
+    // Request to join waiting for an admin: doctor says so, and join is the command that resumes it.
+    unlinkSync(join(station.home, "config.json"))
+    writeFileSync(join(station.home, "join.json"), JSON.stringify({ url: brain.url, id: "req-1", token: "cb_secret_join_token_000", org: "Fournil" }))
+    const p = await doctorIn(station)
+    assert.match(byId(p, "config")!.detail, /join Fournil not accepted yet/)
     assert.match(byId(p, "config")!.command!, / join$/)
     assert.ok(!JSON.stringify(p).includes("cb_secret_join_token_000"))
   } finally {
@@ -338,12 +338,12 @@ test("doctor sans config : KO config en premier, le reste vérifié quand même"
   }
 })
 
-test("doctor --json : un seul objet JSON sur la sortie, code 1 s'il reste un KO", { skip: !POSIX }, async () => {
+test("doctor --json: a single JSON object on the output, code 1 if a KO is left", { skip: !POSIX }, async () => {
   const root = tempDir("brain-doctor-cli-")
   const out = await new Promise<{ code: number | null; stdout: string }>((resolve) => {
     const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "doctor", "--json"], {
       cwd: clientDir,
-      env: { HOME: root, COMPANY_BRAIN_HOME: join(root, "brain"), CLAUDE_CONFIG_DIR: join(root, "claude"), PATH: join(root, "vide") },
+      env: { HOME: root, COMPANY_BRAIN_HOME: join(root, "brain"), CLAUDE_CONFIG_DIR: join(root, "claude"), PATH: join(root, "empty") },
     })
     let stdout = ""
     child.stdout.on("data", (d) => (stdout += d))
@@ -357,46 +357,50 @@ test("doctor --json : un seul objet JSON sur la sortie, code 1 s'il reste un KO"
   assert.ok(r.checks.every((c) => typeof c.detail === "string" && ["ok", "warn", "fail", "skip", "info"].includes(c.status)))
 })
 
-test("captureDiagnosis : vision_reason d'abord (autorisation, pause, blocage), puis l'âge de la dernière image", () => {
+test("captureDiagnosis: vision_reason first (permission, pause, stall), then the age of the last frame", () => {
   const now = Date.parse("2026-10-17T10:00:00Z")
   assert.equal(captureDiagnosis({ vision_reason: "permission_denied" }, "darwin", now).status, "fail")
-  assert.match(captureDiagnosis({ vision_reason: "permission_denied" }, "darwin", now).detail, /macOS n'autorise pas/)
+  assert.match(captureDiagnosis({ vision_reason: "permission_denied" }, "darwin", now).detail, /macOS does not allow/)
   assert.equal(captureDiagnosis({ vision_reason: "screenshots_disabled_by_power_profile" }, "darwin", now).status, "info")
   assert.equal(captureDiagnosis({ vision_reason: "capture_stalled" }, "linux", now).reason, "stalled")
   assert.equal(captureDiagnosis({ frame_status: "not_started", last_frame_timestamp: null }, "darwin", now).reason, "not-started")
   assert.equal(captureDiagnosis({ frame_status: "stale", last_frame_timestamp: "2026-10-17T08:00:00Z" }, "linux", now).status, "warn")
   const ok = captureDiagnosis({ frame_status: "ok", vision_reason: "ok", last_frame_timestamp: "2026-10-17T09:58:00Z" }, "darwin", now)
   assert.equal(ok.status, "ok")
-  assert.match(ok.detail, /il y a 2 min/)
+  assert.match(ok.detail, /2 min ago/)
 })
 
-test("lastLoggedRun / recentHookErrors : dernière synchro du journal, erreurs des hooks sur 24 h", () => {
+test("lastLoggedRun / recentHookErrors: last sync of the log, hook errors over 24 h", () => {
   const log = [
-    "brain-sync — 16/10/2026 09:00:00",
-    "Envoyé : 3 connaissances au cerveau.",
-    "brain-sync — 17/10/2026 09:15:00 (simulation : rien ne sera envoyé)",
-    "brain-sync — 17/10/2026 09:30:00",
-    "[2026-10-17T09:30:01.000Z] hook : délai dépassé",
-    "Erreur : Le cerveau a répondu 500",
+    "brain-sync — 16/10/2026, 09:00:00",
+    "Sent: 3 knowledge items to the brain.",
+    "brain-sync — 17/10/2026, 09:15:00 (dry run: nothing will be sent)",
+    "brain-sync — 17/10/2026, 09:30:00",
+    "[2026-10-17T09:30:01.000Z] hook: timeout exceeded",
+    "The brain answered 500",
   ].join("\n")
   const run = lastLoggedRun(log)!
   assert.equal(run.sent, false)
   assert.equal(run.auth, false)
-  assert.equal(run.error, "Erreur : Le cerveau a répondu 500")
+  assert.equal(run.error, "The brain answered 500")
   assert.equal(new Date(run.at!).getHours(), 9)
-  assert.equal(lastLoggedRun("rien"), null)
-  assert.deepEqual(recentHookErrors(log, Date.parse("2026-10-17T10:00:00Z")), { count: 1, last: "délai dépassé" })
+  assert.equal(lastLoggedRun("nothing"), null)
+  assert.deepEqual(recentHookErrors(log, Date.parse("2026-10-17T10:00:00Z")), { count: 1, last: "timeout exceeded" })
   assert.equal(recentHookErrors(log, Date.parse("2026-10-19T10:00:00Z")).count, 0)
+  // Logs written in French by clients older than the English switch stay readable (intentional French).
+  const legacy = ["brain-sync — 17/10/2026 09:30:00", "[2026-10-17T09:30:01.000Z] hook : délai dépassé", "Envoyé : 3 connaissances au cerveau.", "Jeton refusé par le cerveau (401)"].join("\n")
+  assert.deepEqual(lastLoggedRun(legacy), { at: run.at, sent: true, auth: false, error: "Jeton refusé par le cerveau (401)" })
+  assert.equal(recentHookErrors(legacy, Date.parse("2026-10-17T10:00:00Z")).count, 1)
 })
 
-test("reinstallCommand : la commande d'installation du système, sans jeton (la config le garde)", () => {
+test("reinstallCommand: the install command of the system, without the token (the config keeps it)", () => {
   assert.equal(
     reinstallCommand("https://c.example", "darwin"),
     "(curl -fsSL --create-dirs https://c.example/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://c.example",
   )
   assert.match(reinstallCommand("https://c.example", "win32"), /install\.ps1" --url https:\/\/c\.example; exit \$LASTEXITCODE$/)
   assert.ok(!/--token/.test(reinstallCommand("https://c.example", "win32")))
-  // Cerveau auto-hébergé : le certificat déjà sur le poste sert au téléchargement et repart à setup (--ca).
+  // Self-hosted brain: the certificate already on the computer serves the download and goes back to setup (--ca).
   assert.equal(
     reinstallCommand("https://c.example", "linux", "/home/jm/.company-brain/ca.crt"),
     '(curl -fsSL --cacert "/home/jm/.company-brain/ca.crt" --create-dirs https://c.example/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://c.example --ca "/home/jm/.company-brain/ca.crt"',

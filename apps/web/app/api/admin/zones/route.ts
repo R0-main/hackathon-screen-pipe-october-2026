@@ -15,8 +15,8 @@ const Schema = z.object({
 })
 
 /**
- * Sans `id` : crée une zone (409 si son identifiant, tiré du nom, existe déjà : on n'écrase jamais une zone existante).
- * Avec `id` : met à jour cette zone ; description et mots-clés absents du corps sont conservés.
+ * Without `id`: creates a zone (409 if its id, derived from the name, already exists: an existing zone is never overwritten).
+ * With `id`: updates that zone; description and keywords absent from the body are kept.
  */
 export const POST = withViewer(
   async (req) => {
@@ -27,7 +27,7 @@ export const POST = withViewer(
     const id = body.data.id ?? slugify(body.data.name)
     const prev = zones.find((z) => z.id === id)
     if (prev && body.data.id === undefined)
-      return error(409, `La zone « ${prev.name} » existe déjà (identifiant « ${id} ») : choisissez un autre nom, ou modifiez la zone existante.`)
+      return error(409, `The zone "${prev.name}" already exists (id "${id}"): choose another name, or edit the existing zone.`)
     const zone = await store.upsertZone({
       id,
       name: body.data.name,

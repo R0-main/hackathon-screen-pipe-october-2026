@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 
 const Schema = z.object({ id: z.string().max(64), token: z.string().min(8).max(200) })
 
-/** Public : où en est une demande. Seul le poste qui l'a faite (il détient le jeton) peut le savoir. */
+/** Public: the state of a request. Only the workstation that made it (it holds the token) can know. */
 export async function POST(req: Request) {
   const body = await parseBody(req, Schema)
   if ("response" in body) return body.response
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     const request = store ? await store.getJoinRequest(body.data.id) : null
     const a = Buffer.from(hashToken(body.data.token))
     const b = Buffer.from(request?.token_hash ?? "")
-    if (!store || !request || a.length !== b.length || !timingSafeEqual(a, b)) return error(404, "Demande introuvable.")
+    if (!store || !request || a.length !== b.length || !timingSafeEqual(a, b)) return error(404, "Request not found.")
     return json({ status: request.status, org: (await store.getOrg()).name })
   } catch (err) {
     return internalError(err)

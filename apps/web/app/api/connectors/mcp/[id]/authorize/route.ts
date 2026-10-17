@@ -8,15 +8,15 @@ export const dynamic = "force-dynamic"
 type Ctx = { params: Promise<{ id: string }> }
 
 /**
- * POST /api/connectors/mcp/:id/authorize — prépare la connexion OAuth (découverte, client, PKCE) et renvoie l'adresse
- * de la page de connexion du fournisseur, vers laquelle le navigateur est redirigé. Corps facultatif :
- * `{ return_to: "connecteurs" | "creer" }`, la page où revenir ensuite.
+ * POST /api/connectors/mcp/:id/authorize — prepares the OAuth connection (discovery, client, PKCE) and returns the
+ * address of the provider's sign-in page, to which the browser is redirected. Optional body:
+ * `{ return_to: "connectors" | "create" }`, the page to come back to afterwards.
  */
 export const POST = withViewer<Ctx>(
   async (req, viewer, { params }) => {
     const { id } = await params
     const body = (await req.json().catch(() => null)) as { return_to?: unknown } | null
-    const returnTo = isMcpReturn(body?.return_to) ? body.return_to : "connecteurs"
+    const returnTo = isMcpReturn(body?.return_to) ? body.return_to : "connectors"
     try {
       return json({ url: await startAuthorize(id, viewer, mcpRedirectUri(publicBaseUrl(req)), returnTo) })
     } catch (err) {

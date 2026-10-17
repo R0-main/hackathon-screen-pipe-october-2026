@@ -1,6 +1,6 @@
 name: CI
 
-# Typecheck et tests (core + client) à chaque push et pull request, plus l'installation sur un vrai Windows.
+# Typecheck and tests (core + client) on every push and pull request, plus the install on a real Windows.
 on:
   push:
   pull_request:
@@ -19,34 +19,34 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Dépendances
+      - name: Dependencies
         run: npm install --no-audit --no-fund
       - name: Typecheck
         run: npm run typecheck
       - name: Tests
-        # install.sh télécharge alors vraiment la copie privée de Node.js (~30 Mo, quelques secondes) ; pwsh, présent sur
-        # l'image Ubuntu, analyse et fait tourner install.ps1.
+        # install.sh then really downloads the private copy of Node.js (~30 MB, a few seconds); pwsh, present on
+        # the Ubuntu image, parses and runs install.ps1.
         env:
           BRAIN_TEST_NETWORK: "1"
         run: npm test
 
   windows:
-    # install.ps1 sous Windows PowerShell 5.1, brain.cmd lancé par cmd, install.sh dans Git Bash, copie privée de
-    # Node.js (zip officiel). Seulement les tests d'installation : les autres simulent `claude` par des scripts #!/bin/sh.
+    # install.ps1 under Windows PowerShell 5.1, brain.cmd run by cmd, install.sh in Git Bash, private copy of
+    # Node.js (official zip). Only the install tests: the others fake `claude` with #!/bin/sh scripts.
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      # install.sh garde ses fins de ligne LF, même extrait sous Windows.
-      - name: Fins de ligne telles quelles
+      # install.sh keeps its LF line endings, even checked out on Windows.
+      - name: Line endings as is
         run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Dépendances
+      - name: Dependencies
         run: npm install --no-audit --no-fund
-      - name: Tests d'installation
+      - name: Install tests
         working-directory: apps/client
         env:
           BRAIN_TEST_NETWORK: "1"

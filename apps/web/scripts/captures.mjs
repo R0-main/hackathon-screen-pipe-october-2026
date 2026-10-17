@@ -1,7 +1,7 @@
-// Captures d'écran du front pour valider la direction artistique sans poste local.
-// Lancé par .github/workflows/captures.yml contre un serveur en mode démo (BRAIN_DEMO=1) pendant que
-// `npm run simulate` fait travailler des agents.
-// Usage : node apps/web/scripts/captures.mjs [url] [dossier]
+// Front-end screenshots to review the art direction without a local machine.
+// Run by .github/workflows/captures.yml against a server in demo mode (BRAIN_DEMO=1) while
+// `npm run simulate` puts agents to work.
+// Usage: node apps/web/scripts/captures.mjs [url] [folder]
 
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -16,7 +16,7 @@ const MOBILE = { width: 390, height: 844 }
 
 const log = (...args) => console.log(new Date().toISOString().slice(11, 19), ...args)
 
-// Chromium complet en headless, WebGL logiciel (SwiftShader) pour le cerveau 3D.
+// Full Chromium headless, software WebGL (SwiftShader) for the 3D brain.
 const browser = await chromium.launch({
   channel: "chromium",
   args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
@@ -34,11 +34,11 @@ function cookiesOf(res) {
     .filter((c) => c.name && c.value)
 }
 
-/** Contexte connecté en mode démo. Le cookie est réécrit sans l'attribut Secure : le serveur tourne en http. */
+/** Signed-in context in demo mode. The cookie is rewritten without the Secure attribute: the server runs over http. */
 async function session(userId, viewport = DESKTOP, extra = {}) {
-  const ctx = await browser.newContext({ viewport, locale: "fr-FR", timezoneId: "Europe/Paris", ...extra })
+  const ctx = await browser.newContext({ viewport, locale: "en-GB", timezoneId: "Europe/Paris", ...extra })
   const res = await ctx.request.post(`${base}/api/session/demo`, { data: { userId } })
-  if (!res.ok()) throw new Error(`connexion démo ${res.status()} : ${await res.text()}`)
+  if (!res.ok()) throw new Error(`demo sign-in ${res.status()}: ${await res.text()}`)
   const cookies = cookiesOf(res)
   await ctx.clearCookies()
   await ctx.addCookies(cookies)
@@ -63,7 +63,7 @@ async function waitBrain(page) {
     )
     .then(() => true)
     .catch(() => false)
-  log(ok ? "cerveau 3D affiché" : "cerveau 3D non détecté (secours 2D ?)")
+  log(ok ? "3D brain displayed" : "3D brain not detected (2D fallback?)")
   return ok
 }
 
@@ -76,23 +76,23 @@ async function shot(page, name, options = {}) {
 const users = (await (await fetch(`${base}/api/session/demo`)).json()).users
 const admin = users.find((u) => u.role === "admin") ?? users[0]
 const member = users.find((u) => /jean/i.test(u.name)) ?? users.find((u) => u.role !== "admin") ?? users[0]
-log("admin :", admin.name, "| membre :", member.name)
+log("admin:", admin.name, "| member:", member.name)
 
-// 1. Connexion
+// 1. Sign-in
 {
-  const ctx = await browser.newContext({ viewport: DESKTOP, locale: "fr-FR" })
+  const ctx = await browser.newContext({ viewport: DESKTOP, locale: "en-GB" })
   const page = await ctx.newPage()
   await page.goto(`${base}/login`)
   await settle(page)
-  await shot(page, "01-connexion")
+  await shot(page, "01-login")
   await ctx.close()
 }
 
-// 2. Dashboard admin : cerveau 3D, activité en direct, tiroir, question, pages admin
+// 2. Admin dashboard: 3D brain, live activity, drawer, question, admin pages
 {
   const ctx = await session(admin.id)
   const page = await ctx.newPage()
-  page.on("pageerror", (e) => log("erreur page :", e.message))
+  page.on("pageerror", (e) => log("page error:", e.message))
   await page.goto(`${base}/dashboard`)
   await settle(page)
   const brain3d = await waitBrain(page)
@@ -105,8 +105,8 @@ log("admin :", admin.name, "| membre :", member.name)
     .catch(() => false)
   if (live) {
     await page.waitForTimeout(300)
-    await shot(page, "03-dashboard-en-direct")
-  } else log("aucune activité d'agent captée")
+    await shot(page, "03-dashboard-live")
+  } else log("no agent activity caught")
 
   if (brain3d) {
     await page.locator(".brain-label").first().click({ force: true })
@@ -117,13 +117,13 @@ log("admin :", admin.name, "| membre :", member.name)
     await page.waitForTimeout(300)
   }
 
-  const q = page.getByLabel("Question au cerveau")
-  await q.fill("comment on déploie en production ?")
+  const q = page.getByLabel("Question for the brain")
+  await q.fill("how do we deploy to production?")
   await q.press("Enter")
   await page.waitForTimeout(2500)
   await shot(page, "06-question")
 
-  for (const [p, n] of [["/activite", "04-agents-en-direct"], ["/etat", "04b-etat"], ["/connaissances", "04c-connaissances"], ["/taches", "04d-taches"]]) {
+  for (const [p, n] of [["/activity", "04-live-agents"], ["/status", "04b-status"], ["/knowledge", "04c-knowledge"], ["/tasks", "04d-tasks"]]) {
     await page.goto(`${base}${p}`)
     await settle(page)
     await shot(page, n)
@@ -131,17 +131,17 @@ log("admin :", admin.name, "| membre :", member.name)
 
   await page.goto(`${base}/admin`)
   await settle(page)
-  await shot(page, "07-equipe-acces")
+  await shot(page, "07-team-access")
   await page.goto(`${base}/onboarding`)
   await settle(page)
   await shot(page, "08-onboarding")
   await page.goto(`${base}/people/${member.id}`)
   await settle(page)
-  await shot(page, "09-passation")
+  await shot(page, "09-handover")
   await ctx.close()
 }
 
-// 3. Membre : zones restreintes
+// 3. Member: restricted zones
 {
   const ctx = await session(member.id)
   const page = await ctx.newPage()
@@ -149,7 +149,7 @@ log("admin :", admin.name, "| membre :", member.name)
   await settle(page)
   await waitBrain(page)
   await page.waitForTimeout(1500)
-  await shot(page, "10-dashboard-membre")
+  await shot(page, "10-dashboard-member")
   await ctx.close()
 }
 
@@ -162,11 +162,11 @@ log("admin :", admin.name, "| membre :", member.name)
   await waitBrain(page)
   await page.waitForTimeout(1500)
   await shot(page, "11-mobile")
-  await page.getByLabel("Ouvrir le menu").click()
+  await page.getByLabel("Open menu").click()
   await page.waitForTimeout(400)
   await shot(page, "12-mobile-menu")
   await ctx.close()
 }
 
 await browser.close()
-log("terminé")
+log("done")

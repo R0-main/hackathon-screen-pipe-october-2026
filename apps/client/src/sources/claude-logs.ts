@@ -1,4 +1,4 @@
-// Source « logs Claude Code » : ~/.claude/projects/**/*.jsonl (la source la plus fiable pour la démo).
+// "Claude Code logs" source: ~/.claude/projects/**/*.jsonl (the most reliable source for the demo).
 
 import { statSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
@@ -29,7 +29,7 @@ function cleanUserText(s: string): string {
   return t
 }
 
-/** Extrait le texte utile d'une ligne de transcript, ou null si elle n'en contient pas. */
+/** Extracts the useful text of a transcript line, or null if it has none. */
 export function parseClaudeLine(j: Record<string, unknown>): { sessionId?: string; role: "user" | "assistant"; text: string; at?: string; cwd?: string } | null {
   const type = j.type
   if (type !== "user" && type !== "assistant") return null
@@ -41,7 +41,7 @@ export function parseClaudeLine(j: Record<string, unknown>): { sessionId?: strin
   if (typeof content === "string") {
     text = role === "user" ? cleanUserText(content) : content.trim()
   } else if (Array.isArray(content)) {
-    // On garde les blocs texte ; tool_use / tool_result / thinking / images sont ignorés.
+    // Text blocks are kept; tool_use / tool_result / thinking / images are ignored.
     const parts = (content as Block[])
       .filter((b) => b && b.type === "text" && typeof b.text === "string")
       .map((b) => (role === "user" ? cleanUserText(b.text as string) : (b.text as string).trim()))
@@ -55,8 +55,8 @@ export function parseClaudeLine(j: Record<string, unknown>): { sessionId?: strin
 export type ClaudeParseResult = { conversations: Conversation[]; internal: boolean }
 
 /**
- * Regroupe les lignes d'un fichier par session. `internal` : session issue de nos propres appels `claude -p`,
- * ou session d'installation du cerveau (le prompt magique contient le jeton personnel en clair).
+ * Groups a file's lines by session. `internal`: session coming from our own `claude -p` calls,
+ * or the brain's install session (the magic prompt contains the personal token in clear text).
  */
 export function parseClaudeLines(
   lines: Record<string, unknown>[],
@@ -89,13 +89,13 @@ export function parseClaudeLines(
   return { conversations, internal }
 }
 
-/** Une session restée muette depuis ce délai est considérée comme terminée, même au milieu d'un tour. */
+/** A session that has stayed silent for this long is considered finished, even in the middle of a turn. */
 export const TURN_IDLE_MS = 30 * 60_000
 
 /**
- * Nombre de lignes à traiter maintenant : tout, sauf le dernier tour s'il n'est pas fini (pas encore de réponse texte
- * de l'assistant, ou dernière réponse qui attend un outil) et encore actif (activité depuis moins de `idleMs`).
- * Le tour en cours sera lu en entier au prochain passage.
+ * Number of lines to process now: everything, except the last turn if it is not finished (no text answer from
+ * the assistant yet, or a last answer waiting for a tool) and still active (activity less than `idleMs` ago).
+ * The turn in progress will be read in full on the next pass.
  */
 export function completeLineCount(lines: Record<string, unknown>[], now = Date.now(), idleMs = TURN_IDLE_MS): number {
   let lastUser = -1
@@ -113,15 +113,15 @@ export function completeLineCount(lines: Record<string, unknown>[], now = Date.n
     if (parseClaudeLine(j)?.role === "assistant") hasText = true
   }
   if (hasText && lastStop !== "tool_use") return lines.length
-  // Tour abandonné (ou format sans horodatage) : on le traite tel quel.
+  // Abandoned turn (or format without timestamps): processed as is.
   if (lastActivity === -Infinity || now - lastActivity >= idleMs) return lines.length
   return lastUser
 }
 
 /**
- * `since` s'applique aux fichiers jamais lus ; aux autres seulement si `explicitSince`
- * (sinon on reprend simplement à l'offset enregistré). `floor` (posé par install-schedule) : aucun message antérieur,
- * même dans un fichier déjà suivi (un tour retenu à cheval sur la mise en place n'a jamais été relu).
+ * `since` applies to files never read; to the others only if `explicitSince`
+ * (otherwise we simply resume at the recorded offset). `floor` (set by install-schedule): no earlier message,
+ * even in a file already followed (a turn held back across the setup was never read again).
  */
 export function readClaudeLogs(opts: {
   dir: string
@@ -140,7 +140,7 @@ export function readClaudeLogs(opts: {
   const files = listJsonlFiles(root, (name) => name === "subagents")
   if (files.length === 0) {
     result.available = false
-    result.warnings.push(`Aucun transcript Claude Code trouvé dans ${root}.`)
+    result.warnings.push(`No Claude Code transcript found in ${root}.`)
     return result
   }
   const now = opts.now ?? Date.now()
@@ -148,7 +148,7 @@ export function readClaudeLogs(opts: {
   for (const file of files) {
     const prev = known[file]
     if (!prev) {
-      // Fichier jamais lu et pas modifié depuis `since` : on note juste sa taille.
+      // File never read and not modified since `since`: we just note its size.
       try {
         const st = statSync(file)
         if (st.mtimeMs < opts.since.getTime()) {
@@ -177,7 +177,7 @@ export function readClaudeLogs(opts: {
       result.commits.push({ covers: [], apply: (s) => setFile(s, file, { ...cp, internal: true }) })
       continue
     }
-    // Tour en cours (réponse pas encore écrite) : on s'arrête avant, sans avancer l'offset au-delà.
+    // Turn in progress (answer not written yet): we stop before it, without moving the offset past it.
     const n = completeLineCount(chunk.lines, now, opts.idleMs)
     if (n < chunk.lines.length) result.stats.pending = Number(result.stats.pending) + 1
     if (n === 0) continue

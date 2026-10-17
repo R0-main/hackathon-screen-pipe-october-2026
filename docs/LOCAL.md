@@ -1,121 +1,121 @@
-# Héberger le cerveau sur une machine de l'entreprise
+# Host the brain on a company machine
 
-> Le cerveau tourne chez vous, sur un ordinateur de l'entreprise toujours allumé, et les postes le joignent sur le
-> réseau local en HTTPS. Rien ne sort de l'entreprise : ni les captures (qui restent sur chaque poste), ni le distillé
-> (qui reste sur cette machine). Le cloud ([README](../README.md#déployer-le-cerveau-partagé-vercel--neon-offres-gratuites))
-> devient une option, pas un prérequis.
+> The brain runs at your place, on a company computer that is always on, and the computers reach it on the local
+> network over HTTPS. Nothing leaves the company: neither the captures (which stay on each computer) nor the distilled
+> knowledge (which stays on this machine). The cloud ([README](../README.md#deploy-the-shared-brain-vercel--neon-free-tiers))
+> becomes an option, not a prerequisite.
 
-## En trois commandes
+## In three commands
 
 ```bash
-git clone <ce dépôt> && cd hackathon-screen-pipe-october-2026
-sh deploy/local/brain-local.sh up      # écrit .env, construit l'image, démarre Postgres + cerveau + Caddy, affiche l'adresse
-sh deploy/local/brain-local.sh status  # plus tard : état et adresses
+git clone <this repo> && cd hackathon-screen-pipe-october-2026
+sh deploy/local/brain-local.sh up      # writes .env, builds the image, starts Postgres + brain + Caddy, shows the address
+sh deploy/local/brain-local.sh status  # later: state and addresses
 ```
 
-Prérequis : [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS, Windows) ou Docker Engine avec
-Compose v2 (Linux), les ports 80 et 443 libres sur la machine, et `openssl` (présent sur macOS et Linux). La première
-construction prend quelques minutes (elle télécharge les dépendances et les polices) ; les suivantes sont rapides.
+Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS, Windows) or Docker Engine with
+Compose v2 (Linux), ports 80 and 443 free on the machine, and `openssl` (present on macOS and Linux). The first build
+takes a few minutes (it downloads the dependencies and the fonts); the following ones are quick.
 
-À la fin, le script affiche :
+At the end, the script shows:
 
-- l'adresse du cerveau (`https://192.168.1.20` par exemple, et les autres noms du certificat) ;
-- la première chose à faire : `https://<adresse>/creer` crée l'entreprise et son premier compte admin ;
-- le certificat racine exporté dans `deploy/local/ca.crt`, son empreinte SHA-256, et la commande qui l'installe pour le
-  navigateur de cette machine (les postes des employés, eux, n'ont rien à faire : voir plus bas).
+- the brain's address (`https://192.168.1.20` for example, and the certificate's other names);
+- the first thing to do: `https://<address>/create` creates the company and its first admin account;
+- the root certificate exported to `deploy/local/ca.crt`, its SHA-256 fingerprint, and the command that installs it for
+  this machine's browser (the employees' computers have nothing to do: see below).
 
-## Ce qui tourne
+## What runs
 
-| Conteneur | Rôle |
+| Container | Role |
 |---|---|
-| `postgres` | Postgres 16, données dans le volume Docker `brain-postgres`. Le schéma est appliqué au démarrage du cerveau (`npm run db:migrate`, chaque migration une seule fois). |
-| `brain` | Le dashboard Next.js, son API et le client `brain.mjs` servi sur `/brain.mjs`, construits depuis ce dépôt (`Dockerfile`). |
-| `caddy` | HTTPS devant le cerveau. Par défaut, une autorité privée créée par Caddy signe un certificat pour toutes les adresses de `BRAIN_HOSTS` ; le certificat racine est servi sur `/ca.crt`. |
+| `postgres` | Postgres 16, data in the `brain-postgres` Docker volume. The schema is applied when the brain starts (`npm run db:migrate`, each migration only once). |
+| `brain` | The Next.js dashboard, its API and the `brain.mjs` client served on `/brain.mjs`, built from this repo (`Dockerfile`). |
+| `caddy` | HTTPS in front of the brain. By default, a private authority created by Caddy signs a certificate for every address of `BRAIN_HOSTS`; the root certificate is served on `/ca.crt`. |
 
-Fichiers : `compose.yaml` (les trois services), `Dockerfile`, `deploy/local/Caddyfile`, `deploy/local/entrypoint.sh`
-(migrations puis démarrage), `deploy/local/brain-local.sh` (le script de pilotage), `.env` à la racine (écrit par `up`,
-modèle dans `deploy/local/env.example`).
+Files: `compose.yaml` (the three services), `Dockerfile`, `deploy/local/Caddyfile`, `deploy/local/entrypoint.sh`
+(migrations then start), `deploy/local/brain-local.sh` (the control script), `.env` at the root (written by `up`,
+template in `deploy/local/env.example`).
 
-## Brancher les postes
+## Connect the computers
 
-Le parcours est le même que dans le cloud : `/admin` → « Inviter quelqu'un » → un prompt d'installation que l'employé
-colle dans Claude Code. Une seule chose change, parce que le cerveau est signé par une autorité que les postes ne
-connaissent pas encore : la commande unique du prompt commence par récupérer le certificat (`/ca.crt`) et **vérifie son
-empreinte SHA-256, épinglée dans le prompt** (le serveur la calcule depuis `BRAIN_CA_FILE`). Elle ne continue que si
-l'empreinte correspond ; `install.sh` télécharge ensuite `brain.mjs` avec ce certificat, et `brain setup --ca` :
+The path is the same as in the cloud: `/admin` → "Invite someone" → an install prompt the employee pastes into Claude
+Code. A single thing changes, because the brain is signed by an authority the computers do not know yet: the prompt's
+single command starts by fetching the certificate (`/ca.crt`) and **checks its SHA-256 fingerprint, pinned in the
+prompt** (the server computes it from `BRAIN_CA_FILE`). It only carries on if the fingerprint matches; `install.sh` then
+downloads `brain.mjs` with this certificate, and `brain setup --ca`:
 
-- l'enregistre dans `~/.company-brain/config.json` : la synchro, le MCP et les hooks lui font confiance, en plus des
-  certificats publics (rien d'autre n'est modifié sur le poste) ;
-- l'installe pour les navigateurs du poste (trousseau de session sur macOS, magasin utilisateur sur Windows, base NSS
-  pour Chrome sous Linux), une fois par certificat ; Firefox a son propre magasin (Paramètres → Certificats → Importer).
+- saves it in `~/.company-brain/config.json`: the sync, the MCP and the hooks trust it, on top of the public
+  certificates (nothing else is changed on the computer);
+- installs it for the computer's browsers (login keychain on macOS, user store on Windows, NSS database for Chrome on
+  Linux), once per certificate; Firefox has its own store (Settings → Certificates → Import).
 
-Sous Windows, la commande du prompt (PowerShell) fait la même chose : certificat récupéré, empreinte vérifiée (code 9 si
-elle diffère), ajout au magasin de l'utilisateur (Windows demande une confirmation), puis `install.ps1 --ca`.
+On Windows, the prompt's command (PowerShell) does the same: certificate fetched, fingerprint checked (code 9 if it
+differs), added to the user's store (Windows asks for a confirmation), then `install.ps1 --ca`.
 
-Le message d'équipe (« rejoindre sur demande ») fait la même chose. Exemple complet du prompt : [install/PROMPT.md](../install/PROMPT.md#cerveau-auto-hébergé-https-sur-le-réseau-local).
+The team message ("join on request") does the same. Full example of the prompt: [install/PROMPT.md](../install/PROMPT.md#self-hosted-brain-https-on-the-local-network).
 
-Le jour où l'autorité change (machine réinstallée, passage à vos propres certificats), chaque poste relance
-`~/.company-brain/brain setup --ca <nouveau certificat>`, ou se réinstalle avec un nouveau prompt.
+The day the authority changes (machine reinstalled, switch to your own certificates), each computer runs
+`~/.company-brain/brain setup --ca <new certificate>` again, or reinstalls with a new prompt.
 
-## HTTPS : les choix possibles
+## HTTPS: the possible choices
 
-| Option | Quand | Comment |
+| Option | When | How |
 |---|---|---|
-| **Autorité privée de Caddy** (défaut, `BRAIN_TLS=internal`) | Réseau local, pas de nom de domaine | Rien à faire. Le certificat couvre `BRAIN_HOSTS` : `localhost`, les adresses IP de la machine et `<nom-machine>.local` (mDNS, reconnu par macOS, Windows 10+ et Linux avec Avahi). Les postes récupèrent et vérifient le certificat via le prompt. |
-| **Vos certificats** (`BRAIN_TLS="/certs/cert.pem /certs/key.pem"`) | Votre informatique a déjà une autorité interne, ou un nom de domaine avec un vrai certificat | Placez `cert.pem` et `key.pem` dans `deploy/local/certs/` (ignoré par git), mettez le nom dans `BRAIN_HOSTS`, puis `up`. Si l'autorité est déjà reconnue par les postes, les prompts n'épinglent rien. |
-| Employés à distance | Hors du réseau local | Un VPN d'entreprise, ou un réseau superposé type Tailscale (qui fournit aussi un nom et un certificat valides) : le cerveau reste chez vous. |
+| **Caddy's private authority** (default, `BRAIN_TLS=internal`) | Local network, no domain name | Nothing to do. The certificate covers `BRAIN_HOSTS`: `localhost`, the machine's IP addresses and `<machine-name>.local` (mDNS, recognized by macOS, Windows 10+ and Linux with Avahi). The computers fetch and check the certificate through the prompt. |
+| **Your certificates** (`BRAIN_TLS="/certs/cert.pem /certs/key.pem"`) | Your IT already has an internal authority, or a domain name with a real certificate | Put `cert.pem` and `key.pem` in `deploy/local/certs/` (ignored by git), put the name in `BRAIN_HOSTS`, then `up`. If the authority is already trusted by the computers, the prompts pin nothing. |
+| Remote employees | Outside the local network | A company VPN, or an overlay network like Tailscale (which also provides a valid name and certificate): the brain stays at your place. |
 
-Un nom plutôt qu'une adresse IP : ajoutez-le à `BRAIN_HOSTS` (et `BRAIN_HOST`) dans `.env`, puis `up`. Caddy
-réémet le certificat ; les postes déjà branchés gardent le même certificat racine, rien à refaire.
+A name rather than an IP address: add it to `BRAIN_HOSTS` (and `BRAIN_HOST`) in `.env`, then `up`. Caddy issues the
+certificate again; the computers already connected keep the same root certificate, nothing to redo.
 
 ## Claude
 
-Deux modes, cumulables :
+Two modes, which can be combined:
 
-- **Sur chaque poste** (déjà le cas dans le cloud) : `brain-sync` distille avec `claude -p`, donc l'abonnement Claude Code
-  de l'employé ; aucune clé sur le serveur.
-- **Sur la machine du cerveau** : `ANTHROPIC_API_KEY` dans `.env` sert aux fonctions du serveur (« Où en est la boîte »,
-  onboarding). Les appels partent de cette machine vers l'API Anthropic ; sans clé, le serveur garde ses heuristiques.
+- **On each computer** (already the case in the cloud): `brain-sync` distills with `claude -p`, so the employee's Claude
+  Code subscription; no key on the server.
+- **On the brain's machine**: `ANTHROPIC_API_KEY` in `.env` serves the server's features ("Where does the company
+  stand", onboarding). The calls go from this machine to the Anthropic API; without a key, the server keeps its heuristics.
 
-## Exploitation
+## Operations
 
-| Besoin | Commande |
+| Need | Command |
 |---|---|
-| État, adresses | `sh deploy/local/brain-local.sh status` |
-| Journaux | `sh deploy/local/brain-local.sh logs` |
-| Sauvegarde | `sh deploy/local/brain-local.sh backup` → `deploy/local/backups/brain-<date>.sql.gz` (à copier ailleurs) |
-| Restaurer | `gunzip -c <fichier> \| docker compose exec -T postgres psql -U brain brain` |
-| Mettre à jour | `sh deploy/local/brain-local.sh update` (git pull, reconstruction, redémarrage ; les données restent) |
-| Certificat racine | `sh deploy/local/brain-local.sh ca` (réexporte `deploy/local/ca.crt`, affiche l'empreinte) |
-| Arrêter | `sh deploy/local/brain-local.sh down` (les volumes restent ; `docker compose down -v` efface tout) |
-| Démo | `BRAIN_DEMO=1` dans `.env` puis `up` : l'entreprise fictive Butine se charge au premier passage sur `/login` |
+| State, addresses | `sh deploy/local/brain-local.sh status` |
+| Logs | `sh deploy/local/brain-local.sh logs` |
+| Backup | `sh deploy/local/brain-local.sh backup` → `deploy/local/backups/brain-<date>.sql.gz` (to copy elsewhere) |
+| Restore | `gunzip -c <file> \| docker compose exec -T postgres psql -U brain brain` |
+| Update | `sh deploy/local/brain-local.sh update` (git pull, rebuild, restart; the data stays) |
+| Root certificate | `sh deploy/local/brain-local.sh ca` (exports `deploy/local/ca.crt` again, shows the fingerprint) |
+| Stop | `sh deploy/local/brain-local.sh down` (the volumes stay; `docker compose down -v` deletes everything) |
+| Demo | `BRAIN_DEMO=1` in `.env` then `up`: the fictitious company Butine loads the first time `/login` is opened |
 
-Les conteneurs redémarrent avec Docker (`restart: unless-stopped`) : si la machine redémarre, le cerveau revient seul.
+The containers restart with Docker (`restart: unless-stopped`): if the machine reboots, the brain comes back on its own.
 
-## Dépannage
+## Troubleshooting
 
-- **Port 80 ou 443 déjà pris** : un autre serveur web tourne (`lsof -i :443`). Arrêtez-le, ou changez les ports dans
-  `compose.yaml` et mettez `BRAIN_HOST=<adresse>:<port>`.
-- **Le prompt s'arrête à la vérification de l'empreinte** : le poste n'a pas reçu le certificat attendu. Soit l'adresse
-  n'est pas la bonne (un autre service répond), soit l'autorité a changé depuis la génération du prompt (`ca` affiche
-  l'empreinte actuelle ; régénérez le prompt depuis `/admin`). Ne jamais contourner cette vérification.
-- **« Caddy n'a pas encore créé son autorité »** : le premier démarrage prend quelques secondes ; relancez `ca`.
-- **Avertissement de sécurité dans votre navigateur** sur la machine du cerveau : installez le certificat racine avec la
-  commande affichée par `ca` (ou acceptez l'exception, le temps de créer l'entreprise).
-- **Postgres refuse la connexion au démarrage** : `logs` ; le cerveau attend que Postgres soit prêt (`healthcheck`), un
-  mot de passe changé dans `.env` après la première création ne s'applique pas au volume existant (`docker compose down -v`
-  pour repartir de zéro, en perdant les données).
+- **Port 80 or 443 already taken**: another web server is running (`lsof -i :443`). Stop it, or change the ports in
+  `compose.yaml` and set `BRAIN_HOST=<address>:<port>`.
+- **The prompt stops at the fingerprint check**: the computer did not get the expected certificate. Either the address
+  is wrong (another service answers), or the authority changed since the prompt was generated (`ca` shows the current
+  fingerprint; generate the prompt again from `/admin`). Never work around this check.
+- **"Caddy has not created its authority yet"**: the first start takes a few seconds; run `ca` again.
+- **Security warning in your browser** on the brain's machine: install the root certificate with the command shown by
+  `ca` (or accept the exception, the time to create the company).
+- **Postgres refuses the connection on start**: `logs`; the brain waits for Postgres to be ready (`healthcheck`), a
+  password changed in `.env` after the first creation does not apply to the existing volume (`docker compose down -v`
+  to start from scratch, losing the data).
 
-## Ce qui change par rapport au cloud
+## What changes compared to the cloud
 
-| | Cloud (Vercel + Neon) | Machine de l'entreprise |
+| | Cloud (Vercel + Neon) | Company machine |
 |---|---|---|
-| Où sont les données distillées | Chez l'hébergeur (Neon, Francfort) | Dans un volume Docker sur votre machine |
-| Adresse | `https://cerveau.example.com` | `https://<ip ou nom>.local`, réseau local (ou VPN) |
-| Certificat | Public, automatique | Autorité privée de Caddy, épinglée dans les prompts ; ou le vôtre |
-| Disponibilité | Toujours en ligne | Tant que la machine est allumée ; la synchro des postes réessaie toutes les 15 min |
-| Mise à jour | Déploiement git | `brain-local.sh update` |
-| Sauvegarde | Chez l'hébergeur | `brain-local.sh backup` |
-| Coût | Offres gratuites | Un ordinateur allumé |
+| Where the distilled data is | At the host (Neon, Frankfurt) | In a Docker volume on your machine |
+| Address | `https://brain.example.com` | `https://<ip or name>.local`, local network (or VPN) |
+| Certificate | Public, automatic | Caddy's private authority, pinned in the prompts; or yours |
+| Availability | Always online | As long as the machine is on; the computers' sync retries every 15 min |
+| Update | git deployment | `brain-local.sh update` |
+| Backup | At the host | `brain-local.sh backup` |
+| Cost | Free tiers | A computer that is on |
 
-Le code est le même : deux stockages derrière une seule interface (`apps/web/lib/store`), une seule API, un seul client.
+The code is the same: two storages behind a single interface (`apps/web/lib/store`), a single API, a single client.

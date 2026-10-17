@@ -1,72 +1,72 @@
-# Notes d'Anas : revue du MVP contre l'API réelle de screenpipe
+# Anas's notes: review of the MVP against the real screenpipe API
 
-> Écrit le 16/10/2026 au soir, après lecture complète du dépôt `screenpipe/screenpipe` (commit `9dc0fd0`, ~490k lignes)
-> et de notre branche `claude/great-euler-flq450` (commit `632e5d8`). Les chemins cités sont ceux de ces deux dépôts.
-> Les points marqués *(à vérifier)* n'ont pas pu être testés sur une vraie instance.
+> Written on 16/10/2026 in the evening, after reading the whole `screenpipe/screenpipe` repo (commit `9dc0fd0`, ~490k lines)
+> and our branch `claude/great-euler-flq450` (commit `632e5d8`). The paths quoted are those of these two repos.
+> The points marked *(to check)* could not be tested on a real instance.
 
-## Suivi du chantier (branche `fix/screenpipe-api`, 17/10)
+## Progress (branch `fix/screenpipe-api`, 17/10)
 
-| Point | État |
+| Point | State |
 |---|---|
-| 2.1 format `parsed` (`items`, `actors`) | fait : messages avec rôles, titre de conversation, repli `content.text` |
-| 2.2 parseur sémantique | fait : `brain.mjs status` dit si `parsed` renvoie des données ; consigne dans le prompt d'installation (`--enable-semantic-context` / app context « memory ») |
-| 2.3 authentification | fait : en-têtes `X-Screenpipe-Client: api` + `X-Screenpipe-Agent`, jeton via `npx -y screenpipe@latest auth token`, 401/403 explicites |
-| 2.4 `browser_url` | fait : liste blanche et outil déduits de l'URL de l'onglet |
-| 2.5 pagination / checkpoint | déjà fait côté MVP (fenêtres de temps, checkpoint sûr) ; pages de 100, le serveur n'impose pas de plafond |
-| 2.6 détail des workflows | fait : `GET /workflows/:id` → occurrences, jours, heure habituelle, minutes par semaine (`timingRuns`) |
-| 2.7 `filter_pii=true` | fait |
-| 2.8 réunions | fait : `GET /meetings` + transcriptions → conversations « meeting », checkpoint par réunion, `--screenpipe-meetings non` pour refuser |
-| 2.9 pipe `brain-sync` | fait : `brain.mjs install-pipe` écrit `~/.screenpipe/pipes/brain-sync/pipe.md` (frontmatter à valider sur un vrai poste avec `pipe run`) |
+| 2.1 `parsed` format (`items`, `actors`) | done: messages with roles, conversation title, `content.text` fallback |
+| 2.2 semantic parser | done: `brain.mjs status` says whether `parsed` returns data; instruction in the install prompt (`--enable-semantic-context` / "memory" app context) |
+| 2.3 authentication | done: `X-Screenpipe-Client: api` + `X-Screenpipe-Agent` headers, token through `npx -y screenpipe@latest auth token`, explicit 401/403 |
+| 2.4 `browser_url` | done: allowlist and tool derived from the tab's URL |
+| 2.5 pagination / checkpoint | already done on the MVP side (time windows, safe checkpoint); pages of 100, the server enforces no cap |
+| 2.6 workflow details | done: `GET /workflows/:id` → occurrences, days, usual time, minutes per week (`timingRuns`) |
+| 2.7 `filter_pii=true` | done |
+| 2.8 meetings | done: `GET /meetings` + transcripts → "meeting" conversations, checkpoint per meeting, `--screenpipe-meetings no` to opt out |
+| 2.9 `brain-sync` pipe | done: `brain.mjs install-pipe` writes `~/.screenpipe/pipes/brain-sync/pipe.md` (frontmatter to validate on a real computer with `pipe run`) |
 
-Reste à faire : un passage sur une vraie instance Screenpipe (formes de réponse relues dans le code du dépôt, pas testées en
-conditions réelles), l'agrégation des workflows entre postes côté dashboard (section 1, point 4), et le pitch (section 1, point 5).
+Still to do: a run on a real Screenpipe instance (response shapes read in the repo's code, not tested in real
+conditions), aggregating workflows across computers on the dashboard side (section 1, point 4), and the pitch (section 1, point 5).
 
-## 0. En deux phrases
+## 0. In two sentences
 
-L'idée est bonne et le MVP est impressionnant. Mais tel qu'il est codé, screenpipe y est **optionnel** (les logs Claude Code et
-les hooks font le vrai travail), alors que le recap du kickoff dit : *« un agent générique sans connexion screenpipe ne répond
-pas à l'exigence de jugement »*. Les corrections ci-dessous rendent screenpipe **irremplaçable** (réunions, outils IA sans logs,
-pipe natif, distribution par Teams) et corrigent cinq bugs qui feraient que le cerveau reste vide sur scène.
+The idea is good and the MVP is impressive. But as coded, screenpipe is **optional** in it (the Claude Code logs and the
+hooks do the real work), while the kickoff recap says: *"a generic agent without a screenpipe connection does not meet the
+judging requirement"*. The fixes below make screenpipe **irreplaceable** (meetings, AI tools without logs, native pipe,
+distribution through Teams) and fix five bugs that would leave the brain empty on stage.
 
-## 1. Le risque n°1 pour le jury, et comment le retourner
+## 1. Risk no. 1 with the jury, and how to turn it around
 
-Ce que le jury verra dans notre README : *« les logs Claude Code locaux sont la source la plus fiable »* et les hooks rendent
-les néons fiables *« sans dépendre de la capture d'écran »*. En plus, screenpipe fait déjà une partie de ce qu'on annonce :
+What the jury will see in our README: *"the local Claude Code logs are the most reliable source"* and the hooks make the
+neons reliable *"without depending on screen capture"*. On top of that, screenpipe already does part of what we announce:
 
-| Ce qu'on annonce | Ce que screenpipe a déjà (dans son code) |
+| What we announce | What screenpipe already has (in its code) |
 |---|---|
-| Capter les sessions Claude Code / Codex | Connexions `claude_code.rs`, `codex.rs`, `hermes.rs` dans `screenpipe-connect`, et le changelog d'octobre : « local Claude Code, Codex and Hermes chats can contribute evidence » |
-| Journal des prompts IA | Pipe intégré `ai-prompt-journal` |
-| Mémoire durable | Table `memories`, `content_type=memory`, pipe `commitments` |
-| Détection « même prompt, même heure, 3 jours » | Pipe `automate-my-work` + catalogue de workflows par personne (`/workflows`) |
-| Pousser une config à toute l'équipe | **Teams** : configs de pipes et filtres poussés chiffrés de bout en bout |
-| Cerveau multi-postes | Passerelle entreprise (`screenpipe-gateway`), crate `screenpipe-team-memory` |
+| Capture the Claude Code / Codex sessions | `claude_code.rs`, `codex.rs`, `hermes.rs` connections in `screenpipe-connect`, and the October changelog: "local Claude Code, Codex and Hermes chats can contribute evidence" |
+| Log of AI prompts | Built-in `ai-prompt-journal` pipe |
+| Lasting memory | `memories` table, `content_type=memory`, `commitments` pipe |
+| "Same prompt, same time, 3 days" detection | `automate-my-work` pipe + per-person workflow catalog (`/workflows`) |
+| Push a config to the whole team | **Teams**: pipe configs and filters pushed end-to-end encrypted |
+| Multi-computer brain | Enterprise gateway (`screenpipe-gateway`), `screenpipe-team-memory` crate |
 
-La parade, par ordre d'impact :
+The countermeasure, by order of impact:
 
-1. **Mettre les réunions dans le cerveau** (section 2.8). « Lundi en call, Claire a décidé de reporter la clôture » : aucun log
-   Claude Code ne contient ça, seul screenpipe transcrit, diarise et détecte les réunions.
-2. **Démontrer les outils IA sans logs ni hooks** : ChatGPT web, Claude desktop, Cursor, Gemini. Seul `content_type=parsed` les
-   structure (parseur sémantique, 49 apps couvertes). Les hooks restent pour la latence des néons, pas comme source de vérité.
-3. **Livrer `brain-sync` comme un vrai pipe screenpipe** (section 2.9) et le **distribuer par screenpipe Teams** : c'est mot pour
-   mot le track 3, « setup, approvals and shared tools », avec les primitives du produit.
-4. **Agréger les workflows entre employés** : « ce workflow existe sur 3 postes ». Un poste seul ne peut pas le voir, le produit
-   non plus. C'est leur tagline (« finds work worth automating in your company ») à l'échelle de l'entreprise.
-5. **Auto-hébergement par défaut dans le pitch** (mode fichier / Postgres quelconque). Supabase et Vercel = une option.
+1. **Put meetings into the brain** (section 2.8). "On Monday's call, Claire decided to postpone the closing": no Claude
+   Code log contains that, only screenpipe transcribes, diarizes and detects meetings.
+2. **Show the AI tools without logs or hooks**: ChatGPT web, Claude desktop, Cursor, Gemini. Only `content_type=parsed`
+   structures them (semantic parser, 49 apps covered). The hooks stay for the latency of the neons, not as a source of truth.
+3. **Ship `brain-sync` as a real screenpipe pipe** (section 2.9) and **distribute it through screenpipe Teams**: it is word for
+   word track 3, "setup, approvals and shared tools", with the product's own primitives.
+4. **Aggregate workflows across employees**: "this workflow exists on 3 computers". A single computer cannot see it, nor can
+   the product. It is their tagline ("finds work worth automating in your company") at the company's scale.
+5. **Self-hosting by default in the pitch** (file mode / any Postgres). Supabase and Vercel = an option.
 
-Argument à citer tel quel : leur spec `docs/ORG_DATA_UNIFICATION_SPEC.md` dit *« sqlite does not federate, 30 employees = 30 dbs,
-not one queryable org brain »* et *« ship only the ~30 frames a SOP cites, not the firehose »*. Notre principe « le brut reste
-sur le PC, seul le distillé monte » est exactement ça. On construit la couche qu'ils décrivent comme manquante.
+Argument to quote as is: their spec `docs/ORG_DATA_UNIFICATION_SPEC.md` says *"sqlite does not federate, 30 employees = 30 dbs,
+not one queryable org brain"* and *"ship only the ~30 frames a SOP cites, not the firehose"*. Our principle "the raw data stays
+on the computer, only the distilled knowledge goes up" is exactly that. We are building the layer they describe as missing.
 
-Phrase de pitch : *« screenpipe se souvient pour une personne ; sa propre spec dit que 30 employés font 30 bases. On a construit
-le cerveau au-dessus, et seul le distillé y monte. »*
+Pitch line: *"screenpipe remembers for one person; its own spec says 30 employees make 30 databases. We built the brain on
+top, and only the distilled knowledge goes up to it."*
 
-## 2. Ce qui casse sur de vraies données, et les correctifs
+## 2. What breaks on real data, and the fixes
 
-### 2.1 Le format `parsed` qu'on attend n'existe pas
+### 2.1 The `parsed` format we expect does not exist
 
-`apps/client/src/sources/screenpipe.ts` → `normalizeScreenpipeItem` cherche `content.messages[{ role, text }]`. Forme réelle d'une
-ligne `parsed` (`crates/screenpipe-engine/src/routes/content.rs`) :
+`apps/client/src/sources/screenpipe.ts` → `normalizeScreenpipeItem` looks for `content.messages[{ role, text }]`. Real shape of a
+`parsed` row (`crates/screenpipe-engine/src/routes/content.rs`):
 
 ```jsonc
 {
@@ -74,73 +74,73 @@ ligne `parsed` (`crates/screenpipe-engine/src/routes/content.rs`) :
   "content": {
     "frame_id": 1234, "timestamp": "2026-10-16T21:03:11.120Z",
     "app_name": "Google Chrome", "window_name": "ChatGPT", "browser_url": "https://chatgpt.com/c/...",
-    "text": "…rendu compact de la conversation…",
+    "text": "…compact rendering of the conversation…",
     "parser_id": "conversation/chatgpt-web", "parser_version": "…",
     "items": [
-      { "local_id": "c1", "parent_local_id": null, "kind": "conversation", "title": "Clôture mensuelle", "body": null, "actor": null, "occurred_at": null, "status": null, "metadata": {} },
-      { "local_id": "m1", "parent_local_id": "c1", "kind": "message", "title": null, "body": "Comment on fait le rapprochement Qonto ?", "actor": "You", "occurred_at": "2026-10-16T21:01:00Z", "metadata": {} },
-      { "local_id": "m2", "parent_local_id": "c1", "kind": "message", "body": "Voici la procédure…", "actor": "ChatGPT", "occurred_at": "2026-10-16T21:01:40Z", "metadata": {} }
+      { "local_id": "c1", "parent_local_id": null, "kind": "conversation", "title": "Monthly closing", "body": null, "actor": null, "occurred_at": null, "status": null, "metadata": {} },
+      { "local_id": "m1", "parent_local_id": "c1", "kind": "message", "title": null, "body": "How do we do the Qonto reconciliation?", "actor": "You", "occurred_at": "2026-10-16T21:01:00Z", "metadata": {} },
+      { "local_id": "m2", "parent_local_id": "c1", "kind": "message", "body": "Here is the procedure…", "actor": "ChatGPT", "occurred_at": "2026-10-16T21:01:40Z", "metadata": {} }
     ],
     "actors": [ { "item_id": 9, "local_id": "m1", "actor_id": 3, "name": "Jean-Marc Dubois", "observed_name": "You", "assignment_source": "heuristic" } ]
   }
 }
 ```
 
-Valeurs de `kind` : `conversation`, `message`, `document`, `task`, `page`, `calendar_event`, `derived`, `stable`. Il n'y a **pas**
-de `role`. Aujourd'hui on retombe sur `content.text` et on fabrique une fausse conversation (« Session capturée à l'écran » +
-tout le blob côté assistant) : la distillation perd qui a dit quoi.
+Values of `kind`: `conversation`, `message`, `document`, `task`, `page`, `calendar_event`, `derived`, `stable`. There is **no**
+`role`. Today we fall back on `content.text` and build a fake conversation ("Session captured on screen" + the whole blob on
+the assistant's side): distillation loses who said what.
 
-Correctif : dans le normaliseur, prendre `items` avec `kind === "message"`, regrouper par `parent_local_id`, et déduire le rôle
-de `actor` : `You`/`Vous`/`Moi`/nom de l'utilisateur → `user` ; `ChatGPT`/`Claude`/`Assistant`/`Codex`/`Gemini`/`Copilot` →
-`assistant`. `occurred_at` donne `at`. Garder `content.text` en repli si `items` est vide.
+Fix: in the normalizer, take the `items` with `kind === "message"`, group them by `parent_local_id`, and derive the role
+from `actor`: `You`, the labels of chat UIs in other languages, the user's name → `user`;
+`ChatGPT`/`Claude`/`Assistant`/`Codex`/`Gemini`/`Copilot` → `assistant`. `occurred_at` gives `at`. Keep `content.text` as a
+fallback if `items` is empty.
 
-### 2.2 `parsed` reste vide tant que le parseur sémantique est désactivé
+### 2.2 `parsed` stays empty as long as the semantic parser is off
 
-`enableSemanticContext` est à `false` par défaut (`crates/screenpipe-config/src/recording.rs`, ligne ~966). Notre
-`install/PROMPT.md` ne l'active pas, donc `parsed` répond vide, on retombe sur `accessibility`, et on récupère tout l'historique du
-chat à chaque capture, structure perdue.
+`enableSemanticContext` is `false` by default (`crates/screenpipe-config/src/recording.rs`, line ~966). Our
+`install/PROMPT.md` does not turn it on, so `parsed` answers empty, we fall back on `accessibility`, and we get the whole chat
+history on every capture, structure lost.
 
-Correctif : ajouter à l'étape 3 du prompt d'installation l'activation du parseur sémantique (réglage dans l'app desktop, ou flag
-CLI `--enable-semantic-context` *(nom exact à vérifier dans `screenpipe record --help`)*), puis une vérification :
-`GET /search?content_type=parsed&start_time=10m%20ago&end_time=now&limit=5` doit renvoyer des lignes après quelques minutes
-d'activité dans ChatGPT ou Claude.
+Fix: add to step 3 of the install prompt turning on the semantic parser (setting in the desktop app, or CLI flag
+`--enable-semantic-context` *(exact name to check in `screenpipe record --help`)*), then a check:
+`GET /search?content_type=parsed&start_time=10m%20ago&end_time=now&limit=5` must return rows after a few minutes of activity
+in ChatGPT or Claude.
 
-### 2.3 L'authentification est silencieusement cassée
+### 2.3 Authentication is silently broken
 
-`/health` est **sans auth**, donc `screenpipeHealth` passe. Mais `/search` renvoie 401/403 sans jeton, et `fetchScreenpipeItems`
-prend un `status >= 400` en page 0 pour « aucune donnée ». Les builds actuels activent l'auth par défaut (l'extension navigateur
-s'appaire justement pour obtenir le jeton).
+`/health` has **no auth**, so `screenpipeHealth` passes. But `/search` returns 401/403 without a token, and
+`fetchScreenpipeItems` takes a `status >= 400` on page 0 for "no data". Current builds turn auth on by default (the browser
+extension pairs precisely to get the token).
 
-Correctifs :
-- `brain.mjs init` récupère le jeton tout seul : `npx -y screenpipe@latest auth token` (c'est aussi ce que fait leur skill), et
-  le stocke dans `screenpipe_token`.
-- Distinguer 401/403 dans les warnings (« jeton screenpipe requis ») au lieu de « aucune donnée (parsed, accessibility, ocr) ».
-- Envoyer les en-têtes attendus : `Authorization: Bearer <token>`, `X-Screenpipe-Client: api`, `X-Screenpipe-Agent: company-brain`.
+Fixes:
+- `brain.mjs init` gets the token on its own: `npx -y screenpipe@latest auth token` (it is also what their skill does), and
+  stores it in `screenpipe_token`.
+- Tell 401/403 apart in the warnings ("screenpipe token required") instead of "no data (parsed, accessibility, ocr)".
+- Send the expected headers: `Authorization: Bearer <token>`, `X-Screenpipe-Client: api`, `X-Screenpipe-Agent: company-brain`.
 
-### 2.4 L'URL du navigateur n'est jamais transmise
+### 2.4 The browser URL is never passed on
 
-`isAllowedApp(app, window, whitelist, browserUrl)` et `AI_HOSTS` sont bien faits, mais le normaliseur ne lit pas
-`content.browser_url` (présent sur `parsed` et `ocr`) et `groupScreenpipeItems` ne le passe pas. La détection des onglets
-ChatGPT / Claude repose donc uniquement sur le titre de fenêtre.
+`isAllowedApp(app, window, whitelist, browserUrl)` and `AI_HOSTS` are well done, but the normalizer does not read
+`content.browser_url` (present on `parsed` and `ocr`) and `groupScreenpipeItems` does not pass it. Detecting the ChatGPT /
+Claude tabs therefore only relies on the window title.
 
-Correctif : ajouter `browserUrl: str(c.browser_url)` dans `ScreenpipeItem`, et le passer à `isAllowedApp`.
+Fix: add `browserUrl: str(c.browser_url)` to `ScreenpipeItem`, and pass it to `isAllowedApp`.
 
-### 2.5 Pagination et checkpoint
+### 2.5 Pagination and checkpoint
 
-100 lignes × 10 pages max, toutes apps confondues, filtrées côté client. L'accessibilité capture toutes les quelques secondes :
-15 minutes d'activité dépassent facilement 1 000 lignes. Quand ça tronque, le checkpoint avance quand même jusqu'à la ligne la
-plus récente vue. Si l'API renvoie du plus récent au plus ancien *(à vérifier)*, les lignes anciennes perdues ne sont jamais
-rattrapées.
+100 rows × 10 pages max, all apps together, filtered on the client. Accessibility captures every few seconds: 15 minutes of
+activity easily go past 1,000 rows. When it truncates, the checkpoint still moves up to the most recent row seen. If the API
+returns from newest to oldest *(to check)*, the old rows lost are never caught up.
 
-Correctifs :
-- un appel par app autorisée avec le filtre serveur `app_name=` (ou `browser_url=` pour les onglets IA), au lieu de tout lire ;
+Fixes:
+- one call per allowed app with the server filter `app_name=` (or `browser_url=` for the AI tabs), instead of reading everything;
 - `fields=type,content.timestamp,content.app_name,content.window_name,content.browser_url,content.text,content.items,content.frame_id`
-  et `max_content_length` pour alléger ;
-- quand `truncated` est vrai, poser le checkpoint sur la ligne la plus **ancienne** traitée, pas la plus récente.
+  and `max_content_length` to lighten it;
+- when `truncated` is true, put the checkpoint on the **oldest** row processed, not the most recent one.
 
-### 2.6 `/workflows` ne renvoie pas ce que `mapWorkflows` cherche
+### 2.6 `/workflows` does not return what `mapWorkflows` looks for
 
-Forme réelle de la liste (`crates/screenpipe-engine/src/routes/workflows.rs`) :
+Real shape of the list (`crates/screenpipe-engine/src/routes/workflows.rs`):
 
 ```jsonc
 { "data": [ { "id": "…", "title": "…", "description": "…", "trigger": "…", "outcome": "…",
@@ -148,48 +148,48 @@ Forme réelle de la liste (`crates/screenpipe-engine/src/routes/workflows.rs`) :
   "pagination": { "total": 12, "offset": 0, "limit": 20 }, "analyzedAt": "…", "historyRestricted": false }
 ```
 
-Aucun champ `occurrences`, `days`, `schedule` : nos suggestions issues de screenpipe arrivent avec 0 minute économisée et finissent
-en bas de liste. Les étapes, la procédure observée, les citations, les `timingRuns` et les épisodes d'occurrence sont dans
+No `occurrences`, `days` or `schedule` field: our suggestions coming from screenpipe arrive with 0 minutes saved and end up
+at the bottom of the list. The steps, the observed procedure, the quotes, the `timingRuns` and the occurrence episodes are in
 `GET /workflows/{id}?include_automation=true`.
 
-Correctif : lister, puis appeler le détail pour les N premiers, et dériver `occurrences` / `days` des épisodes ; afficher
-`trigger` et `outcome` dans la carte. C'est aussi la base de l'agrégation entre postes (section 1, point 4).
+Fix: list, then call the detail for the first N, and derive `occurrences` / `days` from the episodes; show `trigger` and
+`outcome` in the card. It is also the basis of the aggregation across computers (section 1, point 4).
 
-### 2.7 Le masquage natif de screenpipe est ignoré
+### 2.7 screenpipe's native redaction is ignored
 
-`/search` accepte `filter_pii=true` : redaction des données personnelles **sur le poste**, avant même notre filtre regex
-(`crates/screenpipe-engine/src/routes/search.rs`, ligne ~1497). Un paramètre à ajouter, et une phrase de pitch : deux couches de
-masquage, dont une signée screenpipe.
+`/search` accepts `filter_pii=true`: redaction of personal data **on the computer**, even before our regex filter
+(`crates/screenpipe-engine/src/routes/search.rs`, line ~1497). One parameter to add, and a pitch line: two layers of
+redaction, one of them signed screenpipe.
 
-### 2.8 Les réunions, la source la plus forte, ne sont pas branchées
+### 2.8 Meetings, the strongest source, are not connected
 
-Endpoints (`crates/screenpipe-engine/src/server.rs`, lignes ~940-960) :
+Endpoints (`crates/screenpipe-engine/src/server.rs`, lines ~940-960):
 
 - `GET /meetings?start_time=…&end_time=…&limit=20&offset=0&q=…` →
   `[{ id, meeting_start, meeting_end, meeting_app, title, attendees, note, detection_source, created_at }]`
-  (`note` contient le résumé sauvegardé par l'utilisateur ou par le pipe `meeting-summary`).
-- `GET /meetings/{id}/transcript` → tableau de segments `{ speaker_name, speaker_id, transcript, captured_at, device_type, … }`.
-- `GET /meetings/status` → réunion en cours.
+  (`note` contains the summary saved by the user or by the `meeting-summary` pipe).
+- `GET /meetings/{id}/transcript` → array of segments `{ speaker_name, speaker_id, transcript, captured_at, device_type, … }`.
+- `GET /meetings/status` → meeting in progress.
 
-À ajouter dans `sync.ts` : une source `meetings` qui transforme chaque réunion terminée depuis le checkpoint en `Conversation`
-(un message par segment, `role` = `user` si `speaker_name` est l'employé, sinon `assistant`, ou mieux : un rendu « Prénom : texte »
-dans un seul message), puis la distillation habituelle. Le prompt de distillation gagne une ligne : « pour une réunion, les
-décisions et les engagements priment ». Démo : une réunion fictive de 2 minutes entre deux membres de l'équipe → 3 décisions
-dans la zone concernée.
+To add in `sync.ts`: a `meetings` source that turns each meeting finished since the checkpoint into a `Conversation`
+(one message per segment, `role` = `user` if `speaker_name` is the employee, otherwise `assistant`, or better: a "Name: text"
+rendering in a single message), then the usual distillation. The distillation prompt gets one more line: "for a meeting,
+decisions and commitments come first". Demo: a fictitious 2-minute meeting between two team members → 3 decisions in the
+zone concerned.
 
-### 2.9 Livrer `brain-sync` comme un pipe screenpipe
+### 2.9 Ship `brain-sync` as a screenpipe pipe
 
-Un pipe est un `pipe.md` dont le prompt est exécuté par un agent (Pi par défaut, ou Claude Code, Codex…) qui a un bash.
-Ça rend brain-sync visible dans « Scheduled tasks », déclenchable sur la fin d'une réunion, borné par des permissions, et
-**poussable à toute l'équipe par screenpipe Teams** (configs chiffrées de bout en bout). Exemple, à mettre dans
-`~/.screenpipe/pipes/brain-sync/pipe.md` :
+A pipe is a `pipe.md` whose prompt is run by an agent (Pi by default, or Claude Code, Codex…) that has a bash.
+That makes brain-sync visible in "Scheduled tasks", triggerable at the end of a meeting, bounded by permissions, and
+**pushable to the whole team through screenpipe Teams** (end-to-end encrypted configs). Example, to put in
+`~/.screenpipe/pipes/brain-sync/pipe.md`:
 
 ```markdown
 ---
 schedule: every 15m
 enabled: true
-title: Cerveau d'entreprise, synchro
-description: Distille les sessions IA et les réunions vers le cerveau partagé (rien de brut ne quitte le poste)
+title: Company brain, sync
+description: Distills the AI sessions and meetings into the shared brain (nothing raw leaves the computer)
 agent: pi
 model: auto
 timeout: 300
@@ -208,73 +208,74 @@ permissions:
 privacy_filter: true
 ---
 
-Lance `node ~/.company-brain/brain.mjs sync` avec le jeton `$SCREENPIPE_LOCAL_API_KEY` de cette tâche.
-Ne lis aucune donnée toi-même, n'envoie rien ailleurs. Rapporte en une phrase le nombre de connaissances envoyées
-et les avertissements éventuels. Si la commande échoue, rapporte l'erreur telle quelle.
+Run `node ~/.company-brain/brain.mjs sync` with this task's `$SCREENPIPE_LOCAL_API_KEY` token.
+Read no data yourself, send nothing anywhere else. Report in one sentence the number of knowledge items sent
+and any warnings. If the command fails, report the error as is.
 ```
 
-Le jeton de la tâche est **scopé** par `permissions.allow` : même si brain.mjs voulait lire autre chose, l'API refuserait.
-`privacy_filter: true` force `filter_pii` sur toutes les lectures du pipe. Garder notre installeur launchd / cron / schtasks
-en repli pour les postes sans l'app desktop.
+The task's token is **scoped** by `permissions.allow`: even if brain.mjs wanted to read something else, the API would refuse.
+`privacy_filter: true` forces `filter_pii` on every read of the pipe. Keep our launchd / cron / schtasks installer as a
+fallback for computers without the desktop app.
 
-Bonus : `POST http://localhost:11435/notify` avec `title`, `body` (markdown), `priority` et des `actions` (`chat`, `link`,
-`pipe`, `api`) → une notification native « 4 connaissances envoyées au cerveau, 1 décision à confirmer ».
+Bonus: `POST http://localhost:11435/notify` with `title`, `body` (markdown), `priority` and `actions` (`chat`, `link`,
+`pipe`, `api`) → a native notification "4 knowledge items sent to the brain, 1 decision to confirm".
 
-## 3. Référence API screenpipe (ce qu'on utilise)
+## 3. screenpipe API reference (what we use)
 
-Base : `http://localhost:3030`. Jeton : `npx -y screenpipe@latest auth token` (ou Settings → Privacy → API security).
-En-têtes sur chaque appel : `Authorization: Bearer <token>`, `X-Screenpipe-Client: api`, `X-Screenpipe-Agent: company-brain`.
-Sans auth : `/health`, `/ws/health`, `/notify`, `/pipes/store/*`.
+Base: `http://localhost:3030`. Token: `npx -y screenpipe@latest auth token` (or Settings → Privacy → API security).
+Headers on every call: `Authorization: Bearer <token>`, `X-Screenpipe-Client: api`, `X-Screenpipe-Agent: company-brain`.
+Without auth: `/health`, `/ws/health`, `/notify`, `/pipes/store/*`.
 
-`GET /search` : `q`, `app_name`, `window_name`, `browser_url` (correspondance normalisée, pas une sous-chaîne : pour un domaine
-utiliser `q=`), `content_type` ∈ `all | ocr | audio | input | accessibility | memory | parsed`, `start_time` / `end_time`
-(ISO 8601 ou relatif `30m ago`, `24h ago`), `limit` (pas de plafond serveur, viser ≤ 100), `offset`, `fields=` (chemins pointés),
-`format=json|csv|tsv`, `max_content_length`, `filter_pii=true`, `focused=true`, `frame_id` / `actor_id` (avec `parsed` seulement).
-Réponse : `{ data: [ { type, content: { … } } ], pagination: { limit, offset, total } }` (`total` peut être une estimation : on
-s'arrête sur une page vide, pas sur `total`). Contenu par type : `ocr` → `text`, `app_name`, `window_name`, `browser_url`,
-`timestamp`, `frame_id` ; `audio` → `transcription`, `speaker`, `timestamp` ; `accessibility` → `text`, `app_name`, `window_name` ;
+`GET /search`: `q`, `app_name`, `window_name`, `browser_url` (normalized match, not a substring: for a domain use `q=`),
+`content_type` ∈ `all | ocr | audio | input | accessibility | memory | parsed`, `start_time` / `end_time` (ISO 8601 or
+relative `30m ago`, `24h ago`), `limit` (no server cap, aim for ≤ 100), `offset`, `fields=` (dotted paths),
+`format=json|csv|tsv`, `max_content_length`, `filter_pii=true`, `focused=true`, `frame_id` / `actor_id` (with `parsed` only).
+Response: `{ data: [ { type, content: { … } } ], pagination: { limit, offset, total } }` (`total` can be an estimate: stop on
+an empty page, not on `total`). Content per type: `ocr` → `text`, `app_name`, `window_name`, `browser_url`, `timestamp`,
+`frame_id`; `audio` → `transcription`, `speaker`, `timestamp`; `accessibility` → `text`, `app_name`, `window_name`;
 `input` → `event_type` (`click`, `key`, `text`, `scroll`, `app_switch`, `window_focus`, `clipboard`), `x`, `y`, `app_name`,
-`window_title`, `browser_url`, `element_role`, `element_name` ; `parsed` → section 2.1.
+`window_title`, `browser_url`, `element_role`, `element_name`; `parsed` → section 2.1.
 
-`GET /activity-summary?start_time=…&end_time=…` : point d'entrée recommandé par leur propre skill avant `/search` :
-apps, fenêtres, minutes actives par app, extraits, `data_status` ∈ `ok | empty_but_recording | no_capture_in_range | not_recording`.
-Utile pour la page « passation » (zones et outils réellement utilisés par un poste).
+`GET /activity-summary?start_time=…&end_time=…`: entry point recommended by their own skill before `/search`:
+apps, windows, active minutes per app, excerpts, `data_status` ∈ `ok | empty_but_recording | no_capture_in_range | not_recording`.
+Useful for the "handover" page (zones and tools really used by a computer).
 
-`GET /meetings`, `GET /meetings/{id}`, `GET /meetings/{id}/transcript`, `GET /meetings/status` : section 2.8.
+`GET /meetings`, `GET /meetings/{id}`, `GET /meetings/{id}/transcript`, `GET /meetings/status`: section 2.8.
 
-`GET /workflows?q=&limit=&offset=`, `GET /workflows/{id}?include_automation=true` : section 2.6.
+`GET /workflows?q=&limit=&offset=`, `GET /workflows/{id}?include_automation=true`: section 2.6.
 
-Parseur sémantique : `enableSemanticContext` (défaut `false`), familles conversation, mail, éditeur, tâche, calendrier, page,
-terminal ; 49 apps dont ChatGPT web, Claude macOS, Claude web, Codex, Cursor, Windsurf, Gemini, Slack, Teams, WhatsApp, Gmail,
-Outlook. Claude Code dans un terminal passe par la famille « terminal » (transcript brut, bruité par le re-rendu de l'interface) :
-pour cet outil, nos logs JSONL restent meilleurs. Il faut le dire honnêtement et démontrer les outils où screenpipe est irremplaçable.
+Semantic parser: `enableSemanticContext` (default `false`), families conversation, mail, editor, task, calendar, page,
+terminal; 49 apps including ChatGPT web, Claude macOS, Claude web, Codex, Cursor, Windsurf, Gemini, Slack, Teams, WhatsApp,
+Gmail, Outlook. Claude Code in a terminal goes through the "terminal" family (raw transcript, noisy because of the interface
+re-rendering): for that tool, our JSONL logs stay better. It must be said honestly, and the tools where screenpipe is
+irreplaceable must be shown.
 
-Pipes : frontmatter `schedule` (`every 15m`, `daily`, cron, `manual`), `enabled`, `title`, `description`, `agent`, `model`,
-`timeout`, `subagent`, `history`, `trigger.events` (`meeting_started`, `meeting_ended`, `pipe_completed:<nom>`), `permissions.allow`
-(`Api(GET /search)`…), `privacy_filter`, `artifacts`. CLI : `npx -y screenpipe@latest pipe install|enable|run <nom>`.
-Journaux : `screenpipe pipe logs <nom>`. Il n'existe pas de déclencheur « quand l'écran montre X » : seulement horaire, réunions
-et fin d'un autre pipe.
+Pipes: frontmatter `schedule` (`every 15m`, `daily`, cron, `manual`), `enabled`, `title`, `description`, `agent`, `model`,
+`timeout`, `subagent`, `history`, `trigger.events` (`meeting_started`, `meeting_ended`, `pipe_completed:<name>`),
+`permissions.allow` (`Api(GET /search)`…), `privacy_filter`, `artifacts`. CLI: `npx -y screenpipe@latest pipe install|enable|run <name>`.
+Logs: `screenpipe pipe logs <name>`. There is no "when the screen shows X" trigger: only schedules, meetings and the end of
+another pipe.
 
-MCP : `npx -y screenpipe-mcp@latest`, outils `search-content`, `activity-summary`, `list-meetings`, `get-meeting`,
+MCP: `npx -y screenpipe-mcp@latest`, tools `search-content`, `activity-summary`, `list-meetings`, `get-meeting`,
 `list-workflows`, `get-workflow`, `frame-context`, `get-frame-elements`, `send-notification`, `team-search`, `team-records`…
-Le desktop accepte aussi des serveurs MCP personnalisés : on peut y déclarer `company-brain` pour que les tâches planifiées de
-screenpipe lisent le cerveau (boucle fermée dans le produit).
+The desktop app also accepts custom MCP servers: we can declare `company-brain` there so that screenpipe's scheduled tasks
+read the brain (a closed loop inside the product).
 
-## 4. Ce qui est solide dans le MVP, à ne pas toucher
+## 4. What is solid in the MVP, not to touch
 
-- API Claude à jour : `messages.parse` + `zodOutputFormat`, `fallbacks: "default"` avec l'en-tête beta `server-side-fallback-2026-07-01`,
-  `effort` par appel, pas de `tool_choice` forcé (qui ferait un 400 sur Sonnet 5.5).
-- Hooks : code de sortie 0 garanti, timeout dur à 2,5 s, stdout d'une ligne sur `SessionStart`, empreinte de prompt sans texte brut.
-- Synchro : verrou fichier avec détection d'orphelins, écritures atomiques, checkpoints par conversation, désinstallation complète.
-- Vie privée : liste blanche par mots entiers, signaux forts et faibles, Luhn, IBAN, rejeu du masquage côté serveur, accès par
-  zone dans l'API et en RLS SQL.
+- Up-to-date Claude API: `messages.parse` + `zodOutputFormat`, `fallbacks: "default"` with the beta header `server-side-fallback-2026-07-01`,
+  `effort` per call, no forced `tool_choice` (which would give a 400 on Sonnet 5.5).
+- Hooks: exit code 0 guaranteed, hard timeout at 2.5 s, one-line stdout on `SessionStart`, prompt fingerprint without raw text.
+- Sync: file lock with orphan detection, atomic writes, per-conversation checkpoints, full uninstall.
+- Privacy: allowlist by whole words, strong and weak signals, Luhn, IBAN, redaction replayed on the server, per-zone access in
+  the API and in SQL RLS.
 
-## 5. Ordre de priorité pour la nuit
+## 5. Priority order for the night
 
-1. 2.2 + 2.3 : activer le parseur et l'auth, vérifier `parsed` non vide sur un vrai poste (sinon tout le reste est invisible).
-2. 2.1 + 2.4 : vrai mapping `items` → messages, `browser_url` dans la liste blanche.
-3. 2.8 : source réunions (le gros gain jury), avec une réunion fictive enregistrée avant la démo.
-4. 2.9 : `pipe.md` brain-sync + capture d'écran de « Scheduled tasks » et de Teams pour les slides.
-5. 2.6 : workflows (détail) + agrégation « présent sur N postes » dans le dashboard.
-6. 2.5 + 2.7 : pagination par app, `fields=`, `filter_pii=true`.
-7. Pitch : track 3 annoncé, citation de la spec d'unification, auto-hébergement par défaut.
+1. 2.2 + 2.3: turn on the parser and auth, check that `parsed` is not empty on a real computer (otherwise everything else is invisible).
+2. 2.1 + 2.4: real `items` → messages mapping, `browser_url` in the allowlist.
+3. 2.8: meetings source (the big win with the jury), with a fictitious meeting recorded before the demo.
+4. 2.9: brain-sync `pipe.md` + screenshot of "Scheduled tasks" and of Teams for the slides.
+5. 2.6: workflows (detail) + "present on N computers" aggregation in the dashboard.
+6. 2.5 + 2.7: pagination per app, `fields=`, `filter_pii=true`.
+7. Pitch: track 3 announced, quote of the unification spec, self-hosting by default.

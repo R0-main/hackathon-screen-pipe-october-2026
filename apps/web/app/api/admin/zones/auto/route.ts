@@ -6,7 +6,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
-/** Admins : historique des passages du job « nouvelles zones » (le plus récent d'abord), et l'URL du cerveau pour la CI. */
+/** Admins: history of the "new zones" job runs (most recent first), and the brain's URL for CI. */
 export const GET = withViewer(async (req) => json({ runs: await loadNewZonesLog(), base_url: publicBaseUrl(req) }), { admin: true })
 
 const AgentSchema = z.object({
@@ -23,9 +23,9 @@ const AgentSchema = z.object({
 })
 
 /**
- * Admins. Sans corps : le serveur lance tout de suite un passage avec la clé API de l'entreprise.
- * Avec `{zones: [...]}` : applique ce qu'a proposé le Claude Code de l'entreprise (`brain refresh-zones`, abonnement),
- * avec les mêmes garde-fous. Le jeton Claude ne quitte jamais le poste ou la CI de l'entreprise.
+ * Admins. Without a body: the server runs a pass right away with the company's API key.
+ * With `{zones: [...]}`: applies what the company's Claude Code proposed (`brain refresh-zones`, subscription),
+ * with the same safeguards. The Claude token never leaves the company's workstation or CI.
  */
 export const POST = withViewer(
   async (req) => {
@@ -35,10 +35,10 @@ export const POST = withViewer(
     try {
       data = JSON.parse(raw)
     } catch {
-      return error(400, "Corps JSON invalide.")
+      return error(400, "Invalid JSON body.")
     }
     const parsed = AgentSchema.safeParse(data)
-    if (!parsed.success) return error(400, "Proposition invalide : envoyez { \"zones\": [{ name, description, keywords, item_ids }] }.", parsed.error.issues.slice(0, 5))
+    if (!parsed.success) return error(400, "Invalid proposal: send { \"zones\": [{ name, description, keywords, item_ids }] }.", parsed.error.issues.slice(0, 5))
     return json(await applyAgentProposals(parsed.data.zones))
   },
   { admin: true },

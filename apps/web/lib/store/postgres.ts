@@ -1,6 +1,6 @@
-// Stockage Postgres (Supabase ou autre). Schéma : supabase/migrations/.
-// Une instance = une organisation : la racine sert la plus ancienne de la table `orgs` (hors entreprises créées depuis
-// /creer), `forOrg` sert une entreprise donnée en partageant la même connexion.
+// Postgres store (Supabase or other). Schema: supabase/migrations/.
+// One instance = one organization: the root serves the oldest one in the `orgs` table (excluding companies created from
+// /create), `forOrg` serves a given company while sharing the same connection.
 
 import { randomBytes } from "node:crypto"
 import postgres from "postgres"
@@ -113,11 +113,11 @@ function toTask(r: Row): Task {
 }
 
 const QUALITY_MISSING_MESSAGE =
-  "Base de données à mettre à jour : colonnes superseded_by / embedding absentes de knowledge_items. Appliquez les migrations (npm run db:migrate)."
+  "The database needs an update: superseded_by / embedding columns missing from knowledge_items. Apply the migrations (npm run db:migrate)."
 const TASKS_EXTERNAL_MISSING_MESSAGE =
-  "Base de données à mettre à jour : colonnes external_* absentes de tasks (connecteurs). Appliquez les migrations (npm run db:migrate)."
+  "The database needs an update: external_* columns missing from tasks (connectors). Apply the migrations (npm run db:migrate)."
 
-/** Colonne absente (code Postgres 42703) : migration non appliquée. */
+/** Missing column (Postgres code 42703): migration not applied. */
 function missingColumn(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "42703"
 }
@@ -153,14 +153,14 @@ function toSkill(r: Row): Skill {
   }
 }
 
-/** Table skills absente : la migration des skills n'a pas été appliquée. */
+/** Missing skills table: the skills migration was not applied. */
 const SKILLS_MISSING_MESSAGE =
-  "Base de données à mettre à jour : la table skills est absente. Appliquez les migrations (npm run db:migrate)."
+  "The database needs an update: the skills table is missing. Apply the migrations (npm run db:migrate)."
 
 const UUID_RE = /^[0-9a-f-]{36}$/i
 
 const SYNC_REPORTS_MISSING_MESSAGE =
-  "Table sync_reports absente : appliquez la migration supabase/migrations/20261017000004_sync_reports.sql (npm run db:migrate)."
+  "Missing sync_reports table: apply the supabase/migrations/20261017000004_sync_reports.sql migration (npm run db:migrate)."
 
 function toSyncReport(r: Row): SyncReportRow {
   return {
@@ -182,38 +182,38 @@ function toSyncReport(r: Row): SyncReportRow {
     screenpipe: r.screenpipe ?? undefined,
   }
 }
-/** L'organisation est relue régulièrement : un reseed (ou un onboarding servi par une autre instance) est vu sans redémarrage. */
+/** The organization is re-read regularly: a reseed (or an onboarding served by another instance) is seen without a restart. */
 const ORG_TTL_MS = 5_000
-/** Verrou consultatif (transaction) qui sérialise la création de l'organisation et le reset. */
+/** Advisory lock (transaction) that serializes the creation of the organization and the reset. */
 const ORG_LOCK_KEY = 7_204_331_117
 
-/** Termes de recherche : préfixe seulement à partir de 4 caractères (comme le stockage fichier : « pr » ne doit pas trouver « produit »). */
+/** Search terms: prefix only from 4 characters (like the file store: "pr" must not find "product"). */
 function tsTerms(query: string): string[] {
   const tokens = [...new Set(tokenize(query))].filter((t) => /^[a-z0-9]+$/.test(t)).slice(0, 12)
   return tokens.map((t) => (t.length >= 4 ? `${t}:*` : t))
 }
 
-/** Une entreprise créée depuis /creer est marquée par une ligne `tenant:<id>` de brain_settings (pas de migration). */
+/** A company created from /create is marked by a `tenant:<id>` row in brain_settings (no migration). */
 const TENANT_PREFIX = "tenant:"
-/** Code du message d'équipe d'une entreprise : `join:<org_id>` → `cj_…` dans brain_settings. */
+/** A company's team message code: `join:<org_id>` → `cj_…` in brain_settings. */
 const JOIN_PREFIX = "join:"
 
-/** Canal LISTEN/NOTIFY du flux temps réel : la charge utile est l'identifiant de l'entreprise. */
+/** LISTEN/NOTIFY channel of the real-time stream: the payload is the company's id. */
 const EVENTS_CHANNEL = "brain_events"
 
 /**
- * Les notifications sont activées par défaut, sauf sur Vercel (une connexion LISTEN dédiée par fonction) :
- * BRAIN_EVENT_NOTIFY=1 les force, =0 les coupe. DATABASE_LISTEN_URL : connexion directe (un pooler en mode
- * transaction, Supabase port 6543 par exemple, ne transmet pas LISTEN).
+ * Notifications are on by default, except on Vercel (one dedicated LISTEN connection per function):
+ * BRAIN_EVENT_NOTIFY=1 forces them, =0 turns them off. DATABASE_LISTEN_URL: direct connection (a pooler in
+ * transaction mode, Supabase port 6543 for example, does not forward LISTEN).
  */
 function notifyEnabled(): boolean {
   const v = process.env.BRAIN_EVENT_NOTIFY
-  if (v === "0" || v === "false" || v === "non") return false
-  if (v === "1" || v === "true" || v === "oui") return true
+  if (v === "0" || v === "false" || v === "no") return false
+  if (v === "1" || v === "true" || v === "yes") return true
   return !process.env.VERCEL
 }
 
-/** Abonnés au flux, par entreprise, et état de la connexion LISTEN : un seul jeu par processus (partagé par globalThis). */
+/** Stream subscribers, per company, and the LISTEN connection state: one set per process (shared through globalThis). */
 type ListenState = {
   listeners: Map<string, Set<() => void>>
   status: "idle" | "starting" | "ready" | "failed"
@@ -227,13 +227,13 @@ export class PostgresStore implements BrainStore {
   private orgCache: { org: Org; at: number } | null = null
   private orgPending: Promise<Org> | null = null
   private secret: string | null = null
-  /** Entreprise servie par cette instance ; absent sur la racine (organisation de la base). */
+  /** Company served by this instance; absent on the root (the base organization). */
   private readonly fixedOrgId: string | null
   private tenants = new Map<string, PostgresStore>()
   private settingsReady = false
   private readonly url: string | null
   private listen: ListenState
-  /** Les colonnes de la migration « qualité » (superseded_by, embedding) existent-elles ? Vérifié une fois. */
+  /** Do the columns of the "quality" migration (superseded_by, embedding) exist? Checked once. */
   private qualityColumns: boolean | null = null
   private taskExternalColumns: boolean | null = null
   private qualityWarned = false
@@ -251,11 +251,11 @@ export class PostgresStore implements BrainStore {
     this.listen = { listeners: new Map(), status: "idle", handle: null, sql: null }
     const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url) || url.includes("host=/")
     const ssl = process.env.DATABASE_SSL === "disable" || local ? false : "require"
-    // prepare: false → compatible avec le pooler Supabase en mode transaction (port 6543).
+    // prepare: false → compatible with the Supabase pooler in transaction mode (port 6543).
     this.sql = postgres(url, { prepare: false, max: Number(process.env.DATABASE_POOL_MAX ?? 5), idle_timeout: 20, ssl, onnotice: () => {} })
   }
 
-  /** brain_settings existe-t-elle ? Sans elle (migration non appliquée), il n'y a simplement aucune entreprise créée. */
+  /** Does brain_settings exist? Without it (migration not applied), there is simply no created company. */
   private async hasSettings(): Promise<boolean> {
     if (this.settingsReady) return true
     const [r] = await this.sql`select to_regclass('brain_settings') is not null as ok`
@@ -264,8 +264,8 @@ export class PostgresStore implements BrainStore {
   }
 
   /**
-   * Fragment SQL « cette organisation n'est pas une entreprise créée depuis /creer ». Synchrone exprès : une fonction
-   * async qui renvoie un fragment postgres.js l'exécuterait (c'est un thenable) au lieu de le renvoyer.
+   * SQL fragment "this organization is not a company created from /create". Synchronous on purpose: an async function
+   * returning a postgres.js fragment would execute it (it is a thenable) instead of returning it.
    */
   private notTenant(col: string, hasSettings: boolean) {
     if (!hasSettings) return this.sql`true`
@@ -273,8 +273,8 @@ export class PostgresStore implements BrainStore {
   }
 
   forOrg(orgId: string): BrainStore {
-    if (this.fixedOrgId) throw new Error("forOrg n'est disponible que sur le stockage racine.")
-    if (!UUID_RE.test(orgId)) throw new Error("Entreprise introuvable.")
+    if (this.fixedOrgId) throw new Error("forOrg is only available on the root store.")
+    if (!UUID_RE.test(orgId)) throw new Error("Company not found.")
     let t = this.tenants.get(orgId)
     if (!t) {
       t = new PostgresStore({ sql: this.sql, orgId, listen: this.listen, url: this.url })
@@ -309,7 +309,7 @@ export class PostgresStore implements BrainStore {
           ${this.sql.json(report.conversations as any)}, ${report.distiller}, ${report.failed}, ${report.deferred}, ${report.error ?? null},
           ${report.client_version ?? null}, ${report.platform ?? null}, ${report.screenpipe ?? null})
         returning *`
-      // Historique borné par poste.
+      // History bounded per workstation.
       await this.sql`delete from sync_reports where user_id = ${userId} and org_id = ${org} and id not in
         (select id from sync_reports where user_id = ${userId} and org_id = ${org} order by at desc limit ${SYNC_REPORTS_KEEP})`
       return toSyncReport(r)
@@ -324,7 +324,7 @@ export class PostgresStore implements BrainStore {
       const rows = await this.sql`select distinct on (user_id) * from sync_reports where org_id = ${await this.orgId()} order by user_id, at desc`
       return rows.map(toSyncReport).sort((a, b) => b.at.localeCompare(a.at))
     } catch (err) {
-      // Migration pas encore appliquée : la supervision affiche « jamais synchronisé » plutôt qu'une erreur.
+      // Migration not applied yet: monitoring shows "never synced" rather than an error.
       if (missingTable(err)) return []
       throw err
     }
@@ -343,8 +343,8 @@ export class PostgresStore implements BrainStore {
   }
 
   /**
-   * Ouvre (une seule fois par processus) la connexion LISTEN. En cas d'échec (pooler en mode transaction, droits),
-   * le flux reste sur sa relecture périodique : rien n'est perdu, les néons sont seulement moins instantanés.
+   * Opens (only once per process) the LISTEN connection. On failure (pooler in transaction mode, permissions),
+   * the stream stays on its periodic re-read: nothing is lost, the neons are just less instantaneous.
    */
   private startListening() {
     const st = this.listen
@@ -366,12 +366,12 @@ export class PostgresStore implements BrainStore {
             try {
               fn()
             } catch (err) {
-              console.error("[store] abonné du flux :", err)
+              console.error("[store] stream subscriber:", err)
             }
           }
         },
         () => {
-          // Reconnexion automatique de postgres.js : rien à faire, les abonnés sont conservés.
+          // postgres.js reconnects automatically: nothing to do, subscribers are kept.
         },
       )
       .then((handle) => {
@@ -380,7 +380,7 @@ export class PostgresStore implements BrainStore {
       })
       .catch((err) => {
         st.status = "failed"
-        console.error(`[store] LISTEN ${EVENTS_CHANNEL} impossible, le flux relit périodiquement :`, err instanceof Error ? err.message : err)
+        console.error(`[store] LISTEN ${EVENTS_CHANNEL} failed, the stream re-reads periodically:`, err instanceof Error ? err.message : err)
       })
   }
 
@@ -421,9 +421,9 @@ export class PostgresStore implements BrainStore {
   }
 
   /**
-   * L'organisation de cette base : la plus ancienne qui a des comptes (une org vide créée par erreur est ignorée).
-   * Une org n'est créée QUE si la table est vide, au premier chargement de cette instance, jamais lors d'un
-   * rafraîchissement du cache : une table vide pendant un rafraîchissement est transitoire (reset) ou anormale.
+   * The organization of this database: the oldest one with accounts (an empty org created by mistake is ignored).
+   * An org is created ONLY if the table is empty, on this instance's first load, never during a
+   * cache refresh: an empty table during a refresh is transient (reset) or abnormal.
    */
   private async org(): Promise<Org> {
     const cached = this.orgCache
@@ -432,16 +432,16 @@ export class PostgresStore implements BrainStore {
       this.orgPending = (async () => {
         if (this.fixedOrgId) {
           const [r] = await this.sql`select * from orgs where id = ${this.fixedOrgId}`
-          if (!r) throw new Error("Entreprise introuvable.")
+          if (!r) throw new Error("Company not found.")
           this.orgCache = { org: toOrg(r), at: Date.now() }
           return this.orgCache.org
         }
         let org = await this.selectOrg()
-        if (!org && !cached) org = (await this.createOrgIfNone({ name: "Mon entreprise", description: "" })) ?? (await this.selectOrg())
+        if (!org && !cached) org = (await this.createOrgIfNone({ name: "My company", description: "" })) ?? (await this.selectOrg())
         if (!org) {
-          // Rafraîchissement sur une table vide : on garde l'org connue, sans prolonger le cache (relue au prochain appel).
+          // Refresh on an empty table: keep the known org, without extending the cache (re-read on the next call).
           if (cached) return cached.org
-          throw new Error("Aucune organisation dans la base.")
+          throw new Error("No organization in the database.")
         }
         this.orgCache = { org, at: Date.now() }
         return org
@@ -460,11 +460,11 @@ export class PostgresStore implements BrainStore {
     return r ? toOrg(r) : null
   }
 
-  /** Base neuve : crée l'org (et ses zones par défaut) seulement si la table est vide, en une instruction atomique. */
+  /** Fresh database: creates the org (and its default zones) only if the table is empty, in one atomic statement. */
   private async createOrgIfNone(o: { name: string; description: string }): Promise<Org | null> {
     const has = await this.hasSettings()
     return this.sql.begin(async (tx: any) => {
-      // Deux instances qui démarrent ensemble : la seconde attend, puis ne trouve plus la table vide.
+      // Two instances starting together: the second one waits, then no longer finds the table empty.
       await tx`select pg_advisory_xact_lock(${ORG_LOCK_KEY})`
       const [org] = await tx`insert into orgs (name, description)
         select ${o.name}, ${o.description} where not exists (select 1 from orgs o where ${this.notTenant("o.id", has)}) returning *`
@@ -474,7 +474,7 @@ export class PostgresStore implements BrainStore {
     }) as Promise<Org | null>
   }
 
-  /** Nouvelle organisation et ses zones par défaut, dans la transaction `tx`. */
+  /** New organization and its default zones, in the `tx` transaction. */
   private async insertOrg(tx: any, o: { name: string; description: string }): Promise<Org> {
     const [org] = await tx`insert into orgs (name, description) values (${o.name}, ${o.description}) returning *`
     await this.insertDefaultZones(tx, org.id)
@@ -492,7 +492,7 @@ export class PostgresStore implements BrainStore {
     return (await this.org()).id
   }
 
-  /** Requête sur join_requests : table absente (migration non appliquée) → erreur de configuration claire (503). */
+  /** Query on join_requests: missing table (migration not applied) → clear configuration error (503). */
   private async joins<T>(run: () => Promise<T>): Promise<T> {
     try {
       return await run()
@@ -527,7 +527,7 @@ export class PostgresStore implements BrainStore {
 
   async getJoinCode() {
     const key = JOIN_PREFIX + (await this.orgId())
-    // Insertion « une seule fois » : deux admins qui ouvrent la page ensemble voient le même code.
+    // "Only once" insertion: two admins opening the page together see the same code.
     await this.settings(() => this.sql`insert into brain_settings (key, value) values (${key}, ${newJoinCode()}) on conflict (key) do nothing`)
     const [r] = await this.sql`select value from brain_settings where key = ${key}`
     return r.value as string
@@ -649,7 +649,7 @@ export class PostgresStore implements BrainStore {
     })
   }
 
-  /** Vrai si la migration 20261017000006 (superseded_by, embedding) est appliquée ; sinon les requêtes s'en passent. */
+  /** True if the 20261017000006 migration (superseded_by, embedding) is applied; otherwise queries do without it. */
   private async hasQuality(): Promise<boolean> {
     if (this.qualityColumns !== null) return this.qualityColumns
     const [r] = await this.sql`select exists (select 1 from information_schema.columns where table_name = 'knowledge_items' and column_name = 'superseded_by') as ok`
@@ -657,7 +657,7 @@ export class PostgresStore implements BrainStore {
     return this.qualityColumns
   }
 
-  /** Colonnes external_* de tasks (migration des connecteurs) : absentes, aucune tâche n'est importée. */
+  /** external_* columns of tasks (connectors migration): absent, no task is imported. */
   private async hasTaskExternal(): Promise<boolean> {
     if (this.taskExternalColumns !== null) return this.taskExternalColumns
     const [r] = await this.sql`select exists (select 1 from information_schema.columns where table_name = 'tasks' and column_name = 'external_source') as ok`
@@ -665,7 +665,7 @@ export class PostgresStore implements BrainStore {
     return this.taskExternalColumns
   }
 
-  /** Fragment « non remplacée » (table nue ou alias `k`), vide tant que la colonne n'existe pas. */
+  /** "Not superseded" fragment (bare table or alias `k`), empty while the column does not exist. */
   private live(hasQuality: boolean, alias: "" | "k" = "") {
     if (!hasQuality) return this.sql``
     return alias === "k" ? this.sql`and k.superseded_by is null` : this.sql`and superseded_by is null`
@@ -707,14 +707,14 @@ export class PostgresStore implements BrainStore {
     const sql = this.sql
     const author = opts.authorId && UUID_RE.test(opts.authorId) ? opts.authorId : null
     if (terms.length === 0 || (zones.length === 0 && !author)) return []
-    // Zones lisibles, plus les items de l'auteur lui-même (droit de regard), quelle que soit leur zone.
+    // Readable zones, plus the author's own items (right of review), whatever their zone.
     const scope =
       zones.length && author
         ? sql`(k.zone in ${sql(zones)} or k.author_id = ${author})`
         : zones.length
           ? sql`k.zone in ${sql(zones)}`
           : sql`k.author_id = ${author}`
-    // Score pondéré par la part des termes trouvés, comme le stockage fichier.
+    // Score weighted by the share of terms found, like the file store.
     const rows = await sql`
       select k.*, ts_rank_cd(k.search, q) * (
           (select count(*) from unnest(${sql.array(terms)}::text[]) t where k.search @@ to_tsquery('simple', t))::float / ${terms.length}
@@ -743,12 +743,12 @@ export class PostgresStore implements BrainStore {
 
   async markSuperseded(oldId: string, newId: string) {
     if (!UUID_RE.test(oldId) || !UUID_RE.test(newId)) return false
-    // Migration « qualité » pas encore appliquée : la nouvelle connaissance est déjà enregistrée, on ne fait pas échouer
-    // l'ingestion pour autant (le poste verrait une synchro en échec) ; l'ancienne reste simplement proposée.
+    // "Quality" migration not applied yet: the new knowledge item is already saved, ingestion does not fail because of
+    // it (the computer would see a failed sync); the old one simply keeps being suggested.
     if (!(await this.hasQuality())) {
       if (!this.qualityWarned) {
         this.qualityWarned = true
-        console.error(`[store] ${QUALITY_MISSING_MESSAGE} Les connaissances remplacées restent proposées en attendant.`)
+        console.error(`[store] ${QUALITY_MISSING_MESSAGE} Superseded knowledge keeps being suggested in the meantime.`)
       }
       return false
     }
@@ -812,7 +812,7 @@ export class PostgresStore implements BrainStore {
     const org = await this.orgId()
     const external = await this.hasTaskExternal()
     return this.sql.begin(async (tx: any) => {
-      // Avant l'item : la clé étrangère (on delete set null) détacherait sinon ses tâches, qui resteraient au tableau.
+      // Before the item: the foreign key (on delete set null) would otherwise detach its tasks, which would stay on the board.
       await tx`delete from tasks where org_id = ${org} and source_item_id = ${id} ${external ? tx`and external_source is null` : tx``}`
       const rows = await tx`delete from knowledge_items where id = ${id} and org_id = ${org} returning id`
       return rows.length > 0
@@ -887,7 +887,7 @@ export class PostgresStore implements BrainStore {
             ${e.session_id ?? null}, ${e.at}) returning *`
         out.push(toEvent(r))
       }
-      // Réveille les flux temps réel de toutes les instances (livré au commit ; sans migration ni déclencheur).
+      // Wakes up the real-time streams of all instances (delivered on commit; without migration or trigger).
       if (out.length) await tx`select pg_notify(${EVENTS_CHANNEL}, ${org})`
       return out
     }) as Promise<AgentEvent[]>
@@ -949,7 +949,7 @@ export class PostgresStore implements BrainStore {
             returning *`
           out.push(toTask(r))
         }
-        // Fermées ou supprimées chez l'outil : faites ici.
+        // Closed or deleted in the tool: done here.
         const closed = await tx`update tasks set status = 'done', updated_at = now()
           where org_id = ${org} and external_source = ${source} and status = 'open' and external_id is not null
           ${ids.length ? tx`and external_id not in ${tx(ids)}` : tx``} returning *`
@@ -999,7 +999,7 @@ export class PostgresStore implements BrainStore {
     return r ? toAutomation(r) : null
   }
 
-  /** Requête sur skills : table absente (migration non appliquée) → erreur de configuration claire (503). */
+  /** Query on skills: missing table (migration not applied) → clear configuration error (503). */
   private async skills<T>(run: () => Promise<T>): Promise<T> {
     try {
       return await run()
@@ -1027,7 +1027,7 @@ export class PostgresStore implements BrainStore {
   }
   async publishSkill(s: NewSkill) {
     const org = await this.orgId()
-    // Même nom : nouvelle version (l'auteur d'origine est gardé), en une instruction (deux publications simultanées s'enchaînent).
+    // Same name: new version (the original author is kept), in one statement (two simultaneous publications chain).
     const [r] = await this.skills(() => this.sql`insert into skills (org_id, name, description, zone, files, author_id, updated_by)
       values (${org}, ${s.name}, ${s.description}, ${s.zone}, ${this.sql.json(s.files)}, ${s.publisher_id}, ${s.publisher_id})
       on conflict (org_id, name) do update set description = excluded.description, zone = excluded.zone, files = excluded.files,
@@ -1061,7 +1061,7 @@ export class PostgresStore implements BrainStore {
   async getSessionSecret() {
     if (this.secret) return this.secret
     try {
-      // Plusieurs instances peuvent démarrer en même temps : la première insertion gagne, toutes relisent la même valeur.
+      // Several instances may start at the same time: the first insertion wins, all re-read the same value.
       await this.sql`insert into brain_settings (key, value) values ('session_secret', ${randomBytes(32).toString("hex")})
         on conflict (key) do nothing`
       const [r] = await this.sql`select value from brain_settings where key = 'session_secret'`
@@ -1073,7 +1073,7 @@ export class PostgresStore implements BrainStore {
     }
   }
 
-  /** Requête sur brain_settings : table absente (migration non appliquée) → erreur de configuration claire (503). */
+  /** Query on brain_settings: missing table (migration not applied) → clear configuration error (503). */
   private async settings<T>(run: () => Promise<T>): Promise<T> {
     try {
       return await run()
@@ -1118,13 +1118,13 @@ export class PostgresStore implements BrainStore {
     return r?.value === "done"
   }
 
-  /** Purge et nouvelle organisation dans UNE transaction : aucune autre instance ne voit jamais la table vide. */
+  /** Purge and new organization in ONE transaction: no other instance ever sees the table empty. */
   async reset(org: { name: string; description: string }) {
-    if (this.fixedOrgId) throw new Error("reset n'est disponible que sur le stockage racine.")
+    if (this.fixedOrgId) throw new Error("reset is only available on the root store.")
     const has = await this.hasSettings()
     const created = (await this.sql.begin(async (tx: any) => {
       await tx`select pg_advisory_xact_lock(${ORG_LOCK_KEY})`
-      // Les entreprises créées depuis /creer survivent au reseed de la démo.
+      // Companies created from /create survive the demo reseed.
       await tx`delete from orgs where ${this.notTenant("orgs.id", has)}`
       return this.insertOrg(tx, org)
     })) as Org

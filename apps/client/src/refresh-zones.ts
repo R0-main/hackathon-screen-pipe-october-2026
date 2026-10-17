@@ -1,6 +1,6 @@
-// `refresh-zones` : le passage quotidien « nouvelles zones » fait par le Claude Code de l'entreprise (`claude -p`, son
-// abonnement, jeton `claude setup-token` en CI), au lieu de la clé API du serveur. Le poste (ou la CI) lit la matière,
-// Claude propose, le cerveau applique avec ses garde-fous. Le jeton Claude ne quitte jamais le poste ou la CI.
+// `refresh-zones`: the daily "new zones" run done by the company's Claude Code (`claude -p`, its
+// subscription, `claude setup-token` token in CI), instead of the server's API key. The computer (or CI) reads the material,
+// Claude proposes, the brain applies with its safeguards. The Claude token never leaves the computer or the CI.
 
 import { buildCliNewZonesPrompt, parseNewZonesJson, truncate, type NewZoneProposal, type NewZonesInput } from "@brain/core"
 import { ApiError, BrainApi } from "./api"
@@ -13,51 +13,51 @@ export const ZONES_CLI_TIMEOUT_MS = 300_000
 type Log = (s: string) => void
 
 const SKIPPED: Record<string, string> = {
-  max_zones: "l'entreprise a déjà 12 zones, le plafond",
-  too_few_items: "pas assez de connaissances récentes (12 au moins sur 30 jours)",
+  max_zones: "the company already has 12 zones, the cap",
+  too_few_items: "not enough recent knowledge (at least 12 over 30 days)",
 }
 
 function adminOnly(err: unknown, what: string): never {
   if (err instanceof ApiError && err.status === 403) {
-    throw new UserError(`refresh-zones est réservé aux administrateurs du cerveau : votre jeton n'a pas les droits admin (${what} refusé, 403).`)
+    throw new UserError(`refresh-zones is reserved to the brain's administrators: your token does not have admin rights (${what} refused, 403).`)
   }
   if (err instanceof ApiError && err.status === 404) {
-    throw new UserError("Ce cerveau ne connaît pas encore refresh-zones (route absente, 404) : mettez le serveur à jour.")
+    throw new UserError("This brain does not know refresh-zones yet (route missing, 404): update the server.")
   }
   throw err
 }
 
-/** Propositions de Claude : `claude -p` (abonnement, jeton de la config ou CLAUDE_CODE_OAUTH_TOKEN) si la CLI est là, sinon le SDK. */
+/** Claude's proposals: `claude -p` (subscription, token from the config or CLAUDE_CODE_OAUTH_TOKEN) if the CLI is there, otherwise the SDK. */
 export async function proposeZones(cfg: Config, input: NewZonesInput, opts: { timeoutMs?: number; log?: Log } = {}): Promise<{ proposals: NewZoneProposal[]; via: string }> {
   const claudePath = cfg.use_claude_cli !== false ? findOnPath("claude") : null
   if (claudePath) {
     const cli = claudeCliOptions(cfg)
-    const token = cli.oauthToken ? ", jeton Claude Code de la config" : process.env.CLAUDE_CODE_OAUTH_TOKEN ? ", jeton CLAUDE_CODE_OAUTH_TOKEN" : ""
-    opts.log?.(`Claude Code (\`claude -p\`, ${claudePath}${token}) : analyse des connaissances…`)
+    const token = cli.oauthToken ? ", Claude Code token from the config" : process.env.CLAUDE_CODE_OAUTH_TOKEN ? ", CLAUDE_CODE_OAUTH_TOKEN token" : ""
+    opts.log?.(`Claude Code (\`claude -p\`, ${claudePath}${token}): analyzing the knowledge…`)
     const run = await runClaudeCli(claudePath, buildCliNewZonesPrompt(input), opts.timeoutMs ?? ZONES_CLI_TIMEOUT_MS, cli)
     const fail = cliFailure(run)
     if (fail) {
       const detail = maskOwnSecrets(fail.error, ownSecrets(cfg)).text
-      if (fail.failure === "auth") throw new UserError(`${claudeAuthHelp(detail)} Puis relancez \`refresh-zones\`.`)
-      throw new UserError(`\`claude -p\` a échoué : ${detail}. Vérifiez la connexion de Claude Code (ou CLAUDE_CODE_OAUTH_TOKEN).`)
+      if (fail.failure === "auth") throw new UserError(`${claudeAuthHelp(detail)} Then run \`refresh-zones\` again.`)
+      throw new UserError(`\`claude -p\` failed: ${detail}. Check Claude Code's sign-in (or CLAUDE_CODE_OAUTH_TOKEN).`)
     }
     const proposals = parseNewZonesJson(run.stdout)
-    if (!proposals) throw new UserError(`Réponse de \`claude -p\` illisible (pas de JSON « zones ») : ${truncate(maskOwnSecrets(run.stdout.trim(), ownSecrets(cfg)).text, 200) || "sortie vide"}`)
+    if (!proposals) throw new UserError(`Unreadable \`claude -p\` answer (no "zones" JSON): ${truncate(maskOwnSecrets(run.stdout.trim(), ownSecrets(cfg)).text, 200) || "empty output"}`)
     return { proposals, via: "Claude Code (`claude -p`)" }
   }
   const key = apiKey(cfg)
   if (key) {
-    opts.log?.("Claude (API Anthropic) : analyse des connaissances…")
+    opts.log?.("Claude (Anthropic API): analyzing the knowledge…")
     const { createClaude, proposeNewZones } = await import("@brain/core/claude")
     const client = createClaude(key)
     const proposals = client ? await proposeNewZones(client, input) : null
-    if (!proposals) throw new UserError("Claude (API Anthropic) n'a pas répondu (clé invalide, quota ou refus).")
-    return { proposals, via: "Claude (API Anthropic)" }
+    if (!proposals) throw new UserError("Claude (Anthropic API) did not answer (invalid key, quota or refusal).")
+    return { proposals, via: "Claude (Anthropic API)" }
   }
-  throw new UserError("Ni CLI `claude` dans le PATH ni clé API : installez Claude Code (`npm install -g @anthropic-ai/claude-code`) et donnez-lui un jeton (`claude setup-token`).")
+  throw new UserError("Neither a `claude` CLI in the PATH nor an API key: install Claude Code (`npm install -g @anthropic-ai/claude-code`) and give it a token (`claude setup-token`).")
 }
 
-/** `brain.mjs refresh-zones [--dry-run]` (admin) : matière → Claude ici → POST /api/admin/zones/auto. */
+/** `brain.mjs refresh-zones [--dry-run]` (admin): material → Claude here → POST /api/admin/zones/auto. */
 export async function cmdRefreshZones(opts: { dryRun?: boolean; timeoutMs?: number } = {}, log: Log = console.log): Promise<number> {
   const cfg = requireConfig()
   const api = new BrainApi(cfg.url, cfg.token)
@@ -68,13 +68,13 @@ export async function cmdRefreshZones(opts: { dryRun?: boolean; timeoutMs?: numb
     adminOnly(err, "GET /api/admin/zones/auto/input")
   }
   if ("skipped" in material) {
-    log(`refresh-zones : rien à faire, ${SKIPPED[material.skipped] ?? material.skipped}.`)
+    log(`refresh-zones: nothing to do, ${SKIPPED[material.skipped] ?? material.skipped}.`)
     return 0
   }
   const input = material.input
-  log(`refresh-zones — ${input.company_name || "entreprise"} : ${input.zones.length} zone(s), ${input.items.length} connaissance(s) des 30 derniers jours.`)
+  log(`refresh-zones — ${input.company_name || "company"}: ${input.zones.length} zone(s), ${input.items.length} knowledge item(s) from the last 30 days.`)
   const { proposals, via } = await proposeZones(cfg, input, { timeoutMs: opts.timeoutMs, log })
-  // Numéros → identifiants : la matière du serveur peut bouger d'ici l'envoi, les identifiants restent justes.
+  // Numbers → ids: the server's material can change before sending, the ids stay right.
   const byRef = new Map(input.items.map((i) => [i.ref, i.id]))
   const zones = proposals.map((p) => ({
     name: p.name,
@@ -83,13 +83,13 @@ export async function cmdRefreshZones(opts: { dryRun?: boolean; timeoutMs?: numb
     item_ids: p.items.map((r) => byRef.get(r)).filter((id): id is string => Boolean(id)),
   }))
   if (zones.length === 0) {
-    log(`${via} : aucune nouvelle zone ne s'impose.`)
+    log(`${via}: no new zone is needed.`)
     if (opts.dryRun) return 0
   } else {
-    for (const z of zones) log(`  • ${z.name} — ${z.description} (${z.item_ids.length} connaissance${z.item_ids.length > 1 ? "s" : ""})`)
+    for (const z of zones) log(`  • ${z.name} — ${z.description} (${z.item_ids.length} knowledge item${z.item_ids.length === 1 ? "" : "s"})`)
   }
   if (opts.dryRun) {
-    log("Rien n'a été envoyé (simulation). Sans --dry-run, le cerveau crée ces zones s'il les juge solides (4 connaissances au moins, pas de doublon).")
+    log("Nothing was sent (dry run). Without --dry-run, the brain creates these zones if it finds them solid (at least 4 knowledge items, no duplicate).")
     return 0
   }
   let run
@@ -98,8 +98,8 @@ export async function cmdRefreshZones(opts: { dryRun?: boolean; timeoutMs?: numb
   } catch (err) {
     adminOnly(err, "POST /api/admin/zones/auto")
   }
-  if (run.status === "created") log(`Zone(s) créée(s) : ${run.zones.map((z) => `${z.name} (${z.items} connaissance${z.items > 1 ? "s" : ""} rangée${z.items > 1 ? "s" : ""})`).join(", ")}.`)
-  else if (run.status === "unchanged") log(zones.length ? "Le cerveau n'a rien créé : les propositions ne passaient pas ses garde-fous (trop maigres ou en doublon)." : "Rien de créé.")
-  else log(`Le cerveau n'a rien fait : ${SKIPPED[run.reason] ?? run.reason}.`)
+  if (run.status === "created") log(`Zone(s) created: ${run.zones.map((z) => `${z.name} (${z.items} knowledge item${z.items === 1 ? "" : "s"} filed)`).join(", ")}.`)
+  else if (run.status === "unchanged") log(zones.length ? "The brain created nothing: the proposals did not pass its safeguards (too thin or duplicated)." : "Nothing created.")
+  else log(`The brain did nothing: ${SKIPPED[run.reason] ?? run.reason}.`)
   return 0
 }

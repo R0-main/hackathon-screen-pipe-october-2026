@@ -1,12 +1,12 @@
-// Client HTTP de l'API du cerveau (jeton Bearer personnel).
+// HTTP client of the brain's API (personal Bearer token).
 
 import type { AgentEventInput, AgentName, KnowledgeItemInput, ModerationInput, ModerationVerdict, NewZonesInput, Skill, SkillFile, StatusInput, SyncReport, ZoneStatus } from "@brain/core"
 import type { ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
 
-// Réponses de l'API lues par les outils MCP : partagées avec l'endpoint MCP du cerveau (@brain/core/mcp).
+// API responses read by the MCP tools: shared with the brain's MCP endpoint (@brain/core/mcp).
 export type { ApiItem, ApiZone, CompanyStatusResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
 
-/** Bilan d'un passage du modérateur (POST /api/admin/moderation). */
+/** Outcome of a moderator run (POST /api/admin/moderation). */
 export type ModerationRunResult = { status: string; reviewed: number; edited: number; rejected: number; remaining?: number }
 
 export class ApiError extends Error {
@@ -34,7 +34,7 @@ export type Workflow = {
   minutes_saved_per_week: number
 }
 
-/** Un skill reçu du cerveau : ceux de toute l'entreprise et ceux des cortex que la personne lit. */
+/** A skill received from the brain: the company-wide ones and those of the cortices the person reads. */
 export type ApiSkill = Skill & { can_manage?: boolean }
 
 export type SkillPush = { name: string; description: string; zone?: string | null; files: SkillFile[] }
@@ -65,8 +65,8 @@ export class BrainApi {
       })
     } catch (err) {
       const e = err as Error
-      const why = e.name === "TimeoutError" || e.name === "AbortError" ? `pas de réponse après ${timeoutMs} ms` : (causeMessage(e) ?? e.message)
-      throw new ApiError(`Impossible de joindre le cerveau (${this.url}) : ${why}`, 0)
+      const why = e.name === "TimeoutError" || e.name === "AbortError" ? `no response after ${timeoutMs} ms` : (causeMessage(e) ?? e.message)
+      throw new ApiError(`Cannot reach the brain (${this.url}): ${why}`, 0)
     }
     const text = await res.text()
     let data: unknown = null
@@ -78,9 +78,9 @@ export class BrainApi {
     if (!res.ok) {
       const msg = (data as { error?: string } | null)?.error
       const details = (data as { details?: unknown } | null)?.details
-      if (res.status === 401) throw new ApiError("Jeton refusé par le cerveau (401) : relancez `init` avec un jeton valide.", 401)
+      if (res.status === 401) throw new ApiError("Token refused by the brain (401): run `init` again with a valid token.", 401)
       throw new ApiError(
-        `Le cerveau a répondu ${res.status}${msg ? ` : ${msg}` : ""}${details ? ` ${JSON.stringify(details).slice(0, 300)}` : ""}`,
+        `The brain answered ${res.status}${msg ? `: ${msg}` : ""}${details ? ` ${JSON.stringify(details).slice(0, 300)}` : ""}`,
         res.status,
       )
     }
@@ -99,36 +99,36 @@ export class BrainApi {
   status() {
     return this.request<CompanyStatusResult>("GET", "/api/status")
   }
-  /** Admins : matière du résumé « où en est la boîte » (30 derniers jours), pour le générer sur ce poste. */
+  /** Admins: material for the "where the company stands" summary (last 30 days), to generate it on this computer. */
   statusInput() {
     return this.request<StatusInput>("GET", "/api/status/input", undefined, 30000)
   }
-  /** Admins : enregistre un résumé d'état produit sur ce poste (masqué et validé par le cerveau). */
+  /** Admins: saves a status summary produced on this computer (redacted and validated by the brain). */
   saveStatus(status: { headline: string; zones: ZoneStatus[] }) {
     return this.request<NonNullable<CompanyStatusResult>>("POST", "/api/status", { status }, 30000)
   }
-  /** Admins : matière d'un passage « nouvelles zones », ou la raison de ne rien faire. */
+  /** Admins: material for a "new zones" run, or the reason to do nothing. */
   newZonesInput() {
     return this.request<{ input: NewZonesInput } | { skipped: string }>("GET", "/api/admin/zones/auto/input", undefined, 30000)
   }
-  /** Admins : applique les zones proposées par Claude sur ce poste (mêmes garde-fous qu'un passage du serveur). */
+  /** Admins: applies the zones proposed by Claude on this computer (same safeguards as a server run). */
   applyNewZones(zones: { name: string; description: string; keywords: string[]; item_ids: string[] }[]) {
     return this.request<NewZonesRunResult>("POST", "/api/admin/zones/auto", { zones }, 60000)
   }
-  /** Admins : connaissances arrivées depuis le dernier passage du modérateur, ou `{skipped}` s'il n'y a rien à relire. */
+  /** Admins: knowledge that arrived since the moderator's last run, or `{skipped}` if there is nothing to review. */
   moderationInput() {
     return this.request<{ input: ModerationInput; remaining: number } | { skipped: string }>("GET", "/api/admin/moderation/input", undefined, 30000)
   }
-  /** Admins : applique les décisions prises ici par Claude (`ids` : les connaissances relues, dans l'ordre). */
+  /** Admins: applies the decisions made here by Claude (`ids`: the knowledge reviewed, in order). */
   applyModeration(ids: string[], verdicts: (Omit<ModerationVerdict, "ref"> & { id: string })[]) {
     return this.request<ModerationRunResult>("POST", "/api/admin/moderation", { ids, verdicts }, 120000)
   }
-  /** Outils des connecteurs MCP de l'entreprise ouverts aux agents. */
+  /** The company's MCP connector tools open to agents. */
   connectedTools(input: { connector?: string; query?: string }) {
     const q = new URLSearchParams({ ...(input.connector ? { connector: input.connector } : {}), ...(input.query ? { query: input.query } : {}) })
     return this.request<ConnectedTools>("GET", `/api/connected-tools${q.toString() ? `?${q}` : ""}`, undefined, 60000)
   }
-  /** Appelle un outil d'un connecteur, avec le compte branché par l'admin. */
+  /** Calls a connector tool, with the account the admin connected. */
   callConnectedTool(input: { connector: string; tool: string; arguments: Record<string, unknown> }) {
     return this.request<ConnectedCall>("POST", "/api/connected-tools/call", input, 70000)
   }
@@ -145,18 +145,18 @@ export class BrainApi {
   automations(workflows: Workflow[]) {
     return this.request<{ saved: number }>("POST", "/api/automations", { workflows })
   }
-  /** Compte rendu d'une synchro (réussie ou non) pour la page Supervision. */
+  /** Report of a sync (successful or not) for the Monitoring page. */
   report(report: SyncReport) {
     return this.request<{ saved: boolean; health: string }>("POST", "/api/sync/report", report, 10000)
   }
   skills() {
     return this.request<{ can_publish: boolean; skills: ApiSkill[] }>("GET", "/api/skills", undefined, 30000)
   }
-  /** Publie un skill (droit de publication requis) ; même nom : version suivante. */
+  /** Publishes a skill (publishing permission required); same name: next version. */
   publishSkill(skill: SkillPush) {
     return this.request<Skill>("POST", "/api/skills", { ...skill, agent: "brain-sync" }, 60000)
   }
-  /** Lien de connexion au dashboard, valable 2 minutes (ouvert par `setup` dans le navigateur). */
+  /** Sign-in link to the dashboard, valid for 2 minutes (opened by `setup` in the browser). */
   loginLink() {
     return this.request<{ path: string; expires_in: number }>("POST", "/api/session/link")
   }
@@ -165,7 +165,7 @@ export class BrainApi {
 function causeMessage(e: Error): string | undefined {
   const cause = (e as { cause?: { code?: string; message?: string } }).cause
   if (!cause) return undefined
-  if (cause.code === "ECONNREFUSED") return "connexion refusée (le serveur est-il lancé ?)"
-  if (cause.code === "ENOTFOUND") return "adresse introuvable"
+  if (cause.code === "ECONNREFUSED") return "connection refused (is the server running?)"
+  if (cause.code === "ENOTFOUND") return "address not found"
   return cause.message ?? cause.code
 }

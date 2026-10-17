@@ -11,7 +11,7 @@ export const GET = withViewer(async () => json({ questions: ONBOARDING_QUESTIONS
 
 const Schema = z.object({ answers: z.record(z.string(), z.string().max(6000)) })
 
-/** Interview + liens → brouillon de cerveau (zones + premières connaissances), à valider avant application. */
+/** Interview + links → brain draft (zones + first knowledge), to validate before applying. */
 export const POST = withViewer(
   async (req) => {
     const body = await parseBody(req, Schema)

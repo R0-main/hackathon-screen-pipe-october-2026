@@ -29,8 +29,8 @@ const WorkflowSchema = z.object({
 })
 
 /**
- * brain-sync remonte ici les workflows répétitifs détectés en local par Screenpipe. Titre, description et horaire sont
- * re-masqués côté serveur (secrets, emails, numéros…), même si le poste l'a déjà fait (anciens clients).
+ * brain-sync reports here the repetitive workflows detected locally by Screenpipe. Title, description and schedule are
+ * redacted again on the server (secrets, emails, numbers…), even if the workstation already did it (older clients).
  */
 export const POST = withViewer(async (req, viewer) => {
   const body = await parseBody(req, WorkflowSchema)
@@ -44,7 +44,7 @@ export const POST = withViewer(async (req, viewer) => {
       user_id: viewer.real.id,
       zone: w.zone && known.has(w.zone) ? w.zone : undefined,
       title: clean(w.title, 200),
-      description: w.description ? clean(w.description, 1000) : `Workflow répétitif détecté par Screenpipe sur le poste de ${viewer.real.name}.`,
+      description: w.description ? clean(w.description, 1000) : `Repetitive workflow detected by Screenpipe on ${viewer.real.name}'s workstation.`,
       schedule: w.schedule ? clean(w.schedule, 120) : undefined,
       evidence: { occurrences: w.occurrences, days: w.days },
       minutes_saved_per_week: w.minutes_saved_per_week,

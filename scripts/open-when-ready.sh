@@ -1,6 +1,6 @@
 #!/bin/sh
-# Ouvre le navigateur sur le cerveau dès que le serveur répond (lancé en arrière-plan par `make dev`).
-# BRAIN_OPEN=0 dans .env pour ne rien ouvrir.
+# Opens the browser on the brain as soon as the server answers (run in the background by `make dev`).
+# BRAIN_OPEN=0 in .env to open nothing.
 url=$1
 [ "${BRAIN_OPEN:-1}" = "0" ] && exit 0
 i=0

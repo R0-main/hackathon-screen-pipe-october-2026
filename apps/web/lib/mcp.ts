@@ -1,6 +1,6 @@
-// Endpoint MCP du cerveau : un serveur MCP par entreprise, à /api/mcp/<entreprise>/<jeton> (HTTP « streamable », sans
-// état, réponses JSON). Claude Code et Codex s'y branchent directement (`brain setup` l'enregistre sous le nom de
-// l'entreprise) : mêmes outils que le serveur MCP du poste (@brain/core/mcp), avec les droits du jeton.
+// The brain's MCP endpoint: one MCP server per company, at /api/mcp/<company>/<token> ("streamable" HTTP, stateless,
+// JSON responses). Claude Code and Codex plug into it directly (`brain setup` registers it under the company's name):
+// same tools as the computer's MCP server (@brain/core/mcp), with the token's rights.
 
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import type { Org, Profile } from "@brain/core"
@@ -14,25 +14,26 @@ import * as whoamiRoute from "@/app/api/whoami/route"
 import * as zoneRoute from "@/app/api/zones/[id]/route"
 import * as zonesRoute from "@/app/api/zones/route"
 import { profileFromToken } from "./auth"
+import { possessive } from "./install-prompt"
 import { recordIncident } from "./monitoring"
 import { storeForOrg } from "./store"
 
 type Route = (req: Request, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>
 
 /**
- * Les outils appellent les routes de l'API sur place, comme le ferait le poste avec son jeton : mêmes droits par zone,
- * même masquage, mêmes événements (la zone interrogée s'allume), sans aller-retour réseau.
+ * The tools call the API routes in place, as the computer would with its token: same per-zone rights, same redaction,
+ * same events (the queried zone lights up), without a network round trip.
  */
 function routesApi(token: string): BrainToolsApi {
   const call = async <T>(route: Route, method: "GET" | "POST", path: string, body?: unknown, params: Record<string, string> = {}): Promise<T> => {
-    const req = new Request(`http://cerveau.local${path}`, {
+    const req = new Request(`http://brain.local${path}`, {
       method,
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
     const res = await route(req, { params: Promise.resolve(params) })
     const data = (await res.json().catch(() => null)) as { error?: string } | null
-    if (!res.ok) throw new Error(`Le cerveau a répondu ${res.status}${data?.error ? ` : ${data.error}` : ""}`)
+    if (!res.ok) throw new Error(`The brain answered ${res.status}${data?.error ? `: ${data.error}` : ""}`)
     return data as T
   }
   return {
@@ -50,12 +51,12 @@ function routesApi(token: string): BrainToolsApi {
   }
 }
 
-/** Consigne du serveur : de quelle entreprise il s'agit (son nom et sa description guident le modèle), pour qui. */
+/** The server's instruction: which company it is (its name and description guide the model), for whom. */
 export function mcpInstructions(org: Pick<Org, "name" | "description">, profile: Pick<Profile, "name">): string {
   return (
-    `Cerveau d'entreprise de ${org.name}${org.description?.trim() ? ` : ${org.description.trim().replace(/[.\s]+$/, "")}` : ""}. ` +
-    `Connecté au nom de ${profile.name}, avec ses droits par zone. Interrogez-le (search_brain) avant de deviner dès qu'une ` +
-    `question touche au contexte de ${org.name} (décisions, procédures, clients, projets, outils) ; remember y enregistre une connaissance.`
+    `${possessive(org.name)} company brain${org.description?.trim() ? `: ${org.description.trim().replace(/[.\s]+$/, "")}` : ""}. ` +
+    `Connected on behalf of ${profile.name}, with their per-zone rights. Query it (search_brain) before guessing whenever a ` +
+    `question touches ${possessive(org.name)} context (decisions, procedures, customers, projects, tools); remember saves knowledge in it.`
   )
 }
 
@@ -63,26 +64,26 @@ function rpcError(status: number, message: string, headers: Record<string, strin
   return Response.json({ jsonrpc: "2.0", error: { code: -32000, message }, id: null }, { status, headers })
 }
 
-/** Une requête MCP pour l'entreprise `orgId`, avec le jeton personnel d'un de ses membres. */
+/** An MCP request for the `orgId` company, with the personal token of one of its members. */
 export async function handleMcp(req: Request, orgId: string, token: string | null | undefined): Promise<Response> {
-  // Sans état : pas de flux SSE ouvert par GET, pas de session à fermer par DELETE.
-  if (req.method !== "POST") return rpcError(405, "Serveur MCP sans état : requêtes POST uniquement.", { allow: "POST" })
+  // Stateless: no SSE stream opened by GET, no session to close by DELETE.
+  if (req.method !== "POST") return rpcError(405, "Stateless MCP server: POST requests only.", { allow: "POST" })
   try {
     const profile = token ? await profileFromToken(token) : null
-    if (!token || !profile || profile.org_id !== orgId) return rpcError(401, "Jeton invalide pour cette entreprise : relancez `brain setup` avec un jeton valide.")
+    if (!token || !profile || profile.org_id !== orgId) return rpcError(401, "Invalid token for this company: rerun `brain setup` with a valid token.")
     const org = await storeForOrg(orgId).getOrg()
     const server = createBrainMcpServer({
       instructions: mcpInstructions(org, profile),
       open: () => ({ api: routesApi(token), key: orgId }),
       sourceApp: "mcp",
     })
-    // Un transport neuf par requête (mode sans état) : rien n'est partagé entre deux clients.
+    // A new transport per request (stateless mode): nothing is shared between two clients.
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     await server.connect(transport)
     return await transport.handleRequest(req)
   } catch (err) {
     console.error("[mcp]", err)
     recordIncident("/api/mcp", err)
-    return rpcError(500, "Erreur interne du cerveau.")
+    return rpcError(500, "Internal brain error.")
   }
 }

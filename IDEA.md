@@ -1,59 +1,59 @@
-# NOS Brainer — le cerveau numérique de ta boîte
+# NOS Brainer — your company's digital brain
 
-> Le nom : un *no-brainer*. Tu colles un prompt dans Claude Code, et ta boîte a un cerveau.
+> The name: a *no-brainer*. You paste a prompt into Claude Code, and your company has a brain.
 
-> Hackathon Screenpipe — « Build Agents That Remember », 42 Paris, octobre 2026
+> Screenpipe hackathon — "Build Agents That Remember", 42 Paris, October 2026
 
-## Le pitch
+## The pitch
 
-Chaque employé utilise déjà l'IA (Claude Code, Codex, ChatGPT…), mais tout ce contexte reste enfermé dans des sessions individuelles et se perd.
-On branche **Screenpipe** sur le poste de chaque utilisateur pour capter ces sessions, et on les fait converger vers **un cerveau unique de l'entreprise** : toute sa connaissance, visualisée sur un dashboard, avec des accès par équipe.
+Every employee already uses AI (Claude Code, Codex, ChatGPT…), but all that context stays locked in individual sessions and gets lost.
+We plug **Screenpipe** into each user's computer to capture these sessions, and we make them converge into **a single company brain**: all of its knowledge, shown on a dashboard, with per-team access.
 
-Screenpipe devient le **pipe** entre le PC de l'utilisateur, ses agents IA et le cerveau de l'entreprise.
+Screenpipe becomes the **pipe** between the user's computer, their AI agents and the company's brain.
 
-## Comment ça marche
+## How it works
 
-### 1. Onboarding de l'entreprise (première création du cerveau)
-- **Interview de 5-10 min** pour présenter l'entreprise : activité, équipes, objectifs, liens utiles.
-- **Scraping** des liens fournis (site, docs, etc.).
-- **Connecteurs** : Notion, Calendar, et toutes les sources de données possibles.
-- Résultat : une première version du cerveau, avant même que quelqu'un ait utilisé l'outil.
+### 1. Company onboarding (first creation of the brain)
+- **5-10 min interview** to present the company: activity, teams, goals, useful links.
+- **Scraping** of the links provided (website, docs, etc.).
+- **Connectors**: Notion, Calendar, and every possible data source.
+- Result: a first version of the brain, before anyone has even used the tool.
 
-### 2. Onboarding de chaque utilisateur
-- On fournit **un prompt à coller dans Claude Code** : une seule commande installe Screenpipe, demande juste les autorisations macOS (écran, et accessibilité en option ; pas de micro), branche le MCP et les hooks, puis **ouvre directement le cerveau** dans le navigateur, où l'on voit le poste s'allumer et le cerveau s'alimenter au fil du travail.
-- Ensuite, rien à faire : **en utilisant simplement Claude / Codex au quotidien**, l'utilisateur alimente le cerveau.
+### 2. Onboarding of each user
+- We provide **a prompt to paste into Claude Code**: a single command installs Screenpipe, only asks for the macOS permissions (screen, and accessibility as an option; no microphone), connects the MCP and the hooks, then **opens the brain directly** in the browser, where you see the computer light up and the brain fill up as work goes on.
+- Then, nothing to do: **just by using Claude / Codex day to day**, the user feeds the brain.
 
-### 3. Le dashboard
-- **Un gros cerveau visuel** : chaque zone = un domaine de connaissance de l'entreprise (dev, compta, sales, produit…).
-- **Agents en direct** : quand un agent démarre et va chercher du contexte, la zone concernée **s'allume comme un néon**.
-- **Gestion des comptes et des accès** : l'admin crée les comptes et choisit quelles zones chaque personne peut voir (ex. la compta n'a pas besoin du contexte code).
-- **État de l'entreprise** : résumé de où en est la boîte — tâches, objectifs, prochaines étapes, et **qui a fait quoi**.
-- **To-do** : brancher l'outil de to-do existant (Todoist, Notion, Linear…) ou en proposer une intégrée au dashboard.
+### 3. The dashboard
+- **A big visual brain**: each zone = a knowledge area of the company (dev, finance, sales, product…).
+- **Live agents**: when an agent starts and goes looking for context, the zone concerned **lights up like a neon**.
+- **Account and access management**: the admin creates the accounts and chooses which zones each person can see (e.g. finance does not need the code context).
+- **Company status**: summary of where the company stands — tasks, goals, next steps, and **who did what**.
+- **To-do**: connect the existing to-do tool (Todoist, Notion, Linear…) or offer one built into the dashboard.
 
-### 4. Les skills de l'entreprise
-Le cerveau ne garde pas que la connaissance : il conserve aussi **les skills de l'entreprise** (les savoir-faire prêts à l'emploi pour Claude Code) et **les scripts qu'ils utilisent**.
-- **Publication sous autorisation** : pour pousser un skill dans le cerveau, il faut un droit particulier, accordé par un admin.
-- **Un onglet Skills** dans le dashboard regroupe tous les skills de l'entreprise.
-- **Attribution à un cortex** : un skill peut être rattaché à un cortex du cerveau (une zone : dev, compta, sales…). Il n'est alors donné qu'aux personnes qui ont accès à ce contexte.
-- **Sur le poste** : chaque employé reçoit automatiquement ses skills dans Claude Code (`~/.claude/skills`), et ceux qui ne lui sont plus attribués sont retirés.
+### 4. The company's skills
+The brain does not only keep knowledge: it also keeps **the company's skills** (ready-to-use know-how for Claude Code) and **the scripts they use**.
+- **Publishing needs a permission**: to push a skill into the brain, you need a specific right, granted by an admin.
+- **A Skills tab** in the dashboard gathers all the company's skills.
+- **Assignment to a cortex**: a skill can be attached to a cortex of the brain (a zone: dev, finance, sales…). It is then only given to the people who have access to that context.
+- **On the computer**: each employee automatically receives their skills in Claude Code (`~/.claude/skills`), and those no longer assigned to them are removed.
 
-### 5. Propositions d'automatisation
-On détecte les tâches répétitives à partir de l'activité enregistrée et on les propose aux dirigeants.
-> Ex. : tous les jours à 9h, Jean-Marc de la compta lance le même prompt → on propose une automatisation qui le fait à sa place, et il récupère son début de journée.
+### 5. Automation proposals
+We detect repetitive tasks from the recorded activity and propose them to the leaders.
+> E.g.: every day at 9 am, Jean-Marc from finance runs the same prompt → we propose an automation that does it for him, and he gets the start of his day back.
 
-### 6. Passation de poste / remplacement
-Quand quelqu'un part ou s'absente, son remplaçant récupère **le contexte que ce poste utilisait le plus** (pas forcément toutes les conversations, voir la partie légale).
+### 6. Handover / replacement
+When someone leaves or is away, their replacement gets **the context that role used the most** (not necessarily every conversation, see the legal part).
 
-## Points à trancher
+## Points to settle
 
-- **Légal / RGPD** : consentement des salariés, filtrage des contenus perso, ce qui remonte au cerveau ou non (texte distillé plutôt que les captures brutes ?), droit de regard de l'employé.
-- **Volume de données** : Screenpipe produit environ 19 Go en 2 semaines par poste. Le cerveau doit **distiller** (faits, décisions, entités, liens) et garder ça de façon persistante, pas stocker le brut.
-- **Structure du cerveau** : graphe de connaissance (personnes, projets, décisions, documents) ? Et comment découpe-t-on les zones ?
-- **Local vs cloud** : Screenpipe est local par défaut. Qu'est-ce qui part vers le cerveau partagé, et quand (en continu, toutes les heures) ?
+- **Legal / GDPR**: employee consent, filtering of personal content, what goes up to the brain or not (distilled text rather than raw captures?), the employee's right of oversight.
+- **Data volume**: Screenpipe produces about 19 GB in 2 weeks per computer. The brain must **distill** (facts, decisions, entities, links) and keep that persistently, not store the raw data.
+- **Brain structure**: knowledge graph (people, projects, decisions, documents)? And how do we split the zones?
+- **Local vs cloud**: Screenpipe is local by default. What goes to the shared brain, and when (continuously, every hour)?
 
-## Ce qu'on montre au hackathon (proposition de MVP)
+## What we show at the hackathon (MVP proposal)
 
-1. Le prompt d'installation qui configure Screenpipe et le connecte au cerveau.
-2. Un pipe qui extrait les sessions IA (Claude Code…) et les distille dans le cerveau.
-3. Le dashboard : le cerveau avec ses zones, les néons quand un agent travaille, et le résumé de l'état de l'entreprise.
-4. Une suggestion d'automatisation détectée à partir de l'activité réelle.
+1. The install prompt that sets up Screenpipe and connects it to the brain.
+2. A pipe that extracts the AI sessions (Claude Code…) and distills them into the brain.
+3. The dashboard: the brain with its zones, the neons when an agent works, and the company status summary.
+4. An automation suggestion detected from real activity.

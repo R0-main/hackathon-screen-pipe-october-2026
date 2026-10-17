@@ -1,4 +1,4 @@
-// Validation des charges utiles reçues par l'API du cerveau.
+// Validation of the payloads received by the brain's API.
 
 import { z } from "zod"
 import { AGENTS, ENTITY_TYPES, EVENT_TYPES, KNOWLEDGE_KINDS, SOURCE_TOOLS } from "./types"
@@ -46,7 +46,7 @@ export const QueryPayloadSchema = z.object({
   agent: z.enum(AGENTS).optional(),
 })
 
-/** Compte rendu de synchronisation d'un poste (POST /api/sync/report). */
+/** A workstation's sync report (POST /api/sync/report). */
 export const SyncReportSchema = z.object({
   at: z.string().max(40),
   ok: z.boolean(),
@@ -63,7 +63,7 @@ export const SyncReportSchema = z.object({
   screenpipe: z.boolean().optional(),
 })
 
-/** Un résumé de zone produit hors du serveur (poste d'un admin, `claude -p`). */
+/** A zone summary produced outside the server (an admin's workstation, `claude -p`). */
 export const ZoneStatusSchema = z.object({
   zone: z.string().min(1).max(64),
   summary: z.string().max(4000).default(""),
@@ -73,7 +73,7 @@ export const ZoneStatusSchema = z.object({
   who_did_what: z.array(z.object({ person: z.string().max(200), did: z.string().max(1000) })).max(30).default([]),
 })
 
-/** POST /api/status avec un résumé déjà généré : { status: { headline, zones } }. */
+/** POST /api/status with an already generated summary: { status: { headline, zones } }. */
 export const StatusPayloadSchema = z.object({
   status: z.object({ headline: z.string().min(1).max(2000), zones: z.array(ZoneStatusSchema).max(64) }),
 })

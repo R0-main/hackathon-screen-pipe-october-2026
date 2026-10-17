@@ -5,8 +5,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * GET /api/connected-tools?connector=&query= — les outils des connecteurs MCP que l'admin a ouverts aux agents, visibles
- * par ce membre (zone du connecteur lisible), avec leur schéma d'entrée. Utilisé par l'outil `connected_tools` du MCP.
+ * GET /api/connected-tools?connector=&query= — the MCP connector tools the admin opened to agents, visible to this member
+ * (connector zone readable), with their input schema. Used by the MCP's `connected_tools` tool.
  */
 export const GET = withViewer(async (req, viewer) => {
   const q = new URL(req.url).searchParams

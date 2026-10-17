@@ -23,24 +23,24 @@ import { ErrorText } from "./ui"
 type Props = {
   initial: McpConnectorPublic[]
   redirectUri: string
-  /** Page où revenir après la connexion chez le fournisseur (par défaut : Connecteurs). */
+  /** Page to come back to after signing in with the provider (default: Connectors). */
   returnTo?: McpReturn
-  /** Sans titre ni introduction (la page qui l'accueille a les siens : étape 8 de /creer). */
+  /** Without a title or introduction (the page hosting it has its own: step 8 of /create). */
   bare?: boolean
-  /** Zones proposées pour rattacher un connecteur (absentes : pas de choix de zone). */
+  /** Zones offered to tie a connector to (absent: no zone choice). */
   zones?: { id: string; name: string }[]
 }
 
-const ReturnTo = createContext<McpReturn>("connecteurs")
+const ReturnTo = createContext<McpReturn>("connectors")
 const Zones = createContext<{ id: string; name: string }[]>([])
 
 const CUSTOM_COLOR = "#52525B"
-/** Serveurs du catalogue montrés avant « Voir les … autres » : 3 rangées pleines, en 3 colonnes ou en 2 (étape 8 de /creer). */
+/** Catalog servers shown before "Show the … others": 3 full rows, in 3 columns or in 2 (step 8 of /create). */
 const PREVIEW = 9
 const PREVIEW_BARE = 8
 
-/** Serveurs MCP : ceux déjà branchés, puis le catalogue (recherche, catégories) et l'ajout d'un serveur quelconque. */
-export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", bare = false, zones = [] }: Props) {
+/** MCP servers: those already connected, then the catalog (search, categories) and adding any server. */
+export function McpConnectors({ initial, redirectUri, returnTo = "connectors", bare = false, zones = [] }: Props) {
   const { t } = useT()
   const k = t.connectors.mcp
   const [items, setItems] = useState(initial)
@@ -49,7 +49,7 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", 
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const [showAll, setShowAll] = useState(false)
 
-  // Retour de la page de connexion du fournisseur (?mcp=connected&id=… ou ?mcp=error&reason=…).
+  // Back from the provider's sign-in page (?mcp=connected&id=… or ?mcp=error&reason=…).
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const outcome = q.get("mcp")
@@ -59,7 +59,7 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", 
       const c = initial.find((x) => x.id === id)
       setNotice(c?.status === "error" ? { ok: false, text: fmt(k.failed, { error: c.last_check?.error ?? "?" }) } : { ok: true, text: fmt(k.connected, { name: c?.name ?? id }) })
     } else setNotice({ ok: false, text: fmt(k.failed, { error: q.get("reason") ?? "?" }) })
-    // On retire seulement nos paramètres (/creer garde son ?brouillon=1, qui reprend le parcours au rechargement).
+    // Only our parameters are removed (/create keeps its ?draft=1, which resumes the flow on reload).
     const url = new URL(window.location.href)
     for (const key of ["mcp", "id", "reason"]) url.searchParams.delete(key)
     window.history.replaceState(null, "", url)
@@ -76,8 +76,8 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", 
   const needle = query.trim().toLowerCase()
   const catalog = MCP_CATALOG.filter((e) => !added.has(e.id))
     .filter((e) => !category || e.category === category)
-    .filter((e) => !needle || `${e.name} ${e.description.fr} ${e.description.en} ${e.id}`.toLowerCase().includes(needle))
-  // Sans recherche ni catégorie, un aperçu (la liste complète fait plusieurs écrans sur mobile).
+    .filter((e) => !needle || `${e.name} ${e.description} ${e.id}`.toLowerCase().includes(needle))
+  // Without a search or a category, a preview (the full list takes several screens on mobile).
   const preview = bare ? PREVIEW_BARE : PREVIEW
   const collapsed = !showAll && !needle && !category && catalog.length > preview + 3
 
@@ -151,16 +151,15 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", 
   )
 }
 
-/** Redirige vers la page de connexion du fournisseur (après découverte, enregistrement du client et PKCE côté serveur). */
+/** Redirects to the provider's sign-in page (after discovery, client registration and PKCE on the server). */
 async function authorize(id: string, returnTo: McpReturn): Promise<void> {
   const { url } = await api<{ url: string }>(`/api/connectors/mcp/${encodeURIComponent(id)}/authorize`, { method: "POST", json: { return_to: returnTo } })
   window.location.assign(url)
 }
 
 function Description({ entry }: { entry?: McpCatalogEntry }) {
-  const { locale } = useT()
   if (!entry) return null
-  return <p className="text-[12px] leading-snug text-trace">{entry.description[locale]}</p>
+  return <p className="text-[12px] leading-snug text-trace">{entry.description}</p>
 }
 
 function CatalogTile({ entry, redirectUri, onAdded }: { entry: McpCatalogEntry; redirectUri: string; onAdded: (c: McpConnectorPublic) => void }) {
@@ -296,7 +295,7 @@ function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connect
   )
 }
 
-/** Fournisseur sans enregistrement automatique : application OAuth déclarée à la main (ou jeton personnel si accepté). */
+/** Provider without automatic registration: OAuth app declared by hand (or a personal token if accepted). */
 function ManualSetup({ id, entry, redirectUri, hasClient, onSaved }: { id: string; entry?: McpCatalogEntry; redirectUri: string; hasClient: boolean; onSaved: (c: McpConnectorPublic) => void }) {
   const returnTo = useContext(ReturnTo)
   const { t } = useT()
@@ -340,7 +339,7 @@ function ManualSetup({ id, entry, redirectUri, hasClient, onSaved }: { id: strin
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      // presse-papiers refusé : l'adresse reste sélectionnable
+      // clipboard refused: the address stays selectable
     }
   }
 
@@ -355,7 +354,7 @@ function ManualSetup({ id, entry, redirectUri, hasClient, onSaved }: { id: strin
       <label className="block text-[12px] font-medium">{k.redirectUri}</label>
       <div className="flex items-start gap-2">
         <code className="mono min-w-0 flex-1 select-all rounded-[6px] border border-line bg-bone px-2 py-1.5 text-[12px] [overflow-wrap:anywhere]">
-          {/* Retour à la ligne de préférence après un « / », au milieu d'un segment seulement s'il est trop long. */}
+          {/* Wrap preferably after a "/", in the middle of a segment only if it is too long. */}
           {redirectUri.split(/(?<=\/)/).map((part, i) => (
             <Fragment key={i}>
               {part}
@@ -439,7 +438,7 @@ function CustomServer({ onAdded }: { onAdded: (c: McpConnectorPublic) => void })
   )
 }
 
-/** Ce que fait le cerveau d'un connecteur branché : outils ouverts aux agents, zone, import du contenu. */
+/** What the brain does with a connected connector: tools open to agents, zone, content import. */
 function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onChange: (c: McpConnectorPublic) => void }) {
   const { t } = useT()
   const k = t.connectors.mcp
@@ -464,7 +463,7 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
     setErr(null)
     try {
       const run = await api<McpImportRun>(`${path}/import`, { method: "POST" })
-      // Réussi ou non, le compte rendu s'affiche dans « Dernier import » ; rien à répéter ici.
+      // Successful or not, the report shows in "Last import"; nothing to repeat here.
       onChange({ ...c, last_import: run })
     } catch (e) {
       setErr(fmt(k.importFailed, { error: errorMessage(e) }))

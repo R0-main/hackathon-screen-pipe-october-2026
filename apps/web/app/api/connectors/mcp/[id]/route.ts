@@ -20,8 +20,8 @@ const Schema = z.object({
 })
 
 /**
- * PUT /api/connectors/mcp/:id — client OAuth déclaré à la main, jeton personnel, pause, outils ouverts aux agents
- * (off, read, all), zone, import automatique. Ajoute le serveur au besoin.
+ * PUT /api/connectors/mcp/:id — OAuth client declared by hand, personal token, pause, tools open to agents (off, read,
+ * all), zone, automatic import. Adds the server if needed.
  */
 export const PUT = withViewer<Ctx>(
   async (req, _viewer, { params }) => {
@@ -39,7 +39,7 @@ export const PUT = withViewer<Ctx>(
   { admin: true },
 )
 
-/** DELETE /api/connectors/mcp/:id — retire le serveur et oublie ses jetons. */
+/** DELETE /api/connectors/mcp/:id — removes the server and forgets its tokens. */
 export const DELETE = withViewer<Ctx>(
   async (_req, _viewer, { params }) => {
     const { id } = await params

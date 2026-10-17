@@ -1,7 +1,7 @@
-// Évaluation de la recherche sur l'entreprise de démo Butine : npm run eval (après npm run seed).
-// Pour chaque question, on attend qu'une connaissance donnée (reconnue par un morceau de son titre) sorte dans les
-// 3 premiers résultats. Affiche précision@1, succès@3 et MRR, avec ou sans embeddings selon la configuration.
-// Ajouter un cas : une ligne dans CASES. Un cas qui régresse se voit tout de suite.
+// Search evaluation on the Butine demo company: npm run eval (after npm run seed).
+// For each question, a given knowledge item (recognized by part of its title) is expected in the top 3
+// results. Prints precision@1, success@3 and MRR, with or without embeddings depending on the configuration.
+// To add a case: one line in CASES. A case that regresses shows up right away.
 
 import { hybridSearch } from "../lib/brain"
 import { getEmbeddings } from "../lib/embeddings"
@@ -9,44 +9,44 @@ import { getStore, runInOrg } from "../lib/store"
 
 type Case = { query: string; expect: string; zones?: string[] }
 
-/** Formulations volontairement différentes des titres (synonymes, anglais, fautes légères). */
+/** Phrasings deliberately different from the titles (synonyms, slight typos). */
 export const CASES: Case[] = [
-  { query: "comment déployer en production ?", expect: "Déployer Butine en production" },
-  { query: "how do we ship a release", expect: "Déployer Butine en production" },
-  { query: "mise en prod", expect: "Déployer Butine en production" },
-  { query: "rapprochement Qonto", expect: "Rapprochement bancaire quotidien" },
-  { query: "reconciliation bancaire", expect: "Rapprochement bancaire quotidien" },
-  { query: "clôture mensuelle export cabinet", expect: "Clôture mensuelle" },
-  { query: "quand déclarer la TVA", expect: "Déclarer la TVA" },
-  { query: "abonnements stripe billing", expect: "Stripe Billing" },
-  { query: "webhook invoice.paid", expect: "webhook Stripe" },
-  { query: "restaurer une sauvegarde", expect: "Restaurer une sauvegarde Supabase" },
-  { query: "backup restore staging", expect: "Restaurer une sauvegarde Supabase" },
-  { query: "dérive des balances par grand froid", expect: "nuit de gel" },
-  { query: "isolation des données par apiculteur", expect: "RLS Supabase" },
-  { query: "prix par ruche", expect: "4 € par ruche" },
-  { query: "pricing mensuel", expect: "4 € par ruche" },
-  { query: "pipeline commercial octobre", expect: "Pipeline d'octobre" },
-  { query: "Miellerie Roussel export des pesées", expect: "Miellerie Roussel" },
-  { query: "balance muette qui n'envoie plus rien", expect: "Réveiller une balance" },
-  { query: "fausses alertes essaimage à la récolte", expect: "fausses alertes d'essaimage" },
-  { query: "burn et runway", expect: "Burn mensuel" },
-  { query: "objectif fin d'année ruches", expect: "4 500 ruches" },
-  { query: "notes de frais", expect: "Swile" },
-  { query: "mémoire tampon hors réseau", expect: "le réseau LoRa tombe" },
-  { query: "frelon asiatique", expect: "frelon" },
-  { query: "recruter un dev embarqué", expect: "embarqué" },
-  { query: "congrès Miel & Ruches leads", expect: "40 % des leads" },
+  { query: "how do we deploy to production?", expect: "Deploy Butine to production" },
+  { query: "how do we ship a release", expect: "Deploy Butine to production" },
+  { query: "go live", expect: "Deploy Butine to production" },
+  { query: "Qonto reconciliation", expect: "bank reconciliation" },
+  { query: "bank reconcilation", expect: "bank reconciliation" },
+  { query: "month-end close accountant export", expect: "Month-end close" },
+  { query: "when to file VAT", expect: "VAT return" },
+  { query: "stripe billing subscriptions", expect: "Stripe Billing" },
+  { query: "webhook invoice.paid", expect: "invoice.paid webhook" },
+  { query: "restore a backup", expect: "Restore a Supabase backup" },
+  { query: "backup restore staging", expect: "Restore a Supabase backup" },
+  { query: "scales drifting in freezing cold", expect: "frosty night" },
+  { query: "data isolation per beekeeper", expect: "Supabase RLS" },
+  { query: "price per hive", expect: "€4 per hive" },
+  { query: "pricing per month", expect: "€4 per hive" },
+  { query: "sales pipeline october", expect: "October pipeline" },
+  { query: "Miellerie Roussel weighing export", expect: "Miellerie Roussel" },
+  { query: "silent scale not sending anything", expect: "Wake up a scale" },
+  { query: "false swarm alerts at harvest time", expect: "false swarm alerts" },
+  { query: "burn and runway", expect: "Monthly burn" },
+  { query: "year-end hive goal", expect: "4,500 hives" },
+  { query: "expense reports", expect: "Swile" },
+  { query: "buffer without network", expect: "LoRa network goes down" },
+  { query: "asian hornet", expect: "hornet" },
+  { query: "hire an embedded dev", expect: "embedded engineer" },
+  { query: "Miel & Ruches convention leads", expect: "40% of the year's leads" },
 ]
 
 async function main() {
   const store = getStore()
   const profiles = await store.listProfiles()
   const admin = profiles.find((p) => p.role === "admin")
-  if (!admin) throw new Error("Aucun admin : lancez d'abord npm run seed.")
+  if (!admin) throw new Error("No admin: run npm run seed first.")
   const zones = (await store.listZones()).map((z) => z.id)
   const provider = getEmbeddings()
-  console.log(`Recherche : lexical + synonymes${provider ? ` + embeddings (${provider.id}, ${provider.model})` : " (sans embeddings : VOYAGE_API_KEY ou BRAIN_EMBEDDING_URL absent)"}`)
+  console.log(`Search: lexical + synonyms${provider ? ` + embeddings (${provider.id}, ${provider.model})` : " (no embeddings: VOYAGE_API_KEY or BRAIN_EMBEDDING_URL not set)"}`)
   console.log("")
   let p1 = 0
   let s3 = 0
@@ -60,16 +60,16 @@ async function main() {
       if (rank >= 0 && rank < 3) s3++
       if (rank >= 0) mrr += 1 / (rank + 1)
       const mark = rank === 0 ? "✓" : rank >= 0 && rank < 3 ? "~" : "✗"
-      console.log(`${mark} ${c.query.padEnd(44)} → ${rank >= 0 ? `rang ${rank + 1}` : "absent "}  (${c.expect})`)
-      if (rank < 0 || rank >= 3) failures.push(`${c.query} : ${results.map((r) => r.title).slice(0, 3).join(" | ") || "aucun résultat"}`)
+      console.log(`${mark} ${c.query.padEnd(44)} → ${rank >= 0 ? `rank ${rank + 1}` : "missing"}  (${c.expect})`)
+      if (rank < 0 || rank >= 3) failures.push(`${c.query}: ${results.map((r) => r.title).slice(0, 3).join(" | ") || "no results"}`)
     }
   })
   const n = CASES.length
   console.log("")
-  console.log(`précision@1 ${((p1 / n) * 100).toFixed(0)} %   succès@3 ${((s3 / n) * 100).toFixed(0)} %   MRR ${(mrr / n).toFixed(2)}   (${n} questions)`)
+  console.log(`precision@1 ${((p1 / n) * 100).toFixed(0)}%   success@3 ${((s3 / n) * 100).toFixed(0)}%   MRR ${(mrr / n).toFixed(2)}   (${n} questions)`)
   if (failures.length) {
     console.log("")
-    console.log("À regarder :")
+    console.log("To look at:")
     for (const f of failures) console.log(`  - ${f}`)
   }
   const s = store as { end?: () => Promise<void> }

@@ -1,8 +1,8 @@
-// Connecteurs MCP distants de l'entreprise : réglages (clé `mcp_connectors` des réglages de l'entreprise, lus et écrits
-// par l'API seulement — jetons, secrets et vérificateurs PKCE ne quittent jamais le serveur), connexion OAuth avec
-// redirection vers la page de connexion du fournisseur, retour (callback) et test de connexion (liste des outils).
-// Les outils des serveurs connectés sont mis en cache (clé `mcp_tools`) et proposés aux agents de l'équipe par le MCP du
-// cerveau, selon la règle choisie par l'admin (aucun, lecture seule, tous) et la zone du connecteur.
+// The company's remote MCP connectors: settings (`mcp_connectors` key of the company settings, read and written by the
+// API only — tokens, secrets and PKCE verifiers never leave the server), OAuth connection with a redirect to the
+// provider's sign-in page, return (callback) and connection test (list of tools).
+// The connected servers' tools are cached (`mcp_tools` key) and offered to the team's agents through the brain's MCP,
+// following the rule the admin chose (none, read-only, all) and the connector's zone.
 
 import {
   MCP_RETURN_PAGES,
@@ -36,17 +36,17 @@ import { discover, exchangeCode, pkcePair, randomToken, refreshTokens, registerC
 
 const SETTING = "mcp_connectors"
 const TOOLS_SETTING = "mcp_tools"
-/** Au-delà, la liste d'outils en cache est relue au prochain usage par un agent. */
+/** Beyond this, the cached list of tools is reread the next time an agent uses it. */
 const TOOLS_TTL_MS = 24 * 60 * 60_000
-/** Durée laissée pour se connecter chez le fournisseur et revenir. */
+/** Time allowed to sign in at the provider and come back. */
 const PENDING_MS = 15 * 60_000
 
-/** Adresse de retour OAuth de ce cerveau (à déclarer chez les fournisseurs qui exigent un client manuel). */
+/** This brain's OAuth redirect URI (to declare at providers that require a manual client). */
 export function mcpRedirectUri(base: string): string {
   return `${base}/api/connectors/mcp/callback`
 }
 
-/** Erreur à montrer telle quelle (400 par défaut côté API ; 403 et 404 pour les agents). */
+/** Error to show as is (400 by default on the API side; 403 and 404 for agents). */
 export class McpUserError extends Error {
   constructor(
     message: string,
@@ -67,7 +67,7 @@ async function load(): Promise<McpConnectorsConfig> {
   }
 }
 
-/** Relit, modifie, enregistre (les appels réseau se font avant, pour ne pas écraser une modification concurrente). */
+/** Reread, modify, save (network calls happen before, so as not to overwrite a concurrent change). */
 async function mutate<T>(fn: (cfg: McpConnectorsConfig) => T): Promise<T> {
   const cfg = await load()
   const out = fn(cfg)
@@ -87,11 +87,11 @@ function fromCatalog(id: string): McpConnectorConfig | null {
   return { id, catalog_id: id, name: entry.name, url: entry.url, auth: entry.auth, enabled: true, added_at: new Date().toISOString() }
 }
 
-/** Le connecteur `id`, ajouté depuis le catalogue s'il ne l'est pas encore. */
+/** The `id` connector, added from the catalog if it is not yet. */
 function ensure(cfg: McpConnectorsConfig, id: string): McpConnectorConfig {
   if (!cfg[id]) {
     const c = fromCatalog(id)
-    if (!c) throw new McpUserError("Connecteur inconnu.")
+    if (!c) throw new McpUserError("Unknown connector.")
     cfg[id] = c
   }
   return cfg[id]
@@ -105,25 +105,25 @@ function message(err: unknown): string {
   return truncate((err instanceof Error ? err.message : String(err)).replace(/\s+/g, " "), 300)
 }
 
-/** Ajoute un serveur du catalogue (sans connexion : un serveur public est testé tout de suite). */
+/** Adds a catalog server (without connecting: a public server is tested right away). */
 export async function addFromCatalog(id: string): Promise<McpConnectorPublic> {
   const c = await mutate((cfg) => ensure(cfg, id))
   return c.auth === "none" ? checkMcp(id) : publicMcpConnector(c)
 }
 
-/** Ajoute un serveur MCP quelconque ; le mode de connexion est découvert (OAuth, public) ou donné par un jeton. */
+/** Adds any MCP server; the connection mode is discovered (OAuth, public) or given by a token. */
 export async function addCustom(input: { name: string; url: string; token?: string }): Promise<McpConnectorPublic> {
   const valid = validateMcpUrl(input.url, { allowHttp: process.env.NODE_ENV !== "production" })
-  if ("error" in valid) throw new McpUserError(`Adresse refusée : ${valid.error}.`)
+  if ("error" in valid) throw new McpUserError(`Address refused: ${valid.error}.`)
   const token = input.token?.trim()
   let auth: McpConnectorConfig["auth"] = "token"
   if (!token) {
     const found = await discover(valid.url).catch((err) => {
-      throw new McpUserError(`Serveur injoignable : ${message(err)}`)
+      throw new McpUserError(`Server unreachable: ${message(err)}`)
     })
     if (found.meta) auth = found.meta.registration_endpoint ? "dynamic" : "manual"
     else if (found.open) auth = "none"
-    else throw new McpUserError("Ce serveur demande une connexion sans annoncer de serveur OAuth : fournissez un jeton d'accès.")
+    else throw new McpUserError("This server asks for a sign-in without announcing an OAuth server: provide an access token.")
   }
   const id = `custom-${randomToken(6).toLowerCase().replace(/[^a-z0-9]/g, "")}`
   await mutate((cfg) => {
@@ -143,8 +143,8 @@ export type McpPatch = {
 }
 
 /**
- * Client OAuth déclaré à la main, jeton personnel, pause, outils proposés aux agents, zone, import. Un secret vide garde
- * celui enregistré pour ce client.
+ * OAuth client declared by hand, personal token, pause, tools offered to agents, zone, import. An empty secret keeps the
+ * one saved for this client.
  */
 export async function updateMcp(id: string, patch: McpPatch): Promise<McpConnectorPublic> {
   const c = await mutate((cfg) => {
@@ -197,8 +197,8 @@ async function saveToolDefs(id: string, tools: McpToolDef[] | null): Promise<voi
 }
 
 /**
- * Exécute `fn` avec le jeton du connecteur : rafraîchi d'abord s'il expire, puis une fois de plus si le serveur le
- * refuse. Les jetons rafraîchis sont enregistrés.
+ * Runs `fn` with the connector's token: refreshed first if it expires, then once more if the server refuses it. The
+ * refreshed tokens are saved.
  */
 export async function withBearer<T>(c: McpConnectorConfig, fn: (bearer: string | undefined) => Promise<T>): Promise<T> {
   let tokens = c.tokens
@@ -212,7 +212,7 @@ export async function withBearer<T>(c: McpConnectorConfig, fn: (bearer: string |
   try {
     if (!c.token && tokenExpiring(tokens)) await refresh()
     const bearer = () => c.token ?? tokens?.access_token
-    if (c.auth !== "none" && !bearer()) throw new McpUserError("Pas encore connecté : cliquez sur « Se connecter ».")
+    if (c.auth !== "none" && !bearer()) throw new McpUserError('Not connected yet: click "Connect".')
     try {
       return await fn(bearer())
     } catch (err) {
@@ -230,22 +230,22 @@ export async function withBearer<T>(c: McpConnectorConfig, fn: (bearer: string |
 }
 
 /**
- * Prépare la connexion OAuth et renvoie l'adresse de la page de connexion du fournisseur. Le client est enregistré
- * automatiquement quand le fournisseur l'accepte ; l'état (anti-CSRF) est lié à l'admin qui clique.
+ * Prepares the OAuth connection and returns the address of the provider's sign-in page. The client is registered
+ * automatically when the provider accepts it; the state (anti-CSRF) is tied to the admin who clicks.
  */
-export async function startAuthorize(id: string, viewer: Viewer, redirectUri: string, returnTo: McpReturn = "connecteurs"): Promise<string> {
+export async function startAuthorize(id: string, viewer: Viewer, redirectUri: string, returnTo: McpReturn = "connectors"): Promise<string> {
   const c = await getMcpConnector(id)
-  if (!c) throw new McpUserError("Connecteur inconnu.")
-  if (c.auth === "none") throw new McpUserError("Ce serveur est public : aucune connexion n'est nécessaire.")
-  if (c.auth === "token") throw new McpUserError("Ce serveur se connecte par jeton d'accès.")
+  if (!c) throw new McpUserError("Unknown connector.")
+  if (c.auth === "none") throw new McpUserError("This server is public: no sign-in is needed.")
+  if (c.auth === "token") throw new McpUserError("This server connects with an access token.")
   const found = await discover(c.url).catch((err) => {
-    throw new McpUserError(`Serveur injoignable : ${message(err)}`)
+    throw new McpUserError(`Server unreachable: ${message(err)}`)
   })
-  if (!found.meta) throw new McpUserError("Ce serveur n'annonce pas de serveur d'autorisation OAuth.")
+  if (!found.meta) throw new McpUserError("This server does not announce an OAuth authorization server.")
   const meta = found.meta
   let client = c.client
   if (!client || (client.dynamic && client.redirect_uri !== redirectUri)) {
-    if (c.auth === "manual" || !meta.registration_endpoint) throw new McpUserError("Renseignez d'abord le client OAuth (client_id et secret) déclaré chez le fournisseur.")
+    if (c.auth === "manual" || !meta.registration_endpoint) throw new McpUserError("First fill in the OAuth client (client_id and secret) declared at the provider.")
     client = await registerClient(meta, redirectUri).catch((err) => {
       throw new McpUserError(message(err))
     })
@@ -261,35 +261,35 @@ export async function startAuthorize(id: string, viewer: Viewer, redirectUri: st
   return buildAuthorizeUrl(meta, { client_id: client.client_id, redirect_uri: redirectUri, state, code_challenge: challenge })
 }
 
-/** Page où ramener l'admin après le retour du fournisseur (celle d'où la connexion est partie). */
+/** Page to bring the admin back to after the provider's return (the one the sign-in started from). */
 export async function pendingReturnPage(state: string): Promise<string> {
   const c = Object.values(await load()).find((x) => x.pending?.state === state)
-  return MCP_RETURN_PAGES[c?.pending?.return_to ?? "connecteurs"] ?? MCP_RETURN_PAGES.connecteurs
+  return MCP_RETURN_PAGES[c?.pending?.return_to ?? "connectors"] ?? MCP_RETURN_PAGES.connectors
 }
 
-/** Retour du fournisseur : vérifie l'état, échange le code contre des jetons, teste la connexion. Renvoie l'id. */
+/** The provider's return: checks the state, exchanges the code for tokens, tests the connection. Returns the id. */
 export async function completeAuthorize(viewer: Viewer, p: { state: string; code?: string | null; error?: string | null; error_description?: string | null }): Promise<string> {
   const cfg = await load()
   const c = Object.values(cfg).find((x) => x.pending?.state === p.state)
-  if (!c?.pending) throw new McpUserError("Connexion expirée ou déjà utilisée : relancez-la depuis la page Connecteurs.")
+  if (!c?.pending) throw new McpUserError("Sign-in expired or already used: start it again from the Connectors page.")
   const pending = c.pending
   const clear = () =>
     mutate((cfg) => {
       if (cfg[c.id]?.pending?.state === p.state) delete cfg[c.id].pending
     })
-  if (pending.by !== viewer.real.id) throw new McpUserError("Cette connexion a été lancée par un autre compte.")
+  if (pending.by !== viewer.real.id) throw new McpUserError("This sign-in was started by another account.")
   if (Date.now() - pending.created_at > PENDING_MS) {
     await clear()
-    throw new McpUserError("Connexion expirée : relancez-la depuis la page Connecteurs.")
+    throw new McpUserError("Sign-in expired: start it again from the Connectors page.")
   }
   if (p.error || !p.code) {
     await clear()
-    throw new McpUserError(p.error === "access_denied" ? "Connexion refusée chez le fournisseur." : `Le fournisseur a renvoyé une erreur : ${p.error_description || p.error || "code absent"}.`)
+    throw new McpUserError(p.error === "access_denied" ? "Sign-in refused at the provider." : `The provider returned an error: ${p.error_description || p.error || "no code"}.`)
   }
-  if (!c.oauth || !c.client) throw new McpUserError("Connexion incomplète : relancez-la.")
+  if (!c.oauth || !c.client) throw new McpUserError("Incomplete sign-in: start it again.")
   const tokens = await exchangeCode(c.oauth, c.client, { code: p.code, verifier: pending.verifier, redirect_uri: pending.redirect_uri }).catch(async (err) => {
     await clear()
-    throw new McpUserError(`Échange du code refusé : ${message(err)}`)
+    throw new McpUserError(`Code exchange refused: ${message(err)}`)
   })
   await mutate((cfg) => {
     const cur = cfg[c.id]
@@ -302,17 +302,17 @@ export async function completeAuthorize(viewer: Viewer, p: { state: string; code
   return c.id
 }
 
-/** Teste la connexion (liste des outils, mise en cache pour les agents), en rafraîchissant le jeton au besoin. */
+/** Tests the connection (list of tools, cached for agents), refreshing the token if needed. */
 export async function checkMcp(id: string): Promise<McpConnectorPublic> {
   const c = (await load())[id]
-  if (!c) throw new McpUserError("Connecteur non ajouté.")
+  if (!c) throw new McpUserError("Connector not added.")
   let check: McpCheck
   try {
     const result = await withBearer(c, (bearer) => listTools(c.url, bearer))
     await saveToolDefs(id, result.tools)
     check = { at: new Date().toISOString(), ok: true, tools: result.tools.map((t) => t.name), server: result.server }
   } catch (err) {
-    const text = err instanceof McpAuthError ? `${message(err)} : reconnectez le connecteur` : message(err)
+    const text = err instanceof McpAuthError ? `${message(err)}: reconnect the connector` : message(err)
     check = { at: new Date().toISOString(), ok: false, tools: [], error: text }
   }
   const next = await mutate((cfg) => {
@@ -325,17 +325,17 @@ export async function checkMcp(id: string): Promise<McpConnectorPublic> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Outils proposés aux agents (MCP du cerveau)
+// Tools offered to agents (the brain's MCP)
 
 export type AgentConnector = { id: string; name: string; mode: McpAgentsMode; tools: McpToolDef[] }
 
-/** Connecteur visible par ce membre : actif, connecté, outils ouverts aux agents, et zone lisible s'il en a une. */
+/** Connector visible to this member: enabled, connected, tools open to agents, and a readable zone if it has one. */
 function visibleTo(c: McpConnectorConfig, viewer: Viewer): boolean {
   if (!c.enabled || !hasAccess(c) || (c.agents ?? "read") === "off") return false
   return !c.zone || viewer.access.readable.includes(c.zone)
 }
 
-/** Outils des connecteurs visibles par ce membre (cache relu au besoin, en parallèle). */
+/** Tools of the connectors visible to this member (cache reread when needed, in parallel). */
 export async function agentConnectors(viewer: Viewer): Promise<AgentConnector[]> {
   const cfg = await load()
   const visible = Object.values(cfg)
@@ -354,31 +354,31 @@ export async function agentConnectors(viewer: Viewer): Promise<AgentConnector[]>
   })
 }
 
-/** Appel d'un outil par l'agent d'un membre, dans les limites choisies par l'admin. Lève McpUserError (400/403/404). */
+/** A member's agent calls a tool, within the limits the admin chose. Throws McpUserError (400/403/404). */
 export async function callAgentTool(viewer: Viewer, connectorId: string, tool: string, args: Record<string, unknown>): Promise<{ text: string; is_error: boolean }> {
-  const c = (await load())[connectorId] ?? Object.values(await load()).find((x) => x.name.toLowerCase() === connectorId.toLowerCase())
-  if (!c || !visibleTo(c, viewer)) throw new McpUserError(`Connecteur « ${connectorId} » introuvable ou non partagé avec les agents.`, 404)
+  const cfg = await load()
+  const c = cfg[connectorId] ?? Object.values(cfg).find((x) => x.name.toLowerCase() === connectorId.toLowerCase())
+  if (!c || !visibleTo(c, viewer)) throw new McpUserError(`Connector "${connectorId}" not found or not shared with agents.`, 404)
   const mode = c.agents ?? "read"
   let defs = (await loadToolCache())[c.id]?.tools
   if (!defs?.some((d) => d.name === tool)) {
-    // Outil apparu depuis la mise en cache : on relit la liste une fois.
+    // Tool that appeared since it was cached: reread the list once.
     await checkMcp(c.id)
     defs = (await loadToolCache())[c.id]?.tools
   }
   const def = defs?.find((d) => d.name === tool)
-  if (!def) throw new McpUserError(`Outil « ${tool} » inconnu de ${c.name} : appelez connected_tools pour la liste.`, 404)
-  if (!toolsForAgents([def], mode).length)
-    throw new McpUserError(`« ${tool} » modifie des données dans ${c.name} : l'admin n'a ouvert que les outils en lecture seule aux agents.`, 403)
+  if (!def) throw new McpUserError(`Tool "${tool}" unknown to ${c.name}: call connected_tools for the list.`, 404)
+  if (!toolsForAgents([def], mode).length) throw new McpUserError(`"${tool}" changes data in ${c.name}: the admin only opened read-only tools to agents.`, 403)
   return callResultText(await withBearer(c, (bearer) => callTool(c.url, bearer, tool, args)))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Import du contenu dans le cerveau
+// Importing the content into the brain
 
 /**
- * Importe le contenu du connecteur au nom de `viewer` (l'admin qui clique, ou celui dont la visite déclenche l'import
- * automatique) : Claude explore l'outil en lecture seule, ses connaissances entrent dans le cerveau. Ne lève pas : le
- * résultat dit si ça a marché, il est noté avec le connecteur et une alerte part en cas d'échec.
+ * Imports the connector's content on behalf of `viewer` (the admin who clicks, or the one whose visit triggers the
+ * automatic import): Claude explores the tool read-only, and its knowledge enters the brain. Does not throw: the result
+ * says whether it worked, it is saved with the connector and an alert goes out on failure.
  */
 export async function importMcp(viewer: Viewer, id: string): Promise<McpImportRun> {
   const started = Date.now()
@@ -390,17 +390,17 @@ export async function importMcp(viewer: Viewer, id: string): Promise<McpImportRu
   }
   try {
     const c = (await load())[id]
-    if (!c) throw new McpUserError("Connecteur non ajouté.")
-    if (!hasAccess(c)) throw new McpUserError("Pas encore connecté : cliquez sur « Se connecter ».")
+    if (!c) throw new McpUserError("Connector not added.")
+    if (!hasAccess(c)) throw new McpUserError('Not connected yet: click "Connect".')
     const store = getStore()
     const claude = await getClaude(store)
-    if (!claude) throw new McpUserError("aucune clé Claude : ajoutez-en une dans Zones (ou ANTHROPIC_API_KEY sur le serveur).")
+    if (!claude) throw new McpUserError("no Claude key: add one in Zones (or ANTHROPIC_API_KEY on the server).")
     let defs = (await loadToolCache())[id]?.tools
     if (!defs) {
       await checkMcp(id)
       defs = (await loadToolCache())[id]?.tools ?? []
     }
-    // Lecture seule seulement, quelle que soit la règle des agents : l'import ne modifie jamais l'outil.
+    // Read-only tools only, whatever the agents rule: the import never changes the tool.
     const tools = defs.filter((d) => d.read_only)
     const [zones, org] = await Promise.all([store.listZones(), store.getOrg()])
     const outcome = await exploreConnector(c, {
@@ -417,7 +417,7 @@ export async function importMcp(viewer: Viewer, id: string): Promise<McpImportRu
     const text = message(err)
     if (!(err instanceof McpUserError)) {
       recordIncident(`mcp-import:${id}`, err)
-      void sendAlert(`mcp-import:${id}`, `Import du connecteur ${id} en échec : ${text}`)
+      void sendAlert(`mcp-import:${id}`, `Import of connector ${id} failed: ${text}`)
     }
     return finish({ at: new Date().toISOString(), ok: false, imported: 0, error: text, duration_ms: Date.now() - started })
   }
@@ -425,7 +425,7 @@ export async function importMcp(viewer: Viewer, id: string): Promise<McpImportRu
 
 const importing = new Set<string>()
 
-/** Imports automatiques : appelé en arrière-plan quand un admin consulte l'état ; un import à la fois par connecteur. */
+/** Automatic imports: called in the background when an admin views the state; one import at a time per connector. */
 export async function runDueMcpImports(viewer: Viewer): Promise<void> {
   if (viewer.real.role !== "admin") return
   for (const c of Object.values(await load())) {

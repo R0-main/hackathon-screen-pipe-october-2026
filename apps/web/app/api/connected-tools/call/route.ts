@@ -13,8 +13,8 @@ const Schema = z.object({
 })
 
 /**
- * POST /api/connected-tools/call — un agent appelle un outil d'un connecteur MCP, avec le compte branché par l'admin et
- * dans les limites qu'il a choisies (lecture seule par défaut). Réponse : le texte rendu par l'outil.
+ * POST /api/connected-tools/call — an agent calls a tool of an MCP connector, with the account the admin connected and
+ * within the limits they chose (read-only by default). Response: the text the tool returned.
  */
 export const POST = withViewer(async (req, viewer) => {
   const body = await parseBody(req, Schema)
@@ -23,7 +23,7 @@ export const POST = withViewer(async (req, viewer) => {
     return json(await callAgentTool(viewer, body.data.connector, body.data.tool, body.data.arguments ?? {}))
   } catch (err) {
     if (err instanceof McpUserError) return error(err.status, err.message)
-    // Serveur distant injoignable, jeton révoqué, réponse illisible : l'agent reçoit la raison.
-    return error(502, `L'outil n'a pas répondu : ${err instanceof Error ? err.message : String(err)}`)
+    // Remote server unreachable, token revoked, unreadable response: the agent gets the reason.
+    return error(502, `The tool did not answer: ${err instanceof Error ? err.message : String(err)}`)
   }
 })

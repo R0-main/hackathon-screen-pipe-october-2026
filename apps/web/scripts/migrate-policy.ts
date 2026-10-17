@@ -1,29 +1,29 @@
-// Quand appliquer les migrations automatiquement au build (`npm run build` de @brain/web, prebuild).
-// Module pur (aucun import), testé par scripts/migrate-policy.test.ts.
+// When to apply the migrations automatically at build time (`npm run build` of @brain/web, prebuild).
+// Pure module (no import), tested by scripts/migrate-policy.test.ts.
 
 export type MigrationDecision = { run: boolean; reason: string }
 
 /**
- * - BRAIN_MIGRATE_ON_BUILD=0 : jamais au build.
- * - Pas de base (ni DATABASE_MIGRATE_URL ni DATABASE_URL) : rien à migrer (stockage fichier, build Docker, CI).
- * - BRAIN_MIGRATE_ON_BUILD=1 : toujours, où que ce soit (preview Vercel avec sa propre base, autre hébergeur).
- * - Vercel en production : oui. C'est le cas par défaut qui compte : chaque fusion dans master migre la base avant
- *   que le nouveau code ne soit servi ; si la migration échoue, le build échoue et Vercel garde l'ancien déploiement.
- * - Vercel en preview : non par défaut, car une preview partage souvent la base de production et une PR pas encore
- *   fusionnée ne doit pas en modifier le schéma.
- * - Ailleurs (build local, Docker) : non ; le conteneur migre à son démarrage (deploy/local/entrypoint.sh).
+ * - BRAIN_MIGRATE_ON_BUILD=0: never at build time.
+ * - No database (neither DATABASE_MIGRATE_URL nor DATABASE_URL): nothing to migrate (file storage, Docker build, CI).
+ * - BRAIN_MIGRATE_ON_BUILD=1: always, wherever it is (Vercel preview with its own database, another host).
+ * - Vercel in production: yes. It is the default case that matters: each merge into master migrates the database before
+ *   the new code is served; if the migration fails, the build fails and Vercel keeps the previous deployment.
+ * - Vercel in preview: no by default, since a preview often shares the production database and a PR not merged yet
+ *   must not change its schema.
+ * - Elsewhere (local build, Docker): no; the container migrates when it starts (deploy/local/entrypoint.sh).
  */
 export function migrationOnBuild(env: Record<string, string | undefined>): MigrationDecision {
   const flag = env.BRAIN_MIGRATE_ON_BUILD?.trim().toLowerCase()
-  if (flag === "0" || flag === "false" || flag === "non") return { run: false, reason: "désactivées (BRAIN_MIGRATE_ON_BUILD=0)" }
-  if (!(env.DATABASE_MIGRATE_URL || env.DATABASE_URL)) return { run: false, reason: "pas de base de données configurée (stockage fichier)" }
-  if (flag === "1" || flag === "true" || flag === "oui") return { run: true, reason: "forcées (BRAIN_MIGRATE_ON_BUILD=1)" }
+  if (flag === "0" || flag === "false" || flag === "no" || flag === "non") return { run: false, reason: "turned off (BRAIN_MIGRATE_ON_BUILD=0)" }
+  if (!(env.DATABASE_MIGRATE_URL || env.DATABASE_URL)) return { run: false, reason: "no database configured (file storage)" }
+  if (flag === "1" || flag === "true" || flag === "yes" || flag === "oui") return { run: true, reason: "forced (BRAIN_MIGRATE_ON_BUILD=1)" }
   if (env.VERCEL) {
-    if (env.VERCEL_ENV === "production") return { run: true, reason: "déploiement de production Vercel" }
+    if (env.VERCEL_ENV === "production") return { run: true, reason: "Vercel production deployment" }
     return {
       run: false,
-      reason: `déploiement Vercel « ${env.VERCEL_ENV ?? "?"} » : la base peut être celle de la production (BRAIN_MIGRATE_ON_BUILD=1 si cette preview a sa propre base)`,
+      reason: `Vercel "${env.VERCEL_ENV ?? "?"}" deployment: the database may be the production one (BRAIN_MIGRATE_ON_BUILD=1 if this preview has its own database)`,
     }
   }
-  return { run: false, reason: "build hors Vercel : lancez npm run db:migrate (le conteneur Docker le fait à son démarrage)" }
+  return { run: false, reason: "build outside Vercel: run npm run db:migrate (the Docker container does it when it starts)" }
 }

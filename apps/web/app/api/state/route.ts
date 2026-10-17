@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic"
 
 export const GET = withViewer(async (_req, viewer) => {
   const state = await getState(viewer)
-  // Les connecteurs dus (une fois par heure) tournent en arrière-plan, sans retarder la réponse ni la faire échouer.
+  // Due connectors (once an hour) run in the background, without delaying the response or making it fail.
   if (viewer.real.role === "admin") {
     void runInOrg(viewer.real.org_id, () => runDueConnectors(viewer)).catch((err) => console.error("[connectors]", err))
-    // Imports des serveurs MCP (toutes les 6 heures, s'ils sont activés), de la même façon.
+    // MCP server imports (every 6 hours, when enabled), the same way.
     void runInOrg(viewer.real.org_id, () => runDueMcpImports(viewer)).catch((err) => console.error("[mcp-import]", err))
   }
   return json(state)

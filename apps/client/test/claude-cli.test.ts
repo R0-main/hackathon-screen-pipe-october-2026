@@ -1,5 +1,5 @@
-// `claude -p` : jamais en mode --bare (il ignore CLAUDE_CODE_OAUTH_TOKEN), et un jeton expiré ou révoqué
-// (« Please run /login ») est une panne du poste, avec un message clair, jamais un échec décompté par conversation.
+// `claude -p`: never in --bare mode (it ignores CLAUDE_CODE_OAUTH_TOKEN), and an expired or revoked token
+// ("Please run /login") is an outage of the computer, with a clear message, never a failure counted per conversation.
 
 import { strict as assert } from "node:assert"
 import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
@@ -15,9 +15,9 @@ import { mockServer, tempDir } from "./helpers"
 import { mockBrain } from "./mock-brain"
 
 const srcDir = fileURLToPath(new URL("../src", import.meta.url))
-// La fausse CLI annonce --bare dans son aide : il ne doit jamais être repris.
+// The fake CLI lists --bare in its help: it must never be used.
 const HELP = "--bare --no-session-persistence --tools --model"
-// Assemblé à l'exécution : aucun motif de jeton en clair dans le dépôt.
+// Assembled at run time: no plain token pattern in the repo.
 const CLAUDE_TOKEN = ["sk-ant-", "oat01-", "Tk4", "w".repeat(48)].join("")
 
 const ts = (minAgo: number) => new Date(Date.now() - minAgo * 60_000).toISOString()
@@ -44,11 +44,11 @@ function station(url: string, token = "cb_test_token_123456", extra: Record<stri
   return { home, proj, state: () => JSON.parse(readFileSync(join(home, "state.json"), "utf8")) }
 }
 
-const AUTH_HELP = /Claude Code n'est plus connecté sur ce poste : le jeton Claude a expiré ou a été révoqué/
-// La commande citée est celle du poste : le raccourci ~/.company-brain/brain s'il existe, sinon Node.js et le script.
-const AUTH_STEPS = /Lancez `claude setup-token`, puis `[^`]+ init --claude-token <jeton>` \(ou `claude \/login`\)/
+const AUTH_HELP = /Claude Code is no longer signed in on this computer: the Claude token has expired or was revoked/
+// The command quoted is the computer's own: the ~/.company-brain/brain shortcut if it exists, otherwise Node.js and the script.
+const AUTH_STEPS = /Run `claude setup-token`, then `[^`]+ init --claude-token <token>` \(or `claude \/login`\)/
 
-test("classifyFailure / cliFailure : jeton expiré ou révoqué, /login, réseau, quotas ; le reste est propre à la conversation", () => {
+test("classifyFailure / cliFailure: expired or revoked token, /login, network, quotas; the rest is specific to the conversation", () => {
   for (const t of [
     "OAuth token has expired. Please obtain a new token or refresh your existing token.",
     "Not logged in · Please run /login",
@@ -59,7 +59,7 @@ test("classifyFailure / cliFailure : jeton expiré ou révoqué, /login, réseau
     assert.equal(classifyFailure(t), "auth", t)
   for (const t of ["API Error: Connection error.", "spawn claude ENOENT", "API Error: 529 Overloaded", "Claude AI usage limit reached|1760000000", "API Error: 429 rate_limit_error", "getaddrinfo ENOTFOUND api.anthropic.com", "Credit balance is too low"])
     assert.equal(classifyFailure(t), "outage", t)
-  // Limites d'abonnement, telles que les écrit la CLI installée.
+  // Subscription limits, as the installed CLI writes them.
   for (const t of [
     "You've hit your session limit · resets 3pm",
     "You've hit your weekly limit · resets Oct 20, 3pm",
@@ -73,69 +73,69 @@ test("classifyFailure / cliFailure : jeton expiré ou révoqué, /login, réseau
     "Overloaded",
   ])
     assert.equal(classifyFailure(t), "outage", t)
-  for (const t of ["Prompt is too long", "Erreur inattendue", "délai de 120 s dépassé", "Error: max turns reached (duration 401 ms, 529 tokens)"]) assert.equal(classifyFailure(t), "conversation", t)
+  for (const t of ["Prompt is too long", "Unexpected error", "timeout of 120 s exceeded", "Error: max turns reached (duration 401 ms, 529 tokens)"]) assert.equal(classifyFailure(t), "conversation", t)
 
-  // Enveloppe is_error avec un code 0 : échec, classé d'après son `result` (les champs numériques ne comptent pas).
+  // is_error envelope with code 0: failure, classified on its `result` (the numeric fields do not count).
   assert.deepEqual(cliFailure({ stdout: JSON.stringify({ is_error: true, duration_ms: 401, result: "Not logged in · Please run /login" }) })?.failure, "auth")
   assert.deepEqual(cliFailure({ stdout: JSON.stringify({ is_error: true, duration_ms: 401, result: "Prompt is too long" }) }), {
     error: "Prompt is too long",
     failure: "conversation",
     signature: "Prompt is too long",
   })
-  // Réponse normale (même en prose) : pas un échec de la CLI.
-  assert.equal(cliFailure({ stdout: JSON.stringify({ is_error: false, duration_ms: 401, result: "Désolé, je ne peux pas." }) }), null)
+  // Normal answer (even in prose): not a failure of the CLI.
+  assert.equal(cliFailure({ stdout: JSON.stringify({ is_error: false, duration_ms: 401, result: "Sorry, I can't." }) }), null)
 
-  // Statut HTTP numérique de l'enveloppe (api_error_status) : 401/403 → connexion, 429/529/5xx → panne, quel que soit le texte.
-  const env = (status: number, result = "Erreur inattendue") => cliFailure({ stdout: JSON.stringify({ type: "result", is_error: true, api_error_status: status, duration_ms: 640, result }) })
+  // Numeric HTTP status of the envelope (api_error_status): 401/403 → sign-in, 429/529/5xx → outage, whatever the text.
+  const env = (status: number, result = "Unexpected error") => cliFailure({ stdout: JSON.stringify({ type: "result", is_error: true, api_error_status: status, duration_ms: 640, result }) })
   assert.deepEqual(env(429, "You've hit your session limit · resets 3pm"), { error: "You've hit your session limit · resets 3pm", failure: "outage" })
   for (const [status, kind] of [[401, "auth"], [403, "auth"], [429, "outage"], [500, "outage"], [503, "outage"], [529, "outage"]] as const) assert.equal(env(status)?.failure, kind, String(status))
-  assert.equal(env(400)?.failure, "conversation", "400 : classé d'après le texte")
+  assert.equal(env(400)?.failure, "conversation", "400: classified on the text")
   assert.equal(env(400, "Not logged in · Please run /login")?.failure, "auth")
-  assert.equal(statusFailure("429"), null, "seul un nombre compte")
+  assert.equal(statusFailure("429"), null, "only a number counts")
   assert.equal(statusFailure(null), null)
 
-  // Sortie sans JSON : le modèle a répondu (échec propre à la conversation)… sauf un texte court qui se lit comme une erreur
-  // de la CLI, qui ne prouve rien (traité comme une erreur inconnue, avec signature), jamais comme une panne.
-  assert.equal(unreadableFailure(JSON.stringify({ is_error: false, result: "Désolé, je préfère ne pas traiter cette conversation." })).signature, undefined)
+  // Output without JSON: the model answered (failure specific to the conversation)… except a short text that reads like an
+  // error of the CLI, which proves nothing (handled as an unknown error, with a signature), never as an outage.
+  assert.equal(unreadableFailure(JSON.stringify({ is_error: false, result: "Sorry, I would rather not process this conversation." })).signature, undefined)
   const lim = unreadableFailure(JSON.stringify({ is_error: false, result: "You've hit your session limit · resets 3pm" }))
   assert.equal(lim.failure, "conversation")
   assert.equal(lim.signature, "You've hit your session limit · resets 3pm")
-  assert.equal(unreadableFailure(JSON.stringify({ is_error: false, result: `Résumé : ${"on parle du rate limit de l'API. ".repeat(20)}` })).signature, undefined, "une longue réponse en prose reste une réponse")
-  assert.equal(unreadableFailure("").signature, "sortie vide")
-  assert.equal(unreadableFailure(JSON.stringify({ type: "result", is_error: false })).signature, "sortie vide")
+  assert.equal(unreadableFailure(JSON.stringify({ is_error: false, result: `Summary: ${"we talk about the rate limit of the API. ".repeat(20)}` })).signature, undefined, "a long answer in prose is still an answer")
+  assert.equal(unreadableFailure("").signature, "empty output")
+  assert.equal(unreadableFailure(JSON.stringify({ type: "result", is_error: false })).signature, "empty output")
 
-  // API Anthropic (statut du dernier appel HTTP).
+  // Anthropic API (status of the last HTTP call).
   assert.equal(apiFailure({ status: 401, body: '{"type":"authentication_error"}' }).failure, "auth")
   assert.equal(apiFailure({ status: 529 }).failure, "outage")
   assert.equal(apiFailure({ network: "fetch failed" }).failure, "outage")
   assert.equal(apiFailure({ status: 400, body: "Your credit balance is too low" }).failure, "outage")
   assert.equal(apiFailure({ status: 200 }).failure, "conversation")
-  assert.equal(apiFailure({ status: 200 }).signature, undefined, "le modèle a répondu : Claude fonctionne")
+  assert.equal(apiFailure({ status: 200 }).signature, undefined, "the model answered: Claude works")
 })
 
-test("NO-BARE : aucun `claude -p` (distillation, refresh-status) n'utilise --bare, même si la CLI le propose", async () => {
+test("NO-BARE: no `claude -p` (distillation, refresh-status) uses --bare, even if the CLI offers it", async () => {
   const cli = fakeClaude({ help: HELP })
   const brain = await mockBrain()
   const input: StatusInput = { company_name: "Fournil", generated_for: "2026-10-16", zones: [{ id: "dev", name: "Dev", description: "" }], items: [], tasks: [] }
   const status = await mockServer((req) => (req.url.startsWith("/api/status/input") ? { body: input } : undefined))
   try {
     const st = station(brain.url, "cb_test_token_123456", { claude_oauth_token: CLAUDE_TOKEN })
-    writeFileSync(join(st.proj, "a.jsonl"), session("a", "QZX1 On part sur quelle base ?", "On part sur Supabase.", 30))
+    writeFileSync(join(st.proj, "a.jsonl"), session("a", "QZX1 Which database do we go with?", "We go with Supabase.", 30))
     const r = await withPath(cli.bin, () => runSync({}, capture().io))
     assert.equal(r.sent, 1)
     station(status.url, "cb_admin", { claude_oauth_token: CLAUDE_TOKEN })
     assert.equal(await withPath(cli.bin, () => cmdRefreshStatus({ dryRun: true }, () => {})), 0)
 
     const calls = cli.calls()
-    assert.ok(calls.some((c) => c.status) && calls.some((c) => !c.status), "distillation et refresh-status appelés")
+    assert.ok(calls.some((c) => c.status) && calls.some((c) => !c.status), "distillation and refresh-status called")
     for (const c of calls) {
       assert.equal(c.args[0], "-p")
-      assert.ok(!c.args.includes("--bare"), `--bare passé : ${c.args.join(" ")}`)
-      assert.equal(c.token, CLAUDE_TOKEN, "le jeton de la config doit arriver à claude -p")
+      assert.ok(!c.args.includes("--bare"), `--bare passed: ${c.args.join(" ")}`)
+      assert.equal(c.token, CLAUDE_TOKEN, "the config token must reach claude -p")
     }
     assert.ok(!claudeCliArgs(join(cli.bin, "claude")).includes("--bare"))
 
-    // Un seul endroit construit les arguments de `claude -p` (claudeCliArgs) : pas d'autre lancement qui le contourne.
+    // A single place builds the arguments of `claude -p` (claudeCliArgs): no other launch that bypasses it.
     const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? files(join(dir, n)) : [join(dir, n)]))
     const withP = files(srcDir).filter((f) => f.endsWith(".ts") && /["']-p["']/.test(readFileSync(f, "utf8")))
     assert.deepEqual(withP.map((f) => f.slice(srcDir.length + 1)), ["distill.ts"])
@@ -146,13 +146,13 @@ test("NO-BARE : aucun `claude -p` (distillation, refresh-status) n'utilise --bar
   }
 })
 
-test("TOKEN-EXPIRED : jeton Claude expiré → message clair, panne (rien de décompté, rien d'abandonné), tout part une fois reconnecté", async () => {
+test("TOKEN-EXPIRED: expired Claude token → clear message, outage (nothing counted, nothing given up), everything goes once signed in again", async () => {
   const cli = fakeClaude({ help: HELP })
   const brain = await mockBrain()
   try {
     const st = station(brain.url)
     const files = [0, 1, 2, 3, 4].map((k) => join(st.proj, `s${k}.jsonl`))
-    files.forEach((f, k) => writeFileSync(f, session(`s${k}`, `QZX${k} Comment on déploie l'API ?`, "On a décidé de déployer avec Vercel.", 60 - k)))
+    files.forEach((f, k) => writeFileSync(f, session(`s${k}`, `QZX${k} How do we deploy the API?`, "We decided to deploy with Vercel.", 60 - k)))
     cli.setMode("expired")
     for (let run = 1; run <= 4; run++) {
       const before = cli.calls().length
@@ -160,14 +160,14 @@ test("TOKEN-EXPIRED : jeton Claude expiré → message clair, panne (rien de dé
       const r = await withPath(cli.bin, () => runSync({}, out.io))
       assert.equal(r.failed, 5)
       assert.equal(r.sent, 0)
-      // Connexion perdue : on s'arrête aussitôt (au plus les appels déjà lancés en parallèle).
-      assert.ok(cli.calls().length - before <= 2, `appels : ${cli.calls().length - before}`)
+      // Sign-in lost: we stop at once (at most the calls already started in parallel).
+      assert.ok(cli.calls().length - before <= 2, `calls: ${cli.calls().length - before}`)
       assert.match(out.text(), AUTH_HELP)
       assert.match(out.text(), AUTH_STEPS)
       assert.match(out.text(), /OAuth token has expired/)
-      assert.match(out.text(), /seront distillées à la prochaine synchro, une fois Claude reconnecté \(aucun essai décompté\)/)
-      assert.doesNotMatch(out.text(), /abandonnée|Échec lié au contenu/)
-      assert.equal(st.state().distill_failures, undefined, "panne comptée comme échec de conversation")
+      assert.match(out.text(), /be distilled on the next sync, once Claude is signed in again \(no attempt counted\)/)
+      assert.doesNotMatch(out.text(), /given up|Failure due to the content/)
+      assert.equal(st.state().distill_failures, undefined, "outage counted as a conversation failure")
       for (const f of files) assert.equal(st.state().claude?.files?.[f], undefined)
     }
     cli.setMode("")
@@ -179,18 +179,18 @@ test("TOKEN-EXPIRED : jeton Claude expiré → message clair, panne (rien de dé
   }
 })
 
-test("TOKEN-EXPIRED : jeton révoqué (enveloppe JSON, code 1) et « Please run /login » (code 0) → même message, même panne", async () => {
+test("TOKEN-EXPIRED: revoked token (JSON envelope, code 1) and \"Please run /login\" (code 0) → same message, same outage", async () => {
   for (const mode of ["revoked-json", "login"]) {
     const cli = fakeClaude({ help: HELP })
     const brain = await mockBrain()
     try {
       const st = station(brain.url)
-      for (let k = 0; k < 4; k++) writeFileSync(join(st.proj, `s${k}.jsonl`), session(`s${k}`, `QZX${k} Question ?`, "Réponse.", 30 - k))
+      for (let k = 0; k < 4; k++) writeFileSync(join(st.proj, `s${k}.jsonl`), session(`s${k}`, `QZX${k} Question?`, "Answer.", 30 - k))
       cli.setMode(mode)
       const out = capture()
       const r = await withPath(cli.bin, () => runSync({}, out.io))
       assert.equal(r.failed, 4, mode)
-      assert.ok(cli.calls().length <= 2, `${mode} : ${cli.calls().length} appels`)
+      assert.ok(cli.calls().length <= 2, `${mode}: ${cli.calls().length} calls`)
       assert.match(out.text(), AUTH_HELP)
       assert.match(out.text(), AUTH_STEPS)
       assert.match(out.text(), /Please run \/login/)
@@ -201,7 +201,7 @@ test("TOKEN-EXPIRED : jeton révoqué (enveloppe JSON, code 1) et « Please run 
   }
 })
 
-test("TOKEN-EXPIRED : refresh-status explique quoi faire quand le jeton a expiré ou a été révoqué", async () => {
+test("TOKEN-EXPIRED: refresh-status says what to do when the token has expired or was revoked", async () => {
   const input: StatusInput = { company_name: "Fournil", generated_for: "2026-10-16", zones: [{ id: "dev", name: "Dev", description: "" }], items: [], tasks: [] }
   const brain = await mockServer((req) => (req.url.startsWith("/api/status/input") ? { body: input } : undefined))
   try {
@@ -212,21 +212,21 @@ test("TOKEN-EXPIRED : refresh-status explique quoi faire quand le jeton a expir�
       await assert.rejects(withPath(cli.bin, () => cmdRefreshStatus({}, () => {})), (err: Error) => {
         assert.match(err.message, AUTH_HELP, mode)
         assert.match(err.message, AUTH_STEPS, mode)
-        assert.match(err.message, /relancez `refresh-status`/)
+        assert.match(err.message, /run `refresh-status` again/)
         assert.ok(!err.message.includes(CLAUDE_TOKEN))
         return true
       })
     }
-    // Autre panne (réseau) : message d'échec générique, pas celui du jeton.
+    // Other outage (network): generic failure message, not the token one.
     const cli = fakeClaude({ help: HELP })
     cli.setMode("network")
-    await assert.rejects(withPath(cli.bin, () => cmdRefreshStatus({}, () => {})), /`claude -p` a échoué : code 1 : API Error: Connection error/)
+    await assert.rejects(withPath(cli.bin, () => cmdRefreshStatus({}, () => {})), /`claude -p` failed: code 1: API Error: Connection error/)
   } finally {
     await brain.close()
   }
 })
 
-test("TOKEN-EXPIRED : clé API refusée (401) par l'API Anthropic → message clair, arrêt immédiat, rien de décompté", async () => {
+test("TOKEN-EXPIRED: API key refused (401) by the Anthropic API → clear message, immediate stop, nothing counted", async () => {
   let calls = 0
   const anthropic = await mockServer(() => {
     calls++
@@ -239,15 +239,15 @@ test("TOKEN-EXPIRED : clé API refusée (401) par l'API Anthropic → message cl
   console.error = () => {}
   try {
     const st = station(brain.url, "cb_test_token_123456", { anthropic_api_key: ["sk-ant-", "api03-", "z".repeat(30)].join("") })
-    for (let k = 0; k < 6; k++) writeFileSync(join(st.proj, `s${k}.jsonl`), session(`s${k}`, `QZX${k} Question ?`, "On a décidé de garder Supabase.", 30 - k))
+    for (let k = 0; k < 6; k++) writeFileSync(join(st.proj, `s${k}.jsonl`), session(`s${k}`, `QZX${k} Question?`, "We decided to keep Supabase.", 30 - k))
     const out = capture()
     const r = await withPath(null, () => runSync({}, out.io))
     assert.equal(r.distiller, "claude-api")
     assert.equal(r.failed, 6)
-    assert.match(out.text(), /Clé API Anthropic refusée \(« API Anthropic : HTTP 401/)
-    assert.match(out.text(), /init --anthropic-key <clé>/)
-    // Concurrence 3 : au plus 3 conversations tentées (tri + extraction chacune), puis arrêt.
-    assert.ok(calls <= 6, `appels HTTP : ${calls}`)
+    assert.match(out.text(), /Anthropic API key refused \("Anthropic API: HTTP 401/)
+    assert.match(out.text(), /init --anthropic-key <key>/)
+    // Concurrency 3: at most 3 conversations attempted (triage + extraction each), then stop.
+    assert.ok(calls <= 6, `HTTP calls: ${calls}`)
     assert.equal(st.state().distill_failures, undefined)
   } finally {
     console.error = prevError
@@ -258,27 +258,27 @@ test("TOKEN-EXPIRED : clé API refusée (401) par l'API Anthropic → message cl
   }
 })
 
-test("R-SIMPLE : CLAUDE_CODE_SIMPLE (équivalent de --bare) n'est jamais transmis à `claude -p`, qui lit donc le jeton", async () => {
+test("R-SIMPLE: CLAUDE_CODE_SIMPLE (same as --bare) is never passed to `claude -p`, which therefore reads the token", async () => {
   const base = { PATH: "/usr/bin", CLAUDE_CODE_SIMPLE: "1", HOME: "/home/x" }
   const env = claudeCliEnv({ oauthToken: CLAUDE_TOKEN }, base)
   assert.equal(env.CLAUDE_CODE_SIMPLE, undefined)
   assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_TOKEN)
   assert.equal(env.COMPANY_BRAIN_INTERNAL, "1")
-  assert.equal(base.CLAUDE_CODE_SIMPLE, "1", "l'environnement du processus n'est pas modifié")
+  assert.equal(base.CLAUDE_CODE_SIMPLE, "1", "the environment of the process is not changed")
 
-  // De bout en bout : brain.mjs lancé depuis une session `claude --bare` (variable héritée).
+  // End to end: brain.mjs started from a `claude --bare` session (inherited variable).
   const cli = fakeClaude({ help: HELP })
   const brain = await mockBrain()
   const prev = process.env.CLAUDE_CODE_SIMPLE
   process.env.CLAUDE_CODE_SIMPLE = "1"
   try {
     const st = station(brain.url, "cb_test_token_123456", { claude_oauth_token: CLAUDE_TOKEN })
-    writeFileSync(join(st.proj, "a.jsonl"), session("a", "QZX1 On part sur quelle base ?", "On part sur Supabase.", 30))
+    writeFileSync(join(st.proj, "a.jsonl"), session("a", "QZX1 Which database do we go with?", "We go with Supabase.", 30))
     const r = await withPath(cli.bin, () => runSync({}, capture().io))
     assert.equal(r.sent, 1)
     assert.ok(cli.calls().length > 0)
     for (const c of cli.calls()) {
-      assert.equal(c.simple, null, "CLAUDE_CODE_SIMPLE transmis à claude -p")
+      assert.equal(c.simple, null, "CLAUDE_CODE_SIMPLE passed to claude -p")
       assert.equal(c.token, CLAUDE_TOKEN)
     }
   } finally {
@@ -288,31 +288,31 @@ test("R-SIMPLE : CLAUDE_CODE_SIMPLE (équivalent de --bare) n'est jamais transmi
   }
 })
 
-test("R-LIMIT : limite d'abonnement (api_error_status 429), synchros répétées → rien de décompté ni d'abandonné, tout part après la remise à zéro", async () => {
+test("R-LIMIT: subscription limit (api_error_status 429), repeated syncs → nothing counted or given up, everything goes after the reset", async () => {
   const cli = fakeClaude({ help: HELP })
   const brain = await mockBrain()
   try {
     const st = station(brain.url)
     const f = join(st.proj, "lim.jsonl")
-    writeFileSync(f, session("lim", "QZXLIM7 On migre la base vers Supabase cette semaine ?", "Oui, décision prise : migration jeudi.", 20))
+    writeFileSync(f, session("lim", "QZXLIM7 Do we move the database to Supabase this week?", "Yes, decision made: migration on Thursday.", 20))
     cli.setMode("limit")
     for (let run = 1; run <= 5; run++) {
       const out = capture()
       const r = await withPath(cli.bin, () => runSync({}, out.io))
       assert.equal(r.failed, 1)
       assert.match(out.text(), /You've hit your session limit/)
-      assert.match(out.text(), /Panne générale \(Claude injoignable ou saturé\) : aucun essai n'est décompté/)
-      assert.doesNotMatch(out.text(), /abandonnée|Échec lié au contenu/)
-      assert.equal(st.state().distill_failures, undefined, "limite d'abonnement décomptée comme un échec de la conversation")
-      assert.equal(st.state().claude?.files?.[f], undefined, "checkpoint avancé pendant la limite")
+      assert.match(out.text(), /General outage \(Claude unreachable or overloaded\): no attempt is counted/)
+      assert.doesNotMatch(out.text(), /given up|Failure due to the content/)
+      assert.equal(st.state().distill_failures, undefined, "subscription limit counted as a failure of the conversation")
+      assert.equal(st.state().claude?.files?.[f], undefined, "checkpoint moved forward during the limit")
     }
-    // Même limite, texte seul (sans enveloppe ni statut) : reconnue aussi.
+    // Same limit, text only (no envelope or status): recognized too.
     cli.setMode("limit-text")
     const out = capture()
     await withPath(cli.bin, () => runSync({}, out.io))
     assert.match(out.text(), /You've hit your weekly limit/)
     assert.equal(st.state().distill_failures, undefined)
-    // La limite est levée : la conversation part.
+    // The limit is lifted: the conversation goes.
     cli.setMode("")
     const r = await withPath(cli.bin, () => runSync({}, capture().io))
     assert.equal(r.sent, 1)
@@ -323,20 +323,20 @@ test("R-LIMIT : limite d'abonnement (api_error_status 429), synchros répétées
   }
 })
 
-test("R-LIMIT : limite atteinte en cours de synchro (2 appels réussis) → les conversations suivantes ne sont pas décomptées", async () => {
+test("R-LIMIT: limit reached during a sync (2 successful calls) → the following conversations are not counted", async () => {
   const cli = fakeClaude({ help: HELP })
   const brain = await mockBrain()
   try {
     const st = station(brain.url)
-    for (let k = 0; k < 6; k++) writeFileSync(join(st.proj, `m${k}.jsonl`), session(`m${k}`, `QZXM${k} Comment on déploie l'API ?`, "On a décidé de déployer avec Vercel.", 60 - k))
+    for (let k = 0; k < 6; k++) writeFileSync(join(st.proj, `m${k}.jsonl`), session(`m${k}`, `QZXM${k} How do we deploy the API?`, "We decided to deploy with Vercel.", 60 - k))
     cli.setMode("limit")
     cli.allow(2)
     const out = capture()
     const r = await withPath(cli.bin, () => runSync({}, out.io))
     assert.equal(r.sent, 2)
     assert.equal(r.failed, 4)
-    assert.match(out.text(), /Panne \(Claude injoignable ou saturé\) : aucun essai n'est décompté/)
-    assert.doesNotMatch(out.text(), /abandonnée|Échec lié au contenu/)
+    assert.match(out.text(), /Outage \(Claude unreachable or overloaded\): no attempt is counted/)
+    assert.doesNotMatch(out.text(), /given up|Failure due to the content/)
     assert.deepEqual(Object.values(st.state().distill_failures ?? {}).filter((x) => (x as { n: number }).n > 0), [])
     cli.setMode("")
     const r2 = await withPath(cli.bin, () => runSync({}, capture().io))
@@ -349,47 +349,47 @@ test("R-LIMIT : limite atteinte en cours de synchro (2 appels réussis) → les 
 
 const tagsOf = (v: unknown) => [...new Set([...JSON.stringify(v).matchAll(/QZX[A-Z]*\d+/g)].map((m) => m[0]))].sort()
 
-test("R-LIMIT : erreur inconnue sans aucune réponse de Claude (formulation de panne inconnue) → jamais abandonnée avant 24 h et 5 essais", async () => {
+test("R-LIMIT: unknown error without any answer from Claude (unknown outage wording) → never given up before 24 h and 5 attempts", async () => {
   const cli = fakeClaude({ help: HELP })
   const brain = await mockBrain()
   try {
     const st = station(brain.url)
     const f = join(st.proj, "w.jsonl")
-    writeFileSync(f, session("w", "QZXW1 On garde Qonto pour la trésorerie ?", "Oui, décision prise.", 20))
+    writeFileSync(f, session("w", "QZXW1 Do we keep Qonto for the cash?", "Yes, decision made.", 20))
     cli.setMode("weird")
     for (let run = 1; run <= 6; run++) {
       const out = capture()
       await withPath(cli.bin, () => runSync({}, out.io))
-      assert.match(out.text(), /Panne générale \(Claude n'a répondu à aucun appel\) : aucun essai n'est décompté/)
-      assert.match(out.text(), /depuis plus de 24 h \(au moins 5 essais\) sera abandonnée/)
-      assert.doesNotMatch(out.text(), /abandonnée après|Échec lié au contenu/)
+      assert.match(out.text(), /General outage \(Claude answered no call\): no attempt is counted/)
+      assert.match(out.text(), /for more than 24 h \(at least 5 attempts\) will be given up/)
+      assert.doesNotMatch(out.text(), /given up after|Failure due to the content/)
       const e = st.state().distill_failures?.w
-      assert.equal(e?.n, 0, "essai décompté sans preuve")
+      assert.equal(e?.n, 0, "attempt counted without proof")
       assert.equal(e?.tries, run)
       assert.equal(st.state().claude?.files?.[f], undefined)
     }
-    // Même texte de limite rendu comme une réponse normale (is_error false) : ne prouve rien non plus.
+    // Same limit text returned as a normal answer (is_error false): proves nothing either.
     cli.setMode("limit-ok")
     await withPath(cli.bin, () => runSync({}, capture().io))
     assert.equal(st.state().distill_failures?.w?.n, 0)
 
-    // Garde-fou : les échecs durent depuis plus de 24 h → abandonnée, le checkpoint avance.
+    // Safeguard: the failures have lasted more than 24 h → given up, the checkpoint moves forward.
     cli.setMode("weird")
     const state = st.state()
     state.distill_failures.w.first_at = new Date(Date.now() - 25 * 3_600_000).toISOString()
     writeFileSync(join(st.home, "state.json"), JSON.stringify(state))
     const out = capture()
     await withPath(cli.bin, () => runSync({}, out.io))
-    assert.match(out.text(), /1 conversation abandonnée après plus de 24 h d'échecs \(5 essais au moins\) : rien n'a été envoyé pour elle/)
+    assert.match(out.text(), /1 conversation given up after more than 24 h of failures \(at least 5 attempts\): nothing was sent for it/)
     assert.equal(st.state().distill_failures, undefined)
-    assert.ok(st.state().claude.files[f], "conversation bloquée : checkpoint toujours pas avancé après 24 h")
+    assert.ok(st.state().claude.files[f], "conversation stuck: checkpoint still not moved forward after 24 h")
     assert.ok(!JSON.stringify(brain.received).includes("QZXW1"))
   } finally {
     await brain.close()
   }
 })
 
-test("R-LIMIT : runClaudeCli classe d'après api_error_status (code non nul) ; délai dépassé = erreur inconnue (signature)", async () => {
+test("R-LIMIT: runClaudeCli classifies on api_error_status (non-zero code); timeout = unknown error (signature)", async () => {
   const dir = tempDir("cli-run-")
   const script = (name: string, body: string) => {
     const bin = join(dir, name)
@@ -397,7 +397,7 @@ test("R-LIMIT : runClaudeCli classe d'après api_error_status (code non nul) ; d
     chmodSync(bin, 0o755)
     return bin
   }
-  const envelope = (status: number) => `process.stdin.on("end", () => { process.stdout.write(JSON.stringify({ type: "result", is_error: true, api_error_status: ${status}, duration_ms: 401, result: "Erreur inattendue" })); process.exit(1) })`
+  const envelope = (status: number) => `process.stdin.on("end", () => { process.stdout.write(JSON.stringify({ type: "result", is_error: true, api_error_status: ${status}, duration_ms: 401, result: "Unexpected error" })); process.exit(1) })`
   for (const [status, kind] of [[529, "outage"], [429, "outage"], [401, "auth"], [400, "conversation"]] as const) {
     const run = await runClaudeCli(script(`s${status}`, envelope(status)), "prompt", 10_000)
     assert.equal(run.failure, kind, String(status))
@@ -405,6 +405,6 @@ test("R-LIMIT : runClaudeCli classe d'après api_error_status (code non nul) ; d
   }
   const run = await runClaudeCli(script("slow", "setTimeout(() => process.exit(0), 5000)"), "prompt", 300)
   assert.equal(run.failure, "conversation")
-  assert.equal(run.signature, "délai dépassé")
-  assert.deepEqual(cliFailure(run), { error: run.error, failure: "conversation", signature: "délai dépassé" })
+  assert.equal(run.signature, "timeout")
+  assert.deepEqual(cliFailure(run), { error: run.error, failure: "conversation", signature: "timeout" })
 })

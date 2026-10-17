@@ -11,16 +11,16 @@ import { PersonAvatar } from "./PersonDot"
 import { RelTime } from "./RelTime"
 import { CheckIcon, CopyIcon, ErrorText, ZoneBead, ZoneTag, zoneColor } from "./ui"
 
-/** Commande du client installé (voir lib/install-prompt.ts) qui fait rédiger l'état par Claude sur le poste, puis l'envoie. */
+/** Command of the installed client (see lib/install-prompt.ts) that has Claude write the state on the workstation, then sends it. */
 const REFRESH_COMMAND = "~/.company-brain/brain refresh-status"
 
 type Person = DashboardState["people"][number]
 type TaskCounts = DashboardState["task_counts"]
 
 /**
- * « Où en est l'entreprise », lu comme un point d'équipe : la réponse d'abord, puis ce qui est à suivre dans toutes les
- * zones et le sommaire des zones, puis le détail zone par zone, accroché à un fil (une bille par zone, comme dans le
- * cerveau). L'avancement se lit en billes : une par tâche, pleine quand elle est faite.
+ * "Where the company stands", read like a team update: the answer first, then what is next across all zones and the
+ * list of zones, then the detail zone by zone, hooked to a thread (one bead per zone, as in the brain). Progress reads
+ * in beads: one per task, filled when it is done.
  */
 export function StatusPanel({
   status,
@@ -44,10 +44,10 @@ export function StatusPanel({
   const { t } = useT()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  // Spectateur qui ne lit pas toutes les zones : le titre est recalculé sur ses zones par le serveur (pas par Claude).
+  // A viewer who doesn't read all zones: the headline is recomputed on their zones by the server (not by Claude).
   const headlineScoped = zones.some((z) => z.locked)
 
-  // Zones du point encore présentes, une fois chacune (une zone supprimée depuis la génération disparaît).
+  // Zones of the update still present, once each (a zone deleted since the generation disappears).
   const sections: { zs: ZoneStatus; z: ZoneView }[] = []
   for (const zs of status?.zones ?? []) {
     const z = zones.find((x) => x.id === zs.zone)
@@ -97,7 +97,7 @@ export function StatusPanel({
           </p>
         )}
         {err && <ErrorText className="mt-3">{fmt(t.status.refreshError, { error: err })}</ErrorText>}
-        {/* Admins : sans clé API sur le serveur, Claude peut rédiger le point depuis un poste (abonnement de l'employé). */}
+        {/* Admins: without an API key on the server, Claude can write the update from a workstation (the employee's subscription). */}
         {canRefresh && status?.generator !== "claude" && <CommandHint />}
       </header>
 
@@ -186,12 +186,12 @@ function ZoneSection({
   last: boolean
 }) {
   const { t } = useT()
-  // L'heuristique écrit « 1/2 tâches terminées » : les billes le disent déjà. La phrase de Claude, elle, ajoute du sens.
+  // The heuristic writes "1/2 tasks done": the beads already say so. Claude's sentence, on the other hand, adds meaning.
   const progressNote = byClaude && zs.progress.trim() && !/^\s*\d+\s*\/\s*\d+/.test(zs.progress) ? zs.progress : null
   const hasDetail = zs.objectives.length > 0 || zs.who_did_what.length > 0
   return (
     <li id={`zone-${zone.id}`} className={`relative scroll-mt-6 pl-8 ${last ? "" : "pb-12"}`}>
-      {/* Le fil : de la bille de cette zone à celle de la suivante. */}
+      {/* The thread: from this zone's bead to the next one's. */}
       {!last && <span aria-hidden className="absolute -bottom-[4px] left-[5px] top-[21px] w-px bg-line-strong" />}
       <ZoneBead color={zoneColor(zone.color, zone.position)} className="absolute left-0 top-[6.5px]" />
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
@@ -243,7 +243,7 @@ function ZoneSection({
       )}
 
       <Link
-        href={`/connaissances?zone=${encodeURIComponent(zone.id)}`}
+        href={`/knowledge?zone=${encodeURIComponent(zone.id)}`}
         className="mt-5 inline-block rounded-[4px] text-[13px] underline decoration-line-strong decoration-1 underline-offset-4 transition-colors duration-150 ease-out hover:decoration-ink"
       >
         {fmt(t.status.seeKnowledge, { zone: zone.name })}
@@ -252,7 +252,7 @@ function ZoneSection({
   )
 }
 
-/** Avancement d'une zone : une bille par tâche (pleine quand elle est faite), puis « 1 sur 2 ». Au-delà de `max`, à l'échelle. */
+/** A zone's progress: one bead per task (filled when it is done), then "1 of 2". Beyond `max`, to scale. */
 function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max: number }) {
   const { t } = useT()
   const done = counts?.done ?? 0
@@ -283,7 +283,7 @@ function SectionTitle({ id, count, children }: { id: string; count?: number; chi
   )
 }
 
-/** La commande qui fait rédiger le point par Claude sur un poste, à copier. */
+/** The command that has Claude write the update on a workstation, to copy. */
 function CommandHint() {
   const { t } = useT()
   const [copied, setCopied] = useState(false)
@@ -293,7 +293,7 @@ function CommandHint() {
       setCopied(true)
       setTimeout(() => setCopied(false), 1800)
     } catch {
-      /* presse-papiers refusé : la commande reste sélectionnable d'un clic */
+      /* clipboard refused: the command stays selectable with one click */
     }
   }
   return (
@@ -314,8 +314,8 @@ function CommandHint() {
 }
 
 /**
- * Une prochaine étape est faite quand les tâches de sa zone qui portent ce titre le sont toutes (l'heuristique reprend
- * le titre de la tâche, tronqué par « … »).
+ * A next step is done when the tasks of its zone that carry this title are all done (the heuristic reuses the task's
+ * title, truncated with "…").
  */
 function stepDone(step: string, zone: string, tasks: Task[]): boolean {
   const prefix = step.endsWith("…") ? step.slice(0, -1) : null
@@ -323,7 +323,7 @@ function stepDone(step: string, zone: string, tasks: Task[]): boolean {
   return matches.length > 0 && matches.every((x) => x.status === "done")
 }
 
-/** Claude écrit souvent le prénom seul, l'heuristique le nom complet. */
+/** Claude often writes the first name alone, the heuristic the full name. */
 function findPerson(people: Person[], name: string): Person | undefined {
   const n = name.trim().toLowerCase()
   return people.find((p) => p.name.toLowerCase() === n) ?? people.find((p) => p.name.toLowerCase().split(" ")[0] === n)

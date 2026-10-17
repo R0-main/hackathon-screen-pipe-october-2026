@@ -9,7 +9,7 @@ import { entityHref } from "@/components/format"
 
 export const dynamic = "force-dynamic"
 
-/** Entités : les clients, projets, outils, personnes et documents les plus cités dans les zones lisibles. */
+/** Entities: the clients, projects, tools, people and documents most cited in the readable zones. */
 export default async function EntitiesPage() {
   const viewer = await requirePageViewer()
   const [{ t }, entities] = await Promise.all([getT(), runInOrg(viewer.real.org_id, () => listEntitiesFor(viewer, 300))])

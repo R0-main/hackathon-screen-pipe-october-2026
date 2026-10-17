@@ -5,9 +5,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * L'équipe et l'état de chaque poste : `last_at` est le dernier signe de son agent (le premier est le `hello` lancé à
- * la fin de l'installation), null tant que le poste n'est pas branché. Le parcours /creer le relit pour montrer qui
- * s'est connecté.
+ * The team and the state of each workstation: `last_at` is the last sign from its agent (the first one is the `hello`
+ * sent at the end of the install), null until the workstation is connected. The /create flow re-reads it to show who
+ * has connected.
  */
 export const GET = withViewer(
   async () => {

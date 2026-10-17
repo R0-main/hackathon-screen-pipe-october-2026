@@ -8,13 +8,13 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * GET /api/connectors/mcp/callback — retour du fournisseur après la connexion : le navigateur arrive ici avec sa
- * session (cookie SameSite=Lax, navigation de premier niveau), on échange le code puis on revient sur la page d'où la
- * connexion est partie (/connecteurs, ou l'étape 8 de /creer).
+ * GET /api/connectors/mcp/callback — the provider's return after sign-in: the browser arrives here with its session
+ * (SameSite=Lax cookie, top-level navigation), the code is exchanged, then back to the page the sign-in started from
+ * (/connectors, or step 8 of /create).
  */
 export async function GET(req: Request) {
   const base = publicBaseUrl(req)
-  const back = (params: Record<string, string>, page = "/connecteurs") => {
+  const back = (params: Record<string, string>, page = "/connectors") => {
     const url = new URL(page, base)
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
     return NextResponse.redirect(url, 303)
@@ -22,10 +22,10 @@ export async function GET(req: Request) {
   try {
     const viewer = await viewerFromRequest(req)
     if (!viewer) return NextResponse.redirect(`${base}/login`, 303)
-    if (viewer.real.role !== "admin") return back({ mcp: "error", reason: "Réservé aux admins." })
+    if (viewer.real.role !== "admin") return back({ mcp: "error", reason: "Admins only." })
     const q = new URL(req.url).searchParams
     const state = q.get("state")
-    if (!state) return back({ mcp: "error", reason: "Retour OAuth sans état." })
+    if (!state) return back({ mcp: "error", reason: "OAuth return without a state." })
     return await runInOrg(viewer.real.org_id, async () => {
       const page = await pendingReturnPage(state)
       try {
@@ -38,6 +38,6 @@ export async function GET(req: Request) {
     })
   } catch (err) {
     internalError(err, "/api/connectors/mcp/callback")
-    return back({ mcp: "error", reason: "Erreur interne du cerveau." })
+    return back({ mcp: "error", reason: "Internal brain error." })
   }
 }

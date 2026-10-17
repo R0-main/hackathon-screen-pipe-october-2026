@@ -5,14 +5,14 @@ import { useState } from "react"
 import type { RememberedAccount } from "@/lib/auth"
 import { fmt } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
-import { LanguageSwitch, useT } from "./I18n"
+import { useT } from "./I18n"
 import { PersonAvatar } from "./PersonDot"
 import { BrainIcon, CloseIcon, ErrorText, PlusIcon } from "./ui"
 
 /**
- * Connexion : d'abord les entreprises retenues par ce navigateur (un clic pour revenir dans l'une d'elles), puis, en grand,
- * la création d'une entreprise. Le jeton personnel reste replié dessous : le reste passe par Claude Code ou Codex. Sans
- * création possible (`BRAIN_SIGNUP=0`) ni entreprise retenue, le jeton seul.
+ * Sign-in: first the companies remembered by this browser (one click to go back into one of them), then, large, creating
+ * a company. The personal token stays folded underneath: everything else goes through Claude Code or Codex. With no
+ * creation possible (`BRAIN_SIGNUP=0`) and no remembered company, the token alone.
  */
 export function LoginForm({
   demo,
@@ -32,11 +32,11 @@ export function LoginForm({
   const [showToken, setShowToken] = useState(adding || (!signup && accounts.length === 0))
   const [token, setToken] = useState("")
   const [err, setErr] = useState<string | null>(null)
-  // « token » pendant la connexion par jeton, sinon l'identifiant du compte en cours d'ouverture ou d'oubli.
+  // "token" during sign-in with a token, otherwise the id of the account being opened or forgotten.
   const [busy, setBusy] = useState<string | null>(null)
 
-  // Navigation complète (pas router.push) : le cache du routeur client, qui peut contenir le cerveau d'une autre
-  // entreprise, est jeté.
+  // Full navigation (not router.push): the client router's cache, which may hold another company's brain, is
+  // thrown away.
   const openDashboard = () => window.location.assign("/dashboard")
 
   async function login(e: React.FormEvent) {
@@ -59,7 +59,7 @@ export function LoginForm({
       await api("/api/session/accounts", { method: "POST", json: { userId: a.userId } })
       openDashboard()
     } catch (e) {
-      // Session retenue expirée (ou jeton régénéré) : retour au jeton.
+      // Remembered session expired (or token regenerated): back to the token.
       setErr(errorMessage(e))
       setShowToken(true)
       setBusy(null)
@@ -145,7 +145,7 @@ export function LoginForm({
 
         {signup && (
           <div className={hasList ? "mt-3" : ""}>
-            <Link href="/creer" className="btn btn-primary btn-lg w-full">
+            <Link href="/create" className="btn btn-primary btn-lg w-full">
               <PlusIcon size={14} />
               {t.login.create}
             </Link>
@@ -194,7 +194,6 @@ export function LoginForm({
               </Link>
             </p>
           )}
-          <LanguageSwitch />
         </div>
       </div>
     </main>

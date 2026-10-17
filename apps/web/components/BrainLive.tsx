@@ -7,7 +7,7 @@ import type { DashboardState } from "@/lib/brain"
 import type { Ripple, ZoneActivity } from "./BrainViz"
 import { EVENT_VERB, api, firstName, uniqueZones } from "./format"
 
-/** `restricted_reason` : « zone » (une zone de l'événement n'est pas lisible) ou « private » (événement sans zone). */
+/** `restricted_reason`: "zone" (one of the event's zones is not readable) or "private" (event without a zone). */
 export type FeedEvent = AgentEvent & { restricted?: boolean; restricted_reason?: "zone" | "private"; fresh?: boolean }
 
 type BrainLive = {
@@ -26,7 +26,7 @@ const FEED_MAX = 80
 
 const maxId = (events: { id: number }[]) => events.reduce((m, e) => Math.max(m, e.id), 0)
 
-/** Fusionne des événements dans le fil, sans doublon, du plus récent au plus ancien. */
+/** Merges events into the feed, without duplicates, from most recent to oldest. */
 function mergeFeed(prev: FeedEvent[], incoming: FeedEvent[]): FeedEvent[] {
   const known = new Set(prev.map((e) => e.id))
   const added = incoming.filter((e) => !known.has(e.id))
@@ -34,7 +34,7 @@ function mergeFeed(prev: FeedEvent[], incoming: FeedEvent[]): FeedEvent[] {
   return [...prev, ...added].sort((a, b) => b.id - a.id).slice(0, FEED_MAX)
 }
 
-/** Repli sans horodatage serveur : une valeur déterministe (identique au rendu serveur et à l'hydratation). */
+/** Fallback without a server timestamp: a deterministic value (identical for the server render and hydration). */
 function maxEventTime(events: { at: string }[]): number {
   return events.reduce((m, e) => Math.max(m, Date.parse(e.at) || 0), 0)
 }
@@ -43,21 +43,21 @@ const Ctx = createContext<BrainLive | null>(null)
 
 export function useBrainLive(): BrainLive {
   const v = useContext(Ctx)
-  if (!v) throw new Error("useBrainLive hors de <BrainLiveProvider>")
+  if (!v) throw new Error("useBrainLive outside <BrainLiveProvider>")
   return v
 }
 
-/** Même état, ou null hors de l'application (création de l'entreprise). */
+/** The same state, or null outside the app (company creation). */
 export function useBrainLiveOptional(): BrainLive | null {
   return useContext(Ctx)
 }
 
 /**
- * État vivant du cerveau, partagé par toutes les pages de l'application : il vit dans le layout, donc le flux SSE
- * reste ouvert d'une page à l'autre et le cerveau garde ses zones allumées.
+ * Live state of the brain, shared by all the app's pages: it lives in the layout, so the SSE stream
+ * stays open from one page to the next and the brain keeps its zones lit.
  *
- * `now` : horodatage du rendu serveur. Le premier rendu client réutilise exactement la même valeur, sinon les dates
- * relatives (« il y a 44 minutes » / « il y a 45 minutes ») diffèrent et l'hydratation échoue.
+ * `now`: timestamp of the server render. The first client render reuses exactly the same value, otherwise relative
+ * dates ("44 minutes ago" / "45 minutes ago") differ and hydration fails.
  */
 export function BrainLiveProvider({ initial, now: serverNow, children }: { initial: DashboardState; now?: number; children: ReactNode }) {
   const [state, setState] = useState(initial)
@@ -69,9 +69,9 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const namesRef = useRef(initial.names)
   namesRef.current = state.names
-  // Identifiants déjà reçus. Le rendu serveur est de l'historique : il n'allume rien. Ensuite, le premier des deux
-  // chemins (flux SSE ou relecture de /api/state) qui voit un événement l'ajoute au fil ET allume sa zone, l'autre
-  // l'ignore : chaque événement apparaît une fois et allume sa zone une fois, quel que soit l'ordre d'arrivée.
+  // Ids already received. The server render is history: it lights nothing. Then, the first of the two
+  // paths (SSE stream or /api/state re-read) that sees an event adds it to the feed AND lights its zone, the other
+  // ignores it: each event appears once and lights its zone once, whatever the order of arrival.
   const seen = useRef<Set<number>>(new Set(initial.events.map((e) => e.id)))
   const lastId = useRef(maxId(initial.events))
   const rippleSeq = useRef(0)
@@ -80,8 +80,8 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
     const t = Date.now()
     const zones = [...new Set(e.zones)]
     if (zones.length === 0) return
-    const who = namesRef.current[e.user_id] ? firstName(namesRef.current[e.user_id]) : "Quelqu'un"
-    const label = e.restricted ? `${who} travaille dans cette zone` : `${who} ${EVENT_VERB[e.type]}${e.type === "query" && e.summary ? ` « ${e.summary} »` : ""}`
+    const who = namesRef.current[e.user_id] ? firstName(namesRef.current[e.user_id]) : "Someone"
+    const label = e.restricted ? `${who} is working in this zone` : `${who} ${EVENT_VERB[e.type]}${e.type === "query" && e.summary ? ` “${e.summary}”` : ""}`
     setActivity((prev) => {
       const next = { ...prev }
       for (const z of zones) next[z] = { until: t + ACTIVE_MS[e.type], startedAt: t, who, label }
@@ -92,7 +92,7 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
     setTimeout(() => setRipples((prev) => prev.filter((r) => !keys.some((k) => k.key === r.key))), 2600)
   }, [])
 
-  /** Événements jamais vus : ajoutés au fil (animés) et allumés, du plus ancien au plus récent. Renvoie les nouveaux. */
+  /** Events never seen: added to the feed (animated) and lit, from oldest to most recent. Returns the new ones. */
   const receive = useCallback(
     (incoming: FeedEvent[]): FeedEvent[] => {
       const added = incoming
@@ -113,10 +113,10 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
       const next = await api<DashboardState>("/api/state")
       namesRef.current = next.names
       setState(next)
-      // Ce que le flux n'a pas encore livré (connexion lente, reconnexion) ou a manqué : ajouté et allumé ici, une fois.
+      // What the stream has not delivered yet (slow connection, reconnection) or missed: added and lit here, once.
       receive(next.events)
     } catch {
-      /* session expirée : la prochaine navigation renverra vers /login */
+      /* session expired: the next navigation will go to /login */
     }
   }, [receive])
 
@@ -125,9 +125,9 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
     refreshTimer.current = setTimeout(refresh, 1200)
   }, [refresh])
 
-  // Flux temps réel (SSE) : chaque événement d'agent allume sa zone.
-  // `after` = dernier événement déjà affiché : rien n'est perdu entre le rendu serveur et la connexion
-  // (les reconnexions automatiques reprennent ensuite via Last-Event-ID).
+  // Real-time stream (SSE): each agent event lights its zone.
+  // `after` = last event already shown: nothing is lost between the server render and the connection
+  // (automatic reconnections then resume through Last-Event-ID).
   useEffect(() => {
     const es = new EventSource(`/api/stream?after=${lastId.current}`)
     es.onopen = () => setLive(true)
@@ -135,7 +135,7 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
     es.addEventListener("agent", (msg) => {
       const e = JSON.parse((msg as MessageEvent).data) as FeedEvent
       lastId.current = Math.max(lastId.current, e.id)
-      // Une écriture que le flux est le premier à voir : les compteurs et les connaissances changent, on relit l'état.
+      // A write the stream is the first to see: counters and knowledge change, the state is re-read.
       if (receive([e]).some((x) => x.type === "write")) scheduleRefresh()
     })
     return () => es.close()
@@ -151,8 +151,8 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
     }
   }, [refresh])
 
-  // Le layout n'est pas re-rendu par le serveur d'une page à l'autre : après une page de configuration (onboarding,
-  // accès), on relit l'état pour que le cerveau montre les zones à jour.
+  // The layout is not re-rendered by the server from one page to the next: after a configuration page (onboarding,
+  // access), the state is re-read so the brain shows the up-to-date zones.
   const pathname = usePathname()
   const firstPath = useRef(true)
   useEffect(() => {

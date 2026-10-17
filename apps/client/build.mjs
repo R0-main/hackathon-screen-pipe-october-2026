@@ -1,4 +1,4 @@
-// Empaquette le client en un seul fichier ESM (brain.mjs), servi par le dashboard sur /brain.mjs.
+// Bundles the client into a single ESM file (brain.mjs), served by the dashboard on /brain.mjs.
 
 import { build } from "esbuild"
 import { createHash } from "node:crypto"
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
 const here = dirname(fileURLToPath(import.meta.url))
 const out = join(here, "dist", "brain.mjs")
 const publicOut = join(here, "..", "web", "public", "brain.mjs")
-// Empreinte publiée à côté (/brain.mjs.sha256, format de sha256sum) : un poste peut vérifier ce qu'il a téléchargé.
+// Fingerprint published alongside (/brain.mjs.sha256, sha256sum format): a computer can check what it downloaded.
 const shaOut = `${publicOut}.sha256`
 
 await build({
@@ -33,6 +33,6 @@ copyFileSync(out, publicOut)
 chmodSync(publicOut, 0o755)
 const sha256 = createHash("sha256").update(readFileSync(publicOut)).digest("hex")
 writeFileSync(shaOut, `${sha256}  brain.mjs\n`)
-const kb = (f) => `${(statSync(f).size / 1024).toFixed(0)} Ko`
-console.log(`brain.mjs construit : ${out} (${kb(out)}) → copié dans ${publicOut}`)
-console.log(`SHA-256 : ${sha256} → ${shaOut}`)
+const kb = (f) => `${(statSync(f).size / 1024).toFixed(0)} KB`
+console.log(`brain.mjs built: ${out} (${kb(out)}) → copied to ${publicOut}`)
+console.log(`SHA-256: ${sha256} → ${shaOut}`)

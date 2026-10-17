@@ -1,6 +1,6 @@
--- Skills de l'entreprise : chaque skill Claude Code (SKILL.md et les scripts qu'il utilise) est conservé dans le cerveau.
--- Publier demande un droit (profiles.can_publish_skills, les admins l'ont toujours). Un skill attribué à un cortex
--- (une zone) n'est donné qu'à ceux qui lisent cette zone ; sans zone, il va à toute l'entreprise.
+-- Company skills: each Claude Code skill (SKILL.md and the scripts it uses) is kept in the brain.
+-- Publishing needs a permission (profiles.can_publish_skills, admins always have it). A skill assigned to a cortex
+-- (a zone) is only given to those who read that zone; without a zone, it goes to the whole company.
 
 alter table profiles add column if not exists can_publish_skills boolean not null default false;
 
@@ -9,9 +9,9 @@ create table if not exists skills (
   org_id uuid not null references orgs(id) on delete cascade,
   name text not null,
   description text not null default '',
-  -- Cortex (zone) du skill ; null : toute l'entreprise.
+  -- Cortex (zone) of the skill; null: the whole company.
   zone text,
-  -- [{ path, content }] : SKILL.md à la racine et les scripts, en texte.
+  -- [{ path, content }]: SKILL.md at the root and the scripts, as text.
   files jsonb not null default '[]',
   author_id uuid references profiles(id) on delete set null,
   updated_by uuid references profiles(id) on delete set null,

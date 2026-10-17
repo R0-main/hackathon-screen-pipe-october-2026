@@ -1,34 +1,34 @@
-# Style du site — direction visuelle
+# Site style — visual direction
 
-> Retranscrit de la discussion d'équipe du 16/10/2026 (~23h10). Transcription audio bruitée : les points marqués *(à confirmer)* sont incertains.
+> Transcribed from the team discussion of 16/10/2026 (~11:10 pm). Noisy audio transcription: the points marked *(to be confirmed)* are uncertain.
 
-## Principe
+## Principle
 
-**Très, très épuré.** Le cerveau doit se lire d'un coup d'œil : peu d'éléments, beaucoup de vide, rien de décoratif.
+**Very, very clean.** The brain must be readable at a glance: few elements, a lot of empty space, nothing decorative.
 
-## Couleurs
+## Colors
 
-- Base **noir et blanc**.
-- **Pas de couleurs flash** : la couleur est réservée à l'information.
-- Quelques cercles en couleur, uniquement pour distinguer les zones / domaines (dev, compta, sales…).
-- Exception : la zone qu'un agent interroge en direct **s'allume comme un néon** (cf. [IDEA.md](IDEA.md)) — c'est le seul moment « flash ». *(à confirmer : une personne voulait un peu plus de flash en général)*
+- **Black and white** base.
+- **No flashy colors**: color is reserved for information.
+- A few colored circles, only to tell the zones / areas apart (dev, finance, sales…).
+- Exception: the zone an agent is querying live **lights up like a neon** (see [IDEA.md](IDEA.md)) — it is the only "flashy" moment. *(to be confirmed: one person wanted a bit more flash in general)*
 
-## Formes
+## Shapes
 
-- Uniquement des **billes / ronds / sphères** (les nœuds de connaissance).
-- Des **connexions** (traits) entre les cercles.
-- Des **légendes** courtes accrochées aux cercles / zones pour dire ce qu'on regarde.
+- Only **beads / circles / spheres** (the knowledge nodes).
+- **Connections** (lines) between the circles.
+- Short **labels** attached to the circles / zones to say what we are looking at.
 
 ## Concept
 
-- L'entreprise = **un cerveau**, découpé en **3 parties** (« hémisphères »). *(à confirmer : quelles 3 parties)*
-- Possibilité d'afficher des **couches** de lecture. *(à confirmer)*
+- The company = **a brain**, split into **3 parts** ("hemispheres"). *(to be confirmed: which 3 parts)*
+- Possibility to show reading **layers**. *(to be confirmed)*
 
 ## Interaction
 
-- Vue **3D** qu'on fait **tourner à la souris**.
-- **Zoom / dézoom** : de loin on voit la structure globale, de près le détail des nœuds.
+- **3D** view you **rotate with the mouse**.
+- **Zoom in / out**: from afar you see the overall structure, up close the detail of the nodes.
 
-## Références
+## References
 
-- Un screen de référence a été mentionné (« il doit être comme le screen que… ») — à ajouter ici.
+- A reference screenshot was mentioned ("it must look like the screenshot that…") — to be added here.

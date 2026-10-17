@@ -3,9 +3,9 @@
 import { useEffect } from "react"
 
 /**
- * Une page restaurée depuis le cache avant/arrière du navigateur (bfcache) n'est pas redemandée au serveur :
- * après une déconnexion, « Précédent » réafficherait le cerveau de la personne précédente. On recharge alors la
- * page, et le serveur renvoie vers /login si la session n'existe plus.
+ * A page restored from the browser's back/forward cache (bfcache) is not requested from the server again:
+ * after signing out, "Back" would show the previous person's brain again. The page is then reloaded,
+ * and the server redirects to /login if the session no longer exists.
  */
 export function RestoreGuard() {
   useEffect(() => {

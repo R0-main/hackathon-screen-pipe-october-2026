@@ -14,14 +14,14 @@ export function error(status: number, message: string, details?: unknown) {
 
 type Handler<C> = (req: Request, viewer: Viewer, ctx: C) => Promise<Response>
 
-/** Exige un utilisateur authentifié (jeton Bearer ou session), dans le contexte de son entreprise. `admin` : vérifie le rôle réel. */
+/** Requires an authenticated user (Bearer token or session), in the context of their company. `admin`: checks the real role. */
 export function withViewer<C = unknown>(handler: Handler<C>, opts: { admin?: boolean } = {}) {
   return async (req: Request, ctx: C) => {
     try {
       const viewer = await viewerFromRequest(req)
-      if (!viewer) return error(401, "Non authentifié : jeton manquant ou invalide.")
-      if (opts.admin && viewer.real.role !== "admin") return error(403, "Réservé aux admins.")
-      // Tout ce que fait la route vise l'entreprise du compte connecté (getStore()).
+      if (!viewer) return error(401, "Not authenticated: missing or invalid token.")
+      if (opts.admin && viewer.real.role !== "admin") return error(403, "Admins only.")
+      // Everything the route does targets the signed-in account's company (getStore()).
       return await runInOrg(viewer.real.org_id, () => handler(req, viewer, ctx))
     } catch (err) {
       return internalError(err, routeOf(req))
@@ -30,8 +30,8 @@ export function withViewer<C = unknown>(handler: Handler<C>, opts: { admin?: boo
 }
 
 /**
- * Erreur inattendue d'une route : 503 avec un message clair si le stockage n'est pas prêt (migration…), sinon 500.
- * `where` : la route, pour la page Supervision (incidents) et l'alerte webhook.
+ * Unexpected route error: 503 with a clear message if storage is not ready (migration…), otherwise 500.
+ * `where`: the route, for the Monitoring page (incidents) and the webhook alert.
  */
 export function internalError(err: unknown, where = "api"): Response {
   if (isStoreSetupError(err)) {
@@ -41,7 +41,7 @@ export function internalError(err: unknown, where = "api"): Response {
   }
   console.error("[api]", err)
   recordIncident(where, err)
-  return error(500, "Erreur interne du cerveau.")
+  return error(500, "Internal brain error.")
 }
 
 export async function parseBody<T extends z.ZodType>(req: Request, schema: T): Promise<{ data: z.infer<T> } | { response: Response }> {
@@ -49,10 +49,10 @@ export async function parseBody<T extends z.ZodType>(req: Request, schema: T): P
   try {
     raw = await req.json()
   } catch {
-    return { response: error(400, "Corps JSON invalide.") }
+    return { response: error(400, "Invalid JSON body.") }
   }
   const parsed = schema.safeParse(raw)
-  if (!parsed.success) return { response: error(400, "Données invalides.", parsed.error.issues.slice(0, 5)) }
+  if (!parsed.success) return { response: error(400, "Invalid data.", parsed.error.issues.slice(0, 5)) }
   return { data: parsed.data }
 }
 
@@ -60,7 +60,7 @@ export function publicBaseUrl(req: Request): string {
   return publicBaseUrlFrom(req.headers)
 }
 
-/** Comme publicBaseUrl, à partir des en-têtes (pages serveur : `await headers()`). */
+/** Like publicBaseUrl, from the headers (server pages: `await headers()`). */
 export function publicBaseUrlFrom(h: Headers): string {
   if (process.env.BRAIN_PUBLIC_URL) return process.env.BRAIN_PUBLIC_URL.replace(/\/+$/, "")
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"

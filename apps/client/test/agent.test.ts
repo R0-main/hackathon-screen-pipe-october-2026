@@ -1,5 +1,5 @@
-// Agent Screenpipe : fenêtre regardée, choix du moteur (Claude Code ou Codex), outils en lecture seule, jeton jamais en
-// argument, filtres avant envoi, checkpoint qui n'avance qu'une fois les connaissances envoyées.
+// Screenpipe agent: window looked at, engine choice (Claude Code or Codex), read-only tools, token never as an
+// argument, filters before sending, checkpoint that only moves once the knowledge is sent.
 
 import { strict as assert } from "node:assert"
 import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
@@ -40,7 +40,7 @@ function workstation(brainUrl: string, spUrl: string, extra: Record<string, unkn
   return { home, state: () => JSON.parse(readFileSync(join(home, "state.json"), "utf8")) }
 }
 
-/** Screenpipe joignable, sans aucune capture : seul l'agent a quelque chose à dire. */
+/** Screenpipe reachable, with no capture at all: only the agent has something to say. */
 async function screenpipe() {
   return mockServer((req) => {
     const path = req.url.split("?")[0]
@@ -52,7 +52,7 @@ async function screenpipe() {
   })
 }
 
-/** Fausse CLI `codex` : journalise arguments et jeton reçu, écrit la réponse finale dans le fichier de `-o`. */
+/** Fake `codex` CLI: logs the arguments and token received, writes the final answer to the `-o` file. */
 function fakeCodex() {
   const dir = tempDir("fake-codex-")
   const bin = join(dir, "bin")
@@ -66,9 +66,9 @@ let input = ""
 process.stdin.on("data", (d) => (input += d))
 process.stdin.on("end", () => {
   fs.appendFileSync(${JSON.stringify(join(dir, "calls.jsonl"))}, JSON.stringify({ args, key: process.env.SCREENPIPE_LOCAL_API_KEY ?? null, prompt: input }) + "\\n")
-  const items = [{ zone: "dev", kind: "decision", title: "Relances clients le lundi", body: "Décidé en revue : les relances partent chaque lundi.", entities: [], confidence: 0.8 }]
+  const items = [{ zone: "dev", kind: "decision", title: "Customer reminders on Mondays", body: "Decided in review: reminders go out every Monday.", entities: [], confidence: 0.8 }]
   fs.writeFileSync(args[args.indexOf("-o") + 1], JSON.stringify({ items }))
-  console.log("OpenAI Codex (faux)")
+  console.log("OpenAI Codex (fake)")
 })
 `,
   )
@@ -87,7 +87,7 @@ process.stdin.on("end", () => {
 
 const agentCalls = (cli: ReturnType<typeof fakeClaude>) => cli.calls().filter((c) => c.args.includes("--mcp-config"))
 
-test("agentWindow : 15 min la première fois, depuis le passage précédent ensuite, 60 min au plus, rien sous 5 min", () => {
+test("agentWindow: 15 min the first time, since the previous run afterwards, 60 min at most, nothing under 5 min", () => {
   const now = new Date("2026-10-17T14:00:00Z")
   const first = agentWindow({}, now)!
   assert.equal(now.getTime() - first.start.getTime(), AGENT_WINDOW_MS)
@@ -96,11 +96,11 @@ test("agentWindow : 15 min la première fois, depuis le passage précédent ensu
   const afterSleep = agentWindow({ screenpipe: { agent_until: "2026-10-16T18:00:00Z" } }, now)!
   assert.equal(now.getTime() - afterSleep.start.getTime(), AGENT_MAX_WINDOW_MS)
   assert.equal(agentWindow({ screenpipe: { agent_until: "2026-10-17T13:57:00Z" } }, now), null)
-  // Rien d'antérieur à la mise en place de la synchro planifiée.
+  // Nothing earlier than when the scheduled sync was set up.
   assert.equal(agentWindow({}, now, new Date("2026-10-17T13:58:00Z")), null)
 })
 
-test("pickAgentEngine : Claude Code d'abord, Codex sinon, ou le moteur imposé", () => {
+test("pickAgentEngine: Claude Code first, otherwise Codex, or the required engine", () => {
   const both = (cmd: string) => `/usr/bin/${cmd}`
   const onlyCodex = (cmd: string) => (cmd === "codex" ? "/usr/bin/codex" : null)
   assert.deepEqual(pickAgentEngine({}, both), { engine: "claude", path: "/usr/bin/claude" })
@@ -111,7 +111,7 @@ test("pickAgentEngine : Claude Code d'abord, Codex sinon, ou le moteur imposé",
   assert.equal(pickAgentEngine({ screenpipe_agent: false }, both), null)
 })
 
-test("arguments : seul le MCP Screenpipe, outils en lecture seule, modèle pas cher, jeton jamais en argument", () => {
+test("arguments: only the Screenpipe MCP, read-only tools, cheap model, token never as an argument", () => {
   const server = screenpipeMcpServer({ screenpipe_url: "http://localhost:3030" }, "codex", "/opt/node/bin/node", "linux", "/usr/bin")
   assert.equal(server.env.PATH, "/opt/node/bin:/usr/bin")
   assert.ok(server.args.includes("screenpipe-mcp@0.20.3"))
@@ -127,7 +127,7 @@ test("arguments : seul le MCP Screenpipe, outils en lecture seule, modèle pas c
 
   const codex = codexAgentArgs(server, "/tmp/agent", "/tmp/agent/out.txt")
   const joined = codex.join(" ")
-  assert.ok(!codex.includes("-m"), "Codex garde son modèle par défaut")
+  assert.ok(!codex.includes("-m"), "Codex keeps its default model")
   assert.match(joined, /--ignore-user-config/)
   assert.match(joined, /--sandbox read-only/)
   assert.match(joined, /--disable shell_tool/)
@@ -139,7 +139,7 @@ test("arguments : seul le MCP Screenpipe, outils en lecture seule, modèle pas c
   assert.ok(codexAgentArgs(server, "/tmp/agent", "/tmp/agent/out.txt", "gpt-6-luna").join(" ").includes("-m gpt-6-luna"))
 })
 
-test("synchro + agent Claude Code : connaissance de travail envoyée, perso écartée, fenêtre avancée une fois envoyée", async () => {
+test("sync + Claude Code agent: work knowledge sent, personal dropped, window moved once sent", async () => {
   const brain = await mockBrain()
   const sp = await screenpipe()
   const cli = fakeClaude()
@@ -147,17 +147,17 @@ test("synchro + agent Claude Code : connaissance de travail envoyée, perso éca
     const ws = workstation(brain.url, sp.url)
     const out = capture()
     await withPath(cli.bin, () => runSync({}, out.io))
-    assert.match(out.text(), /Agent Screenpipe \(Claude Code, .*\) : 1 connaissance proposée, 1 écartée \(contenu personnel\)/)
+    assert.match(out.text(), /Screenpipe agent \(Claude Code, .*\): 1 knowledge item proposed, 1 dropped \(personal content\)/)
     const sent = JSON.stringify(brain.received)
     assert.match(sent, /FOUR-42/)
-    assert.ok(!/médecin|maladie/.test(sent), "connaissance personnelle envoyée")
+    assert.ok(!/[Dd]octor|sick leave/.test(sent), "personal knowledge sent")
     const item = (brain.received as { source: { tool: string; app: string } }[])[0]
     assert.deepEqual([item.source.tool, item.source.app], ["agent", "Screenpipe"])
-    assert.ok(ws.state().screenpipe.agent_until, "fenêtre de l'agent non enregistrée")
+    assert.ok(ws.state().screenpipe.agent_until, "agent window not saved")
 
     const calls = agentCalls(cli)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0].internal, "1", "session de l'agent non marquée interne")
+    assert.equal(calls[0].internal, "1", "agent session not marked internal")
     const mcpFile = calls[0].args[calls[0].args.indexOf("--mcp-config") + 1]
     assert.equal(statSync(mcpFile).mode & 0o777, 0o600)
     const mcp = JSON.parse(readFileSync(mcpFile, "utf8"))
@@ -165,7 +165,7 @@ test("synchro + agent Claude Code : connaissance de travail envoyée, perso éca
     assert.equal(mcp.mcpServers.screenpipe.env.SCREENPIPE_API_URL, sp.url)
     assert.ok(!calls[0].args.join(" ").includes(SP_TOKEN))
 
-    // Synchro relancée tout de suite : fenêtre trop courte, l'agent attend le passage suivant.
+    // Sync run again right away: window too short, the agent waits for the next run.
     await withPath(cli.bin, () => runSync({}, capture().io))
     assert.equal(agentCalls(cli).length, 1)
   } finally {
@@ -174,7 +174,7 @@ test("synchro + agent Claude Code : connaissance de travail envoyée, perso éca
   }
 })
 
-test("agent en échec : rien d'envoyé, fenêtre relue au passage suivant ; agent coupé : aucun appel", async () => {
+test("failing agent: nothing sent, window read again on the next run; agent off: no call", async () => {
   const brain = await mockBrain()
   const sp = await screenpipe()
   const cli = fakeClaude()
@@ -183,7 +183,7 @@ test("agent en échec : rien d'envoyé, fenêtre relue au passage suivant ; agen
     cli.setMode("network")
     const out = capture()
     await withPath(cli.bin, () => runSync({}, out.io))
-    assert.match(out.text(), /Agent Screenpipe \(Claude Code, .*\) : échec .*fenêtre relue au prochain passage/)
+    assert.match(out.text(), /Screenpipe agent \(Claude Code, .*\): failed .*window read again on the next run/)
     assert.equal(brain.received.length, 0)
     assert.equal(ws.state().screenpipe?.agent_until, undefined)
 
@@ -201,7 +201,7 @@ test("agent en échec : rien d'envoyé, fenêtre relue au passage suivant ; agen
   }
 })
 
-test("simulation : l'agent figure dans l'aperçu, --confirm l'envoie et avance sa fenêtre", async () => {
+test("dry run: the agent shows in the preview, --confirm sends it and moves its window", async () => {
   const brain = await mockBrain()
   const sp = await screenpipe()
   const cli = fakeClaude()
@@ -209,7 +209,7 @@ test("simulation : l'agent figure dans l'aperçu, --confirm l'envoie et avance s
     const ws = workstation(brain.url, sp.url)
     const dry = capture()
     await withPath(cli.bin, () => runSync({ dryRun: true }, dry.io))
-    assert.match(dry.text(), /\[dev\] fait — Ticket FOUR-42/)
+    assert.match(dry.text(), /\[dev\] fact — Ticket FOUR-42/)
     assert.equal(brain.received.length, 0)
     await withPath(cli.bin, () => runSync({ confirm: true }, capture().io))
     assert.match(JSON.stringify(brain.received), /FOUR-42/)
@@ -220,7 +220,7 @@ test("simulation : l'agent figure dans l'aperçu, --confirm l'envoie et avance s
   }
 })
 
-test("synchro + agent Codex (pas de Claude Code) : jeton par l'environnement, réponse finale lue et envoyée", async () => {
+test("sync + Codex agent (no Claude Code): token through the environment, final answer read and sent", async () => {
   const brain = await mockBrain()
   const sp = await screenpipe()
   const codex = fakeCodex()
@@ -228,8 +228,8 @@ test("synchro + agent Codex (pas de Claude Code) : jeton par l'environnement, r�
     const ws = workstation(brain.url, sp.url, { use_claude_cli: false })
     const out = capture()
     await withPath(codex.bin, () => runSync({}, out.io))
-    assert.match(out.text(), /Agent Screenpipe \(Codex, .*\) : 1 connaissance proposée\./)
-    assert.match(JSON.stringify(brain.received), /Relances clients le lundi/)
+    assert.match(out.text(), /Screenpipe agent \(Codex, .*\): 1 knowledge item proposed\./)
+    assert.match(JSON.stringify(brain.received), /Customer reminders on Mondays/)
     assert.ok(ws.state().screenpipe.agent_until)
     const [call] = codex.calls()
     assert.equal(call.key, SP_TOKEN)

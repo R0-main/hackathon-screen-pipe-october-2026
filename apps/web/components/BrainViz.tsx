@@ -18,9 +18,9 @@ const PHOSPHOR = "#c7ff3e"
 const bubble = (label: string) => (label.length > 36 ? `${label.slice(0, 35)}…` : label)
 
 /**
- * Cerveau 2D (vue de dessus), monochrome : encre sur blanc. Sert de secours quand WebGL n'est pas
- * disponible. Une zone active s'allume en phosphore ; la couleur d'identité d'une zone n'apparaît
- * que dans la pastille de son libellé.
+ * 2D brain (top view), monochrome: ink on white. The fallback when WebGL is not
+ * available. An active zone lights up in phosphor; a zone's identity color only appears
+ * in its label's dot.
  */
 export function BrainViz(props: {
   zones: ZoneView[]
@@ -45,7 +45,7 @@ export function BrainViz(props: {
   }
 
   return (
-    <svg viewBox={`80 18 ${VIEW_W - 160} ${VIEW_H - 30}`} className="block h-auto w-full select-none" role="img" aria-label="Cerveau de l'entreprise, découpé en zones de connaissance">
+    <svg viewBox={`80 18 ${VIEW_W - 160} ${VIEW_H - 30}`} className="block h-auto w-full select-none" role="img" aria-label="The company brain, split into knowledge zones">
       <defs>
         <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="8" stroke={LINE} strokeWidth="2" />
@@ -96,7 +96,7 @@ export function BrainViz(props: {
               strokeWidth={round2(Math.min(2.5, 0.7 + Math.log2(1 + s.weight) * 0.4))}
               className={active ? "synapse-flow" : undefined}
             >
-              {s.via.length > 0 && <title>{`Liées par : ${s.via.join(", ")}`}</title>}
+              {s.via.length > 0 && <title>{`Linked by: ${s.via.join(", ")}`}</title>}
             </path>
           )
         })}
@@ -151,7 +151,7 @@ export function BrainViz(props: {
               {z.name}
             </text>
             <text x={x} y={y + 14} textAnchor="middle" fontSize={12} fill={TRACE}>
-              {z.locked ? "accès restreint" : `${z.count} connaissance${z.count > 1 ? "s" : ""}`}
+              {z.locked ? "restricted access" : `${z.count} item${z.count === 1 ? "" : "s"}`}
             </text>
             {act && act.until > now && act.label && (
               <g className="bubble-in" key={act.startedAt}>

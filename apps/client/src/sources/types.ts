@@ -1,7 +1,7 @@
 import type { Conversation, ConversationMessage } from "@brain/core"
 import type { SourceName, State } from "../config"
 
-/** Mise à jour de checkpoint, appliquée seulement si toutes les conversations couvertes ont été traitées. */
+/** Checkpoint update, applied only if every conversation covered has been processed. */
 export type CheckpointCommit = { covers: string[]; apply: (state: State) => void }
 
 export type SourceResult = {
@@ -13,7 +13,7 @@ export type SourceResult = {
   stats: Record<string, number | string>
 }
 
-/** Fusionne les messages consécutifs d'un même rôle (Claude Code écrit un bloc par ligne). */
+/** Merges consecutive messages from the same role (Claude Code writes one block per line). */
 export function mergeConsecutive(messages: ConversationMessage[]): ConversationMessage[] {
   const out: ConversationMessage[] = []
   for (const m of messages) {

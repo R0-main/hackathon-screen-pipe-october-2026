@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { MODERATION_DECISIONS, MODERATION_REASONS, KNOWLEDGE_KINDS } from "@brain/core"
+import { MODERATION_DECISIONS, MODERATION_REASONS, KNOWLEDGE_KINDS, moderationReason } from "@brain/core"
 import { claudeKeyInfo } from "@/lib/claude-key"
 import { applyModerationVerdicts, loadModerationLog, loadModerationRuns, moderationEnabled, runModeration, setModerationEnabled } from "@/lib/moderation"
 import { getStore } from "@/lib/store"
@@ -9,7 +9,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
-/** Admins : modérateur actif ou non, d'où vient Claude côté serveur, derniers passages et décisions (sans le texte retiré). */
+/** Admins: whether the moderator is on, where Claude comes from on the server side, latest runs and decisions (without the removed text). */
 export const GET = withViewer(async () => {
   const [enabled, runs, log, claude] = await Promise.all([moderationEnabled(), loadModerationRuns(), loadModerationLog(), claudeKeyInfo(getStore())])
   return json({ enabled, claude: claude.source, runs, log })
@@ -17,7 +17,7 @@ export const GET = withViewer(async () => {
 
 const ToggleSchema = z.object({ enabled: z.boolean() })
 
-/** Admins : active ou coupe le modérateur (coupé : `brain moderate` et « Lancer maintenant » ne font plus rien). */
+/** Admins: turns the moderator on or off (off: `brain moderate` and "Run now" no longer do anything). */
 export const PUT = withViewer(
   async (req) => {
     const body = await parseBody(req, ToggleSchema)
@@ -35,7 +35,8 @@ const VerdictsSchema = z.object({
       z.object({
         id: z.string().max(64),
         decision: z.enum(MODERATION_DECISIONS),
-        category: z.enum(MODERATION_REASONS).nullable().default(null),
+        // Older clients send the earlier (French) reason ids.
+        category: z.preprocess((c) => (typeof c === "string" ? (moderationReason(c) ?? c) : c), z.enum(MODERATION_REASONS).nullable().default(null)),
         reason: z.string().max(500).default(""),
         zone: z.string().max(64).nullable().default(null),
         kind: z.enum(KNOWLEDGE_KINDS).nullable().default(null),
@@ -47,9 +48,9 @@ const VerdictsSchema = z.object({
 })
 
 /**
- * Admins. Sans corps : le serveur fait un passage tout de suite, avec la clé API de l'entreprise.
- * Avec `{ids, verdicts}` : applique le passage fait par Claude Code sur le poste d'un admin (`brain moderate`, lancé
- * par sa synchro toutes les 15 min). Le jeton Claude ne quitte jamais le poste : le cerveau ne reçoit que les décisions.
+ * Admins. Without a body: the server does a run right away, with the company's API key.
+ * With `{ids, verdicts}`: applies the run done by Claude Code on an admin's computer (`brain moderate`, started by
+ * their sync every 15 min). The Claude token never leaves the computer: the brain only receives the decisions.
  */
 export const POST = withViewer(
   async (req) => {
@@ -59,11 +60,11 @@ export const POST = withViewer(
     try {
       data = JSON.parse(raw)
     } catch {
-      return error(400, "Corps JSON invalide.")
+      return error(400, "Invalid JSON body.")
     }
     const parsed = VerdictsSchema.safeParse(data)
-    if (!parsed.success) return error(400, "Verdicts invalides.")
-    if (!(await moderationEnabled())) return error(409, "Le modérateur est coupé (Admin → Zones → Modérateur).")
+    if (!parsed.success) return error(400, "Invalid verdicts.")
+    if (!(await moderationEnabled())) return error(409, "The moderator is off (Admin → Zones → Moderator).")
     return json(await applyModerationVerdicts(parsed.data.ids, parsed.data.verdicts, "claude-code"))
   },
   { admin: true },

@@ -1,6 +1,6 @@
--- Comptes rendus de synchronisation envoyés par les postes (brain sync → POST /api/sync/report) : compteurs seulement,
--- jamais de contenu. Un historique court par poste (purgé par l'API), le dernier sert à la page Supervision.
--- Lus et écrits uniquement par l'API (rôle propriétaire) : RLS activée sans politique.
+-- Sync reports sent by the computers (brain sync → POST /api/sync/report): counters only,
+-- never any content. A short history per computer (purged by the API), the last one feeds the Monitoring page.
+-- Read and written only by the API (owner role): RLS enabled without a policy.
 
 create table if not exists sync_reports (
   id uuid primary key default gen_random_uuid(),

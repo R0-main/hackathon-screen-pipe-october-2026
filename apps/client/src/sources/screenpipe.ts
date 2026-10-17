@@ -1,12 +1,12 @@
-// Source « Screenpipe » : API REST locale (http://localhost:3030 par défaut).
-// Référence : skill « screenpipe-api » embarqué dans screenpipe-mcp (dépôt screenpipe, commit 9dc0fd0) et anas.md.
-// - en-têtes : Authorization: Bearer <jeton local>, X-Screenpipe-Client: api, X-Screenpipe-Agent: company-brain ;
-// - GET /search : pages de 100 (pas de plafond serveur ; le « limit ≤ 20 » du skill vise le contexte d'un agent, pas une
-//   synchro), filter_pii=true (masquage natif sur le poste), content_type « parsed » (messages structurés
-//   items[] + actors[]) puis « accessibility » puis « ocr » ; browser_url sert à reconnaître un onglet ChatGPT / Claude ;
-// - GET /meetings + /meetings/:id/transcript : chaque réunion terminée devient une conversation « meeting » ;
-// - GET /workflows + /workflows/:id : workflows répétitifs avec leurs occurrences réelles (timingRuns).
-// Lecture par fenêtres de temps croissantes : le checkpoint n'avance jamais au-delà de ce qui a été lu en entier.
+// "Screenpipe" source: local REST API (http://localhost:3030 by default).
+// Reference: "screenpipe-api" skill shipped in screenpipe-mcp (screenpipe repo, commit 9dc0fd0) and anas.md.
+// - headers: Authorization: Bearer <local token>, X-Screenpipe-Client: api, X-Screenpipe-Agent: company-brain;
+// - GET /search: pages of 100 (no server cap; the skill's "limit ≤ 20" is meant for an agent's context, not for a
+//   sync), filter_pii=true (native redaction on the computer), content_type "parsed" (structured messages
+//   items[] + actors[]) then "accessibility" then "ocr"; browser_url is used to recognize a ChatGPT / Claude tab;
+// - GET /meetings + /meetings/:id/transcript: each finished meeting becomes a "meeting" conversation;
+// - GET /workflows + /workflows/:id: repetitive workflows with their real occurrences (timingRuns).
+// Reading by growing time windows: the checkpoint never moves past what was read in full.
 
 import {
   classifyZones,
@@ -33,7 +33,7 @@ export type ScreenpipeItem = {
   window: string
   at: string
   frameId?: string
-  /** URL de l'onglet quand Screenpipe la donne (navigateurs) : décide si un onglet est un assistant IA. */
+  /** Tab URL when Screenpipe gives it (browsers): decides whether a tab is an AI assistant. */
   browserUrl?: string
   messages?: ConversationMessage[]
 }
@@ -49,25 +49,25 @@ export type ScreenpipeOptions = {
   maxPages?: number
   gapMinutes?: number
   timeoutMs?: number
-  /** Taille de la première fenêtre de lecture (apprise lors d'un passage précédent), en ms. */
+  /** Size of the first read window (learned on a previous pass), in ms. */
   spanMs?: number
-  /** Noms sous lesquels l'employé apparaît (compte du cerveau) : ses messages sont « user », le reste « assistant ». */
+  /** Names under which the employee appears (brain account): their messages are "user", the rest "assistant". */
   selfNames?: string[]
 }
 
-/** Plus petite fenêtre de lecture : en dessous, on lit ce qu'on peut. */
+/** Smallest read window: below it, we read what we can. */
 export const MIN_SPAN_MS = 60_000
-/** Lignes par page de /search (le serveur n'impose pas de plafond ; on pagine avec `offset`). */
+/** Rows per /search page (the server imposes no cap; we paginate with `offset`). */
 export const DEFAULT_PAGE_SIZE = 100
-/** Réunions distillées par passage au maximum ; la suite part au passage suivant (checkpoint par réunion). */
+/** Maximum meetings distilled per pass; the rest goes on the next pass (checkpoint per meeting). */
 export const MAX_MEETINGS_PER_PASS = 10
-/** Workflows dont on va chercher le détail (occurrences) par passage. */
+/** Workflows whose details (occurrences) we fetch per pass. */
 export const WORKFLOW_DETAIL_MAX = 8
 
-/** Attribution demandée par l'API : valeur fixe « api », et un identifiant d'application fixe (jamais dynamique). */
+/** Attribution requested by the API: fixed value "api", and a fixed application id (never dynamic). */
 export const CLIENT_HEADERS: Record<string, string> = { "x-screenpipe-client": "api", "x-screenpipe-agent": "company-brain" }
 
-/** Commande qui affiche le jeton d'API local de Screenpipe (celle du skill officiel). */
+/** Command that shows Screenpipe's local API token (the one from the official skill). */
 export const TOKEN_COMMAND = "npx -y screenpipe@latest auth token"
 
 function headers(token?: string): Record<string, string> {
@@ -81,7 +81,7 @@ async function getJson(url: string, token: string | undefined, timeoutMs: number
   try {
     res = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(timeoutMs) })
   } catch (err) {
-    throw new ScreenpipeDown((err as Error).name === "TimeoutError" ? "délai dépassé" : ((err as { cause?: { code?: string } }).cause?.code ?? (err as Error).message))
+    throw new ScreenpipeDown((err as Error).name === "TimeoutError" ? "timeout" : ((err as { cause?: { code?: string } }).cause?.code ?? (err as Error).message))
   }
   const text = await res.text()
   let data: unknown = null
@@ -96,39 +96,39 @@ async function getJson(url: string, token: string | undefined, timeoutMs: number
 export async function screenpipeHealth(url: string, token?: string, timeoutMs = 2000): Promise<{ ok: boolean; detail: string }> {
   try {
     const { status, data } = await getJson(`${url.replace(/\/+$/, "")}/health`, token, timeoutMs)
-    if (status >= 400) return { ok: false, detail: `HTTP ${status}${status === 401 || status === 403 ? " (jeton Screenpipe requis ?)" : ""}` }
+    if (status >= 400) return { ok: false, detail: `HTTP ${status}${status === 401 || status === 403 ? " (Screenpipe token required?)" : ""}` }
     const s = (data as { status?: string } | null)?.status
-    return { ok: true, detail: s ? `statut « ${s} »` : "répond" }
+    return { ok: true, detail: s ? `status "${s}"` : "answers" }
   } catch (err) {
-    return { ok: false, detail: `injoignable (${(err as Error).message})` }
+    return { ok: false, detail: `unreachable (${(err as Error).message})` }
   }
 }
 
 export type ScreenpipeProbe = {
-  /** ok : /search répond ; token_required : 401/403 ; error : autre HTTP ; down : injoignable. */
+  /** ok: /search answers; token_required: 401/403; error: other HTTP; down: unreachable. */
   auth: "ok" | "token_required" | "error" | "down"
-  /** Le parseur sémantique produit des lignes « parsed » (24 h) ; null si on n'a pas pu le savoir. */
+  /** The semantic parser produces "parsed" rows (24 h); null if we could not tell. */
   parsed: boolean | null
   detail: string
 }
 
-/** /health ne demande pas de jeton : seul /search dit si le jeton est bon et si le parseur sémantique est actif. */
+/** /health does not need a token: only /search says whether the token is right and whether the semantic parser is on. */
 export async function screenpipeProbe(url: string, token?: string, timeoutMs = 4000): Promise<ScreenpipeProbe> {
   const base = url.replace(/\/+$/, "")
   const qs = new URLSearchParams({ content_type: "parsed", start_time: "24h ago", end_time: "now", limit: "1", offset: "0", filter_pii: "true" })
   try {
     const { status, data } = await getJson(`${base}/search?${qs}`, token, timeoutMs)
-    if (status === 401 || status === 403) return { auth: "token_required", parsed: null, detail: `HTTP ${status} : jeton d'API local requis (${TOKEN_COMMAND})` }
-    if (status >= 400) return { auth: "error", parsed: null, detail: `HTTP ${status} sur /search` }
+    if (status === 401 || status === 403) return { auth: "token_required", parsed: null, detail: `HTTP ${status}: local API token required (${TOKEN_COMMAND})` }
+    if (status >= 400) return { auth: "error", parsed: null, detail: `HTTP ${status} on /search` }
     const d = data as { data?: unknown[] } | unknown[] | null
     const list = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []
     return {
       auth: "ok",
       parsed: list.length > 0,
-      detail: list.length > 0 ? "jeton OK, parseur sémantique actif (données « parsed » sur 24 h)" : "jeton OK, aucune donnée « parsed » sur 24 h (parseur sémantique inactif, ou aucune app IA utilisée)",
+      detail: list.length > 0 ? "token OK, semantic parser on (\"parsed\" data over 24 h)" : "token OK, no \"parsed\" data over 24 h (semantic parser off, or no AI app used)",
     }
   } catch (err) {
-    return { auth: "down", parsed: null, detail: `injoignable (${(err as Error).message})` }
+    return { auth: "down", parsed: null, detail: `unreachable (${(err as Error).message})` }
   }
 }
 
@@ -147,9 +147,9 @@ const ASSISTANT_LABEL_RE = /^(assistant|ai|bot|model|chatgpt|gpt(-?[0-9a-z.]+)?|
 const SELF_LABEL_RE = /^(you|vous|moi|me|user|utilisateur|utilisatrice|human|humain)$/i
 
 /**
- * Rôle d'un message « parsed » : l'étiquette d'origine du parseur (`items[].actor`, ex. « You », « ChatGPT ») décide ;
- * le nom résolu par Screenpipe (`actors[].name`) et le nom de l'employé lèvent le doute. Dans un outil IA, tout ce qui
- * n'est pas l'assistant vient de l'employé.
+ * Role of a "parsed" message: the parser's original label (`items[].actor`, e.g. "You", "ChatGPT") decides;
+ * the name resolved by Screenpipe (`actors[].name`) and the employee's name settle doubts. In an AI tool, everything that
+ * is not the assistant comes from the employee.
  */
 export function roleOfActor(label: string, resolvedName = "", selfNames: string[] = []): "user" | "assistant" {
   const l = label.trim()
@@ -163,7 +163,7 @@ export function roleOfActor(label: string, resolvedName = "", selfNames: string[
 
 type ParsedItem = { local_id?: unknown; parent_local_id?: unknown; kind?: unknown; title?: unknown; body?: unknown; actor?: unknown; occurred_at?: unknown }
 
-/** Messages d'une ligne « parsed » (items[] de kind « message », noms résolus par actors[]) et titre de la conversation. */
+/** Messages of a "parsed" row (items[] of kind "message", names resolved by actors[]) and the conversation's title. */
 function messagesFromParsed(c: Record<string, unknown>, frameAt: string, selfNames: string[]): { messages: ConversationMessage[]; title?: string } | null {
   const items = Array.isArray(c.items) ? (c.items as ParsedItem[]) : []
   if (items.length === 0) return null
@@ -197,7 +197,7 @@ function messagesFromParsed(c: Record<string, unknown>, frameAt: string, selfNam
 
 export type NormalizeOptions = { selfNames?: string[] }
 
-/** Normalise un élément de /search, quelle que soit sa forme exacte (parsed, accessibility, ocr, audio, ancien format). */
+/** Normalizes a /search element, whatever its exact shape (parsed, accessibility, ocr, audio, old format). */
 export function normalizeScreenpipeItem(raw: unknown, opts: NormalizeOptions = {}): ScreenpipeItem | null {
   if (!raw || typeof raw !== "object") return null
   const r = raw as Record<string, unknown>
@@ -210,7 +210,7 @@ export function normalizeScreenpipeItem(raw: unknown, opts: NormalizeOptions = {
   const parsed = messagesFromParsed(c, at, opts.selfNames ?? [])
   if (parsed) {
     messages = parsed.messages
-    // `text` est le rendu compact des mêmes messages : on ne le garde pas en plus.
+    // `text` is the compact rendering of the same messages: we do not keep it as well.
     text = ""
     if (parsed.title) window = parsed.title
   } else if (Array.isArray(c.messages)) {
@@ -258,7 +258,7 @@ export function inferTool(app: string, window: string, browserUrl?: string): Sou
 
 const normLine = (l: string) => normalize(l).replace(/\s+/g, " ").trim()
 
-/** Clé (empreinte) d'une fenêtre app + titre, pour se souvenir des lignes déjà envoyées. */
+/** Key (fingerprint) of an app + title window, to remember the rows already sent. */
 export function windowKey(app: string, window: string): string {
   return fnv1a(`${app.toLowerCase()}\u0000${window.toLowerCase()}`)
 }
@@ -267,16 +267,16 @@ export type GroupOptions = {
   whitelist?: string[]
   gapMinutes?: number
   maxChars?: number
-  /** Lignes déjà envoyées lors des passages précédents (state.screenpipe.seen). */
+  /** Rows already sent on previous passes (state.screenpipe.seen). */
   seen?: Record<string, SeenLines>
 }
 
-/** Lignes d'une conversation, à mémoriser une fois la conversation envoyée. */
+/** Rows of a conversation, to remember once the conversation is sent. */
 export type ConversationLines = { window: string; hashes: string[]; at: string }
 
 /**
- * Regroupe par app + fenêtre (trou de 10 min = nouvelle session) et dédoublonne les lignes répétées d'une capture à
- * l'autre, et d'un passage à l'autre (`seen`). Une session trop longue est coupée en plusieurs conversations, sans perte.
+ * Groups by app + window (10 min gap = new session) and deduplicates rows repeated from one capture to
+ * the next, and from one pass to the next (`seen`). A session that is too long is split into several conversations, without loss.
  */
 export function groupScreenpipeDetailed(items: ScreenpipeItem[], opts: GroupOptions = {}): { conversations: Conversation[]; lines: Map<string, ConversationLines> } {
   const gap = (opts.gapMinutes ?? 10) * 60_000
@@ -351,13 +351,13 @@ export function groupScreenpipeDetailed(items: ScreenpipeItem[], opts: GroupOpti
     const base = { tool: inferTool(g.app, g.window, browserUrl), app: g.app || "Screenpipe", title: g.window ? truncate(g.window, 120) : undefined }
     const hasBoth = msgs.some((m) => m.role === "user") && msgs.some((m) => m.role === "assistant")
     if (hasBoth) {
-      // Messages structurés : la conversation telle quelle ; les lignes OCR de la même fenêtre sont redondantes.
+      // Structured messages: the conversation as is; the OCR rows of the same window are redundant.
       const id = `screenpipe:${first.frameId ?? Date.parse(first.at)}`
       conversations.push({ id, ...base, started_at: first.at, ended_at: last.at, messages: msgs, screenpipe_ref: first.frameId })
       lines.set(id, { window: wk, hashes: [...msgHashes, ...parts.flatMap((p) => p.hashes)], at: last.at })
       continue
     }
-    // Messages d'un seul rôle (la suite d'un échange déjà envoyé) : gardés comme du texte capturé.
+    // Messages from a single role (the continuation of an exchange already sent): kept as captured text.
     if (msgs.length) parts.unshift({ lines: msgs.map((m) => m.text), hashes: msgHashes, first, last, size: 0 })
     parts.forEach((p, i) => {
       const id = `screenpipe:${p.first.frameId ?? Date.parse(p.first.at)}${i > 0 ? `#${i}` : ""}`
@@ -367,7 +367,7 @@ export function groupScreenpipeDetailed(items: ScreenpipeItem[], opts: GroupOpti
         started_at: p.first.at,
         ended_at: p.last.at,
         messages: [
-          { role: "user", text: `Session capturée à l'écran : ${label}`, at: p.first.at },
+          { role: "user", text: `Session captured on screen: ${label}`, at: p.first.at },
           { role: "assistant", text: p.lines.join("\n"), at: p.last.at },
         ],
         screenpipe_ref: p.first.frameId,
@@ -393,7 +393,7 @@ async function searchPage(base: string, type: string, a: number, b: number, offs
     end_time: new Date(b).toISOString(),
     limit: String(o.pageSize),
     offset: String(offset),
-    // Masquage natif des données personnelles sur le poste, avant même notre filtre.
+    // Native redaction of personal data on the computer, even before our filter.
     filter_pii: "true",
   })
   const { status, data } = await getJson(`${base}/search?${qs}`, o.token, o.timeoutMs)
@@ -410,7 +410,7 @@ async function searchPage(base: string, type: string, a: number, b: number, offs
   return { status, rows, raw: list.length, total, done }
 }
 
-/** Nombre de captures estimé sur [a, b] d'après la première page (total si fourni, sinon densité observée). */
+/** Estimated number of captures over [a, b] from the first page (total if given, otherwise observed density). */
 function estimateRows(p: Page, a: number, b: number): number {
   if (p.total !== undefined) return p.total
   if (p.done) return p.raw
@@ -427,8 +427,8 @@ function ascending(rows: ScreenpipeItem[]): boolean {
 type TypeRead = { ok: boolean; status?: number; items: ScreenpipeItem[]; covered: number; truncated: boolean; spanHint?: number }
 
 /**
- * Lit un type de contenu par fenêtres croissantes depuis `since` : une fenêtre trop chargée est réduite avant d'être lue,
- * et `covered` ne dépasse jamais ce qui a été lu en entier (la suite sera lue au prochain passage).
+ * Reads a content type by growing windows from `since`: a window that is too busy is shrunk before being read,
+ * and `covered` never goes past what was read in full (the rest will be read on the next pass).
  */
 async function readContentType(base: string, type: string, o: ReadOptions, sinceMs: number, untilMs: number): Promise<TypeRead> {
   let cursor = sinceMs
@@ -452,7 +452,7 @@ async function readContentType(base: string, type: string, o: ReadOptions, since
     const capacity = (pagesLeft + 1) * o.pageSize
     const estimate = estimateRows(first, cursor, end)
     if (estimate > capacity && end - cursor > MIN_SPAN_MS) {
-      // Trop de captures pour ce passage : on réduit la fenêtre (avec une marge) avant de la lire.
+      // Too many captures for this pass: we shrink the window (with a margin) before reading it.
       span = Math.max(MIN_SPAN_MS, Math.floor(((end - cursor) * capacity * 0.8) / estimate))
       continue
     }
@@ -474,14 +474,14 @@ async function readContentType(base: string, type: string, o: ReadOptions, since
       span *= 2
       continue
     }
-    // Fenêtre lue en partie : on ne garde que ce qui est sûr.
+    // Window read in part: we only keep what is certain.
     truncated = true
     if (ascending(rows)) {
-      // Du plus ancien au plus récent : [cursor, dernière capture[ est complet (la frontière sera relue).
+      // From oldest to most recent: [cursor, last capture[ is complete (the boundary will be read again).
       items.push(...rows)
       cursor = Math.max(cursor, Date.parse(rows[rows.length - 1].at))
     } else if (status === undefined) {
-      // Du plus récent au plus ancien, sans total : on retentera avec une fenêtre plus petite.
+      // From most recent to oldest, without a total: we will retry with a smaller window.
       spanHint = Math.max(MIN_SPAN_MS, Math.floor((end - cursor) / 2))
     }
     break
@@ -493,23 +493,23 @@ async function readContentType(base: string, type: string, o: ReadOptions, since
 export type ScreenpipeFetch = {
   items: ScreenpipeItem[]
   contentType?: string
-  /** Tout n'a pas pu être lu : la suite sera lue aux prochains passages. */
+  /** Not everything could be read: the rest will be read on the next passes. */
   truncated: boolean
   tried: string[]
-  /** Toutes les captures antérieures à cette date ont été lues. */
+  /** Every capture before this date has been read. */
   coveredUntil: string
-  /** Taille de fenêtre à retenir pour le prochain passage (Screenpipe sans total). */
+  /** Window size to remember for the next pass (Screenpipe without a total). */
   spanHint?: number
-  /** Erreur HTTP en cours de lecture (la lecture s'est arrêtée là). */
+  /** HTTP error while reading (reading stopped there). */
   status?: number
-  /** Screenpipe a refusé ou échoué partout : rien n'est fiable, aucun checkpoint ne doit avancer. */
+  /** Screenpipe refused or failed everywhere: nothing is reliable, no checkpoint must move. */
   error?: string
 }
 
 function httpProblem(status: number): string {
   if (status === 401 || status === 403)
-    return `Screenpipe refuse l'accès (HTTP ${status}) : jeton d'API local manquant ou invalide — affichez-le avec \`${TOKEN_COMMAND}\` puis ajoutez-le avec \`init --screenpipe-token <jeton>\`.`
-  return `Screenpipe a répondu HTTP ${status}.`
+    return `Screenpipe refuses access (HTTP ${status}): local API token missing or invalid — show it with \`${TOKEN_COMMAND}\` then add it with \`init --screenpipe-token <token>\`.`
+  return `Screenpipe answered HTTP ${status}.`
 }
 
 function readOptions(opts: ScreenpipeOptions): ReadOptions {
@@ -523,7 +523,7 @@ function readOptions(opts: ScreenpipeOptions): ReadOptions {
   }
 }
 
-/** Interroge /search en essayant les types de contenu dans l'ordre. */
+/** Queries /search trying the content types in order. */
 export async function fetchScreenpipeItems(opts: ScreenpipeOptions): Promise<ScreenpipeFetch> {
   const base = opts.url.replace(/\/+$/, "")
   const o = readOptions(opts)
@@ -532,7 +532,7 @@ export async function fetchScreenpipeItems(opts: ScreenpipeOptions): Promise<Scr
   const tried: string[] = []
   const failures: number[] = []
   let emptyCovered: number | undefined
-  // Période vide (synchro relancée dans la même seconde) : rien à lire, et surtout pas une erreur.
+  // Empty period (sync run again within the same second): nothing to read, and above all not an error.
   if (sinceMs >= untilMs) return { items: [], truncated: false, tried, coveredUntil: opts.since.toISOString() }
   for (const type of opts.contentTypes?.length ? opts.contentTypes : DEFAULT_SCREENPIPE_CONTENT_TYPES) {
     tried.push(type)
@@ -546,7 +546,7 @@ export async function fetchScreenpipeItems(opts: ScreenpipeOptions): Promise<Scr
     }
     emptyCovered = Math.min(emptyCovered ?? Infinity, r.covered)
   }
-  // Aucune donnée : ce n'est une vraie période vide que si Screenpipe a bien répondu (pas de 401/403/5xx).
+  // No data: it is only a really empty period if Screenpipe did answer (no 401/403/5xx).
   const blocking = failures.find((s) => s === 401 || s === 403 || s >= 500)
   if (emptyCovered === undefined || blocking !== undefined) {
     return { items: [], truncated: false, tried, coveredUntil: opts.since.toISOString(), error: httpProblem(blocking ?? failures[0] ?? 0) }
@@ -555,15 +555,15 @@ export async function fetchScreenpipeItems(opts: ScreenpipeOptions): Promise<Scr
 }
 
 function hhmm(iso: string): string {
-  return new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+  return new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
 }
 
-// --- Réunions ---------------------------------------------------------------------------------------------------
+// --- Meetings ----------------------------------------------------------------------------------------------------
 
 export type MeetingRecord = { id: string; start: string; end: string | null; app: string; title: string; attendees: string; note: string }
 export type MeetingSegment = { speaker: string; text: string; at: string }
 
-/** Ligne de GET /meetings (snake_case côté API ; camelCase toléré). */
+/** Row of GET /meetings (snake_case on the API side; camelCase tolerated). */
 export function normalizeMeeting(raw: unknown): MeetingRecord | null {
   if (!raw || typeof raw !== "object") return null
   const m = raw as Record<string, unknown>
@@ -582,7 +582,7 @@ export function normalizeMeeting(raw: unknown): MeetingRecord | null {
   }
 }
 
-/** Segment de GET /meetings/:id/transcript (camelCase côté API ; snake_case toléré). */
+/** Segment of GET /meetings/:id/transcript (camelCase on the API side; snake_case tolerated). */
 export function normalizeSegment(raw: unknown): MeetingSegment | null {
   if (!raw || typeof raw !== "object") return null
   const s = raw as Record<string, unknown>
@@ -593,28 +593,28 @@ export function normalizeSegment(raw: unknown): MeetingSegment | null {
   return { speaker: speaker.trim(), text, at: toIso(s.capturedAt ?? s.captured_at ?? s.timestamp) ?? "" }
 }
 
-function frDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })
+function longDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })
 }
 
 /**
- * Une réunion terminée → une conversation « meeting » : la transcription en un seul message (« Prénom : texte »), et
- * les notes enregistrées dans Screenpipe (résumé) en réponse. Le distillateur en tire décisions et engagements.
+ * A finished meeting → a "meeting" conversation: the transcription in a single message ("Name: text"), and
+ * the notes saved in Screenpipe (summary) as the answer. The distiller draws decisions and commitments from it.
  */
 export function meetingConversation(m: MeetingRecord, segments: MeetingSegment[]): Conversation | null {
   const end = m.end ?? m.start
-  const lines = segments.map((s) => `${s.speaker || "Quelqu'un"} : ${s.text}`)
+  const lines = segments.map((s) => `${s.speaker || "Someone"}: ${s.text}`)
   if (lines.length === 0 && !m.note) return null
-  const header = `Réunion${m.title ? ` « ${m.title} »` : ""} du ${frDateTime(m.start)}${m.app ? ` (${m.app})` : ""}${m.attendees ? `, participants : ${m.attendees}` : ""}.`
+  const header = `Meeting${m.title ? ` "${m.title}"` : ""} on ${longDateTime(m.start)}${m.app ? ` (${m.app})` : ""}${m.attendees ? `, attendees: ${m.attendees}` : ""}.`
   const messages: ConversationMessage[] = [
-    { role: "user", text: `${header}\n\nTranscription :\n${lines.length ? lines.join("\n") : "(aucune transcription)"}`, at: m.start },
+    { role: "user", text: `${header}\n\nTranscription:\n${lines.length ? lines.join("\n") : "(no transcription)"}`, at: m.start },
   ]
-  if (m.note) messages.push({ role: "assistant", text: `Notes et résumé enregistrés dans Screenpipe :\n${m.note}`, at: end })
+  if (m.note) messages.push({ role: "assistant", text: `Notes and summary saved in Screenpipe:\n${m.note}`, at: end })
   return {
     id: `screenpipe-meeting:${m.id}`,
     tool: "meeting",
-    app: m.app || "Réunion",
-    title: truncate(m.title || `Réunion ${m.app || ""}`.trim(), 120),
+    app: m.app || "Meeting",
+    title: truncate(m.title || `Meeting ${m.app || ""}`.trim(), 120),
     started_at: m.start,
     ended_at: end,
     messages,
@@ -625,8 +625,8 @@ export function meetingConversation(m: MeetingRecord, segments: MeetingSegment[]
 export type MeetingsRead = { available: boolean; conversations: Conversation[]; commits: CheckpointCommit[]; warnings: string[]; meetings: number; pending: number }
 
 /**
- * Réunions terminées depuis le checkpoint (`state.screenpipe.meetings_last_end`), au plus MAX_MEETINGS_PER_PASS par
- * passage. Un Screenpipe sans /meetings (404) n'est pas une erreur : la source est simplement absente.
+ * Meetings finished since the checkpoint (`state.screenpipe.meetings_last_end`), at most MAX_MEETINGS_PER_PASS per
+ * pass. A Screenpipe without /meetings (404) is not an error: the source is simply missing.
  */
 export async function readScreenpipeMeetings(opts: { url: string; token?: string; state: State; since: Date; until?: Date; timeoutMs?: number; explicitSince?: boolean }): Promise<MeetingsRead> {
   const out: MeetingsRead = { available: true, conversations: [], commits: [], warnings: [], meetings: 0, pending: 0 }
@@ -635,8 +635,8 @@ export async function readScreenpipeMeetings(opts: { url: string; token?: string
   const last = opts.explicitSince ? undefined : opts.state.screenpipe?.meetings_last_end
   const lastMs = last ? Date.parse(last) : opts.since.getTime()
   const untilMs = (opts.until ?? new Date()).getTime()
-  // Le filtre de l'API porte sur le début de réunion : on remonte un peu avant le checkpoint (réunion longue), puis on
-  // filtre sur la fin côté client.
+  // The API's filter is on the meeting start: we go back a little before the checkpoint (long meeting), then we
+  // filter on the end on the client side.
   const startMs = Math.min(lastMs, opts.since.getTime()) - 6 * 3600_000
   const records: MeetingRecord[] = []
   for (let offset = 0, page = 0; page < 10; page++, offset += 50) {
@@ -646,7 +646,7 @@ export async function readScreenpipeMeetings(opts: { url: string; token?: string
       res = await getJson(`${base}/meetings?${qs}`, opts.token, timeoutMs)
     } catch (err) {
       out.available = false
-      out.warnings.push(`Réunions Screenpipe injoignables (${(err as Error).message}).`)
+      out.warnings.push(`Screenpipe meetings unreachable (${(err as Error).message}).`)
       return out
     }
     if (res.status === 404) {
@@ -655,7 +655,7 @@ export async function readScreenpipeMeetings(opts: { url: string; token?: string
     }
     if (res.status >= 400) {
       out.available = false
-      out.warnings.push(`Réunions Screenpipe : ${httpProblem(res.status)} Source ignorée pour ce passage.`)
+      out.warnings.push(`Screenpipe meetings: ${httpProblem(res.status)} Source skipped for this pass.`)
       return out
     }
     const d = res.data as { data?: unknown[]; meetings?: unknown[] } | unknown[] | null
@@ -681,10 +681,10 @@ export async function readScreenpipeMeetings(opts: { url: string; token?: string
         const list = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : Array.isArray(d?.segments) ? d.segments : []
         segments = list.map(normalizeSegment).filter((s): s is MeetingSegment => s !== null)
       } else if (t.status !== 404) {
-        out.warnings.push(`Transcription de la réunion ${m.id} : HTTP ${t.status}, réunion traitée avec ses notes seulement.`)
+        out.warnings.push(`Transcription of meeting ${m.id}: HTTP ${t.status}, meeting processed with its notes only.`)
       }
     } catch (err) {
-      out.warnings.push(`Transcription de la réunion ${m.id} injoignable (${(err as Error).message}) : réunion remise au prochain passage.`)
+      out.warnings.push(`Transcription of meeting ${m.id} unreachable (${(err as Error).message}): meeting put off to the next pass.`)
       break
     }
     const conv = meetingConversation(m, segments)
@@ -693,7 +693,7 @@ export async function readScreenpipeMeetings(opts: { url: string; token?: string
       out.conversations.push(conv)
       ids.push(conv.id)
     }
-    // Le checkpoint d'une réunion n'avance qu'une fois toutes les réunions terminées avant elle traitées.
+    // A meeting's checkpoint only moves once every meeting finished before it has been processed.
     const covers = [...ids]
     out.commits.push({ covers, apply: (s) => bumpMeetings(s, end) })
   }
@@ -707,11 +707,11 @@ function bumpMeetings(state: State, iso: string) {
   if (!cur || iso > cur) state.screenpipe.meetings_last_end = iso
 }
 
-// --- Lecture complète (captures + réunions) ---------------------------------------------------------------------
+// --- Full read (captures + meetings) -----------------------------------------------------------------------------
 
 /**
- * `baseline` (posé par install-schedule) : rien d'antérieur n'est lu sans --since explicite, même si le checkpoint
- * Screenpipe est plus ancien (captures jamais relues dans une simulation).
+ * `baseline` (set by install-schedule): nothing earlier is read without an explicit --since, even if the Screenpipe
+ * checkpoint is older (captures never reviewed in a dry run).
  */
 export async function readScreenpipe(
   opts: Omit<ScreenpipeOptions, "since"> & { state: State; since: Date; explicitSince?: boolean; baseline?: Date; meetings?: boolean },
@@ -727,30 +727,30 @@ export async function readScreenpipe(
     fetched = await fetchScreenpipeItems({ ...opts, since, until, spanMs: opts.spanMs ?? sp?.span_ms })
   } catch (err) {
     result.available = false
-    result.warnings.push(`Screenpipe injoignable sur ${opts.url} (${(err as Error).message}) : source ignorée, on continue avec les autres.`)
+    result.warnings.push(`Screenpipe unreachable on ${opts.url} (${(err as Error).message}): source skipped, carrying on with the others.`)
     return result
   }
   if (fetched.error) {
-    // Aucun checkpoint : la période sera relue quand Screenpipe répondra.
+    // No checkpoint: the period will be read again when Screenpipe answers.
     result.available = false
-    result.warnings.push(`${fetched.error} Source ignorée ; ces captures seront relues à la prochaine synchro.`)
+    result.warnings.push(`${fetched.error} Source skipped; these captures will be read again on the next sync.`)
     return result
   }
   result.stats.items = fetched.items.length
-  result.stats.content_type = fetched.contentType ?? `aucune donnée (${fetched.tried.join(", ")})`
+  result.stats.content_type = fetched.contentType ?? `no data (${fetched.tried.join(", ")})`
   if (fetched.status || fetched.truncated) result.stats.truncated_until = fetched.coveredUntil
-  if (fetched.status) result.warnings.push(`${httpProblem(fetched.status)} Lecture arrêtée là ; la suite sera relue à la prochaine synchro.`)
+  if (fetched.status) result.warnings.push(`${httpProblem(fetched.status)} Reading stopped there; the rest will be read again on the next sync.`)
   else if (fetched.truncated)
-    result.warnings.push(`Screenpipe : beaucoup de captures sur la période, lues jusqu'au ${hhmm(fetched.coveredUntil)} ; la suite sera lue aux prochaines synchros.`)
+    result.warnings.push(`Screenpipe: many captures over the period, read up to ${hhmm(fetched.coveredUntil)}; the rest will be read on the next syncs.`)
   const grouped = groupScreenpipeDetailed(fetched.items, { whitelist: opts.whitelist, gapMinutes: opts.gapMinutes, seen: sp?.seen })
   const conversations = grouped.conversations
   result.conversations = conversations
 
   const covered = Date.parse(fetched.coveredUntil)
   const maxSeen = fetched.items.reduce((m, i) => (i.at > m ? i.at : m), "")
-  // Les captures tardives (horodatées juste avant la lecture) sont relues : on repart de la dernière vue + 1 ms.
+  // Late captures (timestamped just before the read) are read again: we start again from the last one seen + 1 ms.
   const final = maxSeen ? new Date(Math.min(Date.parse(maxSeen) + 1, covered)).toISOString() : fetched.coveredUntil
-  // Un commit par conversation (ordre chronologique) : il n'avance qu'une fois traitées toutes celles commencées avant.
+  // One commit per conversation (chronological order): it only moves once every conversation started before has been processed.
   for (const c of [...conversations].sort((a, b) => a.ended_at.localeCompare(b.ended_at))) {
     const covers = conversations.filter((o) => o.started_at <= c.ended_at).map((o) => o.id)
     const at = c.ended_at < final ? c.ended_at : final
@@ -767,7 +767,7 @@ export async function readScreenpipe(
     },
   })
 
-  // Réunions terminées : la source la plus riche en décisions, hors de portée des logs d'agents.
+  // Finished meetings: the source richest in decisions, out of reach of the agents' logs.
   if (opts.meetings !== false) {
     const meetingsSince = opts.baseline && !opts.explicitSince && opts.baseline.getTime() > opts.since.getTime() ? opts.baseline : opts.since
     const m = await readScreenpipeMeetings({ url: opts.url, token: opts.token, state: opts.state, since: meetingsSince, until, timeoutMs: opts.timeoutMs, explicitSince: opts.explicitSince })
@@ -775,7 +775,7 @@ export async function readScreenpipe(
     result.commits.push(...m.commits)
     result.warnings.push(...m.warnings)
     if (m.available) result.stats.meetings = m.meetings
-    if (m.pending) result.warnings.push(`${m.pending} réunion(s) de plus à distiller : elles partiront aux prochaines synchros.`)
+    if (m.pending) result.warnings.push(`${m.pending} more meeting(s) to distill: they will go on the next syncs.`)
   }
   return result
 }
@@ -790,7 +790,7 @@ const MAX_SEEN_PER_WINDOW = 1000
 const MAX_SEEN_WINDOWS = 60
 const SEEN_TTL_MS = 7 * 86_400_000
 
-/** Mémorise les lignes envoyées d'une fenêtre (bornées : 1000 par fenêtre, 60 fenêtres, 7 jours). */
+/** Remembers the rows sent from a window (bounded: 1000 per window, 60 windows, 7 days). */
 export function rememberLines(state: State, l: ConversationLines, now = Date.now()) {
   state.screenpipe ??= {}
   const seen = (state.screenpipe.seen ??= {})
@@ -804,7 +804,7 @@ export function rememberLines(state: State, l: ConversationLines, now = Date.now
   state.screenpipe.seen = Object.fromEntries(keep)
 }
 
-// --- Workflows répétitifs -----------------------------------------------------------------------------------------
+// --- Repetitive workflows -----------------------------------------------------------------------------------------
 
 function int(v: unknown, max = 1_000_000): number {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number.parseFloat(v) : NaN
@@ -824,14 +824,14 @@ function appsOf(w: Record<string, unknown>): string[] {
 
 export type WorkflowOptions = {
   whitelist?: string[]
-  /** Secrets du poste (jetons, clés) à masquer tels quels. */
+  /** The computer's secrets (tokens, keys) to redact as is. */
   literals?: string[]
 }
 
 /**
- * Correspondance « au mieux » des workflows détectés par Screenpipe vers POST /api/automations, avec les mêmes
- * garde-fous que le reste : workflow écarté s'il cite une app hors liste blanche ou a l'air personnel, texte masqué.
- * `ids` : identifiants d'origine (pour GET /workflows/:id), alignés sur `workflows`.
+ * "Best effort" mapping of the workflows detected by Screenpipe to POST /api/automations, with the same
+ * safeguards as the rest: workflow dropped if it names an app outside the allowlist or looks personal, text redacted.
+ * `ids`: original ids (for GET /workflows/:id), aligned with `workflows`.
  */
 export function mapWorkflowsDetailed(
   raw: unknown,
@@ -850,7 +850,7 @@ export function mapWorkflowsDetailed(
     if (!rawTitle) continue
     const trigger = str(w.trigger).trim()
     const outcome = str(w.outcome).trim()
-    const rawDescription = str(w.description ?? w.summary ?? w.details).trim() || [trigger && `Déclencheur : ${trigger}`, outcome && `Résultat : ${outcome}`].filter(Boolean).join(". ")
+    const rawDescription = str(w.description ?? w.summary ?? w.details).trim() || [trigger && `Trigger: ${trigger}`, outcome && `Outcome: ${outcome}`].filter(Boolean).join(". ")
     const apps = appsOf(w)
     if (looksPersonal(`${rawTitle}\n${rawDescription}\n${apps.join(" ")}`) || apps.some((a) => !isAllowedApp(a, "", whitelist))) {
       dropped++
@@ -892,9 +892,9 @@ function median(xs: number[]): number | undefined {
 }
 
 /**
- * Complète un workflow avec son détail (GET /workflows/:id) : `timingRuns` = occurrences complètes, chacune bornée
- * par deux horodatages cités. On en tire le nombre d'occurrences, de jours distincts, l'heure habituelle (médiane
- * des débuts) et une estimation du temps par semaine (durée médiane × occurrences / semaines couvertes).
+ * Completes a workflow with its details (GET /workflows/:id): `timingRuns` = complete occurrences, each bounded
+ * by two cited timestamps. We draw the number of occurrences, of distinct days, the usual time (median
+ * of the starts) and an estimate of the time per week (median duration × occurrences / weeks covered).
  */
 export function enrichWorkflow(w: Workflow, detail: unknown): Workflow {
   if (!detail || typeof detail !== "object") return w
@@ -911,7 +911,7 @@ export function enrichWorkflow(w: Workflow, detail: unknown): Workflow {
   const starts = bounds.map((b) => b.s)
   const days = new Set(starts.map((t) => new Date(t).toISOString().slice(0, 10))).size
   const minuteOfDay = median(starts.map((t) => new Date(t).getHours() * 60 + new Date(t).getMinutes()))
-  const schedule = minuteOfDay !== undefined ? `${String(Math.floor(minuteOfDay / 60)).padStart(2, "0")}h${String(minuteOfDay % 60).padStart(2, "0")}` : w.schedule
+  const schedule = minuteOfDay !== undefined ? `${String(Math.floor(minuteOfDay / 60)).padStart(2, "0")}:${String(minuteOfDay % 60).padStart(2, "0")}` : w.schedule
   const durations = bounds.map((b) => (b.e - b.s) / 60_000).filter((m) => Number.isFinite(m) && m > 0 && m < 8 * 60)
   const perRun = median(durations) ?? 5
   const spanWeeks = Math.max(1, (Math.max(...starts) - Math.min(...starts)) / (7 * 86_400_000))

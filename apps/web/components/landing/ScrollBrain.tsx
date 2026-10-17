@@ -15,45 +15,45 @@ export type ScrollBrainProps = {
   zones: ZoneView[]
   synapses: Synapse[]
   agents: Agent[]
-  /** Progression de la scène épinglée, de 0 (accueil) à 1 (le cerveau se retire). Lue à chaque image. */
+  /** Progress of the pinned scene, from 0 (home) to 1 (the brain steps back). Read every frame. */
   progress: React.RefObject<number>
-  /** Mouvement réduit : cerveau assemblé et coloré, cadrage de l'accueil, rien ne bouge. */
+  /** Reduced motion: brain assembled and colored, home framing, nothing moves. */
   still: boolean
 }
 
-// Mêmes valeurs que le cerveau du dashboard : encre sur bone ; une zone qu'un agent touche s'allume dans sa propre couleur, avivée.
+// Same values as the dashboard brain: ink on bone; a zone an agent touches lights up in its own color, brightened.
 const INK = 0x0a0a0a
 const LINE = 0xd6d6cf
 const RAW = 0xc6c6bf
 const WHITE = 0xffffff
-/** Le cercle d'encre autour d'une zone (ou d'une connaissance) allumée, relatif à sa bille. */
+/** The ink circle around a lit zone (or knowledge item), relative to its bead. */
 const RIM = 1.14
 
 const CENTER_R = 0.034
-/** Hauteur réservée en haut et en bas de l'écran pendant les chapitres (barre de navigation, barre de progression). */
+/** Height kept free at the top and bottom of the screen during the chapters (nav bar, progress bar). */
 const NAV_ROOM = 72
-/** Écart entre la colonne des chapitres et le cerveau, en px. */
+/** Gap between the chapters column and the brain, in px. */
 const CHAPTER_GAP = 32
-/** Demi-encombrement du cerveau à l'écran (surface + billes), pour cadrer la caméra. */
+/** Half of the brain's on-screen footprint (surface + beads), to frame the camera. */
 const EXTENT = { w: 1.65, h: 1.45 }
-// Focale longue : peu de perspective, les billes gardent la même taille d'un bord à l'autre.
+// Long focal length: little perspective, the beads keep the same size from one edge to the other.
 const FOV = 26
 const DUST = 160
 const BONE = 0xf6f6f3
-/** Traits du réseau à l'encre, un peu adoucis vers le blanc. */
+/** Network lines in ink, slightly softened toward white. */
 const SOFTEN = 0.35
-/** Petits neurones dans la couleur de leur zone, légèrement adoucie. */
+/** Small neurons in their zone's color, slightly softened. */
 const DOT_SOFTEN = 0.2
-/** Chaque couche interne est un peu plus pâle et ses neurones un peu plus petits : la profondeur se lit. */
+/** Each inner layer is a bit paler and its neurons a bit smaller: depth reads. */
 const DEPTH_SOFTEN = 0.15
-/** Part de bone sur la face cachée du réseau : il n'en reste qu'un souffle, qui garde la silhouette. */
+/** Share of bone on the network's hidden side: only a breath of it remains, which keeps the silhouette. */
 const BACK = 0.86
 const NEURON_R = 0.007
-/** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
+/** Radius of the arcs between zones: thin tubes, a bit thicker than the links (WebGL lines stay at 1 px). */
 const SYNAPSE_R = 0.004
-/** Avancement de l'assemblage sur la page d'accueil : un quart des connaissances est déjà en place. */
+/** Assembly progress on the home page: a quarter of the knowledge is already in place. */
 const HERO_ASSEMBLY = 0.32
-/** Le dernier tiers des billes arrive plus tard : décalage maximal d'une bille dans l'assemblage. */
+/** The last third of the beads arrives later: maximal delay of a bead in the assembly. */
 const MAX_DELAY = 0.7
 const LAND = 0.3
 
@@ -65,13 +65,13 @@ const smooth = (a: number, b: number, x: number) => {
 }
 const easeOut = (t: number) => 1 - (1 - t) ** 3
 
-/** Zones nommées pendant le 2e chapitre, effacées quand le cerveau se retire. */
+/** Zones named during the 2nd chapter, faded out when the brain steps back. */
 const labelsAt = (s: number) => smooth(0.39, 0.46, s) * (1 - smooth(0.88, 0.95, s))
 
 /**
- * Le cerveau de la page d'accueil. Même géométrie que celui du dashboard, mais piloté par le scroll :
- * il avance jusqu'à remplir l'écran en tournant, les connaissances dispersées se posent sur la coque,
- * les zones prennent leur couleur et leur nom, puis trois agents viennent y chercher du contexte.
+ * The home page brain. Same geometry as the dashboard's, but driven by scrolling:
+ * it moves forward until it fills the screen while rotating, the scattered knowledge settles on the shell,
+ * the zones take their color and their name, then three agents come to it for context.
  */
 export function ScrollBrain({ zones, synapses, agents, progress, still }: ScrollBrainProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -133,7 +133,7 @@ export function ScrollBrain({ zones, synapses, agents, progress, still }: Scroll
                 <span>
                   <span className="block whitespace-nowrap text-[13px] font-medium leading-tight sm:text-[15px]">{z.name}</span>
                   <span className="hidden whitespace-nowrap text-[12px] tabular-nums leading-tight text-trace sm:block sm:text-[13px]">
-                    {z.count} connaissance{z.count > 1 ? "s" : ""}
+                    {z.count} item{z.count === 1 ? "" : "s"}
                   </span>
                 </span>
               </span>
@@ -173,14 +173,14 @@ type BuildArgs = {
   bubbles: Map<string, HTMLDivElement>
 }
 
-/** `d` : distance de la connaissance (posée) au centre de sa zone ; l'onde la fait gonfler en passant. */
+/** `d`: distance of the (placed) knowledge from its zone's center; the ripple makes it swell as it passes. */
 type Node = { zone: number; end: THREE.Vector3; start: THREE.Vector3; r: number; delay: number; wobble: number; d: number }
-/** `glow` : la couleur de la zone quand un agent la touche, la sienne plus saturée et un peu plus claire. */
+/** `glow`: the zone's color when an agent touches it, its own more saturated and a little lighter. */
 type ZoneGfx = { id: string; color: THREE.Color; glow: THREE.Color; center: SphereMesh; outline: SphereMesh; pos: THREE.Vector3; first: number; last: number }
 type SynapseGfx = { a: number; b: number; mat: THREE.MeshBasicMaterial; base: number; arc: FlowArc }
 type Layout = { heroZ: number; fullZ: number; endZ: number; hero: [number, number]; full: [number, number] }
 
-/** Construit la scène et lance la boucle de rendu. Renvoie la fonction de nettoyage. */
+/** Builds the scene and starts the render loop. Returns the cleanup function. */
 function build(T: ThreeModule, args: BuildArgs): () => void {
   const { container, canvas, zones, synapses, agents, progress, still, labels, bubbles } = args
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
@@ -191,7 +191,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const camera = new T.PerspectiveCamera(FOV, 1, 0.1, 60)
   const group = new T.Group()
   scene.add(group)
-  // Brouillard couleur bone : ce qui est derrière pâlit, la profondeur se lit sans ombre ni dégradé.
+  // Bone-colored fog: what is behind fades, depth reads without shadow or gradient.
   const fog = new T.Fog(BONE, 1, 10)
   scene.fog = fog
 
@@ -202,13 +202,13 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const surface = brainSurface()
   const anchors = zoneAnchors(zones.length)
   const owner = territories(anchors)
-  /** Point de surface i, décalé de k le long de sa normale (k < 0 : sous la surface). */
+  /** Surface point i, shifted by k along its normal (k < 0: under the surface). */
   const onSurface = (i: number, k: number) => {
     const { p, n } = surface[i]
     return new T.Vector3(p[0] + n[0] * k, p[1] + n[1] * k, p[2] + n[2] * k)
   }
 
-  // Le réseau qui dessine le cerveau : gris brut au départ ; quand les zones sont nommées, les traits passent à l'encre et les neurones à la couleur de leur zone.
+  // The network that draws the brain: raw gray at first; once the zones are named, the lines turn to ink and the neurons to their zone's color.
   const net = brainNetwork(owner)
   const curves = curveNetwork(net)
   const netCol = new Float32Array(curves.positions.length)
@@ -226,7 +226,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   geometries.push(netGeo, neurons.geometry)
   materials.push(shellMat, neuronMat)
 
-  // Zones : un centre coloré cerclé d'encre, et ses connaissances autour.
+  // Zones: a colored center ringed with ink, and its knowledge around it.
   const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
   materials.push(outlineMat)
   const gfx: ZoneGfx[] = []
@@ -247,11 +247,11 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const first = nodes.length
     const count = 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
     for (const idx of zoneNodes(anchors, owner, i, count)) {
-      // Sous la surface, à des profondeurs variées : les connaissances se posent dans le cerveau, pas dessus.
+      // Under the surface, at varied depths: the knowledge settles into the brain, not on top of it.
       const end = onSurface(idx, -(0.04 + rand() * 0.14))
-      // Avant de se poser, la connaissance flotte loin de la coque, dans sa direction : elle vient d'un poste.
+      // Before settling, the item floats far from the shell, in its direction: it comes from a computer.
       const away = scatter(dir, rand, 1.2)
-      // Pas trop loin : la bille ne doit pas flotter sur le titre ni sur les chapitres.
+      // Not too far: the bead must not float over the title or the chapters.
       const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(1.5 + rand() * 0.45)
       nodes.push({ zone: i, end, start, r: 0.0065 + rand() * 0.005, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2, d: end.distanceTo(pos) })
     }
@@ -259,7 +259,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     gfx.push({ id: z.id, color, glow: color.clone().offsetHSL(0, 0.18, 0.06), center, outline, pos, first, last: nodes.length })
   })
 
-  // Les connaissances : une seule géométrie instanciée, couleur par bille (brute, posée, ou touchée par un agent).
+  // The knowledge: a single instanced geometry, one color per bead (raw, settled, or touched by an agent).
   const nodeMat = new T.MeshBasicMaterial({ color: WHITE })
   const nodeMesh = new T.InstancedMesh(geoSphere, nodeMat, nodes.length)
   const ringMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
@@ -267,7 +267,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   group.add(ringMesh, nodeMesh)
   materials.push(nodeMat, ringMat)
 
-  // Traits d'une connaissance à son centre de zone : ils poussent au moment où la bille se pose.
+  // Lines from an item to its zone center: they grow at the moment the bead settles.
   const linkPos = new Float32Array(nodes.length * 6)
   const linkCol = new Float32Array(nodes.length * 6)
   const linkGeo = new T.BufferGeometry()
@@ -278,7 +278,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   geometries.push(linkGeo)
   materials.push(linkMat)
 
-  // Le brut : une poussière de captures qui reste autour, sans jamais rejoindre le cerveau.
+  // The raw data: a dust of captures that stays around, never joining the brain.
   const dustRand = seeded(7)
   const dust = Array.from({ length: DUST }, () => {
     const d = scatter([dustRand() - 0.5, dustRand() - 0.5, dustRand() - 0.5], dustRand, 2)
@@ -289,7 +289,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   group.add(dustMesh)
   materials.push(dustMat)
 
-  // Les connaissances reliées entre elles une fois posées, par des traits droits, chacune à ses plus proches voisines.
+  // The knowledge items linked to each other once settled, by straight lines, each to its nearest neighbors.
   const ends = nodes.map((nd) => nd.end.toArray())
   const knownSeg = gradientSegments(
     knowledgeLinks(ends).map(([a, b]) => ({ pts: [ends[a], ends[b]], from: gfx[nodes[a].zone].color.toArray(), to: gfx[nodes[b].zone].color.toArray() })),
@@ -302,7 +302,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   geometries.push(knownGeo)
   materials.push(knownMat)
 
-  // Synapses : arcs entre zones qui partagent des entités, en dégradé de la couleur de l'une à celle de l'autre.
+  // Synapses: arcs between zones that share entities, as a gradient from one's color to the other's.
   const index = new Map(gfx.map((g, i) => [g.id, i]))
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
@@ -317,12 +317,12 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     materials.push(mat)
     syn.push({ a, b, mat, base: 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08), arc })
   }
-  // Le flux, comme sur le dashboard : de petites billes de lumière dans chaque arc. Sous mouvement réduit, aucune.
+  // The flow, as on the dashboard: small light beads in each arc. Under reduced motion, none.
   const flow = arcBeads(T, syn.map((sy) => sy.arc))
   flow.mesh.visible = !still
   group.add(flow.mesh)
 
-  // Ondes sous chaque agent, dans la couleur de sa zone : deux anneaux décalés, entièrement pilotés par le scroll (réversibles).
+  // Ripples under each agent, in its zone's color: two offset rings, fully driven by scrolling (reversible).
   const ripples = agents.flatMap((a) => {
     const z = index.get(a.zone)
     if (z === undefined) return []
@@ -337,7 +337,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     })
   })
 
-  // Cadrage : la caméra recule ou avance pour que le cerveau occupe une fraction donnée de l'écran.
+  // Framing: the camera moves back or forward so that the brain fills a given fraction of the screen.
   const size = { w: 1, h: 1 }
   const tanH = Math.tan((FOV / 2) * (Math.PI / 180))
   let layout: Layout = { heroZ: 6, fullZ: 3.5, endZ: 5, hero: [0, 0], full: [0, 0] }
@@ -355,18 +355,18 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const halfW = (z: number) => tanH * z * aspect
     const halfH = (z: number) => tanH * z
     const wide = aspect >= 1.05
-    // Assez petit pour ne jamais passer sous le titre ni sous la colonne des chapitres.
+    // Small enough never to go under the title or the chapters column.
     const heroZ = fit(0.5)
-    // Chapitres, large écran : le cerveau tient dans la place laissée à droite de la colonne de texte (mêmes
-    // mesures que .landing-chapter : gouttière, 30rem de texte, 20 px de marge intérieure) et sous la barre du haut.
+    // Chapters, wide screen: the brain fits in the space left to the right of the text column (same
+    // measurements as .landing-chapter: gutter, 30rem of text, 20 px of inner padding) and under the top bar.
     const gutter = Math.min(56, Math.max(16, 0.04 * w))
     const column = Math.max(gutter, (w - 1440) / 2 + gutter) + 480 + 20 + CHAPTER_GAP
     const room = { w: Math.max(w * 0.3, w - column - gutter), h: h - 2 * NAV_ROOM }
     const fullZ = wide ? Math.max(fit(0.8), EXTENT.w / ((room.w / w) * tanH * aspect), EXTENT.h / ((room.h / h) * tanH)) : fit(0.78)
-    // Centre de cette place, en coordonnées de la scène à la distance du cadrage plein écran.
+    // Center of that space, in scene coordinates at the full-screen framing distance.
     const roomCenter = ((column + room.w / 2 - w / 2) / (w / 2)) * halfW(fullZ)
-    // Large écran : le cerveau à droite du titre, puis dans la place à droite des chapitres.
-    // Écran étroit : le cerveau au-dessus du texte.
+    // Wide screen: the brain to the right of the title, then in the space to the right of the chapters.
+    // Narrow screen: the brain above the text.
     layout = {
       heroZ,
       fullZ,
@@ -395,7 +395,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const fade = new Float32Array(net.points.length)
   const camLocal = new T.Vector3()
   let painted = -1
-  /** Couleur du réseau : gris brut → traits à l'encre et neurones dans la couleur de leur zone, à mesure que les zones sont nommées. */
+  /** Network color: raw gray → ink lines and neurons in their zone's color, as the zones get named. */
   const paintNetwork = (named: number) => {
     if (Math.abs(named - painted) < 0.004) return
     painted = named
@@ -407,7 +407,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       else dotBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, DOT_SOFTEN + deeper), named)
     })
   }
-  /** La face cachée pâlit vers le fond : seule la face visible du réseau se lit. */
+  /** The hidden side fades toward the background: only the visible side of the network reads. */
   const shadeNetwork = () => {
     group.updateMatrixWorld()
     camLocal.copy(camera.position)
@@ -426,7 +426,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   let last = performance.now()
   const state = { visible: true, running: false }
 
-  /** Une image : tout l'état de la scène découle de `s` (progression lissée) et de l'horloge. */
+  /** One frame: the whole scene state derives from `s` (smoothed progress) and the clock. */
   const draw = (t: number) => {
     const dt = Math.min(0.05, (t - last) / 1000)
     last = t
@@ -436,8 +436,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     }
     const intro = still ? 1 : easeOut(clamp01((t - born) / 1800))
 
-    // Cadrage : accueil → plein écran (chapitres) → recul quand le cerveau se retire.
-    // Mouvement réduit : le cadrage de l'accueil, cerveau déjà assemblé et nommé.
+    // Framing: home → full screen (chapters) → stepping back when the brain withdraws.
+    // Reduced motion: the home framing, brain already assembled and named.
     const toFull = still ? 0 : smooth(0.02, 0.16, s)
     const toEnd = still ? 0 : smooth(0.86, 1, s)
     const z = lerp(lerp(layout.heroZ, layout.fullZ, toFull), layout.endZ, toEnd)
@@ -451,7 +451,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     group.rotation.x = lerp(0.3, 0.16, toFull)
     group.rotation.y = still ? -0.5 : -0.5 + s * Math.PI * 1.15 + spin
 
-    // Assemblage : chaque connaissance quitte la poussière et se pose sur la coque, à son tour.
+    // Assembly: each item leaves the dust and settles on the shell, in turn.
     const assembly = still ? 1.06 : HERO_ASSEMBLY * intro + (1.06 - HERO_ASSEMBLY) * smooth(0.1, 0.4, s)
     const named = still ? 1 : smooth(0.39, 0.5, s)
     paintNetwork(named)
@@ -468,7 +468,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       tmp.x += Math.sin(t * 0.0006 + nd.wobble) * float
       tmp.y += Math.cos(t * 0.0005 + nd.wobble) * float
       const on = lit.has(gfx[nd.zone].id) && k >= 1
-      // L'onde traverse les connaissances de la zone : chacune gonfle quand le front de l'onde l'atteint.
+      // The ripple goes through the zone's knowledge: each one swells when the ripple's front reaches it.
       let pulse = 0
       if (on)
         for (const rp of ripples) {
@@ -482,7 +482,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       ringMesh.setMatrixAt(i, mtx.compose(tmp, quat, scl.setScalar(on ? r * RIM : 0)))
       nodeMesh.setColorAt(i, on ? gfx[nd.zone].glow : col.copy(rawC).lerp(gfx[nd.zone].color, e * named))
 
-      // Trait : il part du centre au moment où la bille arrive.
+      // Line: it starts from the center at the moment the bead arrives.
       const grow = easeOut(clamp01((k - 0.55) / 0.45))
       const c = gfx[nd.zone].pos
       linkPos.set([c.x, c.y, c.z, lerp(c.x, nd.end.x, grow), lerp(c.y, nd.end.y, grow), lerp(c.z, nd.end.z, grow)], i * 6)
@@ -504,7 +504,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       g.outline.visible = on
     }
     knownMat.opacity = 0.55 * (still ? 1 : smooth(0.43, 0.55, s))
-    // Les arcs (et leurs billes de lumière) apparaissent avec les liaisons entre connaissances.
+    // The arcs (and their light beads) appear with the links between knowledge items.
     const arcsIn = still ? 1 : smooth(0.43, 0.55, s)
     for (const sy of syn) {
       const on = lit.has(gfx[sy.a].id) || lit.has(gfx[sy.b].id)
@@ -517,7 +517,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       flow.frame(t / 1000)
     }
 
-    // La poussière brute s'éteint à mesure que le cerveau se remplit : elle reste sur le poste.
+    // The raw dust fades as the brain fills up: it stays on the computer.
     dustMat.opacity = still ? 0 : 0.85 * intro * (1 - smooth(0.14, 0.4, s))
     dustMesh.visible = dustMat.opacity > 0.01
     if (dustMesh.visible) {
@@ -545,8 +545,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
 
     renderer.render(scene, camera)
 
-    // Libellés : projetés sur leur zone, plus pâles quand la zone passe derrière.
-    // Sous mouvement réduit, le cerveau reste dans le cadrage de l'accueil : pas de libellés sur le titre.
+    // Labels: projected onto their zone, paler when the zone goes behind.
+    // Under reduced motion, the brain stays in the home framing: no labels over the title.
     const shown = still ? 0 : labelsAt(s)
     const centerDepth = tmp.set(0, 0, 0).applyMatrix4(group.matrixWorld).project(camera).z
     for (const g of gfx) {
@@ -576,7 +576,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     raf = requestAnimationFrame(frame)
     draw(t)
   }
-  // Mouvement réduit : une seule image par changement de taille, pas de boucle.
+  // Reduced motion: a single frame per size change, no loop.
   function invalidate() {
     if (still) draw(performance.now())
   }

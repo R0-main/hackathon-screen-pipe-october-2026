@@ -8,7 +8,7 @@ import { runInOrg } from "@/lib/store"
 
 export const dynamic = "force-dynamic"
 
-/** Connecteurs (admins) : serveurs MCP (catalogue, connexion OAuth) et imports par jeton (Notion, Linear, Todoist, ICS). */
+/** Connectors (admins): MCP servers (catalog, OAuth sign-in) and token imports (Notion, Linear, Todoist, ICS). */
 export default async function ConnectorsPage() {
   const viewer = await requirePageViewer({ admin: true })
   const [connectors, mcp] = await runInOrg(viewer.real.org_id, () => Promise.all([listConnectors(), listMcpConnectors()]))

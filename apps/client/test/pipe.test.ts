@@ -5,7 +5,7 @@ import { test } from "node:test"
 import { PIPE_NAME, installPipe, pipeInstalled, pipeMarkdown, pipePath, uninstallPipe } from "../src/install"
 import { tempDir } from "./helpers"
 
-test("pipe Screenpipe brain-sync : frontmatter borné, commande sync --scheduled, installation et retrait", () => {
+test("Screenpipe brain-sync pipe: bounded frontmatter, sync --scheduled command, install and removal", () => {
   const dir = tempDir("brain-pipe-")
   process.env.COMPANY_BRAIN_SCREENPIPE_DIR = dir
   process.env.COMPANY_BRAIN_SCRIPT = "/home/x/.company-brain/brain.mjs"
@@ -16,7 +16,7 @@ test("pipe Screenpipe brain-sync : frontmatter borné, commande sync --scheduled
     assert.match(md, /privacy_filter: true/)
     assert.match(md, /- Api\(GET \/meetings\)/)
     assert.match(md, /"\/home\/x\/\.company-brain\/brain\.mjs" sync --scheduled --home "\/home\/x\/\.company-brain"/)
-    assert.ok(!/POST/.test(md), "aucune écriture autorisée")
+    assert.ok(!/POST/.test(md), "no write allowed")
 
     const logs: string[] = []
     const file = installPipe((s) => logs.push(s))

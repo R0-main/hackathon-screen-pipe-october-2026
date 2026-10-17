@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> }
 
 const Schema = z.object({ zone: z.string().min(1).max(64).nullable() })
 
-/** Attribue le skill à un cortex (`zone`), ou à toute l'entreprise (`null`). */
+/** Assigns the skill to a cortex (`zone`), or to the whole company (`null`). */
 export const PATCH = withViewer<Ctx>(async (req, viewer, { params }) => {
   const { id } = await params
   const body = await parseBody(req, Schema)
@@ -21,7 +21,7 @@ export const PATCH = withViewer<Ctx>(async (req, viewer, { params }) => {
   }
 })
 
-/** Retire le skill : les postes le désinstallent à leur prochaine synchro. */
+/** Removes the skill: workstations uninstall it at their next sync. */
 export const DELETE = withViewer<Ctx>(async (_req, viewer, { params }) => {
   const { id } = await params
   try {

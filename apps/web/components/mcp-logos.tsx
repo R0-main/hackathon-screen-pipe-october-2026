@@ -1,6 +1,6 @@
-// Logos des connecteurs MCP : tracés de Simple Icons (CC0, https://simpleicons.org, v16) et couleur de chaque marque,
-// intégrés tels quels (rien n'est chargé depuis un service tiers). Sans logo connu ou lisible en petit (Zapier, dont le
-// tracé est un mot dans un carré) : monogramme à la couleur de la marque.
+// MCP connector logos: paths from Simple Icons (CC0, https://simpleicons.org, v16) and each brand's color, embedded
+// as is (nothing is loaded from a third-party service). Without a known logo or one readable at small size (Zapier,
+// whose path is a word in a square): monogram in the brand's color.
 
 type Logo = readonly [color: string, path: string]
 
@@ -41,7 +41,7 @@ const LOGOS: Record<string, Logo> = {
 
 type Props = { logo?: string; name: string; color: string; size?: number; className?: string }
 
-/** Tuile carrée claire, bordée, avec le logo en couleur (ou l'initiale), comme la liste de connecteurs de Claude. */
+/** Light square tile, bordered, with the logo in color (or the initial), like Claude's connector list. */
 export function McpLogo({ logo, name, color, size = 40, className = "" }: Props) {
   const known = logo ? LOGOS[logo] : undefined
   return (

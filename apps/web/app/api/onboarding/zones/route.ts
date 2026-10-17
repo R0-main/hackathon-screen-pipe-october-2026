@@ -15,28 +15,28 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
 const Schema = z.object({
-  /** Zones proposées par Claude Code ou Codex et gardées (noms et descriptions éventuellement retouchés). */
+  /** Zones suggested by Claude Code or Codex and kept (names and descriptions possibly edited). */
   proposed: z
     .array(z.object({ id: z.string().max(32), name: z.string().trim().min(1).max(40), description: z.string().max(300).default(""), keywords: z.array(z.string().max(40)).max(80).default([]) }))
     .max(12)
     .default([]),
-  /** Zones de la liste par défaut cochées, par identifiant. */
+  /** Ticked zones from the default list, by id. */
   picked: z.array(z.string().max(32)).max(DEFAULT_ZONES.length).default([]),
-  /** Zones ajoutées à la main, par nom. */
+  /** Zones added by hand, by name. */
   custom: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
-  /** Premières connaissances de la proposition : rangées dans les zones gardées (sinon classées dans la plus proche). */
+  /** The proposal's first knowledge: filed in the kept zones (otherwise classified into the closest one). */
   items: z.array(KnowledgeItemInputSchema).max(60).default([]),
-  /** Description de l'entreprise tirée de la proposition, reprise si l'admin n'en a pas donné. */
+  /** Company description taken from the proposal, used if the admin did not give one. */
   description: z.string().max(2000).default(""),
-  /** Jeton de l'admin (renvoyé par POST /api/orgs, déjà dans son prompt) : pour refaire ce prompt avec les zones choisies. */
+  /** The admin's token (returned by POST /api/orgs, already in their prompt): to redo this prompt with the chosen zones. */
   token: z.string().max(200).optional(),
 })
 
 /**
- * /creer, étape des zones (admin) : crée les zones choisies (celles proposées par Claude, cochées, ajoutées), donne
- * leur accès à l'admin, ajoute les premières connaissances de la proposition, puis refait son prompt d'installation
- * pour qu'il cite ces zones. Le jeton ne change pas (la session du dashboard en dépend) : la page le renvoie, il est
- * vérifié ; sans lui, pas de nouveau prompt (la page garde celui de la création).
+ * /create, zones step (admin): creates the chosen zones (suggested by Claude, ticked, added), gives the admin access to
+ * them, adds the proposal's first knowledge, then redoes their install prompt so that it names these zones. The token
+ * does not change (the dashboard session depends on it): the page sends it back, it is checked; without it, no new
+ * prompt (the page keeps the one from creation).
  */
 export const POST = withViewer(
   async (req, viewer) => {
@@ -50,7 +50,7 @@ export const POST = withViewer(
       .filter((d) => !ids.has(d.id))
       .map(({ id, name, description, keywords }) => ({ id, name, description, keywords }))
     const wanted = [...proposed, ...others]
-    if (wanted.length === 0 && existing.length === 0) return error(400, "Choisissez au moins une zone.")
+    if (wanted.length === 0 && existing.length === 0) return error(400, "Choose at least one zone.")
     for (const zone of zonesFromDraft({ zones: wanted }, existing)) await store.upsertZone(zone)
 
     const zones = await store.listZones()

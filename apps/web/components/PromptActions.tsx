@@ -7,16 +7,16 @@ import { CheckIcon, ErrorText } from "./ui"
 type App = "terminal" | "desktop" | "vscode"
 type Status = { kind: "idle" } | { kind: "busy" } | { kind: "copied" } | { kind: "codex" } | { kind: "opened"; app: App } | { kind: "error"; message: string }
 
-/** Au-delà, un lien `claude-cli://` est refusé (https://code.claude.com/docs/en/deep-links) : on colle le prompt à la main. */
+/** Beyond this, a `claude-cli://` link is refused (https://code.claude.com/docs/en/deep-links): the prompt is pasted by hand. */
 const MAX_LINK_PROMPT = 5000
 
 /**
- * Liens Claude Code ; le prompt arrive pré-rempli, rien ne part sans que la personne appuie sur Entrée.
- * - `desktop` (claude://code/new) : l'app de bureau, onglet Code. C'est le bouton principal. Elle peut ouvrir une session
- *   dans le cloud et aucun paramètre documenté ne choisit l'environnement, d'où le rappel de choisir « Local » : nos
- *   prompts ont besoin du poste (installer le client, lire l'historique des sessions).
- * - `terminal` (claude-cli://) : toujours sur ce poste, en lien discret sous les boutons.
- * - `vscode` : l'extension Claude Code, sur ce poste aussi.
+ * Claude Code links; the prompt arrives pre-filled, nothing is sent until the person presses Enter.
+ * - `desktop` (claude://code/new): the desktop app, Code tab. It is the main button. It can open a session
+ *   in the cloud and no documented parameter picks the environment, hence the reminder to choose "Local": our
+ *   prompts need the computer itself (installing the client, reading the session history).
+ * - `terminal` (claude-cli://): always on this computer, as a discreet link under the buttons.
+ * - `vscode`: the Claude Code extension, on this computer too.
  */
 export function claudeCodeUrl(app: App, prompt: string): string {
   const q = encodeURIComponent(prompt)
@@ -25,7 +25,7 @@ export function claudeCodeUrl(app: App, prompt: string): string {
   return `claude-cli://open?q=${q}`
 }
 
-/** Copie un texte qui peut arriver plus tard. Safari n'autorise la copie qu'au moment du clic : on lui passe la promesse. */
+/** Copies a text that may arrive later. Safari only allows copying at click time: it is given the promise. */
 export async function copyText(text: Promise<string> | string): Promise<void> {
   const pending = Promise.resolve(text)
   if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
@@ -36,35 +36,34 @@ export async function copyText(text: Promise<string> | string): Promise<void> {
 }
 
 const OPENED: Record<App, string> = {
-  terminal: "Un terminal s'ouvre avec claude et le prompt : relisez-le, puis appuyez sur Entrée. Rien ne s'est ouvert ? Le prompt est aussi copié : collez-le dans un terminal où tourne claude (le lien ne marche qu'après une première session claude).",
-  vscode: "Le prompt attend dans Claude Code pour VS Code : relisez-le, puis appuyez sur Entrée. Rien ne s'est ouvert ? Il est aussi copié.",
-  desktop: "Le prompt attend dans l'app Claude, onglet Code. Vérifiez que l'environnement est « Local » (pas un environnement cloud), puis appuyez sur Entrée. Il est aussi copié.",
+  terminal: "A terminal opens with claude and the prompt: read it, then press Enter. Nothing opened? The prompt is also copied: paste it into a terminal running claude (the link only works after a first claude session).",
+  vscode: "The prompt is waiting in Claude Code for VS Code: read it, then press Enter. Nothing opened? It is also copied.",
+  desktop: "The prompt is waiting in the Claude app, Code tab. Check that the environment is \"Local\" (not a cloud environment), then press Enter. It is also copied.",
 }
 
 /**
- * Copier un prompt, ou l'ouvrir directement dans Claude Code sur ce poste. `getPrompt` peut créer le prompt au premier
- * clic (compte visiteur de la démo, code d'envoi) : il est appelé à chaque action, à lui de garder son résultat.
- */
-/**
- * `sends` : le prompt envoie des données du poste à un site (onboarding par un agent). En mode auto, Claude Code le
- * bloque par sécurité, ce qui est voulu : on explique comment l'autoriser en connaissance de cause.
+ * Copy a prompt, or open it directly in Claude Code on this computer. `getPrompt` may create the prompt on the first
+ * click (demo visitor account, upload code): it is called on every action, it is up to it to keep its result.
+ *
+ * `sends`: the prompt sends data from the computer to a website (onboarding by an agent). In auto mode, Claude Code
+ * blocks it for safety, which is intended: we explain how to allow it knowingly.
  */
 export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPrompt: () => Promise<string>; size?: "lg" | "md"; sends?: boolean }) {
   const [status, setStatus] = useState<Status>({ kind: "idle" })
   const btn = size === "lg" ? "btn-lg" : ""
 
-  // Codex n'a pas de lien documenté qui pré-remplit un prompt : on le copie et on donne la commande à lancer.
+  // Codex has no documented link that pre-fills a prompt: it is copied and the command to run is shown.
   const onCopy = async (forCodex = false) => {
     setStatus({ kind: "busy" })
     try {
       await copyText(getPrompt())
       setStatus({ kind: forCodex ? "codex" : "copied" })
     } catch (e) {
-      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Copie impossible." })
+      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Could not copy." })
     }
   }
 
-  // Ouvrir copie aussi le prompt : si le lien ne mène nulle part, le prompt est prêt à coller.
+  // Opening also copies the prompt: if the link leads nowhere, the prompt is ready to paste.
   const onOpen = async (app: App) => {
     setStatus({ kind: "busy" })
     try {
@@ -80,7 +79,7 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
       await copied
       setStatus({ kind: "opened", app })
     } catch (e) {
-      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Ouverture impossible." })
+      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Could not open." })
     }
   }
 
@@ -89,54 +88,54 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
   return (
     <div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
-        <button type="button" className={`btn ${btn}`} onClick={() => onOpen("desktop")} disabled={busy} title="Ouvre l'app Claude, onglet Code">
+        <button type="button" className={`btn ${btn}`} onClick={() => onOpen("desktop")} disabled={busy} title="Opens the Claude app, Code tab">
           <ClaudeLogo size={logo} />
-          Ouvrir dans Claude Code
+          Open in Claude Code
         </button>
-        <button type="button" className={`btn ${btn}`} onClick={() => onCopy(true)} disabled={busy} title="Copie le prompt et donne la commande codex à lancer">
+        <button type="button" className={`btn ${btn}`} onClick={() => onCopy(true)} disabled={busy} title="Copies the prompt and shows the codex command to run">
           <CodexLogo size={logo} />
-          Utiliser avec Codex
+          Use with Codex
         </button>
         <button type="button" className={`btn btn-ghost ${btn}`} onClick={() => onCopy()} disabled={busy}>
-          Copier le prompt
+          Copy the prompt
         </button>
       </div>
       <p className="mt-3 text-[13px] leading-relaxed text-trace">
-        Claude Code s&apos;ouvre dans l&apos;app Claude, onglet Code : choisissez l&apos;environnement « Local », sur ce poste. Avec Codex, le prompt est copié et la
-        commande à lancer s&apos;affiche.
+        Claude Code opens in the Claude app, Code tab: choose the &quot;Local&quot; environment, on this computer. With Codex, the prompt is copied and the
+        command to run is shown.
       </p>
       <p className="mt-1.5 text-[12px] text-trace">
-        Plutôt le terminal ?{" "}
+        Prefer the terminal?{" "}
         <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => onOpen("terminal")} disabled={busy}>
-          Cliquez ici pour l&apos;ouvrir dans le terminal
+          Click here to open it in the terminal
         </button>{" "}
-        ou{" "}
+        or{" "}
         <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => onOpen("vscode")} disabled={busy}>
-          dans VS Code
+          in VS Code
         </button>
         .
       </p>
 
       {sends && (
         <p className="mt-2 text-[13px] leading-relaxed text-trace">
-          L&apos;envoi est bloqué ? En mode auto, Claude Code refuse par sécurité d&apos;envoyer des données à un site. Passez en mode par défaut (Maj+Tab) et
-          acceptez la commande d&apos;envoi quand il la propose, ou lancez <span className="mono text-ink">claude --dangerously-skip-permissions</span> pour cette
-          session (plus aucune confirmation : à réserver à ce prompt). Codex, lui, demande à sortir de son bac à sable : acceptez.
+          Upload blocked? In auto mode, Claude Code refuses for safety to send data to a website. Switch to the default mode (Shift+Tab) and
+          accept the upload command when it proposes it, or run <span className="mono text-ink">claude --dangerously-skip-permissions</span> for this
+          session (no more confirmations: keep it for this prompt). Codex asks to leave its sandbox: accept.
         </p>
       )}
 
       <div className="mt-4 min-h-[22px] text-[14px]" aria-live="polite">
-        {status.kind === "busy" && <p className="text-trace">Préparation de votre prompt…</p>}
+        {status.kind === "busy" && <p className="text-trace">Preparing your prompt…</p>}
         {status.kind === "copied" && (
           <p className="flex items-center gap-1.5">
-            <CheckIcon /> Prompt copié. Collez-le dans Claude Code ou Codex, sur ce poste (pas dans une session cloud).
+            <CheckIcon /> Prompt copied. Paste it into Claude Code or Codex, on this computer (not in a cloud session).
           </p>
         )}
         {status.kind === "codex" && (
           <div className="flex items-start gap-1.5">
             <CheckIcon className="mt-[3px] shrink-0" />
             <div>
-              <p>Prompt copié. Dans un terminal, sur ce poste, lancez codex et collez-le. Sur Mac, en une ligne :</p>
+              <p>Prompt copied. In a terminal, on this computer, run codex and paste it. On a Mac, in one line:</p>
               <p className="mono inset mt-1.5 inline-block select-all px-2 py-1 text-[13px]">codex &quot;$(pbpaste)&quot;</p>
             </div>
           </div>

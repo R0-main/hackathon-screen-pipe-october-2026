@@ -1,5 +1,5 @@
-// Skills de l'entreprise sur le poste : installation dans ~/.claude/skills (marqueur, mise à jour, retrait, skills
-// personnels jamais touchés) et publication d'un dossier avec `skills push`.
+// Company skills on the computer: install in ~/.claude/skills (marker, update, removal, personal skills never
+// touched) and publishing a folder with `skills push`.
 
 import { strict as assert } from "node:assert"
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
@@ -11,7 +11,7 @@ import { saveConfig } from "../src/config"
 import { cmdSkills, installSkills, readSkillDir, removeInstalledSkills } from "../src/skills"
 import { mockServer, tempDir } from "./helpers"
 
-const URL_A = "https://cerveau.fournil.example"
+const URL_A = "https://brain.fournil.example"
 
 function skill(name: string, version = 1, extra: Partial<ApiSkill> = {}): ApiSkill {
   return {
@@ -33,47 +33,47 @@ function skill(name: string, version = 1, extra: Partial<ApiSkill> = {}): ApiSki
   }
 }
 
-test("skills : installation avec marqueur, scripts exécutables, mise à jour à la version suivante", () => {
+test("skills: install with a marker, executable scripts, update to the next version", () => {
   const dir = tempDir()
-  const r1 = installSkills([skill("deployer"), skill("ton-fournil")], URL_A, dir)
-  assert.deepEqual(r1.installed.sort(), ["deployer", "ton-fournil"])
+  const r1 = installSkills([skill("deployer"), skill("fournil-tone")], URL_A, dir)
+  assert.deepEqual(r1.installed.sort(), ["deployer", "fournil-tone"])
   assert.match(readFileSync(join(dir, "deployer", "SKILL.md"), "utf8"), /# deployer v1/)
-  assert.ok(statSync(join(dir, "deployer", "scripts", "run.sh")).mode & 0o100, "le script est exécutable")
-  assert.equal(statSync(join(dir, "deployer", "reference.md")).mode & 0o111, 0, "un fichier de référence ne l'est pas")
+  assert.ok(statSync(join(dir, "deployer", "scripts", "run.sh")).mode & 0o100, "the script is executable")
+  assert.equal(statSync(join(dir, "deployer", "reference.md")).mode & 0o111, 0, "a reference file is not")
   const marker = JSON.parse(readFileSync(join(dir, "deployer", SKILL_MARKER_FILE), "utf8"))
   assert.equal(marker.url, URL_A)
   assert.equal(marker.version, 1)
 
-  const r2 = installSkills([skill("deployer", 2), skill("ton-fournil")], URL_A, dir)
+  const r2 = installSkills([skill("deployer", 2), skill("fournil-tone")], URL_A, dir)
   assert.deepEqual(r2.updated, ["deployer"])
-  assert.deepEqual(r2.unchanged, ["ton-fournil"])
+  assert.deepEqual(r2.unchanged, ["fournil-tone"])
   assert.match(readFileSync(join(dir, "deployer", "SKILL.md"), "utf8"), /# deployer v2/)
 })
 
-test("skills : un skill qui n'est plus attribué au poste est retiré, un skill personnel ou d'un autre cerveau jamais", () => {
+test("skills: a skill no longer assigned to the computer is removed, a personal skill or one from another brain never", () => {
   const dir = tempDir()
-  installSkills([skill("deployer"), skill("cloture")], URL_A, dir)
-  // Skill personnel du même nom qu'un skill de l'entreprise, et un autre sans rapport.
-  mkdirSync(join(dir, "ton-fournil"))
-  writeFileSync(join(dir, "ton-fournil", "SKILL.md"), "# Mon ton à moi\n")
-  mkdirSync(join(dir, "perso"))
-  writeFileSync(join(dir, "perso", "SKILL.md"), "# Perso\n")
-  // Skill installé depuis un autre cerveau.
-  installSkills([skill("autre")], "https://autre.example", dir)
+  installSkills([skill("deployer"), skill("closing")], URL_A, dir)
+  // Personal skill with the same name as a company skill, and another unrelated one.
+  mkdirSync(join(dir, "fournil-tone"))
+  writeFileSync(join(dir, "fournil-tone", "SKILL.md"), "# My own tone\n")
+  mkdirSync(join(dir, "personal"))
+  writeFileSync(join(dir, "personal", "SKILL.md"), "# Personal\n")
+  // Skill installed from another brain.
+  installSkills([skill("other")], "https://other.example", dir)
 
-  const r = installSkills([skill("deployer"), skill("ton-fournil")], URL_A, dir)
-  assert.deepEqual(r.removed, ["cloture"], "le cortex n'est plus lu : le skill part")
-  assert.ok(!existsSync(join(dir, "cloture")))
-  assert.ok(r.skipped.some((s) => s.name === "ton-fournil" && /personnel/.test(s.reason)))
-  assert.equal(readFileSync(join(dir, "ton-fournil", "SKILL.md"), "utf8"), "# Mon ton à moi\n", "le skill personnel est intact")
-  assert.ok(existsSync(join(dir, "perso", "SKILL.md")))
-  assert.ok(existsSync(join(dir, "autre", "SKILL.md")), "le skill d'un autre cerveau est gardé")
+  const r = installSkills([skill("deployer"), skill("fournil-tone")], URL_A, dir)
+  assert.deepEqual(r.removed, ["closing"], "the cortex is no longer readable: the skill goes")
+  assert.ok(!existsSync(join(dir, "closing")))
+  assert.ok(r.skipped.some((s) => s.name === "fournil-tone" && /personal/.test(s.reason)))
+  assert.equal(readFileSync(join(dir, "fournil-tone", "SKILL.md"), "utf8"), "# My own tone\n", "the personal skill is intact")
+  assert.ok(existsSync(join(dir, "personal", "SKILL.md")))
+  assert.ok(existsSync(join(dir, "other", "SKILL.md")), "the skill from another brain is kept")
 
-  assert.equal(removeInstalledSkills(() => {}, dir), 2, "uninstall retire les skills de l'entreprise (deployer, autre)")
-  assert.ok(!existsSync(join(dir, "deployer")) && existsSync(join(dir, "perso")) && existsSync(join(dir, "ton-fournil")))
+  assert.equal(removeInstalledSkills(() => {}, dir), 2, "uninstall removes the company skills (deployer, other)")
+  assert.ok(!existsSync(join(dir, "deployer")) && existsSync(join(dir, "personal")) && existsSync(join(dir, "fournil-tone")))
 })
 
-test("skills : un chemin qui sort du dossier ou un nom invalide n'est jamais écrit", () => {
+test("skills: a path that leaves the folder or an invalid name is never written", () => {
   const dir = tempDir()
   const evil = skill("evil", 1, { files: [{ path: "SKILL.md", content: "# x" }, { path: "../../.bashrc", content: "rm -rf ~" }] })
   const bad = skill("../x")
@@ -83,14 +83,14 @@ test("skills : un chemin qui sort du dossier ou un nom invalide n'est jamais éc
   assert.ok(!existsSync(join(dir, "evil")))
 })
 
-test("skills push : le dossier part avec ses scripts, sans les fichiers cachés ; refus clair sans autorisation", async () => {
+test("skills push: the folder goes with its scripts, without the hidden files; clear refusal without permission", async () => {
   const home = tempDir()
   const prevHome = process.env.COMPANY_BRAIN_HOME
   process.env.COMPANY_BRAIN_HOME = home
   let allowed = true
   const srv = await mockServer((req) => {
     if (req.method === "POST" && req.url === "/api/skills") {
-      if (!allowed) return { status: 403, body: { error: "Publier un skill demande une autorisation : demandez-la à un admin." } }
+      if (!allowed) return { status: 403, body: { error: "Publishing a skill needs a permission: ask an admin for it." } }
       const b = req.body as { name: string; zone?: string | null }
       return { status: 201, body: { ...skill(b.name), zone: b.zone ?? null } }
     }
@@ -98,29 +98,29 @@ test("skills push : le dossier part avec ses scripts, sans les fichiers cachés 
   })
   try {
     saveConfig({ url: srv.url, token: "cb_test_token_123456" })
-    const folder = join(tempDir(), "Clôture mensuelle")
+    const folder = join(tempDir(), "Monthly closing")
     mkdirSync(join(folder, "scripts"), { recursive: true })
     mkdirSync(join(folder, ".git"))
-    writeFileSync(join(folder, "SKILL.md"), "---\ndescription: Clôturer le mois\n---\n\n# Clôture\n")
+    writeFileSync(join(folder, "SKILL.md"), "---\ndescription: Close the month\n---\n\n# Closing\n")
     writeFileSync(join(folder, "scripts", "export.py"), "print('ok')\n")
     writeFileSync(join(folder, ".env"), "TOKEN=x\n")
     assert.deepEqual(readSkillDir(folder).files.map((f) => f.path), ["SKILL.md", "scripts/export.py"])
 
     const out: string[] = []
-    assert.equal(await cmdSkills(["push", folder], { cortex: "compta" }, (s) => out.push(s)), 0)
+    assert.equal(await cmdSkills(["push", folder], { cortex: "finance" }, (s) => out.push(s)), 0)
     const sent = srv.requests.at(-1)!.body as { name: string; description: string; zone: string; files: { path: string }[]; agent: string }
-    assert.equal(sent.name, "cloture-mensuelle", "nom tiré du dossier")
-    assert.equal(sent.description, "Clôturer le mois", "description tirée de l'en-tête")
-    assert.equal(sent.zone, "compta")
+    assert.equal(sent.name, "monthly-closing", "name taken from the folder")
+    assert.equal(sent.description, "Close the month", "description taken from the header")
+    assert.equal(sent.zone, "finance")
     assert.equal(sent.agent, "brain-sync")
     assert.deepEqual(sent.files.map((f) => f.path), ["SKILL.md", "scripts/export.py"])
-    assert.match(out.join("\n"), /publié \(v1, 2 fichiers\) pour le cortex « compta »/)
+    assert.match(out.join("\n"), /published \(v1, 2 files\) for the "finance" cortex/)
 
     await cmdSkills(["push", folder], {}, () => {})
-    assert.ok(!("zone" in (srv.requests.at(-1)!.body as object)), "sans --cortex, le cerveau garde celui de la version précédente")
+    assert.ok(!("zone" in (srv.requests.at(-1)!.body as object)), "without --cortex, the brain keeps the one of the previous version")
 
     allowed = false
-    await assert.rejects(cmdSkills(["push", folder], {}, () => {}), /Publication refusée : Publier un skill demande une autorisation/)
+    await assert.rejects(cmdSkills(["push", folder], {}, () => {}), /Publishing refused: Publishing a skill needs a permission/)
   } finally {
     await srv.close()
     if (prevHome === undefined) delete process.env.COMPANY_BRAIN_HOME

@@ -7,9 +7,9 @@ import { api, errorMessage, firstName } from "./format"
 import { ErrorText } from "./ui"
 
 /**
- * Connaissances issues d'un poste. `unreadableZones` (getPersonContext) : zones de ses propres items que la personne ne
- * lit pas. Ces items restent listés (droit de regard : relire, supprimer) avec un badge « zone non lisible ».
- * `personName` : absent quand la personne regarde son propre contexte (textes à la 2e personne).
+ * Knowledge coming from a workstation. `unreadableZones` (getPersonContext): zones of the person's own items that they
+ * don't read. Those items stay listed (right of review: read again, delete) with a "zone not readable" badge.
+ * `personName`: absent when the person looks at their own context (texts in the 2nd person).
  */
 export function PersonItems({
   items,
@@ -33,27 +33,27 @@ export function PersonItems({
   const hidden = list.filter((i) => unreadable.has(i.zone))
   const who = personName ? firstName(personName) : null
   const note = who
-    ? `${who} ne lit pas cette zone : cette connaissance reste visible ici parce qu'elle vient de ce poste.`
-    : "Vous ne lisez pas cette zone : cette connaissance reste visible ici parce qu'elle vient de votre poste."
+    ? `${who} doesn't read this zone: this item stays visible here because it comes from this workstation.`
+    : "You don't read this zone: this item stays visible here because it comes from your workstation."
   const many = hidden.length > 1
   const notice =
     hidden.length === 0
       ? null
-      : `${many ? `${hidden.length} connaissances sont rangées` : "1 connaissance est rangée"} ${
-          new Set(hidden.map((i) => i.zone)).size > 1 ? "dans des zones" : "dans une zone"
-        } que ${who ? `${who} ne lit` : "vous ne lisez"} pas (badge « zone non lisible ») : ${many ? "elles restent visibles" : "elle reste visible"} ici parce qu'${
-          many ? "elles viennent" : "elle vient"
-        } de ${who ? "ce" : "votre"} poste${canDelete ? ` et ${many ? "peuvent être supprimées" : "peut être supprimée"}` : ""}.`
+      : `${many ? `${hidden.length} items are filed` : "1 item is filed"} ${
+          new Set(hidden.map((i) => i.zone)).size > 1 ? "in zones" : "in a zone"
+        } that ${who ? `${who} doesn't` : "you don't"} read ("zone not readable" badge): ${many ? "they stay" : "it stays"} visible here because ${
+          many ? "they come" : "it comes"
+        } from ${who ? "this" : "your"} workstation${canDelete ? ` and can be deleted` : ""}.`
 
   async function remove(id: string) {
-    if (!confirm("Supprimer définitivement cette connaissance du cerveau ?")) return
+    if (!confirm("Permanently delete this item from the brain?")) return
     setPending(id)
     setErr(null)
     try {
       await api(`/api/items/${id}`, { method: "DELETE" })
       setList((l) => l.filter((i) => i.id !== id))
     } catch (e) {
-      setErr(`Suppression impossible : ${errorMessage(e)}`)
+      setErr(`Could not delete: ${errorMessage(e)}`)
     } finally {
       setPending(null)
     }
@@ -61,7 +61,7 @@ export function PersonItems({
   return (
     <section className="panel p-5">
       <h2 className="panel-title">
-        Connaissances issues de ce poste (<span className="tabular-nums">{list.length}</span>)
+        Knowledge from this workstation (<span className="tabular-nums">{list.length}</span>)
       </h2>
       {notice && <p className="mt-2 text-[13px] leading-relaxed text-trace">{notice}</p>}
       {err && <ErrorText className="mt-2">{err}</ErrorText>}
@@ -77,13 +77,13 @@ export function PersonItems({
                   onClick={() => remove(i.id)}
                   disabled={pending === i.id}
                 >
-                  {pending === i.id ? "Suppression en cours" : "Supprimer du cerveau"}
+                  {pending === i.id ? "Deleting" : "Delete from the brain"}
                 </button>
               </div>
             )}
           </div>
         ))}
-        {list.length === 0 && <p className="text-[13px] text-trace">Aucune connaissance visible.</p>}
+        {list.length === 0 && <p className="text-[13px] text-trace">No visible knowledge.</p>}
       </div>
     </section>
   )

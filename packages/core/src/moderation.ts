@@ -1,6 +1,6 @@
-// Modérateur du cerveau : toutes les 15 min, Claude (le Claude Code de l'entreprise en CI, ou le serveur avec sa clé)
-// relit ce qui est arrivé depuis le passage précédent, et garde, corrige ou retire chaque connaissance.
-// Ici : la matière qu'on lui montre, la lecture de sa réponse et l'application de ses verdicts (sans réseau).
+// The brain's moderator: every 15 min, Claude (the company's Claude Code in CI, or the server with its key)
+// rereads what arrived since the previous run, and keeps, fixes or removes each knowledge item.
+// Here: the material shown to it, the reading of its answer and the application of its verdicts (no network).
 
 import { z } from "zod"
 import { redactText } from "./privacy"
@@ -12,25 +12,35 @@ import type { ZoneHint } from "./distill"
 export const MODERATION_DECISIONS = ["publish", "edit", "reject"] as const
 export type ModerationDecision = (typeof MODERATION_DECISIONS)[number]
 
-/** Motifs de refus : seuls eux (pas le texte refusé) apparaissent dans le journal des admins. */
-export const MODERATION_REASONS = ["personnel", "secret", "vague", "doublon", "injection", "jugement", "autre"] as const
+/** Rejection reasons: only they (not the rejected text) appear in the admins' log. */
+export const MODERATION_REASONS = ["personal", "secret", "vague", "duplicate", "injection", "judgment", "other"] as const
 export type ModerationReason = (typeof MODERATION_REASONS)[number]
 
 export const MODERATION_REASON_LABELS: Record<ModerationReason, string> = {
-  personnel: "contenu personnel",
+  personal: "personal content",
   secret: "secret",
-  vague: "trop vague ou sans valeur",
-  doublon: "doublon",
-  injection: "consigne suspecte",
-  jugement: "jugement sur une personne",
-  autre: "autre",
+  vague: "too vague or of no value",
+  duplicate: "duplicate",
+  injection: "suspicious instruction",
+  judgment: "judgment about a person",
+  other: "other",
 }
 
-/** Connaissances relues par passage (les plus anciennes d'abord ; le reste attend le passage suivant). */
+/** Reason ids of earlier (French) versions: still found in saved logs and sent by older clients. */
+const LEGACY_MODERATION_REASONS: Record<string, ModerationReason> = { personnel: "personal", doublon: "duplicate", jugement: "judgment", autre: "other" }
+
+/** A reason id, legacy ones included; null if unknown. */
+export function moderationReason(raw: unknown): ModerationReason | null {
+  if (typeof raw !== "string") return null
+  if ((MODERATION_REASONS as readonly string[]).includes(raw)) return raw as ModerationReason
+  return LEGACY_MODERATION_REASONS[raw] ?? null
+}
+
+/** Knowledge items reviewed per run (oldest first; the rest waits for the next run). */
 export const MODERATION_BATCH = 40
-/** Connaissances par appel à Claude quand le serveur fait le passage (lots relus en parallèle). */
+/** Knowledge items per call to Claude when the server does the run (batches reviewed in parallel). */
 export const MODERATION_CHUNK = 20
-/** Connaissances déjà publiées montrées en regard de chaque proposition (pour les doublons). */
+/** Knowledge already published shown next to each proposal (for duplicates). */
 export const MODERATION_SIMILAR = 3
 const SIMILAR_MIN = 0.15
 
@@ -42,7 +52,7 @@ export type ModerationInput = {
   zones: ZoneHint[]
   items: {
     ref: number
-    /** Identifiant de la connaissance (pour renvoyer les verdicts) ; jamais montré au modèle. */
+    /** Id of the knowledge item (to send back the verdicts); never shown to the model. */
     id?: string
     author: string
     zone: string
@@ -66,8 +76,8 @@ export type ModerationVerdict = {
 }
 
 /**
- * Ce qu'on montre au modérateur : les connaissances à relire (numérotées), et pour chacune les connaissances proches
- * déjà en place dans sa zone (`published`, qui peut contenir le lot lui-même : une connaissance n'est pas comparée à elle-même).
+ * What the moderator is shown: the knowledge to review (numbered), and for each one the close knowledge already in
+ * place in its zone (`published`, which can contain the batch itself: a knowledge item is not compared with itself).
  */
 export function buildModerationInput(opts: {
   companyName: string
@@ -110,8 +120,8 @@ export type ModerationOutcome<T> = {
 }
 
 /**
- * Applique les verdicts (`ref` = position + 1 dans `items`). Sans verdict pour une connaissance (réponse partielle),
- * elle est publiée telle quelle. Une correction est re-masquée, et ne peut viser qu'une zone ou un type existants.
+ * Applies the verdicts (`ref` = position + 1 in `items`). Without a verdict for a knowledge item (partial answer),
+ * it is published as is. A fix is redacted again, and can only target an existing zone or type.
  */
 export function applyModeration<T extends ModerationCandidate>(items: T[], verdicts: ModerationVerdict[], zoneIds: Set<string>): ModerationOutcome<T> {
   const byRef = new Map<number, ModerationVerdict>()
@@ -124,7 +134,7 @@ export function applyModeration<T extends ModerationCandidate>(items: T[], verdi
       return
     }
     if (v.decision === "reject") {
-      const category = v.category && (MODERATION_REASONS as readonly string[]).includes(v.category) ? v.category : "autre"
+      const category = moderationReason(v.category) ?? "other"
       out.rejected.push({ index, item, category, reason: truncate(redactText(v.reason ?? "").trim(), 160) })
       return
     }
@@ -154,8 +164,8 @@ export const ModerationVerdictsSchema = z.object({
 })
 
 /**
- * Verdicts tirés de la réponse de `claude -p` (texte libre, ou enveloppe `--output-format json`). Tolérant : un verdict
- * mal formé est ignoré (sa connaissance reste publiée), une catégorie inconnue devient « autre ». Null : rien de lisible.
+ * Verdicts drawn from the answer of `claude -p` (free text, or `--output-format json` envelope). Tolerant: a malformed
+ * verdict is ignored (its knowledge stays published), an unknown category becomes "other". Null: nothing readable.
  */
 export function parseModerationJson(text: string): ModerationVerdict[] | null {
   const obj = (t: string): unknown => {
@@ -186,7 +196,7 @@ export function parseModerationJson(text: string): ModerationVerdict[] | null {
     out.push({
       ref,
       decision: v.decision as ModerationDecision,
-      category: (MODERATION_REASONS as readonly unknown[]).includes(v.category) ? (v.category as ModerationReason) : v.decision === "reject" ? "autre" : null,
+      category: moderationReason(v.category) ?? (v.decision === "reject" ? "other" : null),
       reason: typeof v.reason === "string" ? v.reason : "",
       zone: str(v.zone),
       kind: str(v.kind),

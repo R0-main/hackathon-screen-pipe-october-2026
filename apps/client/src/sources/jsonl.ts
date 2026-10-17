@@ -1,10 +1,10 @@
-// Lecture incrémentale de fichiers JSONL (logs Claude Code / Codex) avec un offset par fichier.
+// Incremental reading of JSONL files (Claude Code / Codex logs) with one offset per file.
 
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import type { FileCheckpoint } from "../config"
 
-/** Liste récursive des *.jsonl sous `root` (sans suivre les liens symboliques). */
+/** Recursive list of *.jsonl under `root` (without following symbolic links). */
 export function listJsonlFiles(root: string, skipDir: (name: string) => boolean = () => false, maxDepth = 8): string[] {
   const out: string[] = []
   const walk = (dir: string, depth: number) => {
@@ -27,19 +27,19 @@ export function listJsonlFiles(root: string, skipDir: (name: string) => boolean 
 
 export type JsonlChunk = {
   lines: Record<string, unknown>[]
-  /** Offset absolu de fin de chaque ligne de `lines` (pour reprendre au milieu d'un morceau). */
+  /** Absolute end offset of each line of `lines` (to resume in the middle of a chunk). */
   ends: number[]
-  /** Offset absolu où commence ce morceau. */
+  /** Absolute offset where this chunk starts. */
   start: number
   checkpoint: FileCheckpoint
   bytesRead: number
-  /** Vrai si le fichier a rétréci (tronqué / remplacé) : relu depuis le début. */
+  /** True if the file shrank (truncated / replaced): read again from the start. */
   reset: boolean
 }
 
 /**
- * Lit les octets ajoutés depuis le dernier checkpoint. Une dernière ligne incomplète
- * (en cours d'écriture) est laissée pour le prochain passage.
+ * Reads the bytes added since the last checkpoint. An incomplete last line
+ * (being written) is left for the next pass.
  */
 export function readNewLines(file: string, prev?: FileCheckpoint): JsonlChunk | null {
   let st
@@ -97,7 +97,7 @@ export function readNewLines(file: string, prev?: FileCheckpoint): JsonlChunk | 
     parse(buf.subarray(pos, stop).toString("utf8"), offset + stop)
     pos = stop
   }
-  // Dernier morceau sans saut de ligne : on ne le consomme que s'il est un JSON complet.
+  // Last chunk without a line break: only consumed if it is complete JSON.
   if (consumed < length) {
     const tail = buf.subarray(consumed).toString("utf8")
     const before = lines.length
@@ -118,8 +118,8 @@ export function toIso(v: unknown): string | undefined {
 }
 
 /**
- * Offset de fin des lignes complètes d'un fichier (comme le ferait readNewLines) : tout le fichier, sauf une dernière
- * ligne en cours d'écriture. Ne lit que la fin du fichier.
+ * End offset of a file's complete lines (as readNewLines would do it): the whole file, except a last
+ * line being written. Only reads the end of the file.
  */
 export function completeLinesEnd(file: string): { offset: number; size: number; mtime: number } | null {
   let st
@@ -146,7 +146,7 @@ export function completeLinesEnd(file: string): { offset: number; size: number; 
     const v = JSON.parse(tail)
     if (v && typeof v === "object") return { offset: size, size, mtime }
   } catch {
-    // dernière ligne incomplète
+    // incomplete last line
   }
   return { offset: nl === -1 ? Math.max(0, size - window) : size - window + nl + 1, size, mtime }
 }
