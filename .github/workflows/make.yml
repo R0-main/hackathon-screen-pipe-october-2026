@@ -1,0 +1,53 @@
+# `make dev` sur un poste neuf : Postgres avec Docker, puis sans Docker (Postgres privé, comme sur un poste 42),
+# avec des ports changés dans .env. Le dashboard doit répondre et les migrations passer.
+name: Lancement local (make)
+
+on:
+  workflow_dispatch:
+  push:
+    paths: [Makefile, .env.example, scripts/local-db.sh, package-lock.json, supabase/**, .github/workflows/make.yml]
+  pull_request:
+    paths: [Makefile, .env.example, scripts/local-db.sh, package-lock.json, supabase/**, .github/workflows/make.yml]
+
+jobs:
+  make-dev:
+    name: make dev (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [docker, private]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: .env avec d'autres ports
+        run: |
+          cp .env.example .env
+          sed -i 's/^BRAIN_PORT=.*/BRAIN_PORT=3100/; s/^POSTGRES_PORT=.*/POSTGRES_PORT=55432/' .env
+      - name: make dev
+        env:
+          LOCAL_DB: ${{ matrix.db }}
+        run: |
+          make dev > dev.log 2>&1 &
+          for i in $(seq 1 180); do curl -fsS http://localhost:3100/api/health && break; sleep 2; done
+          echo
+          curl -fsS http://localhost:3100/api/health
+          make db-status
+          make migrate | tee migrate.log
+          grep -q "déjà appliquée" migrate.log
+      - name: make seed (Fournil)
+        env:
+          LOCAL_DB: ${{ matrix.db }}
+        run: make seed
+      - name: Journal
+        if: always()
+        run: cat dev.log; ls .local/postgres 2>/dev/null && cat .local/postgres/postgres.log 2>/dev/null || true
+      - name: make stop
+        if: always()
+        env:
+          LOCAL_DB: ${{ matrix.db }}
+        run: make stop

@@ -10,20 +10,26 @@ Chaque employé travaille déjà avec Claude Code, Codex ou ChatGPT, mais ce con
 
 **Le brut reste sur le PC, seul le distillé monte au cerveau.**
 
-## Lancer la démo en 2 minutes
+## Lancer en local
 
-Prérequis : Node.js ≥ 20.
+Prérequis : Node.js ≥ 20 et `make`. Docker est facultatif.
 
 ```bash
-npm install
-npm run seed                 # entreprise fictive « Fournil » : 6 comptes, 5 skills, 34 connaissances, 10 jours d'activité
-BRAIN_DEMO=1 npm run dev     # http://localhost:3000/demo → connexion en un clic (mode démo)
-npm run simulate             # dans un 2e terminal : des agents travaillent, le cerveau s'allume
+make dev      # première fois : .env, npm install, Postgres, migrations, puis http://localhost:3000
+make demo     # la même chose avec l'entreprise fictive Fournil : http://localhost:3000/demo
+make help     # toutes les commandes (db-stop, db-reset, seed, simulate, test…)
 ```
 
-- Connectez-vous en **Claire (CEO, admin)** pour tout voir, puis « Voir en tant que : Jean-Marc » : la compta ne voit que sa zone, et une question sur le déploiement ne renvoie rien (la zone Dev est verrouillée).
-- Sans clé Claude, tout fonctionne avec des heuristiques locales. Avec `ANTHROPIC_API_KEY`, le résumé « où en est la boîte » et l'onboarding sont rédigés par Claude.
-- `npm run smoke` vérifie le cerveau de bout en bout (accès par zone, masquage des secrets, détection d'automatisation…).
+- **Ports et clés API** : `make dev` crée `.env` depuis [.env.example](.env.example). Un port déjà pris sur ton poste ?
+  Change `BRAIN_PORT` (dashboard, 3000) ou `POSTGRES_PORT` (base, 5432) dans `.env`, puis relance. Les clés API sont
+  toutes optionnelles : sans clé Claude, tout fonctionne avec des heuristiques locales.
+- **Postgres, sans rien choisir** : avec Docker s'il marche sans `sudo`, sinon un Postgres privé téléchargé dans
+  `.local/postgres` du dépôt, sans droits administrateur (poste de l'école 42 compris). Une base existante (Neon,
+  Supabase…) : renseigne `DATABASE_URL` dans `.env` et aucun Postgres local n'est démarré.
+- Avec `make demo`, connecte-toi en **Claire (CEO, admin)** pour tout voir, puis « Voir en tant que : Jean-Marc » : la
+  compta ne voit que sa zone. `make simulate` dans un 2e terminal fait travailler des agents fictifs.
+- Pas de HTTPS ni de Caddy ici : ils servent seulement quand d'autres postes joignent le cerveau sur le réseau de
+  l'entreprise ([docs/LOCAL.md](docs/LOCAL.md)).
 
 ## Ce que contient le repo
 
