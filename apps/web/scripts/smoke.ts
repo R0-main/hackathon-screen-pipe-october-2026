@@ -966,6 +966,8 @@ async function main() {
   const redis = await getEntityContext(hugo, "tool", "redis")
   assert(redis !== null && redis.items.some((i) => i.id === revised.ids[0]) && !redis.items.some((i) => i.id === firstDecision.ids[0]), "la page d'une entité ne cite que les connaissances à jour")
   assert(redis !== null && redis.name === "Redis", "le nom affiché garde sa casse d'origine")
+  // Nettoyage : un passage suivant sur le même stockage ne doit pas retrouver ces décisions comme quasi-doublons.
+  for (const id of [firstDecision.ids[0], revised.ids[0]]) assert(await store.deleteItem(id), "décision de test supprimée")
 
   console.log("\n— Connecteurs : tâches externes insérées, mises à jour, fermées")
   const ext1 = await store.upsertExternalTasks("linear", [
