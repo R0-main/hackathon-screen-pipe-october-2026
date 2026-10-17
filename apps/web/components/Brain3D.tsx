@@ -6,6 +6,7 @@ import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
 import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes, type V3 } from "./brain-geometry"
+import { arcBeads, arcTube, type FlowArc } from "./arc-flow"
 import { assignLooks, dotKit, type DotLook } from "./dot-model"
 import { firstName } from "./format"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
@@ -53,19 +54,6 @@ const BACK = 0.86
 const NEURON_R = 0.008
 /** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
 const SYNAPSE_R = 0.0045
-/**
- * Flux entre zones : de toutes petites billes claires qui circulent à l'intérieur des arcs, dans les deux sens.
- * Par sens et par arc, leur nombre ; leur vitesse (en tours d'arc par seconde) ; leur rayon, relatif à celui de
- * l'arc (sous 1 : elles restent dans le trait) ; leur part de blanc, qui les fait ressortir sur sa couleur.
- */
-const BEADS_PER_WAY = 4
-const BEAD_SPEED = 0.1
-const BEAD_R = 0.6
-const BEAD_LIGHT = 0.88
-/** Allongement des billes le long de l'arc : leur longueur vaut BEAD_STRETCH fois leur largeur. */
-const BEAD_STRETCH = 3
-/** Gonflement de l'arc autour de chaque bille : rayon ajouté au cœur de la bille, en part du rayon de l'arc. */
-const BEAD_BULGE = 0.55
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
@@ -123,17 +111,8 @@ type SynapseGfx = {
   mat: THREE.MeshBasicMaterial
   baseOpacity: number
   active: boolean
-  /** L'arc (pour y poser les billes) et ses deux couleurs d'extrémité. */
-  curve: THREE.CatmullRomCurve3
-  from: THREE.Color
-  to: THREE.Color
-  /** Décalage de départ des billes, propre à chaque arc : elles ne partent pas toutes ensemble. */
-  phase: number
-  /** Le tube de l'arc, pour le faire gonfler autour des billes : centre de chaque anneau et direction de chaque sommet. */
-  tube: THREE.BufferAttribute
-  rings: Float32Array
-  spokes: Float32Array
-  length: number
+  /** L'arc, où circulent les billes de lumière (voir arc-flow). */
+  arc: FlowArc
 }
 /** `fade` : instant où l'onde commence à s'éteindre avant son terme (zone désélectionnée). */
 type RippleGfx = { key: string; zone: ZoneGfx; mesh: RingMesh; start: number; fade?: number }
@@ -554,16 +533,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
 
   const reducedFlow = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  const beadAt = new T.Vector3()
-  const beadDir = new T.Vector3()
-  const beadTurn = new T.Quaternion()
-  const beadSize = new T.Vector3()
-  const beadAxis = new T.Vector3(0, 0, 1)
   // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
   // l'autre, plus marqués quand elles sont actives.
-  // Assez d'anneaux pour que l'arc gonfle en douceur autour d'une bille, pas plus longue que deux ou trois d'entre eux.
-  const TUBULAR = 384
-  const RADIAL = 6
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const A = gfx.get(s.a)
@@ -572,92 +543,22 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
     const baseOpacity = 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08)
     const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
-    const curve = new T.CatmullRomCurve3(pts)
-    const geo = new T.TubeGeometry(curve, TUBULAR, SYNAPSE_R, RADIAL, false)
     const from = new T.Color(A.locked ? NEUTRAL : A.color)
     const to = new T.Color(B.locked ? NEUTRAL : B.color)
-    const cols = new Float32Array(geo.attributes.position.count * 3)
-    // Les sommets du tube vont anneau par anneau : l'anneau donne la position le long de l'arc.
-    for (let v = 0; v < geo.attributes.position.count; v++) tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / TUBULAR).toArray(cols, v * 3)
-    geo.setAttribute("color", new T.BufferAttribute(cols, 3))
+    const { geo, arc } = arcTube(T, pts, from, to, SYNAPSE_R, `${s.a}|${s.b}`)
     group.add(new T.Mesh(geo, mat))
     geometries.push(geo)
     materials.push(mat)
-
-    // Chaque anneau du tube est centré sur l'arc (au même point que TubeGeometry) ; chaque sommet en part dans
-    // une direction fixe : le gonflement l'y pousse plus loin.
-    const tube = geo.attributes.position as THREE.BufferAttribute
-    const rings = new Float32Array((TUBULAR + 1) * 3)
-    const spokes = new Float32Array(tube.count * 3)
-    for (let ring = 0; ring <= TUBULAR; ring++) {
-      curve.getPointAt(ring / TUBULAR, beadAt).toArray(rings, ring * 3)
-      for (let k = 0; k <= RADIAL; k++) {
-        const v = ring * (RADIAL + 1) + k
-        for (let c = 0; c < 3; c++) spokes[v * 3 + c] = (tube.array[v * 3 + c] - rings[ring * 3 + c]) / SYNAPSE_R
-      }
-    }
-    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, curve, from, to, phase: (hashString(`${s.a}|${s.b}`) % 1000) / 1000, tube, rings, spokes, length: curve.getLength() })
+    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, arc })
   }
-  // Les billes du flux, toutes dans un seul maillage : chacune prend la couleur de l'arc là où elle passe, très
-  // éclaircie. Dessinées après les arcs (qui sont transparents), elles se voient dans le trait au lieu d'être teintées par lui.
-  const beads = new T.InstancedMesh(geoSphere, new T.MeshBasicMaterial({ color: WHITE, transparent: true, depthWrite: false }), Math.max(1, syn.length * BEADS_PER_WAY * 2))
-  beads.renderOrder = 2
-  beads.count = reducedFlow ? 0 : syn.length * BEADS_PER_WAY * 2
-  beads.frustumCulled = false
-  group.add(beads)
-  materials.push(beads.material as THREE.Material)
-  /**
-   * Le flux entre zones : dans chaque arc, de petites billes vont de A vers B et d'autres de B vers A, en continu et
-   * régulièrement espacées. Elles rapetissent jusqu'à disparaître en arrivant sur une zone, et accélèrent quand
-   * une des deux zones est active.
-   */
-  const beadsOn: { u: number; half: number; size: number }[] = []
-  /**
-   * L'arc gonfle légèrement autour de chaque bille, sur sa longueur à elle : une bosse douce qui la suit, plus
-   * petite quand la bille rapetisse près d'une zone.
-   */
-  const bulge = (s: SynapseGfx, on: { u: number; half: number; size: number }[]) => {
-    const arr = s.tube.array as Float32Array
-    for (let ring = 0; ring <= TUBULAR; ring++) {
-      const u = ring / TUBULAR
-      let swell = 0
-      for (const b of on) {
-        if (b.half <= 0) continue
-        const x = (u - b.u) / (b.half * 1.3)
-        if (x > -3 && x < 3) swell = Math.max(swell, Math.exp(-x * x) * b.size)
-      }
-      const radius = SYNAPSE_R * (1 + BEAD_BULGE * swell)
-      for (let k = 0; k <= RADIAL; k++) {
-        const v = (ring * (RADIAL + 1) + k) * 3
-        for (let c = 0; c < 3; c++) arr[v + c] = s.rings[ring * 3 + c] + s.spokes[v + c] * radius
-      }
-    }
-    s.tube.needsUpdate = true
-  }
+  // Le flux : de petites billes de lumière dans chaque arc, qui accélèrent quand une des deux zones est active.
+  const flow = arcBeads(T, syn.map((s) => s.arc))
+  flow.mesh.visible = !reducedFlow
+  group.add(flow.mesh)
   const flowFrame = (time: number) => {
     if (reducedFlow) return
-    let n = 0
-    for (const s of syn) {
-      const run = time * BEAD_SPEED * (s.active ? 1.8 : 1) + s.phase
-      beadsOn.length = 0
-      for (let j = 0; j < BEADS_PER_WAY * 2; j++) {
-        // Les billes paires vont de A vers B, les impaires de B vers A ; chaque sens est décalé d'une demi-bille.
-        const along = (run + Math.floor(j / 2) / BEADS_PER_WAY + (j % 2) * (0.5 / BEADS_PER_WAY)) % 1
-        const u = j % 2 === 0 ? along : 1 - along
-        s.curve.getPointAt(u, beadAt)
-        // Allongée dans le sens de l'arc : son grand axe suit la tangente au point où elle passe.
-        s.curve.getTangentAt(u, beadDir)
-        beadTurn.setFromUnitVectors(beadAxis, beadDir)
-        const r = SYNAPSE_R * BEAD_R * Math.min(1, u / 0.1, (1 - u) / 0.1)
-        beads.setMatrixAt(n, mtx.compose(beadAt, beadTurn, beadSize.set(r, r, r * BEAD_STRETCH)))
-        beads.setColorAt(n, tone.copy(s.from).lerp(s.to, u).lerp(whiteC, BEAD_LIGHT))
-        beadsOn.push({ u, half: (r * BEAD_STRETCH) / s.length, size: r / (SYNAPSE_R * BEAD_R) })
-        n++
-      }
-      bulge(s, beadsOn)
-    }
-    beads.instanceMatrix.needsUpdate = true
-    if (beads.instanceColor) beads.instanceColor.needsUpdate = true
+    for (const s of syn) s.arc.fast = s.active
+    flow.frame(time)
   }
 
   // Dots des personnes : posés à l'écran, juste hors de la silhouette du cerveau, dans la direction de leur zone.
@@ -1066,7 +967,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
     neurons.dispose()
-    beads.dispose()
+    flow.dispose()
     kit.dispose()
     renderer.dispose()
   }
