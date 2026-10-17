@@ -68,7 +68,25 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET/POST | `/api/status` | État de l'entreprise (titre global réservé à qui lit toutes les zones). POST admin : sans corps, recalcul côté serveur ; avec `{status}`, résumé rédigé sur un poste. |
 | GET | `/api/status/input` | Admin : matière du résumé (30 derniers jours) pour `refresh-status`. |
 | GET/POST/PATCH | `/api/automations…` | Suggestions (heuristique + workflows Screenpipe), validation par un admin. |
+| POST | `/api/orgs` | Public (sauf `BRAIN_SIGNUP=0`) : crée une entreprise et son admin, ouvre la session, renvoie son prompt d'installation. |
+| GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
+
+## Créer son entreprise à partir de zéro
+
+Sur la page d'accueil, **Créer mon entreprise** (`/creer`) : quatre questions, une par écran (nom, activité, qui
+vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en êtes l'admin. Ensuite :
+
+1. **Votre poste** : copiez le prompt (ou « Ouvrir dans Claude Code ») et collez-le dans Claude Code. Il installe tout
+   comme la démo de la page d'accueil ; la page passe à « Votre poste est connecté » dès le premier signe de son agent.
+2. **Votre équipe** : un nom, les zones qu'elle lit, et son prompt (avec son propre jeton) est copié. Envoyez-le-lui :
+   elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté sur la page.
+
+Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
+Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
+organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_settings`, sans migration ; fichier :
+`<BRAIN_DATA_DIR>/orgs/<id>/`). Un jeton ou une session désigne son entreprise, et chaque route lit la sienne.
+`BRAIN_SIGNUP=0` ferme la création, `BRAIN_MAX_ORGS` la plafonne (200 par défaut).
 
 ## Brancher un vrai poste
 

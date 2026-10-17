@@ -1,5 +1,6 @@
 // Stockage Postgres (Supabase ou autre). Schéma : supabase/migrations/.
-// Une instance = une organisation (la première de la table `orgs`).
+// Une instance = une organisation : la racine sert la plus ancienne de la table `orgs` (hors entreprises créées depuis
+// /creer), `forOrg` sert une entreprise donnée en partageant la même connexion.
 
 import { randomBytes } from "node:crypto"
 import postgres from "postgres"
@@ -18,7 +19,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, ProfilePatch, ZoneStat } from "./types"
+import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, NewTenantOrg, ProfilePatch, ZoneStat } from "./types"
 import { SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
 type Row = Record<string, any>
@@ -115,18 +116,87 @@ function tsTerms(query: string): string[] {
   return tokens.map((t) => (t.length >= 4 ? `${t}:*` : t))
 }
 
+/** Une entreprise créée depuis /creer est marquée par une ligne `tenant:<id>` de brain_settings (pas de migration). */
+const TENANT_PREFIX = "tenant:"
+
 export class PostgresStore implements BrainStore {
   readonly kind = "postgres" as const
   private sql: Sql
   private orgCache: { org: Org; at: number } | null = null
   private orgPending: Promise<Org> | null = null
   private secret: string | null = null
+  /** Entreprise servie par cette instance ; absent sur la racine (organisation de la base). */
+  private readonly fixedOrgId: string | null
+  private tenants = new Map<string, PostgresStore>()
+  private settingsReady = false
 
-  constructor(url: string) {
+  constructor(url: string | { sql: Sql; orgId: string }) {
+    if (typeof url !== "string") {
+      this.sql = url.sql
+      this.fixedOrgId = url.orgId
+      return
+    }
+    this.fixedOrgId = null
     const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url) || url.includes("host=/")
     const ssl = process.env.DATABASE_SSL === "disable" || local ? false : "require"
     // prepare: false → compatible avec le pooler Supabase en mode transaction (port 6543).
     this.sql = postgres(url, { prepare: false, max: Number(process.env.DATABASE_POOL_MAX ?? 5), idle_timeout: 20, ssl, onnotice: () => {} })
+  }
+
+  /** brain_settings existe-t-elle ? Sans elle (migration non appliquée), il n'y a simplement aucune entreprise créée. */
+  private async hasSettings(): Promise<boolean> {
+    if (this.settingsReady) return true
+    const [r] = await this.sql`select to_regclass('brain_settings') is not null as ok`
+    this.settingsReady = Boolean(r.ok)
+    return this.settingsReady
+  }
+
+  /**
+   * Fragment SQL « cette organisation n'est pas une entreprise créée depuis /creer ». Synchrone exprès : une fonction
+   * async qui renvoie un fragment postgres.js l'exécuterait (c'est un thenable) au lieu de le renvoyer.
+   */
+  private notTenant(col: string, hasSettings: boolean) {
+    if (!hasSettings) return this.sql`true`
+    return this.sql`not exists (select 1 from brain_settings s where s.key = ${TENANT_PREFIX} || ${this.sql(col)}::text)`
+  }
+
+  forOrg(orgId: string): BrainStore {
+    if (this.fixedOrgId) throw new Error("forOrg n'est disponible que sur le stockage racine.")
+    if (!UUID_RE.test(orgId)) throw new Error("Entreprise introuvable.")
+    let t = this.tenants.get(orgId)
+    if (!t) {
+      t = new PostgresStore({ sql: this.sql, orgId })
+      this.tenants.set(orgId, t)
+    }
+    return t
+  }
+
+  async createTenantOrg(o: NewTenantOrg) {
+    if (!(await this.hasSettings())) throw new StoreSetupError(SETTINGS_MISSING_MESSAGE)
+    return (await this.sql.begin(async (tx: any) => {
+      const [org] = await tx`insert into orgs (name, description) values (${o.name}, ${o.description}) returning *`
+      await tx`insert into brain_settings (key, value) values (${TENANT_PREFIX + org.id}, ${new Date().toISOString()})`
+      for (const z of o.zones) {
+        await tx`insert into zones (org_id, id, name, description, color, keywords, position)
+                 values (${org.id}, ${z.id}, ${z.name}, ${z.description}, ${z.color}, ${tx.array(z.keywords)}, ${z.position})`
+      }
+      return toOrg(org)
+    })) as Org
+  }
+
+  async countTenantOrgs() {
+    if (!(await this.hasSettings())) return 0
+    const [r] = await this.sql`select count(*)::int as n from brain_settings where key like ${TENANT_PREFIX + "%"}`
+    return Number(r.n)
+  }
+
+  async findUserOrg(by: { id: string } | { tokenHash: string }) {
+    if ("id" in by && !UUID_RE.test(by.id)) return null
+    const [r] =
+      "id" in by
+        ? await this.sql`select org_id from profiles where id = ${by.id}`
+        : await this.sql`select org_id from profiles where token_hash = ${by.tokenHash}`
+    return r ? (r.org_id as string) : null
   }
 
   /**
@@ -139,6 +209,12 @@ export class PostgresStore implements BrainStore {
     if (cached && Date.now() - cached.at < ORG_TTL_MS) return cached.org
     if (!this.orgPending) {
       this.orgPending = (async () => {
+        if (this.fixedOrgId) {
+          const [r] = await this.sql`select * from orgs where id = ${this.fixedOrgId}`
+          if (!r) throw new Error("Entreprise introuvable.")
+          this.orgCache = { org: toOrg(r), at: Date.now() }
+          return this.orgCache.org
+        }
         let org = await this.selectOrg()
         if (!org && !cached) org = (await this.createOrgIfNone({ name: "Mon entreprise", description: "" })) ?? (await this.selectOrg())
         if (!org) {
@@ -156,7 +232,8 @@ export class PostgresStore implements BrainStore {
   }
 
   private async selectOrg(): Promise<Org | null> {
-    const [r] = await this.sql`select o.* from orgs o
+    const has = await this.hasSettings()
+    const [r] = await this.sql`select o.* from orgs o where ${this.notTenant("o.id", has)}
       order by exists (select 1 from profiles p where p.org_id = o.id) desc, o.created_at, o.id
       limit 1`
     return r ? toOrg(r) : null
@@ -164,11 +241,12 @@ export class PostgresStore implements BrainStore {
 
   /** Base neuve : crée l'org (et ses zones par défaut) seulement si la table est vide, en une instruction atomique. */
   private async createOrgIfNone(o: { name: string; description: string }): Promise<Org | null> {
+    const has = await this.hasSettings()
     return this.sql.begin(async (tx: any) => {
       // Deux instances qui démarrent ensemble : la seconde attend, puis ne trouve plus la table vide.
       await tx`select pg_advisory_xact_lock(${ORG_LOCK_KEY})`
       const [org] = await tx`insert into orgs (name, description)
-        select ${o.name}, ${o.description} where not exists (select 1 from orgs) returning *`
+        select ${o.name}, ${o.description} where not exists (select 1 from orgs o where ${this.notTenant("o.id", has)}) returning *`
       if (!org) return null
       await this.insertDefaultZones(tx, org.id)
       return toOrg(org)
@@ -260,7 +338,7 @@ export class PostgresStore implements BrainStore {
   async setZoneAccess(userId: string, access: { zone_id: string; can_write: boolean }[]) {
     const org = await this.orgId()
     await this.sql.begin(async (tx: any) => {
-      await tx`delete from zone_access where user_id = ${userId}`
+      await tx`delete from zone_access where user_id = ${userId} and org_id = ${org}`
       for (const a of access) {
         await tx`insert into zone_access (org_id, user_id, zone_id, can_write) values (${org}, ${userId}, ${a.zone_id}, ${a.can_write})`
       }
@@ -485,7 +563,8 @@ export class PostgresStore implements BrainStore {
   }
 
   async isEmpty() {
-    const [r] = await this.sql`select not exists (select 1 from profiles) as empty`
+    const has = await this.hasSettings()
+    const [r] = await this.sql`select not exists (select 1 from profiles p where ${this.notTenant("p.org_id", has)}) as empty`
     return Boolean(r.empty)
   }
 
@@ -510,15 +589,19 @@ export class PostgresStore implements BrainStore {
 
   /** Purge et nouvelle organisation dans UNE transaction : aucune autre instance ne voit jamais la table vide. */
   async reset(org: { name: string; description: string }) {
+    if (this.fixedOrgId) throw new Error("reset n'est disponible que sur le stockage racine.")
+    const has = await this.hasSettings()
     const created = (await this.sql.begin(async (tx: any) => {
       await tx`select pg_advisory_xact_lock(${ORG_LOCK_KEY})`
-      await tx`truncate orgs cascade`
+      // Les entreprises créées depuis /creer survivent au reseed de la démo.
+      await tx`delete from orgs where ${this.notTenant("orgs.id", has)}`
       return this.insertOrg(tx, org)
     })) as Org
     this.orgCache = { org: created, at: Date.now() }
   }
 
   async end() {
+    if (this.fixedOrgId) return
     await this.sql.end({ timeout: 5 })
   }
 }

@@ -9,10 +9,15 @@
 /** Le raccourci écrit par install.sh : marche même quand Node.js est une copie privée hors du PATH. */
 export const BRAIN_CLI = "~/.company-brain/brain"
 
+/** « de Fournil », « d'Atelier Lumen » : l'élision devant une voyelle ou un h. */
+export function deNom(name: string): string {
+  return /^[aeiouyhàâäéèêëîïôöùûüœæ]/i.test(name.trim()) ? `d'${name.trim()}` : `de ${name.trim()}`
+}
+
 export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; zones: string[] }): string {
   const { baseUrl, token, name, orgName, zones } = opts
   const brain = BRAIN_CLI
-  return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de ${orgName}. Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
+  return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}. Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.

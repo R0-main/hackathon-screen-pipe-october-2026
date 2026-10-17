@@ -18,7 +18,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, ProfilePatch, ZoneStat } from "./types"
+import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, NewTenantOrg, ProfilePatch, ZoneStat } from "./types"
 
 type StoredProfile = Profile & { token_hash: string }
 
@@ -37,6 +37,7 @@ type Data = {
 }
 
 const MAX_EVENTS = 20000
+const ORG_ID_RE = /^[0-9a-f-]{36}$/i
 const LOCK_STALE_MS = 15_000
 const LOCK_WAIT_MS = 10_000
 
@@ -79,6 +80,8 @@ export class FileStore implements BrainStore {
   private version = ""
   private locked = false
   private secret: string | null = null
+  /** Entreprises créées depuis /creer : un dossier chacune, sous <dir>/orgs/<id>/ (stockage racine seulement). */
+  private tenants = new Map<string, FileStore>()
 
   constructor(dir: string) {
     fs.mkdirSync(dir, { recursive: true })
@@ -185,6 +188,57 @@ export class FileStore implements BrainStore {
         throw err
       }
     })
+  }
+
+  private get tenantsDir() {
+    return path.join(this.dir, "orgs")
+  }
+
+  private tenantIds(): string[] {
+    try {
+      return fs.readdirSync(this.tenantsDir).filter((id) => ORG_ID_RE.test(id) && fs.existsSync(path.join(this.tenantsDir, id, "brain.json")))
+    } catch {
+      return []
+    }
+  }
+
+  forOrg(orgId: string): BrainStore {
+    if (orgId === this.load().org.id) return this
+    let t = this.tenants.get(orgId)
+    if (!t) {
+      // Jamais de dossier créé pour un identifiant inconnu : seul createTenantOrg en crée.
+      if (!ORG_ID_RE.test(orgId) || !fs.existsSync(path.join(this.tenantsDir, orgId, "brain.json"))) throw new Error("Entreprise introuvable.")
+      t = new FileStore(path.join(this.tenantsDir, orgId))
+      this.tenants.set(orgId, t)
+    }
+    return t
+  }
+
+  async createTenantOrg(o: NewTenantOrg) {
+    const id = randomUUID()
+    const t = new FileStore(path.join(this.tenantsDir, id))
+    const org: Org = { id, name: o.name, description: o.description, created_at: new Date().toISOString() }
+    t.withLock(() => {
+      t.data = { ...emptyData(), org, zones: o.zones }
+      t.save()
+    })
+    this.tenants.set(id, t)
+    return org
+  }
+
+  async countTenantOrgs() {
+    return this.tenantIds().length
+  }
+
+  async findUserOrg(by: { id: string } | { tokenHash: string }) {
+    const match = (p: StoredProfile) => ("id" in by ? p.id === by.id : p.token_hash === by.tokenHash)
+    const root = this.load()
+    if (root.profiles.some(match)) return root.org.id
+    for (const id of this.tenantIds()) {
+      const t = this.forOrg(id) as FileStore
+      if (t.load().profiles.some(match)) return id
+    }
+    return null
   }
 
   async getOrg() {

@@ -24,12 +24,26 @@ export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: str
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">
 export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created_at?: string }
 
+/** Nouvelle entreprise créée depuis la page d'accueil (/creer) : un cerveau à part, à côté de celui de la base. */
+export type NewTenantOrg = { name: string; description: string; zones: Zone[] }
+
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
 
 /** Contrat de stockage du cerveau : implémenté en fichier JSON (démo) et en Postgres (Supabase). */
 export interface BrainStore {
   readonly kind: "file" | "postgres"
+
+  /**
+   * Multi-entreprise. Le stockage racine sert l'organisation « de la base » (la démo, le cerveau déployé) ; chaque
+   * entreprise créée depuis /creer est une organisation « tenant », servie par `forOrg`. Les méthodes ci-dessous
+   * n'ont de sens que sur le stockage racine.
+   */
+  forOrg(orgId: string): BrainStore
+  createTenantOrg(o: NewTenantOrg): Promise<Org>
+  countTenantOrgs(): Promise<number>
+  /** Organisation d'un compte, toutes entreprises confondues (connexion par jeton ou par session). */
+  findUserOrg(by: { id: string } | { tokenHash: string }): Promise<string | null>
 
   getOrg(): Promise<Org>
   updateOrg(patch: Partial<Pick<Org, "name" | "description">>): Promise<Org>

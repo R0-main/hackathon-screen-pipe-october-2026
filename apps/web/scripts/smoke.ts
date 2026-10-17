@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
 import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput } from "@brain/core"
-import { getStore, isStoreSetupError, type BrainStore } from "../lib/store"
+import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
 import { getAccess, redactEvent } from "../lib/access"
@@ -27,7 +27,7 @@ import {
   statusForViewer,
   streamStartId,
 } from "../lib/brain"
-import { createLoginCode, createSessionValue, hashToken, newToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
+import { createLoginCode, createSessionValue, hashToken, newToken, profileFromToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -35,6 +35,9 @@ import * as statusRoute from "../app/api/status/route"
 import * as statusInputRoute from "../app/api/status/input/route"
 import * as stateRoute from "../app/api/state/route"
 import * as demoSessionRoute from "../app/api/session/demo/route"
+import * as adminUsersRoute from "../app/api/admin/users/route"
+import * as adminTeamRoute from "../app/api/admin/team/route"
+import * as itemRoute from "../app/api/items/[id]/route"
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`ÉCHEC : ${msg}`)
@@ -611,6 +614,68 @@ async function main() {
       assert((await copy.listItems({ limit: 100_000 })).length === itemsBefore + 3 * Math.ceil(n / 10), "aucun item perdu")
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  console.log("\n— Créer son entreprise (/creer) : un cerveau à part")
+  {
+    const root = getRootStore()
+    const fournil = await root.getOrg()
+    const tenantsBefore = await root.countTenantOrgs()
+    const acme = await root.createTenantOrg({
+      name: `Acme ${run}`,
+      description: "Test de fumée",
+      zones: [{ id: "ops", name: "Ops", description: "", color: "#2a78d6", keywords: ["ops", "astreinte"], position: 0 }],
+    })
+    const acmeStore = storeForOrg(acme.id)
+    try {
+      assert((await root.countTenantOrgs()) === tenantsBefore + 1, "une entreprise créée est comptée")
+      assert((await root.getOrg()).id === fournil.id && !(await root.isEmpty()), "le cerveau de la base reste celui de Fournil")
+      assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops", "la nouvelle entreprise n'a que ses zones")
+      const token = newToken()
+      const boss = await acmeStore.createProfile({ name: `Alice ${run}`, role: "admin", manager_id: null, token_hash: hashToken(token) })
+      assert(boss.org_id === acme.id, "son premier compte lui appartient")
+      assert((await profileFromToken(token))?.id === boss.id, "son jeton est reconnu (connexion du poste)")
+      const cookie = await createSessionValue(boss.id)
+      const alice = await viewerFromCookies(cookie, claire.profile.id)
+      assert(alice?.real.id === boss.id && alice.profile.id === boss.id, "sa session est reconnue ; « voir en tant que » ne sort pas de son entreprise")
+      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Fournil ne voit pas ce compte")
+
+      const st = await call(stateRoute.GET, "/api/state", { session: cookie })
+      assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "son dashboard ne montre que son entreprise")
+      const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
+      assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviter un collègue : prompt à son nom, zones de l'entreprise seulement")
+      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "le collègue rejoint l'entreprise, pas Fournil")
+
+      const bob = (await profileFromToken(inv.data.token))!
+      const bobViewer: Viewer = { profile: bob, real: bob, access: await getAccess(bob) }
+      const team0 = await call(adminTeamRoute.GET, "/api/admin/team", { session: cookie })
+      assert(team0.status === 200 && team0.data.users.every((u: { last_at: string | null }) => u.last_at === null), "équipe : personne n'est encore branché")
+      await runInOrg(acme.id, () => recordEvents(bobViewer, [{ agent: "claude-code", type: "started" }]))
+      const team1 = await call(adminTeamRoute.GET, "/api/admin/team", { session: cookie })
+      assert(team1.data.users.find((u: { id: string }) => u.id === bob.id)?.last_at, "équipe : le poste de Bob apparaît branché")
+
+      const ing = await runInOrg(acme.id, () => ingestItems(bobViewer, [item("ops", `Procédure d'astreinte Acme (${run})`)]))
+      assert((await acmeStore.getItem(ing.ids[0]))?.zone === "ops", "une connaissance du poste de Bob arrive dans l'entreprise")
+      const fromFournil = await queryBrain(claire, { query: `astreinte Acme ${run}` })
+      assert(fromFournil.items.every((i) => i.org_id === fournil.id), "Fournil n'en voit rien")
+      const fromAcme = await runInOrg(acme.id, () => queryBrain(alice!, { query: "déployer en production" }))
+      assert(fromAcme.items.length === 0, "et l'entreprise ne voit rien de Fournil")
+      const fournilItem = created[0]
+      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${fournilItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
+        params: Promise.resolve({ id: fournilItem }),
+      })
+      assert(del.status === 404 && (await store.getItem(fournilItem)), "une connaissance de Fournil est introuvable (et intacte) depuis l'entreprise")
+      const demoList = await call(demoSessionRoute.GET, "/api/session/demo")
+      assert(demoList.status === 404 || !demoList.data.users.some((u: { id: string }) => u.id === boss.id), "les comptes de l'entreprise ne sont pas proposés dans la démo")
+    } finally {
+      if (store.kind === "file") fs.rmSync(path.resolve(process.env.BRAIN_DATA_DIR ?? ".brain", "orgs", acme.id), { recursive: true, force: true })
+      else {
+        const sql = pgClient(process.env.DATABASE_URL!)
+        await sql`delete from orgs where id = ${acme.id}`
+        await sql`delete from brain_settings where key = ${`tenant:${acme.id}`}`
+        await sql.end()
+      }
     }
   }
 
