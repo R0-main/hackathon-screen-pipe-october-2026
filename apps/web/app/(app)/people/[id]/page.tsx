@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic"
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const viewer = await requirePageViewer()
-  if (viewer.real.role !== "admin" && viewer.real.id !== id) redirect("/")
+  if (viewer.real.role !== "admin" && viewer.real.id !== id) redirect("/dashboard")
   const ctx = await getPersonContext(viewer, id)
   if (!ctx) notFound()
   const zones = await getStore().listZones()

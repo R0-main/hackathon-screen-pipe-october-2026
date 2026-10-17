@@ -62,7 +62,11 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
   pages défilent dans leur colonne.
 - L'état vivant (flux SSE, zones allumées) est dans le layout (`components/BrainLive.tsx`) : il survit à la navigation.
 
-## Page d'accueil publique (`/accueil`, servie sur `/` sans session)
+## Page d'accueil publique (`/`)
+
+Adresses : `/` la page d'accueil (pour tout le monde), `/demo` l'entrée de la démo (choix d'un compte de Fournil,
+mode démo seulement), `/login` la connexion par jeton, `/dashboard` le cerveau et, à côté, les autres pages
+connectées. `/accueil` redirige vers `/`.
 
 Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accueil » de `globals.css`).
 

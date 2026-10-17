@@ -31,7 +31,7 @@ const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!
  * il passe en plein écran et tourne pendant trois chapitres, puis la page reprend son cours.
  * Sans JavaScript ou sous `prefers-reduced-motion`, les chapitres se lisent à la suite, cerveau immobile.
  */
-export function Landing({ demo }: { demo: boolean }) {
+export function Landing({ demo, signedIn = false }: { demo: boolean; signedIn?: boolean }) {
   const stageRef = useRef<HTMLElement>(null)
   const heroRef = useRef<HTMLDivElement>(null)
   const chapterRefs = useRef<(HTMLDivElement | null)[]>([])
@@ -106,7 +106,9 @@ export function Landing({ demo }: { demo: boolean }) {
     lenis.scrollTo(st.start + (st.end - st.start) * 0.2, { duration: 1.6 })
   }
 
-  const primary = demo ? "Ouvrir la démo" : "Se connecter"
+  // Déjà connecté : droit au dashboard. Sinon la démo (mode démo) ou la connexion par jeton.
+  const cta = signedIn ? { href: "/dashboard", label: "Ouvrir le dashboard" } : demo ? { href: "/demo", label: "Ouvrir la démo" } : { href: "/login", label: "Se connecter" }
+  const primary = cta.label
 
   return (
     <main className="landing">
@@ -121,12 +123,12 @@ export function Landing({ demo }: { demo: boolean }) {
                 <span className="text-[15px] font-medium">Cerveau d'entreprise</span>
               </Link>
               <div className="flex items-center gap-2">
-                {demo && (
+                {demo && !signedIn && (
                   <Link href="/login" className="btn btn-ghost hidden sm:inline-flex">
                     Se connecter
                   </Link>
                 )}
-                <Link href="/login" className="btn btn-primary">
+                <Link href={cta.href} className="btn btn-primary">
                   {primary}
                 </Link>
               </div>
@@ -142,7 +144,7 @@ export function Landing({ demo }: { demo: boolean }) {
                 Chaque employé travaille déjà avec Claude Code ou Codex. Screenpipe capte ces sessions sur son poste, et le cerveau en garde l'essentiel pour tous les agents de l'entreprise.
               </p>
               <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
-                <Link href="/login" className="btn btn-primary btn-lg">
+                <Link href={cta.href} className="btn btn-primary btn-lg">
                   {primary}
                 </Link>
                 <a href="#chapitres" onClick={toChapters} className="landing-link text-[15px]">
@@ -195,7 +197,7 @@ export function Landing({ demo }: { demo: boolean }) {
       <Dashboard />
       <Install />
       <Privacy />
-      <Close primary={primary} demo={demo} />
+      <Close cta={cta} demo={demo} />
     </main>
   )
 }
@@ -371,7 +373,7 @@ function RawToDistilled() {
   )
 }
 
-function Close({ primary, demo }: { primary: string; demo: boolean }) {
+function Close({ cta, demo }: { cta: { href: string; label: string }; demo: boolean }) {
   return (
     <section className="landing-section !pb-10 border-t border-line" aria-labelledby="fin">
       <div className="landing-wrap">
@@ -382,8 +384,8 @@ function Close({ primary, demo }: { primary: string; demo: boolean }) {
           {demo ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta." : "Connectez-vous avec le jeton que votre admin vous a remis."}
         </p>
         <div className="mt-8">
-          <Link href="/login" className="btn btn-primary btn-lg">
-            {primary}
+          <Link href={cta.href} className="btn btn-primary btn-lg">
+            {cta.label}
           </Link>
         </div>
       </div>
