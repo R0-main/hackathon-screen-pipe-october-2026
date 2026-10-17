@@ -48,6 +48,8 @@ const DEFAULT_PICK = ["dev", "produit", "direction"]
  */
 const STORAGE_KEY = "nos-brainer:creer"
 const POLL_MS = 3000
+/** Fond de la page (--color-bone) : le cerveau de l'aperçu s'y fond, comme sur la landing. */
+const BONE = 0xf6f6f3
 
 function load(): Partial<Saved> | null {
   try {
@@ -875,8 +877,8 @@ function MiniBrain(props: { org: string; zones: ZoneOption[]; people: { id: stri
   const connected = people.filter((p) => p.connected).length
   return (
     <figure>
-      <div className="panel relative h-[min(62vh,520px)] w-full overflow-hidden">
-        <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} />
+      <div className="relative h-[min(62vh,520px)] w-full">
+        <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} paper={BONE} />
       </div>
       <figcaption className="mt-2 text-center">
         <span className="block text-[17px] font-medium">{org.charAt(0).toUpperCase() + org.slice(1)}</span>
