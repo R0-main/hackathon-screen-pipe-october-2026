@@ -36,12 +36,11 @@ export type Brain3DProps = {
   people?: BrainPerson[]
 }
 
-// Encre sur blanc. La seule couleur vive est le phosphore, réservé à une zone qu'un agent touche en direct.
+// Encre sur blanc. Une zone qu'on touche en direct (un agent, un clic) s'allume dans sa propre couleur, avivée.
 const INK = 0x0a0a0a
 const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
 const WHITE = 0xffffff
-const PHOSPHOR = 0xc7ff3e
 /** Traits du réseau à l'encre, un peu adoucis vers le blanc. */
 const SOFTEN = 0.35
 /** Petits neurones dans la couleur de leur zone, légèrement adoucie ; gris hors zone (cervelet, tronc, zone verrouillée). */
@@ -73,6 +72,10 @@ type ZoneGfx = {
   id: string
   locked: boolean
   color: number
+  /** Couleur de la zone quand elle s'allume : la sienne, plus saturée et un peu plus claire. */
+  glow: number
+  /** Distance de la connaissance la plus éloignée du centre : l'onde va jusqu'à elle. */
+  reach: number
   center: SphereMesh
   outline: SphereMesh
   nodes: SphereMesh[]
@@ -83,7 +86,7 @@ type ZoneGfx = {
 }
 
 type SynapseGfx = { a: string; b: string; mat: THREE.MeshBasicMaterial; baseOpacity: number; active: boolean }
-type RippleGfx = { key: string; mesh: RingMesh; start: number }
+type RippleGfx = { key: string; zone: ZoneGfx; mesh: RingMesh; start: number }
 type View = { rx: number; ry: number; zoom: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -229,7 +232,7 @@ export function Brain3D(props: Brain3DProps) {
               </span>
               {live && (
                 <span key={act!.startedAt} className="bubble-in mt-1 hidden max-w-[260px] items-start gap-1.5 rounded-[4px] border border-ink bg-surface px-2 py-1 text-[11.5px] leading-snug sm:flex">
-                  <span className="mt-[3px] size-2 shrink-0 rounded-full border border-ink bg-phosphor" aria-hidden />
+                  <span className="mt-[3px] size-2 shrink-0 rounded-full border border-ink" style={{ background: z.locked ? "#b8b8b8" : zoneColor(z.color, z.position) }} aria-hidden />
                   <span className="whitespace-normal">{act!.label}</span>
                 </span>
               )}
@@ -333,6 +336,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       node.scale.setScalar(r)
       node.userData.zone = z.id
       node.userData.r = r
+      node.userData.d = p.distanceTo(centerPos)
       group.add(node)
       nodes.push(node)
       pickables.push(node)
@@ -343,7 +347,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     group.add(new T.LineSegments(linkGeo, linkMat))
     geometries.push(linkGeo)
     materials.push(centerMat, nodeMat, linkMat)
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
+    const glow = new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
+    const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
+    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
   })
 
   // Le réseau qui dessine le cerveau : des liaisons en arcs, à l'encre ; seules les zones portent la couleur.
@@ -566,6 +572,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   // Boucle : ondes, états actifs, rotation d'attente, libellés projetés.
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
   const live: RippleGfx[] = []
+  /** Rayon de l'onde à l'instant k (0 → 1) : elle part du centre et s'éteint un peu après la connaissance la plus lointaine. */
+  const rippleRadius = (r: RippleGfx, k: number) => 0.05 + (r.zone.reach + 0.08) * k
   const seen = new Set<string>()
   const tmp = new T.Vector3()
   let raf = 0
@@ -589,9 +597,21 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const on = Boolean(a && a.until > nowMs)
       if (on !== g.active) {
         g.active = on
-        g.center.material.color.setHex(on ? PHOSPHOR : g.locked ? NEUTRAL : g.color)
+        g.center.material.color.setHex(on ? g.glow : g.locked ? NEUTRAL : g.color)
         g.linkMat.color.setHex(on ? INK : LINE)
-        for (const node of g.nodes) node.scale.setScalar((node.userData.r as number) * (on ? 1.6 : 1))
+      }
+      // L'onde traverse les connaissances de la zone : chacune gonfle quand le front de l'onde l'atteint.
+      for (const node of g.nodes) {
+        let pulse = 0
+        if (!reduced)
+          for (const r of live) {
+            if (r.zone !== g) continue
+            const k = (t - r.start) / RIPPLE_MS
+            const front = rippleRadius(r, k)
+            const off = ((node.userData.d as number) - front) / 0.07
+            pulse = Math.max(pulse, Math.exp(-off * off) * (1 - k * 0.6))
+          }
+        node.scale.setScalar((node.userData.r as number) * (on ? 1.6 : 1) * (1 + 1.4 * pulse))
       }
       const isSel = sel === g.id
       if (isSel !== g.selected) {
@@ -617,10 +637,10 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       seen.add(r.key)
       const g = gfx.get(r.zone)
       if (!g) continue
-      const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: PHOSPHOR, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
+      const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: g.glow, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
       mesh.position.copy(g.center.position)
       group.add(mesh)
-      live.push({ key: r.key, mesh, start: t })
+      live.push({ key: r.key, zone: g, mesh, start: t })
     }
     for (const k of seen) if (!wanted.some((r) => r.key === k)) seen.delete(k)
     for (let i = live.length - 1; i >= 0; i--) {
@@ -632,7 +652,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         live.splice(i, 1)
         continue
       }
-      r.mesh.scale.setScalar(0.05 + 0.42 * k)
+      r.mesh.scale.setScalar(rippleRadius(r, k))
       r.mesh.material.opacity = 0.9 * (1 - k)
       r.mesh.lookAt(camera.position)
     }
