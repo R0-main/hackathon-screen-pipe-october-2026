@@ -6,7 +6,7 @@ Entreprise fictive : **Butine**, des balances connectées pour ruches (6 personn
 
 ```bash
 npm run seed -- --force          # repart d'un cerveau propre (jetons affichés dans le terminal)
-BRAIN_DEMO=1 npm run dev         # ou l'URL déployée
+make demo                        # ou l'URL déployée (http://localhost:3000/demo)
 npm run simulate -- --speed 1.5  # 2e terminal, à lancer au moment voulu (Ctrl-C pour arrêter)
 ```
 
