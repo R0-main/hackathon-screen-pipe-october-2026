@@ -16,3 +16,6 @@ apps/web/public/brain.mjs
 
 # Captures de relecture Impeccable (régénérées à chaque passe)
 apps/web/.impeccable/review/
+
+# Worktrees des agents Claude Code (temporaires)
+.claude/worktrees/
