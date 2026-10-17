@@ -3,6 +3,7 @@
 // redirection vers la page de connexion du fournisseur, retour (callback) et test de connexion (liste des outils).
 
 import {
+  MCP_RETURN_PAGES,
   buildAuthorizeUrl,
   catalogEntry,
   publicMcpConnector,
@@ -13,6 +14,7 @@ import {
   type McpConnectorConfig,
   type McpConnectorPublic,
   type McpConnectorsConfig,
+  type McpReturn,
 } from "@brain/core"
 import type { Viewer } from "../auth"
 import { getStore } from "../store"
@@ -140,7 +142,7 @@ export async function removeMcp(id: string): Promise<void> {
  * Prépare la connexion OAuth et renvoie l'adresse de la page de connexion du fournisseur. Le client est enregistré
  * automatiquement quand le fournisseur l'accepte ; l'état (anti-CSRF) est lié à l'admin qui clique.
  */
-export async function startAuthorize(id: string, viewer: Viewer, redirectUri: string): Promise<string> {
+export async function startAuthorize(id: string, viewer: Viewer, redirectUri: string, returnTo: McpReturn = "connecteurs"): Promise<string> {
   const c = await getMcpConnector(id)
   if (!c) throw new McpUserError("Connecteur inconnu.")
   if (c.auth === "none") throw new McpUserError("Ce serveur est public : aucune connexion n'est nécessaire.")
@@ -163,9 +165,15 @@ export async function startAuthorize(id: string, viewer: Viewer, redirectUri: st
     const cur = ensure(cfg, id)
     cur.client = client
     cur.oauth = meta
-    cur.pending = { state, verifier, redirect_uri: redirectUri, by: viewer.real.id, created_at: Date.now() }
+    cur.pending = { state, verifier, redirect_uri: redirectUri, by: viewer.real.id, created_at: Date.now(), return_to: returnTo }
   })
   return buildAuthorizeUrl(meta, { client_id: client.client_id, redirect_uri: redirectUri, state, code_challenge: challenge })
+}
+
+/** Page où ramener l'admin après le retour du fournisseur (celle d'où la connexion est partie). */
+export async function pendingReturnPage(state: string): Promise<string> {
+  const c = Object.values(await load()).find((x) => x.pending?.state === state)
+  return MCP_RETURN_PAGES[c?.pending?.return_to ?? "connecteurs"] ?? MCP_RETURN_PAGES.connecteurs
 }
 
 /** Retour du fournisseur : vérifie l'état, échange le code contre des jetons, teste la connexion. Renvoie l'id. */

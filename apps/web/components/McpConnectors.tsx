@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { MCP_CATALOG, MCP_CATEGORIES, catalogEntry, type McpCatalogEntry, type McpCategory, type McpConnectorPublic } from "@brain/core"
+import { createContext, useContext, useEffect, useState } from "react"
+import { MCP_CATALOG, MCP_CATEGORIES, catalogEntry, type McpCatalogEntry, type McpCategory, type McpConnectorPublic, type McpReturn } from "@brain/core"
 import { fmt } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
@@ -9,14 +9,23 @@ import { McpLogo } from "./mcp-logos"
 import { RelTime } from "./RelTime"
 import { ErrorText } from "./ui"
 
-type Props = { initial: McpConnectorPublic[]; redirectUri: string }
+type Props = {
+  initial: McpConnectorPublic[]
+  redirectUri: string
+  /** Page où revenir après la connexion chez le fournisseur (par défaut : Connecteurs). */
+  returnTo?: McpReturn
+  /** Sans titre ni introduction (la page qui l'accueille a les siens : étape 8 de /creer). */
+  bare?: boolean
+}
+
+const ReturnTo = createContext<McpReturn>("connecteurs")
 
 const CUSTOM_COLOR = "#52525B"
 /** Serveurs du catalogue montrés avant « Voir les … autres ». */
 const PREVIEW = 9
 
 /** Serveurs MCP : ceux déjà branchés, puis le catalogue (recherche, catégories) et l'ajout d'un serveur quelconque. */
-export function McpConnectors({ initial, redirectUri }: Props) {
+export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", bare = false }: Props) {
   const { t } = useT()
   const k = t.connectors.mcp
   const [items, setItems] = useState(initial)
@@ -35,7 +44,10 @@ export function McpConnectors({ initial, redirectUri }: Props) {
       const c = initial.find((x) => x.id === id)
       setNotice(c?.status === "error" ? { ok: false, text: fmt(k.failed, { error: c.last_check?.error ?? "?" }) } : { ok: true, text: fmt(k.connected, { name: c?.name ?? id }) })
     } else setNotice({ ok: false, text: fmt(k.failed, { error: q.get("reason") ?? "?" }) })
-    window.history.replaceState(null, "", window.location.pathname)
+    // On retire seulement nos paramètres (/creer garde son ?brouillon=1, qui reprend le parcours au rechargement).
+    const url = new URL(window.location.href)
+    for (const key of ["mcp", "id", "reason"]) url.searchParams.delete(key)
+    window.history.replaceState(null, "", url)
   }, [initial, k.connected, k.failed])
 
   function upsert(next: McpConnectorPublic) {
@@ -54,72 +66,76 @@ export function McpConnectors({ initial, redirectUri }: Props) {
   const collapsed = !showAll && !needle && !category && catalog.length > PREVIEW + 3
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-[18px] font-medium leading-tight">{k.title}</h2>
-        <p className="mt-1 max-w-3xl text-[13px] text-trace">{k.lead}</p>
-      </div>
-      {notice && (
-        <div role="status" className={`panel flex items-start justify-between gap-3 px-4 py-3 text-[13px] ${notice.ok ? "" : "text-danger"}`}>
-          <span>{notice.text}</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNotice(null)} aria-label="OK">
-            ×
-          </button>
-        </div>
-      )}
-
-      {items.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
-          <div className="grid items-start gap-3 md:grid-cols-2">
-            {items.map((c) => (
-              <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
-            ))}
+    <ReturnTo.Provider value={returnTo}>
+      <div className="space-y-4">
+        {!bare && (
+          <div>
+            <h2 className="text-[18px] font-medium leading-tight">{k.title}</h2>
+            <p className="mt-1 max-w-3xl text-[13px] text-trace">{k.lead}</p>
           </div>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        <h3 className="text-[13px] font-medium text-trace">{k.catalog}</h3>
-        <div className="flex flex-wrap items-center gap-2">
-          <input className="input input-sm !w-64 max-w-full" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={k.search} aria-label={k.search} autoComplete="off" />
-          <div className="flex flex-wrap gap-1" role="group">
-            <button type="button" className={`chip ${category === null ? "chip-on" : ""}`} aria-pressed={category === null} onClick={() => setCategory(null)}>
-              {k.allCategories}
+        )}
+        {notice && (
+          <div role="status" className={`panel flex items-start justify-between gap-3 px-4 py-3 text-[13px] ${notice.ok ? "" : "text-danger"}`}>
+            <span>{notice.text}</span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNotice(null)} aria-label="OK">
+              ×
             </button>
-            {MCP_CATEGORIES.map((cat) => (
-              <button key={cat} type="button" className={`chip ${category === cat ? "chip-on" : ""}`} aria-pressed={category === cat} onClick={() => setCategory(category === cat ? null : cat)}>
-                {k.categories[cat]}
-              </button>
-            ))}
           </div>
-        </div>
-        {catalog.length === 0 ? (
-          <p className="text-[13px] text-trace">{k.noResult}</p>
-        ) : (
-          <>
-            <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {(collapsed ? catalog.slice(0, PREVIEW) : catalog).map((e) => (
-                <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
+        )}
+
+        {items.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
+            <div className="grid items-start gap-3 md:grid-cols-2">
+              {items.map((c) => (
+                <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
               ))}
             </div>
-            {collapsed && (
-              <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
-                {fmt(k.showAll, { n: catalog.length - PREVIEW })}
-              </button>
-            )}
-          </>
+          </div>
         )}
-      </div>
 
-      <CustomServer onAdded={upsert} />
-    </div>
+        <div className="space-y-3">
+          <h3 className="text-[13px] font-medium text-trace">{k.catalog}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <input className="input input-sm !w-64 max-w-full" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={k.search} aria-label={k.search} autoComplete="off" />
+            <div className="flex flex-wrap gap-1" role="group">
+              <button type="button" className={`chip ${category === null ? "chip-on" : ""}`} aria-pressed={category === null} onClick={() => setCategory(null)}>
+                {k.allCategories}
+              </button>
+              {MCP_CATEGORIES.map((cat) => (
+                <button key={cat} type="button" className={`chip ${category === cat ? "chip-on" : ""}`} aria-pressed={category === cat} onClick={() => setCategory(category === cat ? null : cat)}>
+                  {k.categories[cat]}
+                </button>
+              ))}
+            </div>
+          </div>
+          {catalog.length === 0 ? (
+            <p className="text-[13px] text-trace">{k.noResult}</p>
+          ) : (
+            <>
+              <div className={`grid items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
+                {(collapsed ? catalog.slice(0, PREVIEW) : catalog).map((e) => (
+                  <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
+                ))}
+              </div>
+              {collapsed && (
+                <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
+                  {fmt(k.showAll, { n: catalog.length - PREVIEW })}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        <CustomServer onAdded={upsert} />
+      </div>
+    </ReturnTo.Provider>
   )
 }
 
 /** Redirige vers la page de connexion du fournisseur (après découverte, enregistrement du client et PKCE côté serveur). */
-async function authorize(id: string): Promise<void> {
-  const { url } = await api<{ url: string }>(`/api/connectors/mcp/${encodeURIComponent(id)}/authorize`, { method: "POST" })
+async function authorize(id: string, returnTo: McpReturn): Promise<void> {
+  const { url } = await api<{ url: string }>(`/api/connectors/mcp/${encodeURIComponent(id)}/authorize`, { method: "POST", json: { return_to: returnTo } })
   window.location.assign(url)
 }
 
@@ -130,6 +146,7 @@ function Description({ entry }: { entry?: McpCatalogEntry }) {
 }
 
 function CatalogTile({ entry, redirectUri, onAdded }: { entry: McpCatalogEntry; redirectUri: string; onAdded: (c: McpConnectorPublic) => void }) {
+  const returnTo = useContext(ReturnTo)
   const { t } = useT()
   const k = t.connectors.mcp
   const [busy, setBusy] = useState(false)
@@ -141,7 +158,7 @@ function CatalogTile({ entry, redirectUri, onAdded }: { entry: McpCatalogEntry; 
     if (entry.auth === "manual") return setOpen((o) => !o)
     setBusy(true)
     try {
-      if (entry.auth === "dynamic") return await authorize(entry.id)
+      if (entry.auth === "dynamic") return await authorize(entry.id, returnTo)
       onAdded(await api<McpConnectorPublic>("/api/connectors/mcp", { method: "POST", json: { catalog_id: entry.id } }))
     } catch (e) {
       setErr(fmt(k.failed, { error: errorMessage(e) }))
@@ -169,6 +186,7 @@ function CatalogTile({ entry, redirectUri, onAdded }: { entry: McpCatalogEntry; 
 }
 
 function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connector: McpConnectorPublic; redirectUri: string; onChange: (c: McpConnectorPublic) => void; onRemoved: (id: string) => void }) {
+  const returnTo = useContext(ReturnTo)
   const { t } = useT()
   const k = t.connectors.mcp
   const entry = c.catalog_id ? catalogEntry(c.catalog_id) : undefined
@@ -187,7 +205,7 @@ function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connect
           setBusy(null)
           return
         }
-        return await authorize(c.id)
+        return await authorize(c.id, returnTo)
       }
       if (kind === "remove") {
         await api(`/api/connectors/mcp/${encodeURIComponent(c.id)}`, { method: "DELETE" })
@@ -259,6 +277,7 @@ function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connect
 
 /** Fournisseur sans enregistrement automatique : application OAuth déclarée à la main (ou jeton personnel si accepté). */
 function ManualSetup({ id, entry, redirectUri, hasClient, onSaved }: { id: string; entry?: McpCatalogEntry; redirectUri: string; hasClient: boolean; onSaved: (c: McpConnectorPublic) => void }) {
+  const returnTo = useContext(ReturnTo)
   const { t } = useT()
   const k = t.connectors.mcp
   const [clientId, setClientId] = useState("")
@@ -274,7 +293,7 @@ function ManualSetup({ id, entry, redirectUri, hasClient, onSaved }: { id: strin
     setErr(null)
     try {
       onSaved(await api<McpConnectorPublic>(path, { method: "PUT", json: { client_id: clientId, client_secret: secret || undefined } }))
-      await authorize(id)
+      await authorize(id, returnTo)
     } catch (e) {
       setErr(fmt(k.failed, { error: errorMessage(e) }))
       setBusy(null)

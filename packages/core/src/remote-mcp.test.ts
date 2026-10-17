@@ -6,6 +6,8 @@ import {
   authServerMetadataUrls,
   buildAuthorizeUrl,
   canonicalResource,
+  isMcpReturn,
+  MCP_RETURN_PAGES,
   findResponse,
   parseSseMessages,
   parseTokenResponse,
@@ -126,4 +128,12 @@ test("vue publique : jamais de secret, statut déduit", () => {
   assert.equal(publicMcpConnector({ ...c, tokens: undefined }).status, "needs_auth")
   assert.equal(publicMcpConnector({ ...c, last_check: { at: "", ok: false, tools: [], error: "x" } }).status, "error")
   assert.equal(publicMcpConnector({ ...c, auth: "none", tokens: undefined }).status, "connected")
+})
+
+test("page de retour après la connexion : liste fermée de pages internes", () => {
+  assert.equal(isMcpReturn("creer"), true)
+  assert.equal(isMcpReturn("connecteurs"), true)
+  assert.equal(isMcpReturn("https://evil.example"), false)
+  assert.equal(isMcpReturn("toString"), false, "pas de propriété héritée")
+  assert.equal(MCP_RETURN_PAGES.creer, "/creer?brouillon=1")
 })
