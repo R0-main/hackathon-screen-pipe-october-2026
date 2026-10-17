@@ -15,7 +15,7 @@ import { cmdConnectClaude, hasScheduledClaude } from "./connect"
 import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Company, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
-import { companiesWithIds, mcpSpecs, probeMcp, registerMcpServers } from "./mcp-config"
+import { claudeJsonPath, companiesWithIds, editClaudeMcp, mcpSpecs, probeMcp, registerMcpServers, removeClaudeMcp } from "./mcp-config"
 import { refreshSkills } from "./skills"
 import {
   installedScreenpipeBin,
@@ -185,14 +185,21 @@ export async function waitForCapture(o: PermissionOptions): Promise<CaptureState
 export function ensureMcp(log: Log = console.log): boolean {
   const manual = mcpAddCommand()
   const claude = findOnPath("claude")
-  if (!claude) {
-    log(`MCP: \`claude\` CLI not found in the PATH. To run by hand: ${manual}`)
-    return false
-  }
   const current = readMcpEntry()
   if (current && mcpUpToDate(current)) {
     log(`MCP ${MCP_NAME}: already connected in Claude Code.`)
     return true
+  }
+  if (!claude) {
+    // Claude Code of the desktop app alone: its CLI is not in the PATH, but it reads the same ~/.claude.json.
+    try {
+      editClaudeMcp({ [MCP_NAME]: { type: "stdio", command: process.execPath, args: mcpArgs(), env: {} } })
+      log(`MCP ${MCP_NAME} ${current ? "updated (it pointed to an old path)" : "connected in Claude Code"} (${claudeJsonPath()}, no \`claude\` CLI in the PATH): active from the next session.`)
+      return true
+    } catch (err) {
+      log(`MCP: ${claudeJsonPath()} not changed (${(err as Error).message}). To run by hand: ${manual}`)
+      return false
+    }
   }
   // Unreadable Claude Code file: we rely on the CLI to know whether it is there.
   if (current === undefined && runCommand(claude, ["mcp", "get", MCP_NAME], 30_000).ok) {
@@ -230,12 +237,10 @@ export async function ensureMcpServers(log: Log = console.log): Promise<void> {
     return
   }
   if (!registerMcpServers(specs, log)) return
-  const legacy = readMcpEntry()
-  const claude = findOnPath("claude")
-  if (legacy && claude && runCommand(claude, ["mcp", "remove", MCP_NAME, "--scope", "user"], 30_000).ok) {
+  if (readMcpEntry() && removeClaudeMcp(findOnPath("claude"), MCP_NAME)) {
     log(`MCP ${MCP_NAME} (the computer's server) removed: each company now has its own MCP server.`)
   }
-  log("The MCP servers are active from the next session (Claude Code: /mcp; Codex: codex mcp list).")
+  log("The MCP servers are active from the next session (Claude Code: /mcp; Claude desktop app: a new session, restart the app if they are missing; Codex: codex mcp list).")
 }
 
 /** Opens the brain, already signed in thanks to a short-lived sign-in link; failing that, the sign-in page. */

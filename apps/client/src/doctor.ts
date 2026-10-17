@@ -632,7 +632,7 @@ function checkClaudeCode(ctx: Ctx) {
       id: "claude",
       group: "Claude Code",
       status: "warn",
-      detail: "`claude` CLI not found in the PATH: MCP cannot be checked, distillation without Claude",
+      detail: "`claude` CLI not found in the PATH (Claude desktop app alone?): MCP written straight into its settings, distillation without Claude",
       fix: "Install Claude Code (https://claude.com/claude-code), then run setup again.",
       ...setup,
     })

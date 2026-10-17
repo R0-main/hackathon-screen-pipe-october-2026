@@ -125,7 +125,11 @@ test("setup --skip-screenpipe --no-open: config, hooks, neon, without touching a
     assert.equal(code, 0, out)
     for (const step of ["[1/6]", "[2/6]", "[4/6]", "[5/6]", "[6/6]", "It is connected"]) assert.ok(out.includes(step), `missing: ${step}\n${out}`)
     assert.match(out, /Connection to the brain OK: Hugo Bernard .*at Fournil/)
-    assert.match(out, /claude mcp add company-brain --scope user --/)
+    // No `claude` CLI in the PATH (Claude desktop app alone): the MCP is written straight into ~/.claude.json.
+    assert.match(out, /MCP company-brain connected in Claude Code \(.*\.claude\.json, no `claude` CLI in the PATH\)/)
+    const mcp = JSON.parse(readFileSync(join(home, "claude", ".claude.json"), "utf8")).mcpServers["company-brain"]
+    assert.equal(mcp.type, "stdio")
+    assert.equal(mcp.args[1], "mcp")
     const cfg = JSON.parse(readFileSync(join(home, "brain", "config.json"), "utf8"))
     assert.equal(cfg.token, "cb_test_token_123456")
     const settings = readFileSync(join(home, "claude", "settings.json"), "utf8")

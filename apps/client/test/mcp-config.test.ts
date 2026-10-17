@@ -149,3 +149,47 @@ test("registration: each company in Claude Code (claude mcp add --transport http
   assert.deepEqual(readClaudeMcp(), {})
   assert.deepEqual(readCodexMcp(), {})
 })
+
+test("Claude desktop app alone (no `claude` CLI in the PATH): servers written into ~/.claude.json, the rest kept", { skip: !POSIX }, () => {
+  const file = join(process.env.CLAUDE_CONFIG_DIR!, ".claude.json")
+  const path = process.env.PATH
+  process.env.PATH = tempDir("no-claude-")
+  try {
+    const figma = { type: "http", url: "https://mcp.figma.com/mcp" }
+    writeFileSync(file, JSON.stringify({ numStartups: 3, projects: { "/work": { allowedTools: [] } }, mcpServers: { figma } }))
+    const callsBefore = calls().length
+    const out: string[] = []
+    assert.equal(registerMcpServers(mcpSpecs([FOURNIL, ACME]), (s) => out.push(s)), true)
+    assert.equal(calls().length, callsBefore, "no CLI run")
+    const data = JSON.parse(readFileSync(file, "utf8"))
+    assert.equal(data.numStartups, 3)
+    assert.deepEqual(data.projects, { "/work": { allowedTools: [] } })
+    assert.deepEqual(data.mcpServers.figma, figma)
+    assert.deepEqual(data.mcpServers["nos-brainer-fournil"], { type: "http", url: companyMcpUrl(FOURNIL) })
+    assert.deepEqual(Object.keys(readClaudeMcp() ?? {}), ["nos-brainer-fournil", "nos-brainer-acme-co"])
+    assert.equal(statSync(file).mode & 0o777, 0o600)
+    assert.ok(!out.join("\n").includes(FOURNIL.token), "the token does not show in the messages")
+    assert.match(out.join("\n"), /MCP nos-brainer-fournil \(Fournil\) plugged into Claude Code/)
+
+    // Acme removed: its server disappears, Fournil's is already there.
+    out.length = 0
+    assert.equal(registerMcpServers(mcpSpecs([FOURNIL]), (s) => out.push(s)), true)
+    assert.deepEqual(Object.keys(readClaudeMcp() ?? {}), ["nos-brainer-fournil"])
+    assert.match(out.join("\n"), /nos-brainer-fournil \(Fournil\): already plugged/)
+    assert.match(out.join("\n"), /nos-brainer-acme-co removed/)
+
+    // uninstall: ours go, the others stay.
+    unregisterMcpServers(() => {})
+    assert.deepEqual(readClaudeMcp(), {})
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).mcpServers, { figma })
+
+    // Unreadable file: never overwritten.
+    writeFileSync(file, "{ not json")
+    out.length = 0
+    assert.equal(registerMcpServers(mcpSpecs([FOURNIL]), (s) => out.push(s)), false)
+    assert.equal(readFileSync(file, "utf8"), "{ not json")
+    assert.ok(!out.join("\n").includes(FOURNIL.token))
+  } finally {
+    process.env.PATH = path
+  }
+})

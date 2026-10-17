@@ -66,6 +66,33 @@ export function readClaudeMcp(file = claudeJsonPath()): Record<string, string> |
   }
 }
 
+/**
+ * Writes user-scope servers straight into ~/.claude.json (null removes one), the rest of the file kept: for Claude Code
+ * of the desktop app alone, whose copy of the CLI is not in the PATH but which reads the same file. Throws if the file
+ * is unreadable (never overwritten then).
+ */
+export function editClaudeMcp(entries: Record<string, Record<string, unknown> | null>, file = claudeJsonPath()): void {
+  const data: unknown = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {}
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(`${file}: not a JSON object`)
+  const servers = { ...((data as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}) }
+  for (const [name, entry] of Object.entries(entries)) {
+    if (entry) servers[name] = entry
+    else delete servers[name]
+  }
+  writePrivate(file, `${JSON.stringify({ ...data, mcpServers: servers }, null, 2)}\n`)
+}
+
+/** Removes a user-scope server from Claude Code: through the `claude` CLI if there is one, otherwise from ~/.claude.json. */
+export function removeClaudeMcp(claude: string | null, name: string, timeoutMs = 30_000): boolean {
+  if (claude) return runCommand(claude, ["mcp", "remove", name, "--scope", "user"], timeoutMs).ok
+  try {
+    editClaudeMcp({ [name]: null })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // --- Codex (~/.codex/config.toml, written directly: also works before Codex is first opened) --------------------------
 
 export function codexConfigPath(): string {
@@ -192,17 +219,28 @@ export function maskedUrl(url: string): string {
 }
 
 /**
- * Plugs each company's MCP server into Claude Code (`claude mcp add --transport http`) and into Codex (config.toml),
- * removes those of companies no longer on the computer. True if all companies are plugged into Claude Code (a missing
- * `claude` CLI counts as a failure: command to run by hand).
+ * Plugs each company's MCP server into Claude Code (`claude mcp add --transport http`; without the CLI in the PATH,
+ * Claude Code of the desktop app alone: written into ~/.claude.json) and into Codex (config.toml), removes those of
+ * companies no longer on the computer. True if all companies are plugged into Claude Code.
  */
 export function registerMcpServers(specs: McpServerSpec[], log: Log = console.log): boolean {
   let ok = true
   const claude = findOnPath("claude")
   const current = readClaudeMcp()
   if (!claude) {
-    ok = false
-    for (const s of specs) log(`MCP ${s.name}: \`claude\` CLI not found in the PATH. To run by hand: claude mcp add --transport http --scope user ${s.name} ${s.url}`)
+    const stale = Object.keys(current ?? {}).filter((n) => !specs.some((s) => s.name === n))
+    try {
+      if (stale.length || specs.some((s) => current?.[s.name] !== s.url)) {
+        editClaudeMcp({ ...Object.fromEntries(stale.map((n) => [n, null])), ...Object.fromEntries(specs.map((s) => [s.name, { type: "http", url: s.url }])) })
+      }
+      for (const s of specs) {
+        log(current?.[s.name] === s.url ? `MCP ${s.name} (${s.label}): already plugged into Claude Code.` : `MCP ${s.name} (${s.label}) plugged into Claude Code (${claudeJsonPath()}, no \`claude\` CLI in the PATH): ${maskedUrl(s.url)}.`)
+      }
+      for (const n of stale) log(`MCP ${n} removed from Claude Code (company no longer on this computer).`)
+    } catch (err) {
+      ok = false
+      log(`MCP: ${claudeJsonPath()} not changed (${(err as Error).message}): fix or delete it, then run setup again.`)
+    }
   } else {
     for (const s of specs) {
       if (current?.[s.name] === s.url) {
@@ -245,7 +283,7 @@ export async function syncCompanyMcp(cfg: Config, log: Log = console.log): Promi
 export function unregisterMcpServers(log: Log = console.log) {
   const claude = findOnPath("claude")
   for (const name of Object.keys(readClaudeMcp() ?? {})) {
-    if (claude && runCommand(claude, ["mcp", "remove", name, "--scope", "user"], 15_000).ok) log(`MCP server ${name} removed from Claude Code.`)
+    if (removeClaudeMcp(claude, name, 15_000)) log(`MCP server ${name} removed from Claude Code.`)
     else log(`MCP ${name}: to remove by hand (claude mcp remove ${name} --scope user).`)
   }
   if (existsSync(codexConfigPath()) && Object.keys(readCodexMcp()).length) {

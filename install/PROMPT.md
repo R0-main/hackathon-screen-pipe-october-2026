@@ -28,7 +28,9 @@ and, on an error, relies on `brain doctor --json`. The prompt stays short becaus
    starts. Nobody has to come back to the terminal to say "done".
 4. **Claude Code and Codex**: the company's MCP server, `nos-brainer-<company>`, plugged straight into the brain
    (`<brain>/api/mcp/<company id>/<token>`, HTTP): `claude mcp add --transport http` (user scope) and
-   `~/.codex/config.toml` if Codex is there. It shows as "Connected" in `/mcp` and `claude mcp list`, and in
+   `~/.codex/config.toml` if Codex is there. Without the `claude` CLI in the PATH (Claude Code of the desktop app alone,
+   whose copy is not in the PATH), the same entry is written straight into `~/.claude.json`, which the CLI and the
+   desktop app both read: the server shows in a new desktop session. It shows as "Connected" in `/mcp` and `claude mcp list`, and in
    `codex mcp list`. A second company installed on the computer gets its own next to it. Brain with a private
    certificate: the computer's MCP server (`company-brain`, stdio) instead. Then the `SessionStart` /
    `UserPromptSubmit` / `Stop` hooks.
