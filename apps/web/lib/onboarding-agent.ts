@@ -136,11 +136,12 @@ export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string
   return `Tu vas préparer l'onboarding de NOS Brainer, le cerveau d'entreprise ${org}, à partir de mes anciennes conversations sur ce poste. Ce message contient un code d'envoi valable 2 heures : ne l'affiche jamais en entier.
 
 0. ${LOCAL_ONLY} Puis, avant de lire quoi que ce soit, demande-moi : « Ce message me demande de lire tes conversations Claude Code et Codex de ce poste, puis d'envoyer à ${host} un résumé de ce qui concerne l'entreprise (sans secrets ni données personnelles). Acceptes-tu de donner accès à ces données à ce site ? » Sans un oui clair, arrête-toi sans rien lire ni envoyer. ${IF_BLOCKED}
-   Tiens la page au courant : « signale » = curl -fsS -X POST ${baseUrl}/api/onboarding/progress ${auth} -d '{"step":"…","message":"…"}' (step start, progress, done ou error ; message d'une phrase courte, sans secret ni nom de personne ; hors du bac à sable s'il y est bloqué).
+   Tiens la page au courant : « signale » = curl -fsS -X POST ${baseUrl}/api/onboarding/progress ${auth} -d '{"step":"…","message":"…"}' (step start, progress, done ou error ; une phrase courte, sans secret ni nom de personne ; hors du bac à sable si bloqué).
    Dès le oui, signale start (« Accord reçu, je cherche les conversations de l'entreprise ») et dis-moi : « C'est lancé : retourne sur ta création, elle se remplit au fur et à mesure. »
 1. Tu cherches UNIQUEMENT les projets et les conversations de ${scope}. Repère d'abord ceux qui correspondent à ce nom et à ces thèmes, et n'apprends rien d'autre : un projet perso, une autre entreprise, un autre client, une question générale ou un autre sujet ne se lit pas en détail et n'entre pas dans la proposition, même récent. Dans le doute, laisse de côté.
    Historique : Claude Code (~/.claude/projects/**/*.jsonl, un dossier par projet) et Codex (~/.codex/sessions/**/*.jsonl). Trie par projet et premiers messages, puis lis en détail les sessions de l'entreprise, des plus récentes aux plus anciennes, avec les README, CLAUDE.md et AGENTS.md de ces projets.
-   Signale progress à chaque trouvaille (« 3 projets de l'entreprise repérés », « Zone Ventes : 6 connaissances »), une dizaine de fois au plus.
+   Signale progress à chaque trouvaille (« 3 projets repérés », « Zone Ventes : 6 connaissances »), dix fois au plus.
+   Si tu ne trouves aucune trace claire de l'entreprise, n'invente rien et n'envoie pas de proposition : signale error (« Aucune trace de l'entreprise sur ce poste »), dis-le-moi et arrête-toi.
 2. Retiens ce qu'un nouvel arrivant doit savoir : ce que fait l'entreprise et pour qui, équipes, clients et partenaires, outils, objectifs, procédures, décisions (avec leur raison). Jamais de secrets, de données personnelles (emails, téléphones, adresses) ni rien de privé.
 3. Écris ~/.company-brain/onboarding.json :
    {"source": "claude-code" ou "codex", "company_name": "…", "description": "2 ou 3 phrases", "zones": [{"id": "…", "name": "…", "description": "…", "keywords": ["…"]}], "items": [{"zone": "<id>", "kind": "${KNOWLEDGE_KINDS.join(" | ")}", "title": "…", "body": "…", "entities": [{"type": "${ENTITY_TYPES.join(" | ")}", "name": "…"}]}]}
@@ -148,6 +149,6 @@ export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string
 4. Envoie une première version dès que tu tiens les zones et quelques connaissances, sans attendre la fin :
    curl -fsS -X POST ${baseUrl}/api/onboarding/import ${auth} --data @"$HOME/.company-brain/onboarding.json"
    Puis reviens sur ta création : continue à lire, complète le fichier et renvoie-le (chaque envoi remplace le précédent, la page se met à jour).
-5. À la fin, signale done (« Terminé : 5 zones, 24 connaissances »), supprime le fichier et dis-moi combien de zones et de connaissances sont parties. Rien n'est appliqué : je relis et valide la proposition à l'écran. En cas d'échec, signale error avec la raison en une phrase.`
+5. À la fin, signale done (« Terminé : 5 zones, 24 connaissances »), supprime le fichier et dis-moi combien de zones et de connaissances sont parties. Rien n'est appliqué : je relis et valide la proposition à l'écran. En cas d'échec, signale error avec la raison.`
 }
 

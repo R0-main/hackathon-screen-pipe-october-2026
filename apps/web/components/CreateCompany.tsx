@@ -2,12 +2,13 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { slugify } from "@brain/core"
+import { slugify, type McpConnectorPublic } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { AgentLogos } from "./brand-logos"
 import { AgentRun, AgentToasts, useAgentOnboarding, type AgentEvent, type RunState } from "./AgentProgress"
 import { Brain3D, type BrainPerson } from "./Brain3D"
 import type { ZoneActivity } from "./BrainViz"
+import { McpConnectors } from "./McpConnectors"
 import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
@@ -16,7 +17,7 @@ import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE,
 import { deNom } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
-type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team"
+type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team" | "connectors"
 /** Une personne ajoutée depuis cette page : invitée (son prompt personnel), ou acceptée via le message d'équipe (prompt vide). */
 type Invite = { id: string; name: string; title?: string; zones: string[]; prompt: string }
 /** `token` : le jeton de l'admin (déjà dans `prompt`), renvoyé à l'étape des zones pour refaire ce prompt. */
@@ -41,7 +42,7 @@ type Saved = {
 }
 
 /** Étapes numérotées (barre de progression) : l'intro n'en fait pas partie. */
-const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team"]
+const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team", "connectors"]
 const DEFAULT_PICK = ["dev", "produit", "direction"]
 /**
  * La progression survit à un rechargement, dans cet onglet seulement (sessionStorage, effacé à sa fermeture). Elle
@@ -98,6 +99,7 @@ function clear() {
  */
 export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: boolean }) {
   const [ready, setReady] = useState(false)
+  const brainFrame = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<Step>("intro")
   const [company, setCompany] = useState("")
   const [description, setDescription] = useState("")
@@ -264,7 +266,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const index = STEPS.indexOf(step)
   const org = created?.orgName ?? (company.trim() || "votre entreprise")
   // Une fois le cerveau créé (après « Et vous ? »), plus de retour vers les questions qui l'ont nommé.
-  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install" }
+  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install", connectors: "team" }
   const people = created
     ? [{ id: created.meId, name, connected: Boolean(team[created.meId]) }, ...invites.map((i) => ({ id: i.id, name: i.name, connected: Boolean(team[i.id]) }))]
     : name.trim()
@@ -273,7 +275,9 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
   return (
     <main className="create flex min-h-dvh flex-col">
-      <header className="create-wrap flex items-center justify-between gap-4 py-4">
+      {/* Positionné et premier : tout ce qui suit (positionné aussi) passe devant. */}
+      <MiniBrain frame={brainFrame} zones={draftZones} people={people} counts={proposalCounts} />
+      <header className="create-wrap relative flex items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
           <LogoMark size={26} />
           <span className="whitespace-nowrap text-[15px] font-medium">NOS Brainer</span>
@@ -295,12 +299,13 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
           )}
         </div>
       </header>
-      <div className="create-progress" aria-hidden>
+      <div className="create-progress relative" aria-hidden>
         <div className="create-progress-fill" style={{ transform: `scaleX(${index < 0 ? 0 : (index + 1) / STEPS.length})` }} />
       </div>
 
-      <div className="create-wrap grid flex-1 gap-12 py-[clamp(40px,9vh,112px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-20">
-        <section className="min-w-0 max-w-[640px]" aria-live="polite">
+      {/* Le cerveau est en fond de page : là où il n'y a pas de contenu, glisser et zoomer lui reviennent. */}
+      <div className="create-wrap pointer-events-none relative grid flex-1 gap-12 py-[clamp(40px,9vh,112px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-20">
+        <section className="pointer-events-auto min-w-0 max-w-[640px]" aria-live="polite">
           {!ready ? null : (
             <div key={step} className="step-in">
               {back[step] && (
@@ -314,7 +319,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                   <h1 className="create-title">Créons le cerveau de votre entreprise.</h1>
                   <p className="create-lead">
                     Trois questions pour monter votre dashboard, puis Claude Code ou Codex peut proposer ses zones à partir de vos conversations. Ensuite, un message
-                    branche votre poste, et un message par collègue les fait rejoindre le cerveau. Quelques minutes en tout.
+                    branche votre poste, et un message par collègue les fait rejoindre le cerveau. Pour finir, branchez vos outils (Notion, Linear, GitHub…) en un
+                    clic. Quelques minutes en tout.
                   </p>
                   <div className="mt-9 flex flex-wrap items-center gap-3">
                     <button type="button" className="btn btn-primary btn-lg" onClick={() => go("company")} autoFocus>
@@ -452,10 +458,12 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
               )}
 
               {step === "team" && created && (
-                <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} />
+                <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} onNext={() => go("connectors")} />
               )}
 
-              {(step === "context" || step === "zones" || step === "install" || step === "team") && !created && (
+              {step === "connectors" && created && <ConnectorsStep orgName={created.orgName} meConnected={Boolean(team[created.meId])} />}
+
+              {(step === "context" || step === "zones" || step === "install" || step === "team" || step === "connectors") && !created && (
                 <>
                   <h1 className="create-title">Cette page a perdu votre cerveau.</h1>
                   <p className="create-lead">Il existe toujours : retrouvez-le depuis le dashboard, ou recommencez.</p>
@@ -475,10 +483,10 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
         <aside className="hidden lg:block" aria-label={`Aperçu du cerveau ${deNom(org)}`}>
           <div className="sticky top-10">
-            <MiniBrain org={org} zones={draftZones} people={people} counts={proposalCounts} />
+            <BrainCaption frame={brainFrame} org={org} zones={draftZones} people={people} />
             {created && step !== "intro" && (
               <p className="mt-6 text-center text-[13px] text-trace">
-                <button type="button" className="hover:text-ink" onClick={restart}>
+                <button type="button" className="pointer-events-auto hover:text-ink" onClick={restart}>
                   Créer une autre entreprise
                 </button>
               </p>
@@ -722,7 +730,7 @@ function ZonesStep(props: {
   )
 }
 
-function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: (i: Invite[]) => Invite[]) => void; team: Record<string, string | null> }) {
+function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: (i: Invite[]) => Invite[]) => void; team: Record<string, string | null>; onNext: () => void }) {
   const { created, invites } = props
   const [name, setName] = useState("")
   const [title, setTitle] = useState("")
@@ -868,12 +876,47 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       </div>
 
       <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <Link href="/dashboard" className="btn btn-lg">
+        <button type="button" className="btn btn-primary btn-lg" onClick={props.onNext}>
+          Brancher vos outils
+        </button>
+        <Link href="/dashboard" className="landing-link text-[15px]">
           Ouvrir le dashboard
         </Link>
         <Presence connected={Boolean(props.team[created.meId])} self compact />
       </div>
     </div>
+  )
+}
+
+/**
+ * Étape 8 : brancher les outils de l'équipe par leur serveur MCP officiel (Notion, Linear, GitHub…). « Se connecter »
+ * passe par la page de connexion du fournisseur, puis revient ici (/creer?brouillon=1 reprend le parcours à cette étape).
+ */
+function ConnectorsStep({ orgName, meConnected }: { orgName: string; meConnected: boolean }) {
+  const [data, setData] = useState<{ connectors: McpConnectorPublic[]; redirect_uri: string } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    api<{ connectors: McpConnectorPublic[]; redirect_uri: string }>("/api/connectors/mcp").then(setData, (e) => setErr(errorMessage(e)))
+  }, [])
+
+  return (
+    <>
+      <h1 className="create-title">Branchez les outils {deNom(orgName)}.</h1>
+      <p className="create-lead">
+        Notion, Linear, GitHub, Slack, Stripe… Cliquez sur « Se connecter » : vous passez par la page de connexion de l&apos;outil, puis revenez ici. Les jetons restent
+        sur le serveur du cerveau. Vous pourrez en ajouter d&apos;autres plus tard, depuis la page Connecteurs.
+      </p>
+      <div className="mt-8">
+        {err ? <ErrorText>{err}</ErrorText> : data ? <McpConnectors initial={data.connectors} redirectUri={data.redirect_uri} returnTo="creer" bare /> : <p className="text-[14px] text-trace">Chargement…</p>}
+      </div>
+      <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <Link href="/dashboard" className="btn btn-primary btn-lg">
+          Ouvrir le dashboard
+        </Link>
+        <Presence connected={meConnected} self compact />
+      </div>
+    </>
   )
 }
 
@@ -902,9 +945,11 @@ function Presence({ connected, self, compact = false }: { connected: boolean; se
 /**
  * Le cerveau de l'entreprise en train de naître : le même cerveau 3D que le dashboard et la landing, sans ses
  * commandes. Chaque zone qui apparaît s'allume un instant ; les personnes y prennent place une fois le cerveau créé.
+ * Il se cadre sur sa case, à droite, mais il est dessiné sur toute la page, derrière le contenu : on zoome jusque
+ * dedans sans jamais buter sur un cadre.
  */
-function MiniBrain(props: { org: string; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[]; counts: Record<string, number> }) {
-  const { org, zones, people, counts } = props
+function MiniBrain(props: { frame: React.RefObject<HTMLDivElement | null>; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[]; counts: Record<string, number> }) {
+  const { frame, zones, people, counts } = props
   const views = useMemo<ZoneView[]>(
     () => zones.map((z) => ({ ...z, keywords: [], count: counts[z.id] ?? 0, last_at: null, contributors: 0, locked: false, entities: [] })),
     [zones, counts],
@@ -926,12 +971,20 @@ function MiniBrain(props: { org: string; zones: ZoneOption[]; people: { id: stri
   const dots: BrainPerson[] = people
     .filter((p) => p.id !== "me")
     .map((p, i) => ({ id: p.id, name: p.name, zone: zones[0]?.id ?? null, working: p.connected, me: i === 0 }))
+  return (
+    <div className="fixed inset-0 hidden lg:block">
+      <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} paper={BONE} anchor={frame} />
+    </div>
+  )
+}
+
+/** La case où se cadre le cerveau (dessiné, lui, sur toute la page), et sa légende. */
+function BrainCaption(props: { frame: React.RefObject<HTMLDivElement | null>; org: string; zones: ZoneOption[]; people: { connected: boolean }[] }) {
+  const { frame, org, zones, people } = props
   const connected = people.filter((p) => p.connected).length
   return (
     <figure>
-      <div className="relative h-[min(62vh,520px)] w-full">
-        <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} paper={BONE} />
-      </div>
+      <div ref={frame} className="h-[min(62vh,520px)] w-full" />
       <figcaption className="mt-2 text-center">
         <span className="block text-[17px] font-medium">{org.charAt(0).toUpperCase() + org.slice(1)}</span>
         <span className="text-[13px] tabular-nums text-trace">
