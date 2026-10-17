@@ -618,6 +618,8 @@ export function renderConversation(conv: Conversation): string {
   ]
     .filter(Boolean)
     .join("\n")
-  const body = conv.messages.map((m) => `### ${m.role === "user" ? "Employé" : "Assistant IA"}\n${m.text.trim()}`).join("\n\n")
+  const meeting = conv.tool === "meeting"
+  const label = (role: string) => (meeting ? (role === "user" ? "Transcription de la réunion" : "Notes enregistrées") : role === "user" ? "Employé" : "Assistant IA")
+  const body = conv.messages.map((m) => `### ${label(m.role)}\n${m.text.trim()}`).join("\n\n")
   return `${head}\n\n${body}`
 }

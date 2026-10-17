@@ -1,10 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { slugify, type Profile, type Zone } from "@brain/core"
 import { BrainIcon } from "./TopBar"
 import { api, errorMessage } from "./format"
+import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 
 type User = Profile & { zones: string[] }
 
@@ -37,7 +38,7 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
     try {
       await api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { zones: next } })
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      setErr(errorMessage(e))
       await reload()
     } finally {
       setSaving(null)
@@ -51,7 +52,7 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
       await api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { role } })
       await reload()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      setErr(errorMessage(e))
     } finally {
       setSaving(null)
     }
@@ -72,51 +73,59 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-[var(--border)] bg-[rgba(4,6,12,0.75)] backdrop-blur-md">
+    <div className="min-h-dvh">
+      <header className="border-b border-line bg-bone">
         <div className="mx-auto flex max-w-[1300px] items-center gap-3 px-4 py-3 sm:px-6">
           <BrainIcon />
-          <div className="font-semibold">Équipe &amp; accès · {props.orgName}</div>
+          <h1 className="text-[15px] font-medium">
+            Équipe et accès <span className="font-normal text-trace">{props.orgName}</span>
+          </h1>
           <Link href="/" className="btn ml-auto">
-            ← Retour au cerveau
+            Retour au cerveau
           </Link>
         </div>
       </header>
       <main className="mx-auto max-w-[1300px] space-y-4 px-4 py-6 sm:px-6">
         {err && (
-          <p role="alert" className="flex items-start gap-3 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2 text-sm text-red-200">
+          <div role="alert" className="panel flex items-start gap-3 px-4 py-2.5 text-[13px] text-danger">
             <span className="min-w-0 flex-1">{err}</span>
-            <button className="shrink-0 text-xs text-red-200/70 hover:text-red-100" onClick={() => setErr(null)} aria-label="Masquer l'erreur">
-              ✕
+            <button type="button" className="btn btn-icon btn-sm shrink-0" onClick={() => setErr(null)} aria-label="Masquer l'erreur">
+              <CloseIcon size={14} />
             </button>
-          </p>
+          </div>
         )}
 
         <section className="panel p-4 sm:p-5">
-          <div className="panel-title">Qui voit quelles zones</div>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Un membre (et ses agents, via le MCP) ne lit que les zones cochées. Tout le monde nourrit le cerveau ; seule la lecture est restreinte. Les admins voient tout.
+          <h2 className="panel-title">Qui voit quelles zones</h2>
+          <p className="mt-1 max-w-3xl text-[13px] text-trace">
+            Un membre, et ses agents via le MCP, ne lit que les zones cochées. Tout le monde nourrit le cerveau ; seule la lecture est restreinte. Les admins voient tout.
           </p>
           <div className="scroll-thin mt-4 overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[760px] text-[13px]">
               <thead>
-                <tr className="text-left text-xs text-[var(--muted)]">
-                  <th className="py-2 pr-3 font-medium">Membre</th>
+                <tr className="text-left text-[12px] text-trace">
+                  <th scope="col" className="py-2 pr-3 font-medium">
+                    Membre
+                  </th>
                   {zones.map((z) => (
-                    <th key={z.id} className="px-2 py-2 text-center font-semibold uppercase tracking-wider" style={{ color: z.color }}>
-                      {z.name}
+                    <th key={z.id} scope="col" className="px-2 py-2 text-center font-medium text-ink">
+                      <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
                     </th>
                   ))}
-                  <th className="px-2 py-2 font-medium">Rôle</th>
-                  <th className="px-2 py-2" />
+                  <th scope="col" className="px-2 py-2 font-medium">
+                    Rôle
+                  </th>
+                  <th scope="col" className="px-2 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <tr key={u.id} className="border-t border-[var(--border)]">
+                  <tr key={u.id} className="border-t border-line">
                     <td className="py-2.5 pr-3">
                       <div className="font-medium">{u.name}</div>
-                      <div className="text-xs text-[var(--faint)]">{u.title ?? u.email ?? ""}</div>
+                      <div className="text-[12px] text-trace">{u.title ?? u.email ?? ""}</div>
                     </td>
                     {zones.map((z) => {
                       const on = u.role === "admin" || u.zones.includes(z.id)
@@ -124,7 +133,7 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
                         <td key={z.id} className="px-2 py-2.5 text-center">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 accent-cyan-400"
+                            className="size-4"
                             checked={on}
                             disabled={u.role === "admin" || saving === u.id}
                             onChange={() => toggleZone(u, z.id)}
@@ -135,7 +144,8 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
                     })}
                     <td className="px-2 py-2.5">
                       <select
-                        className="input !w-auto !py-1 !text-xs"
+                        className="input input-sm"
+                        aria-label={`Rôle de ${u.name}`}
                         value={u.role}
                         disabled={u.id === props.meId || saving === u.id}
                         onChange={(e) => setRole(u, e.target.value as "admin" | "member")}
@@ -145,12 +155,14 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
                       </select>
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-right">
-                      <Link className="btn !py-1 !text-xs" href={`/people/${u.id}`}>
-                        Passation
-                      </Link>{" "}
-                      <button className="btn !py-1 !text-xs" onClick={() => regenerate(u)} disabled={saving === u.id}>
-                        Nouveau prompt
-                      </button>
+                      <div className="inline-flex gap-1.5">
+                        <Link className="btn btn-sm" href={`/people/${u.id}`}>
+                          Passation
+                        </Link>
+                        <button type="button" className="btn btn-sm" onClick={() => regenerate(u)} disabled={saving === u.id}>
+                          Nouveau prompt
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -203,39 +215,39 @@ function InviteForm({ zones, onInvited }: { zones: Zone[]; onInvited: (name: str
   }
 
   return (
-    <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5">
-      <div className="panel-title">Inviter quelqu&apos;un</div>
-      <p className="text-sm text-[var(--muted)]">La personne reçoit un prompt à coller dans Claude Code : il installe Screenpipe, brain-sync, le MCP et les hooks.</p>
+    <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
+      <h2 className="panel-title">Inviter quelqu&apos;un</h2>
+      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code : une commande installe Screenpipe, le MCP et les hooks, puis ouvre le cerveau.</p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <input className="input" placeholder="Prénom Nom" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
-        <input className="input" placeholder="Poste (ex. Comptable)" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
-        <input className="input" type="email" placeholder="email (optionnel)" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <select className="input" value={role} onChange={(e) => setRole(e.target.value as "member" | "admin")}>
+        <input className="input" aria-label="Prénom et nom" placeholder="Prénom Nom" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
+        <input className="input" aria-label="Poste" placeholder="Poste, par exemple Comptable" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
+        <input className="input" type="email" aria-label="Email (optionnel)" placeholder="Email (optionnel)" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <select className="input" aria-label="Rôle" value={role} onChange={(e) => setRole(e.target.value as "member" | "admin")}>
           <option value="member">Membre</option>
           <option value="admin">Admin (voit tout)</option>
         </select>
       </div>
       {role === "member" && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Zones accessibles">
           {zones.map((z) => {
             const on = selected.includes(z.id)
             return (
               <button
                 type="button"
                 key={z.id}
-                className="chip"
-                style={on ? { color: z.color, borderColor: z.color, background: `${z.color}18` } : undefined}
+                className={`chip ${on ? "chip-on" : ""}`}
+                aria-pressed={on}
                 onClick={() => setSelected((s) => (on ? s.filter((x) => x !== z.id) : [...s, z.id]))}
               >
-                {on ? "✓ " : ""}
+                <Dot color={zoneColor(z.color, z.position)} />
                 {z.name}
               </button>
             )
           })}
         </div>
       )}
-      {err && <p className="text-sm text-red-300">{err}</p>}
-      <button className="btn btn-primary" disabled={busy || !name.trim()}>
+      {err && <ErrorText>{err}</ErrorText>}
+      <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
         Créer le compte et le prompt
       </button>
     </form>
@@ -266,7 +278,14 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
     e.preventDefault()
     setErr(null)
     setOk(null)
-    const words = [...new Set(keywords.split(/[,\n]/).map((k) => k.trim().slice(0, 40)).filter(Boolean))]
+    const words = [
+      ...new Set(
+        keywords
+          .split(/[,\n]/)
+          .map((k) => k.trim().slice(0, 40))
+          .filter(Boolean),
+      ),
+    ]
     if (words.length > ZONE_KEYWORDS_MAX) {
       setErr(`${ZONE_KEYWORDS_MAX} mots-clés au maximum (${words.length} saisis).`)
       return
@@ -296,19 +315,20 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
   }
 
   return (
-    <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5">
-      <div className="panel-title">Zones du cerveau</div>
+    <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
+      <h2 className="panel-title">Zones du cerveau</h2>
       <div className="flex flex-wrap gap-1.5">
         {zones.map((z) => (
-          <span key={z.id} className="chip" style={{ color: z.color, borderColor: `${z.color}55` }} title={z.keywords.join(", ")}>
-            {z.name}
+          <span key={z.id} className="chip" title={z.keywords.join(", ")}>
+            <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
           </span>
         ))}
       </div>
       <input
         ref={nameRef}
         className="input"
-        placeholder="Nouvelle zone (ex. RH)"
+        aria-label="Nom de la nouvelle zone"
+        placeholder="Nouvelle zone, par exemple RH"
         value={name}
         onChange={(e) => {
           setName(e.target.value)
@@ -321,28 +341,29 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
         required
       />
       {existing && (
-        <p id="zone-exists" className="text-xs text-amber-200">
+        <p id="zone-exists" className="text-[12px] text-trace">
           « {existing.name} » existe déjà : choisissez un autre nom.
         </p>
       )}
-      <input className="input" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} />
+      <input className="input" aria-label="Description" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} />
       <textarea
         className="input min-h-[70px]"
-        placeholder="Mots-clés pour classer automatiquement les sessions (séparés par des virgules)"
+        aria-label="Mots-clés"
+        placeholder="Mots-clés pour classer automatiquement les sessions, séparés par des virgules"
         value={keywords}
         onChange={(e) => setKeywords(e.target.value)}
       />
-      {err && (
-        <p role="alert" className="text-sm text-red-300">
-          {err}
+      {err && <ErrorText>{err}</ErrorText>}
+      {ok && (
+        <p role="status" className="inline-flex items-center gap-1.5 text-[13px]">
+          <CheckIcon size={14} /> {ok}
         </p>
       )}
-      {ok && <p className="text-sm text-emerald-300">{ok}</p>}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button className="btn btn-primary" disabled={busy || !name.trim() || Boolean(existing)}>
-          {busy ? "Ajout…" : "Ajouter la zone"}
+        <button type="submit" className="btn btn-primary" disabled={busy || !name.trim() || Boolean(existing)}>
+          {busy ? "Ajout en cours" : "Ajouter la zone"}
         </button>
-        <span className="text-xs text-[var(--faint)]">Stockage : {storeKind === "postgres" ? "Postgres / Supabase" : "fichier local"}</span>
+        <span className="text-[12px] text-trace">Stockage : {storeKind === "postgres" ? "Postgres / Supabase" : "fichier local"}</span>
       </div>
     </form>
   )
@@ -351,7 +372,19 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
 function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const [copyErr, setCopyErr] = useState<string | null>(null)
+  const copyRef = useRef<HTMLButtonElement>(null)
   const preRef = useRef<HTMLPreElement>(null)
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    copyRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
+    window.addEventListener("keydown", onKey)
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      previous?.focus?.()
+    }
+  }, [onClose])
 
   /** Sélectionne le prompt : copie manuelle possible même sans presse-papiers. */
   function selectPrompt(): boolean {
@@ -378,31 +411,36 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
       setCopyErr("Copie automatique impossible ici : le prompt est sélectionné, copiez-le avec Ctrl+C (⌘C sur Mac).")
     }
   }
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="panel w-full max-w-3xl bg-[#070b16] p-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/20 p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-labelledby="prompt-modal-title" className="panel w-full max-w-3xl p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="panel-title">Prompt d&apos;installation pour {name}</div>
-            <p className="mt-1 text-sm text-[var(--muted)]">
+            <h2 id="prompt-modal-title" className="panel-title">
+              Prompt d&apos;installation pour {name}
+            </h2>
+            <p className="mt-1 text-[13px] text-trace">
               À envoyer à {name.split(" ")[0]} par un canal privé : il contient son jeton, affiché une seule fois. Il suffit de le coller dans Claude Code.
             </p>
           </div>
-          <button className="btn" onClick={onClose} aria-label="Fermer">
-            ✕
+          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Fermer">
+            <CloseIcon />
           </button>
         </div>
-        <pre ref={preRef} className="scroll-thin mono mt-4 max-h-[55vh] overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--border)] bg-black/40 p-4 text-[12px] leading-relaxed text-slate-300">
+        <pre ref={preRef} className="scroll-thin mono inset mt-4 max-h-[55vh] overflow-auto whitespace-pre-wrap p-4 text-[12px] leading-relaxed">
           {prompt}
         </pre>
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-          {copyErr && (
-            <p role="alert" className="mr-auto text-xs text-amber-200">
-              {copyErr}
-            </p>
-          )}
-          <button className="btn btn-primary" onClick={copy}>
-            {copied ? "✓ Copié" : "Copier le prompt"}
+          {copyErr && <ErrorText className="mr-auto text-[12px]">{copyErr}</ErrorText>}
+          <button ref={copyRef} type="button" className="btn btn-primary" onClick={copy}>
+            {copied ? (
+              <>
+                <CheckIcon size={14} /> Copié
+              </>
+            ) : (
+              "Copier le prompt"
+            )}
           </button>
         </div>
       </div>

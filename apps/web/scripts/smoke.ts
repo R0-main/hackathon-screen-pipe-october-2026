@@ -27,7 +27,7 @@ import {
   statusForViewer,
   streamStartId,
 } from "../lib/brain"
-import { createSessionValue, hashToken, newToken, viewerFromCookies, type Viewer } from "../lib/auth"
+import { createLoginCode, createSessionValue, hashToken, newToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -473,6 +473,12 @@ async function main() {
     assert(!(await viewerFromCookies(forged, undefined)), "un cookie admin forgé avec l'ancien secret devinable est refusé")
     const cookie = await createSessionValue(hugo.profile.id)
     assert((await viewerFromCookies(cookie, undefined))?.real.id === hugo.profile.id, "une session signée est acceptée")
+    const code = await createLoginCode(hugo.profile.id)
+    assert((await verifyLoginCode(code)) === hugo.profile.id, "un lien de connexion (setup) signé est accepté")
+    assert(!(await viewerFromCookies(code, undefined)), "un lien de connexion ne vaut pas cookie de session")
+    assert(!(await verifyLoginCode(cookie)), "un cookie de session ne vaut pas lien de connexion")
+    const [codeUser, , codeSig] = code.split(".")
+    assert(!(await verifyLoginCode(`${codeUser}.${Date.now() + 86400_000}.${codeSig}`)), "un lien dont on repousse l'échéance est refusé")
     assert(!(await viewerFromCookies(`${cookie.slice(0, -3)}${cookie.endsWith("AAA") ? "BBB" : "AAA"}`, undefined)), "une signature modifiée est refusée")
     assert((await viewerFromCookies(cookie, jm.profile.id))?.profile.id === hugo.profile.id, "un membre ne peut pas « voir en tant que »")
     const claireCookie = await createSessionValue(claire.profile.id)

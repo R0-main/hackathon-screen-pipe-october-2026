@@ -76,14 +76,6 @@ export const KIND_LABEL: Record<KnowledgeKind, string> = {
   question: "Question",
 }
 
-export const KIND_COLOR: Record<KnowledgeKind, string> = {
-  fact: "#94a3b8",
-  decision: "#f472b6",
-  task: "#facc15",
-  procedure: "#22d3ee",
-  question: "#a78bfa",
-}
-
 export async function api<T = unknown>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   let res: Response
   try {

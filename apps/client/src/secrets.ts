@@ -3,8 +3,11 @@
 
 import type { Config } from "./config"
 
-/** Première phrase du prompt d'installation (apps/web/lib/install-prompt.ts) : la session qui le contient est ignorée. */
-export const INSTALL_PROMPT_RE = /Tu vas connecter ce poste au cerveau d'entreprise/
+/**
+ * Première phrase du prompt d'installation (apps/web/lib/install-prompt.ts) : la session qui le contient est ignorée.
+ * Les deux formes : NOS Brainer (actuelle) et « cerveau d'entreprise » (prompts déjà distribués).
+ */
+export const INSTALL_PROMPT_RE = /Tu vas connecter ce poste (?:à NOS Brainer|au cerveau d'entreprise)/
 
 /** Forme des jetons personnels du cerveau (cb_ + 32 caractères base64url). */
 const BRAIN_TOKEN_RE = /\bcb_[A-Za-z0-9_-]{20,}/g

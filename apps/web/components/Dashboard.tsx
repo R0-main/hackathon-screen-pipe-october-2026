@@ -1,9 +1,11 @@
 "use client"
 
+import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { AgentEvent } from "@brain/core"
 import type { DashboardState } from "@/lib/brain"
-import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
+import type { Ripple, ZoneActivity } from "./BrainViz"
+import { Brain3D } from "./Brain3D"
 import { TopBar } from "./TopBar"
 import { LiveFeed } from "./LiveFeed"
 import { StatusPanel } from "./StatusPanel"
@@ -12,7 +14,8 @@ import { TasksPanel } from "./TasksPanel"
 import { KnowledgeList } from "./KnowledgeList"
 import { ZoneDrawer } from "./ZoneDrawer"
 import { AskBrain } from "./AskBrain"
-import { AGENT_LABEL, api, firstName, uniqueZones } from "./format"
+import { WelcomeBanner } from "./WelcomeBanner"
+import { EVENT_VERB, api, firstName, uniqueZones } from "./format"
 
 /** `restricted_reason` : « zone » (une zone de l'événement n'est pas lisible) ou « private » (événement sans zone). */
 export type FeedEvent = AgentEvent & { restricted?: boolean; restricted_reason?: "zone" | "private"; fresh?: boolean }
@@ -39,7 +42,7 @@ function maxEventTime(events: { at: string }[]): number {
  * `now` : horodatage du rendu serveur. Le premier rendu client réutilise exactement la même valeur, sinon les dates
  * relatives (« il y a 44 minutes » / « il y a 45 minutes ») diffèrent et l'hydratation échoue.
  */
-export function Dashboard({ initial, now: serverNow }: { initial: DashboardState; now?: number }) {
+export function Dashboard({ initial, now: serverNow, welcome }: { initial: DashboardState; now?: number; welcome?: boolean }) {
   const [state, setState] = useState(initial)
   const [feed, setFeed] = useState<FeedEvent[]>(() => initial.events.map(uniqueZones))
   const [activity, setActivity] = useState<Record<string, ZoneActivity>>({})
@@ -62,12 +65,7 @@ export function Dashboard({ initial, now: serverNow }: { initial: DashboardState
     const zones = [...new Set(e.zones)]
     if (zones.length === 0) return
     const who = namesRef.current[e.user_id] ? firstName(namesRef.current[e.user_id]) : "Quelqu'un"
-    const label =
-      e.type === "write"
-        ? `${who} · ${AGENT_LABEL[e.agent]} a ajouté du contexte`
-        : e.restricted
-          ? `${who} · activité`
-          : `${who} · ${e.summary ?? AGENT_LABEL[e.agent]}`
+    const label = e.restricted ? `${who} travaille dans cette zone` : `${who} ${EVENT_VERB[e.type]}${e.type === "query" && e.summary ? ` « ${e.summary} »` : ""}`
     setActivity((prev) => {
       const next = { ...prev }
       for (const z of zones) next[z] = { until: t + ACTIVE_MS[e.type], startedAt: t, who, label }
@@ -139,45 +137,58 @@ export function Dashboard({ initial, now: serverNow }: { initial: DashboardState
 
   const activeAgents = new Set(feed.filter((e) => Date.parse(e.at) > now - 15 * 60_000 && e.type !== "stopped").map((e) => e.user_id)).size
   const selectedZone = state.zones.find((z) => z.id === selected) ?? null
+  const isAdmin = state.real.role === "admin"
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <TopBar state={state} live={live} activeAgents={activeAgents} />
-      <main className="mx-auto max-w-[1600px] px-4 pb-16 sm:px-6">
+      <main className="mx-auto max-w-[1600px] px-4 pb-16 pt-4 sm:px-6">
+        {welcome && <WelcomeBanner name={state.me.name} meId={state.me.id} />}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="panel relative min-w-0 overflow-hidden p-4 sm:p-5">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="panel-title">Le cerveau de {state.org.name}</div>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Chaque zone est un domaine de connaissance. Elle s&apos;allume quand un agent y cherche ou y écrit du contexte.
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="panel-title">Zones de connaissance</h2>
+                <p className="mt-1 max-w-2xl text-[13px] text-trace">
+                  Chaque zone est un domaine de l&apos;entreprise. Elle s&apos;allume quand un agent y cherche ou y écrit du contexte. Cliquez une zone pour l&apos;ouvrir.
                 </p>
               </div>
-              <div className="flex gap-2 text-xs text-[var(--muted)]">
-                <span className="chip mono">{state.totals.items} connaissances</span>
-                <span className="chip mono">{state.people.length} personnes</span>
+              <div className="flex gap-1.5 text-[12px]">
+                <span className="chip tabular-nums">{state.totals.items} connaissances</span>
+                <span className="chip tabular-nums">{state.people.length} personnes</span>
               </div>
             </div>
             <AskBrain me={state.me} zones={state.zones} />
-            <div className="mt-2">
-              <BrainViz
-                zones={state.zones}
-                synapses={state.synapses}
-                activity={activity}
-                ripples={ripples}
-                now={now}
-                selected={selected}
-                onSelect={(z) => setSelected((s) => (s === z ? null : z))}
-              />
+            <div className="mt-3">
+              {state.zones.length === 0 ? (
+                <div className="inset p-8 text-center">
+                  <p className="text-[13px] text-trace">Le cerveau n&apos;a pas encore de zones.</p>
+                  {isAdmin && (
+                    <Link href="/onboarding" className="btn btn-primary mt-3">
+                      Lancer l&apos;onboarding
+                    </Link>
+                  )}
+                </div>
+              ) : (
+                <Brain3D
+                  zones={state.zones}
+                  synapses={state.synapses}
+                  activity={activity}
+                  ripples={ripples}
+                  now={now}
+                  selected={selected}
+                  onSelect={(z) => setSelected((s) => (s === z ? null : z))}
+                />
+              )}
             </div>
           </div>
           <LiveFeed events={feed} names={state.names} zones={state.zones} now={now} />
         </section>
 
         <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <StatusPanel status={state.status} zones={state.zones} canRefresh={state.real.role === "admin"} onRefreshed={refresh} now={now} />
+          <StatusPanel status={state.status} zones={state.zones} canRefresh={isAdmin} onRefreshed={refresh} now={now} />
           <div className="grid min-w-0 grid-cols-1 content-start gap-4">
-            <AutomationsPanel automations={state.automations} names={state.names} zones={state.zones} isAdmin={state.real.role === "admin"} onChange={refresh} />
+            <AutomationsPanel automations={state.automations} names={state.names} zones={state.zones} isAdmin={isAdmin} onChange={refresh} />
             <TasksPanel tasks={state.tasks} names={state.names} zones={state.zones} onChange={refresh} />
           </div>
         </section>

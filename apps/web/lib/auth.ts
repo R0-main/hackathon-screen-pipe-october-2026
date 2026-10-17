@@ -36,10 +36,16 @@ async function sessionSecret(): Promise<string> {
   return getStore().getSessionSecret()
 }
 
-/** Charge signée : membre, expiration et début de l'empreinte de son jeton (régénérer le jeton invalide les sessions). */
-async function sign(userId: string, exp: string, tokenHash: string): Promise<string> {
-  return createHmac("sha256", await sessionSecret()).update(`v2.${userId}.${exp}.${tokenHash.slice(0, 16)}`).digest("base64url")
+/**
+ * Charge signée : usage, membre, expiration et début de l'empreinte de son jeton (régénérer le jeton invalide les
+ * sessions). L'usage sépare les cookies de session (« v2 ») des liens de connexion (« link1 ») : l'un ne vaut pas l'autre.
+ */
+async function sign(userId: string, exp: string, tokenHash: string, purpose = "v2"): Promise<string> {
+  return createHmac("sha256", await sessionSecret()).update(`${purpose}.${userId}.${exp}.${tokenHash.slice(0, 16)}`).digest("base64url")
 }
+
+/** Durée de validité d'un lien de connexion ouvert par `brain.mjs setup`. */
+export const LOGIN_LINK_SECONDS = 120
 
 export async function createSessionValue(userId: string): Promise<string> {
   const tokenHash = await getStore().getTokenHash(userId)
@@ -58,7 +64,7 @@ export const sessionCookieOptions = {
 
 let warnedSetup = false
 
-async function verifySession(value: string | undefined): Promise<string | null> {
+async function verifySigned(value: string | undefined, purpose: string): Promise<string | null> {
   if (!value) return null
   const parts = value.split(".")
   if (parts.length !== 3) return null
@@ -68,7 +74,7 @@ async function verifySession(value: string | undefined): Promise<string | null> 
   if (!tokenHash) return null
   let expected: string
   try {
-    expected = await sign(userId, exp, tokenHash)
+    expected = await sign(userId, exp, tokenHash, purpose)
   } catch (err) {
     // Secret introuvable (migration non appliquée) : session invérifiable, donc refusée (401 / page de connexion).
     if (!isStoreSetupError(err)) throw err
@@ -82,6 +88,25 @@ async function verifySession(value: string | undefined): Promise<string | null> 
   const b = Buffer.from(expected)
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null
   return userId
+}
+
+function verifySession(value: string | undefined): Promise<string | null> {
+  return verifySigned(value, "v2")
+}
+
+/**
+ * Lien de connexion à usage court : après l'installation, le poste ouvre le dashboard déjà connecté, sans mettre le
+ * jeton personnel dans une URL (historique du navigateur, journaux). Expire au bout de LOGIN_LINK_SECONDS.
+ */
+export async function createLoginCode(userId: string): Promise<string> {
+  const tokenHash = await getStore().getTokenHash(userId)
+  if (!tokenHash) throw new Error("Membre introuvable.")
+  const exp = String(Date.now() + LOGIN_LINK_SECONDS * 1000)
+  return `${userId}.${exp}.${await sign(userId, exp, tokenHash, "link1")}`
+}
+
+export function verifyLoginCode(code: string | null | undefined): Promise<string | null> {
+  return verifySigned(code ?? undefined, "link1")
 }
 
 export type Viewer = {

@@ -24,6 +24,8 @@ export type Config = {
   sources: SourceName[]
   app_whitelist?: string[]
   screenpipe_content_types?: string[]
+  /** Réunions Screenpipe (transcriptions) distillées comme les sessions IA (défaut : oui). */
+  screenpipe_meetings?: boolean
   /** Hook UserPromptSubmit : envoyer un court résumé masqué des prompts classés dans une zone (défaut : oui). */
   share_prompt_summaries?: boolean
   /** Environnement relevé par install-schedule, réappliqué par `sync --scheduled` (utile sous Windows). */
@@ -46,6 +48,8 @@ export type State = {
     seen?: Record<string, SeenLines>
     /** Taille de fenêtre de lecture apprise quand Screenpipe ne donne pas le total (ms). */
     span_ms?: number
+    /** Fin de la dernière réunion distillée : les réunions terminées avant sont faites. */
+    meetings_last_end?: string
   }
   /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
   baseline_at?: string
@@ -137,6 +141,7 @@ export function withDefaults(raw: Partial<Config>): Partial<Config> {
     screenpipe_url: DEFAULT_SCREENPIPE_URL,
     use_claude_cli: true,
     share_prompt_summaries: true,
+    screenpipe_meetings: true,
     sources: [...SOURCE_NAMES],
     ...raw,
     url: raw.url?.replace(/\/+$/, ""),

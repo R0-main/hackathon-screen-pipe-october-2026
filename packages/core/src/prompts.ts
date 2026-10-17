@@ -8,7 +8,9 @@ import { truncate } from "./text"
 export const DISTILL_MARKER = "[company-brain:distill]"
 
 export const DISTILL_SYSTEM = `Tu alimentes le « cerveau » d'une entreprise : une base de connaissances partagée entre les équipes.
-On te donne une session de travail entre un employé et un assistant IA (Claude Code, Codex, ChatGPT…), déjà filtrée sur le poste.
+On te donne une session de travail entre un employé et un assistant IA (Claude Code, Codex, ChatGPT…), déjà filtrée sur le poste,
+ou la transcription d'une réunion (outil « meeting », lignes « Prénom : texte »). Pour une réunion, les décisions, les engagements
+(qui fait quoi, pour quand) et les faits annoncés priment ; une opinion en l'air n'est pas une décision.
 Ton travail : en extraire uniquement la connaissance RÉUTILISABLE par l'entreprise.
 
 À garder :

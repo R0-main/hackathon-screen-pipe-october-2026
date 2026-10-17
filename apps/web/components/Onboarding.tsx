@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { KnowledgeItemInput } from "@brain/core"
 import { BrainIcon } from "./TopBar"
-import { KIND_COLOR, KIND_LABEL, api, errorMessage } from "./format"
+import { KIND_LABEL, api, errorMessage } from "./format"
+import { CheckIcon, CloseIcon, ErrorText } from "./ui"
 
 type Question = { id: string; question: string }
 type Draft = {
@@ -24,7 +25,7 @@ function withUniqueZones(d: Draft): Draft {
   return zones.length === d.zones.length ? d : { ...d, zones }
 }
 
-/** Interview de 5-10 min : le dirigeant présente l'entreprise, le cerveau en tire ses zones et ses premières connaissances. */
+/** Interview de 5 à 10 minutes : le dirigeant présente l'entreprise, le cerveau en tire ses zones et ses premières connaissances. */
 export function Onboarding({ questions, orgName, claude }: { questions: Question[]; orgName: string; claude: boolean }) {
   const router = useRouter()
   const [step, setStep] = useState(0)
@@ -79,18 +80,18 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-[var(--border)] bg-[rgba(4,6,12,0.75)] backdrop-blur-md">
+    <div className="min-h-dvh">
+      <header className="border-b border-line bg-bone">
         <div className="mx-auto flex max-w-[900px] items-center gap-3 px-4 py-3">
           <BrainIcon />
-          <div>
-            <div className="font-semibold">Onboarding de l&apos;entreprise</div>
-            <div className="text-xs text-[var(--muted)]">
-              5-10 minutes pour donner au cerveau de {orgName} sa première mémoire {claude ? "(synthèse par Claude)" : "(mode sans Claude : synthèse heuristique)"}
-            </div>
+          <div className="min-w-0">
+            <h1 className="text-[15px] font-medium">Onboarding de l&apos;entreprise</h1>
+            <p className="text-[12px] text-trace">
+              5 à 10 minutes pour donner au cerveau de {orgName} sa première mémoire, {claude ? "avec une synthèse par Claude" : "en mode sans Claude (synthèse heuristique)"}.
+            </p>
           </div>
-          <Link href="/" className="btn ml-auto">
-            ← Cerveau
+          <Link href="/" className="btn ml-auto shrink-0">
+            Retour au cerveau
           </Link>
         </div>
       </header>
@@ -98,11 +99,11 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
         {questions.slice(0, Math.min(step + 1, questions.length)).map((q, i) => (
           <div key={q.id} className="space-y-2">
             <div className="flex gap-3">
-              <span className="mt-1 shrink-0">
+              <span className="mt-1 shrink-0" aria-hidden>
                 <BrainIcon size={24} />
               </span>
               <div className="panel bubble-in max-w-[85%] break-words px-4 py-3 text-[14px]">
-                <span className="mr-2 text-xs text-[var(--faint)]">
+                <span className="mr-2 text-[12px] tabular-nums text-trace">
                   {i + 1}/{questions.length}
                 </span>
                 {q.question}
@@ -110,8 +111,8 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
             </div>
             {answers[q.id] !== undefined && (
               <div className="flex justify-end">
-                <div className="bubble-in max-w-[85%] whitespace-pre-line break-words rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-[14px]">
-                  {answers[q.id] || <span className="italic text-[var(--faint)]">(passé)</span>}
+                <div className="bubble-in max-w-[85%] whitespace-pre-line break-words rounded-[8px] bg-ink px-4 py-3 text-[14px] text-surface">
+                  {answers[q.id] || <span className="text-line-strong">(passé)</span>}
                 </div>
               </div>
             )}
@@ -124,21 +125,24 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
               className="input min-h-[60px] flex-1"
               value={current}
               autoFocus
+              aria-label="Votre réponse"
               onChange={(e) => setCurrent(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) answer(e)
               }}
-              placeholder="Votre réponse (Entrée pour envoyer, Maj+Entrée pour aller à la ligne, vide pour passer)"
+              placeholder="Votre réponse. Entrée pour envoyer, Maj+Entrée pour aller à la ligne, vide pour passer."
             />
-            <button className="btn btn-primary self-end">Envoyer</button>
+            <button type="submit" className="btn btn-primary self-end">
+              Envoyer
+            </button>
           </form>
         )}
 
         {done && !draft && (
           <div className="panel p-5 text-center">
-            <p className="text-sm text-[var(--muted)]">Merci ! Le cerveau va lire les liens fournis et proposer ses zones et ses premières connaissances.</p>
-            <button className="btn btn-primary mt-3" onClick={generate} disabled={busy === "draft"}>
-              {busy === "draft" ? "Lecture des liens et synthèse…" : "Générer le cerveau"}
+            <p className="text-[13px] text-trace">Merci. Le cerveau va lire les liens fournis et proposer ses zones et ses premières connaissances.</p>
+            <button type="button" className="btn btn-primary mt-3" onClick={generate} disabled={busy === "draft"}>
+              {busy === "draft" ? "Lecture des liens et synthèse" : "Générer le cerveau"}
             </button>
           </div>
         )}
@@ -146,30 +150,35 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
         {draft && (
           <div className="panel space-y-4 p-5">
             <div>
-              <div className="panel-title">Proposition {draft.generator === "claude" ? "de Claude" : "(heuristique)"}</div>
-              <input className="input mt-2 text-lg font-semibold" value={draft.company_name} onChange={(e) => setDraft({ ...draft, company_name: e.target.value })} />
-              <textarea className="input mt-2 min-h-[70px]" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+              <h2 className="panel-title">Proposition {draft.generator === "claude" ? "de Claude" : "heuristique"}</h2>
+              <input
+                className="input mt-2 text-[18px] font-medium"
+                aria-label="Nom de l'entreprise"
+                value={draft.company_name}
+                onChange={(e) => setDraft({ ...draft, company_name: e.target.value })}
+              />
+              <textarea className="input mt-2 min-h-[70px]" aria-label="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
             </div>
             {draft.pages.length > 0 && (
-              <div className="text-xs text-[var(--muted)]">
-                Liens lus :{" "}
+              <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-trace">
+                <span>Liens lus :</span>
                 {draft.pages.map((p, i) => (
-                  <span key={`${p.url}-${i}`} className="chip mr-1 !whitespace-normal break-all">
-                    {p.error ? `✗ ${p.url} (${p.error})` : `✓ ${p.title || p.url}${p.truncated ? " (tronqué à 20 000 caractères)" : ""}`}
+                  <span key={`${p.url}-${i}`} className="chip h-auto min-h-[22px] whitespace-normal break-all py-0.5">
+                    {p.error ? <CloseIcon size={12} /> : <CheckIcon size={12} />}
+                    {p.error ? `${p.url} (${p.error})` : `${p.title || p.url}${p.truncated ? " (tronqué à 20 000 caractères)" : ""}`}
                   </span>
                 ))}
               </div>
             )}
             <div>
-              <div className="panel-title">Zones</div>
-              {/* grid-cols-1 = minmax(0, 1fr) : sans gabarit, la colonne implicite prend la largeur de la ligne
-                  de mots-clés (nowrap) et la page déborde sur mobile. */}
+              <h3 className="panel-title">Zones</h3>
+              {/* grid-cols-1 explicite : sans gabarit, la colonne prend la largeur de la ligne de mots-clés et la page déborde sur mobile. */}
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {draft.zones.map((z) => (
-                  <div key={z.id} className="min-w-0 rounded-xl border border-[var(--border)] p-3">
+                  <div key={z.id} className="inset min-w-0 p-3">
                     <div className="break-words font-medium">{z.name}</div>
-                    <div className="break-words text-xs text-[var(--muted)]">{z.description}</div>
-                    <div className="mt-1 truncate text-[11px] text-[var(--faint)]" title={z.keywords.join(", ")}>
+                    <div className="break-words text-[12px] text-trace">{z.description}</div>
+                    <div className="mt-1 truncate text-[12px] text-trace" title={z.keywords.join(", ")}>
                       {z.keywords.join(", ")}
                     </div>
                   </div>
@@ -177,36 +186,36 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
               </div>
             </div>
             <div>
-              <div className="panel-title">Premières connaissances ({keep.filter(Boolean).length}/{draft.items.length})</div>
+              <h3 className="panel-title">
+                Premières connaissances (<span className="tabular-nums">{keep.filter(Boolean).length}</span>/<span className="tabular-nums">{draft.items.length}</span>)
+              </h3>
               <div className="mt-2 space-y-1.5">
                 {draft.items.map((it, i) => (
-                  <label key={i} className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[var(--border)] p-3 hover:border-[var(--border-strong)]">
-                    <input type="checkbox" className="mt-1 accent-cyan-400" checked={keep[i]} onChange={() => setKeep((k) => k.map((v, j) => (j === i ? !v : v)))} />
+                  <label key={i} className="inset flex cursor-pointer items-start gap-2.5 p-3">
+                    <input type="checkbox" className="mt-1 size-4" checked={keep[i]} onChange={() => setKeep((k) => k.map((v, j) => (j === i ? !v : v)))} />
                     <div className="min-w-0">
-                      <div className="flex flex-wrap gap-1.5 text-[11px]">
-                        <span className="chip !py-0" style={{ color: KIND_COLOR[it.kind] }}>
-                          {KIND_LABEL[it.kind]}
-                        </span>
-                        <span className="chip !py-0">{draft.zones.find((z) => z.id === it.zone)?.name ?? it.zone}</span>
+                      <div className="flex flex-wrap gap-1.5 text-[12px]">
+                        <span className="chip">{KIND_LABEL[it.kind]}</span>
+                        <span className="chip">{draft.zones.find((z) => z.id === it.zone)?.name ?? it.zone}</span>
                       </div>
                       <div className="mt-1 text-[13.5px] font-medium">{it.title}</div>
-                      <div className="mt-0.5 line-clamp-2 text-xs text-[var(--muted)]">{it.body}</div>
+                      <div className="mt-0.5 line-clamp-2 text-[12px] text-trace">{it.body}</div>
                     </div>
                   </label>
                 ))}
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button className="btn" onClick={() => setDraft(null)}>
+              <button type="button" className="btn" onClick={() => setDraft(null)}>
                 Recommencer la synthèse
               </button>
-              <button className="btn btn-primary" onClick={apply} disabled={busy === "apply"}>
-                {busy === "apply" ? "Création…" : "Valider et allumer le cerveau"}
+              <button type="button" className="btn btn-primary" onClick={apply} disabled={busy === "apply"}>
+                {busy === "apply" ? "Création en cours" : "Valider et allumer le cerveau"}
               </button>
             </div>
           </div>
         )}
-        {err && <p className="text-sm text-red-300">{err}</p>}
+        {err && <ErrorText>{err}</ErrorText>}
         <div ref={endRef} />
       </main>
     </div>

@@ -1,4 +1,6 @@
-# Cerveau d'entreprise
+# NOS Brainer
+
+> Le cerveau d'entreprise qui est un *no-brainer* : un prompt à coller dans Claude Code, et ta boîte a un cerveau.
 
 > Hackathon Screenpipe « Build Agents That Remember » — 42 Paris, octobre 2026.
 > Le pitch est dans [IDEA.md](IDEA.md), l'architecture dans [ARCHITECTURE.md](ARCHITECTURE.md), le déroulé de la démo dans [demo/DEMO.md](demo/DEMO.md).
@@ -71,9 +73,10 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 ## Brancher un vrai poste
 
 1. Dans `/admin`, invitez la personne et choisissez ses zones : le dashboard génère son prompt (voir [install/PROMPT.md](install/PROMPT.md)).
-2. Elle le colle dans Claude Code, qui télécharge `brain.mjs`, teste la connexion (`hello` → son néon s'allume), vérifie/installe Screenpipe, ajoute le MCP et les hooks.
-3. Avant tout envoi, Claude Code lui montre la simulation complète (`sync --dry-run --full --since 24h`) et attend son accord ; seulement alors `sync --confirm` envoie exactement ce qui a été relu, puis `install-schedule` planifie la synchro toutes les 15 min **à partir de maintenant** (l'historique non relu n'est jamais envoyé).
-4. Ensuite rien à faire : en travaillant avec Claude Code, elle nourrit le cerveau. `sync --dry-run --full` permet de revoir à tout moment ce qui partirait, `uninstall` retire tout.
+2. Elle le colle dans Claude Code, qui lance **une seule commande** (`brain.mjs setup`) : Screenpipe installé et lancé, autorisations macOS
+   (écran, et accessibilité en option ; pas de micro) avec reprise automatique, MCP, hooks, synchro toutes les 15 min, néon allumé.
+3. Le cerveau s'ouvre dans son navigateur, déjà connecté. Ensuite rien à faire : en travaillant avec Claude Code, elle le nourrit.
+   `sync --dry-run --full` permet de revoir à tout moment ce qui partirait, `uninstall` retire tout.
 
 Le dashboard doit être joignable par les postes (URL publique ou réseau local) : définissez `BRAIN_PUBLIC_URL`.
 

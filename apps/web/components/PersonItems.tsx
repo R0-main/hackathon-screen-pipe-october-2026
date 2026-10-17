@@ -4,6 +4,7 @@ import { useState } from "react"
 import type { KnowledgeItem } from "@brain/core"
 import { KnowledgeCard } from "./KnowledgeList"
 import { api, errorMessage, firstName } from "./format"
+import { ErrorText } from "./ui"
 
 /**
  * Connaissances issues d'un poste. `unreadableZones` (getPersonContext) : zones de ses propres items que la personne ne
@@ -19,7 +20,7 @@ export function PersonItems({
   personName,
 }: {
   items: KnowledgeItem[]
-  zones: { id: string; name: string; color: string }[]
+  zones: { id: string; name: string; color: string; position?: number }[]
   canDelete: boolean
   now?: number
   unreadableZones?: string[]
@@ -57,30 +58,32 @@ export function PersonItems({
       setPending(null)
     }
   }
-
   return (
     <section className="panel p-5">
-      <div className="panel-title">Connaissances issues de ce poste ({list.length})</div>
-      {notice && <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--muted)]">{notice}</p>}
-      {err && (
-        <p role="alert" className="mt-2 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">
-          {err}
-        </p>
-      )}
+      <h2 className="panel-title">
+        Connaissances issues de ce poste (<span className="tabular-nums">{list.length}</span>)
+      </h2>
+      {notice && <p className="mt-2 text-[13px] leading-relaxed text-trace">{notice}</p>}
+      {err && <ErrorText className="mt-2">{err}</ErrorText>}
       <div className="mt-3 grid gap-2.5 md:grid-cols-2">
         {list.map((i) => (
           <div key={i.id} className="min-w-0">
             <KnowledgeCard item={i} zone={zones.find((z) => z.id === i.zone)} now={now} unreadableNote={unreadable.has(i.zone) ? note : undefined} />
             {canDelete && (
               <div className="mt-1 pr-2 text-right">
-                <button className="text-[11px] text-[var(--faint)] hover:text-red-300 disabled:opacity-50" onClick={() => remove(i.id)} disabled={pending === i.id}>
-                  {pending === i.id ? "suppression…" : "supprimer du cerveau"}
+                <button
+                  type="button"
+                  className="text-[12px] text-trace underline underline-offset-2 hover:text-danger disabled:no-underline"
+                  onClick={() => remove(i.id)}
+                  disabled={pending === i.id}
+                >
+                  {pending === i.id ? "Suppression en cours" : "Supprimer du cerveau"}
                 </button>
               </div>
             )}
           </div>
         ))}
-        {list.length === 0 && <p className="text-sm text-[var(--muted)]">Aucune connaissance visible.</p>}
+        {list.length === 0 && <p className="text-[13px] text-trace">Aucune connaissance visible.</p>}
       </div>
     </section>
   )
