@@ -102,7 +102,7 @@ function dedupePrompts(list: { summary: string; count: number; last: string }[])
 }
 
 export function formatStatus(s: CompanyStatusResult, zoneName: ZoneNamer): string {
-  if (!s || !s.headline) return "L'état de l'entreprise n'a pas encore été généré (un admin peut le rafraîchir depuis le dashboard)."
+  if (!s || !s.headline) return "L'état de l'entreprise n'a pas encore été généré (un admin peut le rafraîchir depuis le dashboard, ou avec `brain.mjs refresh-status`)."
   const zones = (s.zones ?? []).map((z) => {
     const lines = [`### ${zoneName(z.zone)}`, z.summary, `Avancement : ${z.progress}`]
     if (z.objectives.length) lines.push(`Objectifs : ${z.objectives.join(" ; ")}`)

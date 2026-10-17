@@ -4,9 +4,9 @@ import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { KnowledgeItemInput } from "@brain/core"
-import { BrainIcon } from "./TopBar"
+import { PageScroll } from "./AppShell"
 import { KIND_LABEL, api, errorMessage } from "./format"
-import { CheckIcon, CloseIcon, ErrorText } from "./ui"
+import { BrainIcon, CheckIcon, CloseIcon, ErrorText } from "./ui"
 
 type Question = { id: string; question: string }
 type Draft = {
@@ -80,29 +80,21 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
   }
 
   return (
-    <div className="min-h-dvh">
-      <header className="border-b border-line bg-bone">
-        <div className="mx-auto flex max-w-[900px] items-center gap-3 px-4 py-3">
-          <BrainIcon />
-          <div className="min-w-0">
-            <h1 className="text-[15px] font-medium">Onboarding de l&apos;entreprise</h1>
-            <p className="text-[12px] text-trace">
-              5 à 10 minutes pour donner au cerveau de {orgName} sa première mémoire, {claude ? "avec une synthèse par Claude" : "en mode sans Claude (synthèse heuristique)"}.
-            </p>
-          </div>
-          <Link href="/" className="btn ml-auto shrink-0">
-            Retour au cerveau
-          </Link>
-        </div>
+    <PageScroll width="max-w-[900px]">
+      <header className="mb-5">
+        <h1 className="text-[22px] font-medium leading-tight">Onboarding de l&apos;entreprise</h1>
+        <p className="mt-1 text-[13px] text-trace">
+          5 à 10 minutes pour donner au cerveau de {orgName} sa première mémoire, {claude ? "avec une synthèse par Claude" : "en mode sans Claude (synthèse heuristique)"}.
+        </p>
       </header>
-      <main className="mx-auto max-w-[900px] space-y-3 px-4 py-6">
+      <div className="space-y-3">
         {questions.slice(0, Math.min(step + 1, questions.length)).map((q, i) => (
           <div key={q.id} className="space-y-2">
             <div className="flex gap-3">
               <span className="mt-1 shrink-0" aria-hidden>
                 <BrainIcon size={24} />
               </span>
-              <div className="panel bubble-in max-w-[85%] px-4 py-3 text-[14px]">
+              <div className="panel bubble-in max-w-[85%] break-words px-4 py-3 text-[14px]">
                 <span className="mr-2 text-[12px] tabular-nums text-trace">
                   {i + 1}/{questions.length}
                 </span>
@@ -111,7 +103,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
             </div>
             {answers[q.id] !== undefined && (
               <div className="flex justify-end">
-                <div className="bubble-in max-w-[85%] whitespace-pre-line rounded-[8px] bg-ink px-4 py-3 text-[14px] text-surface">
+                <div className="bubble-in max-w-[85%] whitespace-pre-line break-words rounded-[8px] bg-ink px-4 py-3 text-[14px] text-surface">
                   {answers[q.id] || <span className="text-line-strong">(passé)</span>}
                 </div>
               </div>
@@ -217,7 +209,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
         )}
         {err && <ErrorText>{err}</ErrorText>}
         <div ref={endRef} />
-      </main>
-    </div>
+      </div>
+    </PageScroll>
   )
 }

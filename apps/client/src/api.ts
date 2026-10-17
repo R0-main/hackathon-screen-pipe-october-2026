@@ -1,6 +1,6 @@
 // Client HTTP de l'API du cerveau (jeton Bearer personnel).
 
-import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, Zone } from "@brain/core"
+import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, StatusInput, Zone, ZoneStatus } from "@brain/core"
 
 export class ApiError extends Error {
   constructor(
@@ -71,6 +71,12 @@ export type CompanyStatusResult = {
   generated_at: string
   generator: string
 } | null
+
+/**
+ * Réponse de POST /api/ingest. `skipped` : items déjà reçus (même auteur, zone, titre et contenu sur 30 jours), ignorés.
+ * `zones` : zones où au moins un item a été inséré. `per_zone` (facultatif) : nombre d'items insérés par zone.
+ */
+export type IngestResult = { inserted: number; skipped?: number; ids: string[]; zones: string[]; per_zone?: Record<string, number> }
 
 export type Workflow = {
   id: string
@@ -143,6 +149,14 @@ export class BrainApi {
   status() {
     return this.request<CompanyStatusResult>("GET", "/api/status")
   }
+  /** Admins : matière du résumé « où en est la boîte » (30 derniers jours), pour le générer sur ce poste. */
+  statusInput() {
+    return this.request<StatusInput>("GET", "/api/status/input", undefined, 30000)
+  }
+  /** Admins : enregistre un résumé d'état produit sur ce poste (masqué et validé par le cerveau). */
+  saveStatus(status: { headline: string; zones: ZoneStatus[] }) {
+    return this.request<NonNullable<CompanyStatusResult>>("POST", "/api/status", { status }, 30000)
+  }
   query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
     return this.request<QueryResult>("POST", "/api/query", input)
   }
@@ -151,11 +165,14 @@ export class BrainApi {
     return this.request<{ recorded: number; zones: string[] }>("POST", "/api/events", body, timeoutMs)
   }
   ingest(items: KnowledgeItemInput[], agent: AgentName = "brain-sync") {
-    // `skipped` : items déjà reçus (même auteur, zone et titre sur 30 jours), ignorés par le cerveau.
-    return this.request<{ inserted: number; skipped?: number; ids: string[]; zones: string[] }>("POST", "/api/ingest", { items, agent }, 60000)
+    return this.request<IngestResult>("POST", "/api/ingest", { items, agent }, 60000)
   }
   automations(workflows: Workflow[]) {
     return this.request<{ saved: number }>("POST", "/api/automations", { workflows })
+  }
+  /** Lien de connexion au dashboard, valable 2 minutes (ouvert par `setup` dans le navigateur). */
+  loginLink() {
+    return this.request<{ path: string; expires_in: number }>("POST", "/api/session/link")
   }
 }
 

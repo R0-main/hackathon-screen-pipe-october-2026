@@ -107,7 +107,6 @@ log("admin :", admin.name, "| membre :", member.name)
     await page.waitForTimeout(300)
     await shot(page, "03-dashboard-en-direct")
   } else log("aucune activité d'agent captée")
-  await shot(page, "04-dashboard-page-entiere", { fullPage: true })
 
   if (brain3d) {
     await page.locator(".brain-label").first().click({ force: true })
@@ -124,15 +123,21 @@ log("admin :", admin.name, "| membre :", member.name)
   await page.waitForTimeout(2500)
   await shot(page, "06-question")
 
+  for (const [p, n] of [["/activite", "04-agents-en-direct"], ["/etat", "04b-etat"], ["/connaissances", "04c-connaissances"], ["/taches", "04d-taches"]]) {
+    await page.goto(`${base}${p}`)
+    await settle(page)
+    await shot(page, n)
+  }
+
   await page.goto(`${base}/admin`)
   await settle(page)
-  await shot(page, "07-equipe-acces", { fullPage: true })
+  await shot(page, "07-equipe-acces")
   await page.goto(`${base}/onboarding`)
   await settle(page)
   await shot(page, "08-onboarding")
   await page.goto(`${base}/people/${member.id}`)
   await settle(page)
-  await shot(page, "09-passation", { fullPage: true })
+  await shot(page, "09-passation")
   await ctx.close()
 }
 
@@ -157,7 +162,9 @@ log("admin :", admin.name, "| membre :", member.name)
   await waitBrain(page)
   await page.waitForTimeout(1500)
   await shot(page, "11-mobile")
-  await shot(page, "12-mobile-page-entiere", { fullPage: true })
+  await page.getByLabel("Ouvrir le menu").click()
+  await page.waitForTimeout(400)
+  await shot(page, "12-mobile-menu")
   await ctx.close()
 }
 

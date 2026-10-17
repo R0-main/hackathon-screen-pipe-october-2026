@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { slugify, type Profile, type Zone } from "@brain/core"
-import { BrainIcon } from "./TopBar"
+import { PageScroll } from "./AppShell"
 import { api, errorMessage } from "./format"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 
@@ -73,19 +73,11 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
   }
 
   return (
-    <div className="min-h-dvh">
-      <header className="border-b border-line bg-bone">
-        <div className="mx-auto flex max-w-[1300px] items-center gap-3 px-4 py-3 sm:px-6">
-          <BrainIcon />
-          <h1 className="text-[15px] font-medium">
-            Équipe et accès <span className="font-normal text-trace">{props.orgName}</span>
-          </h1>
-          <Link href="/" className="btn ml-auto">
-            Retour au cerveau
-          </Link>
-        </div>
-      </header>
-      <main className="mx-auto max-w-[1300px] space-y-4 px-4 py-6 sm:px-6">
+    <PageScroll width="max-w-[1300px]">
+      <h1 className="mb-5 text-[22px] font-medium leading-tight">
+        Équipe et accès <span className="font-normal text-trace">{props.orgName}</span>
+      </h1>
+      <div className="space-y-4">
         {err && (
           <div role="alert" className="panel flex items-start gap-3 px-4 py-2.5 text-[13px] text-danger">
             <span className="min-w-0 flex-1">{err}</span>
@@ -181,9 +173,9 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
           />
           <ZoneForm zones={zones} reload={reload} storeKind={props.storeKind} />
         </div>
-      </main>
+      </div>
       {prompt && <PromptModal name={prompt.name} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
-    </div>
+    </PageScroll>
   )
 }
 
@@ -217,7 +209,7 @@ function InviteForm({ zones, onInvited }: { zones: Zone[]; onInvited: (name: str
   return (
     <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
       <h2 className="panel-title">Inviter quelqu&apos;un</h2>
-      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code : il installe Screenpipe, brain-sync, le MCP et les hooks.</p>
+      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code : une commande installe Screenpipe, le MCP et les hooks, puis ouvre le cerveau.</p>
       <div className="grid gap-2 sm:grid-cols-2">
         <input className="input" aria-label="Prénom et nom" placeholder="Prénom Nom" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
         <input className="input" aria-label="Poste" placeholder="Poste, par exemple Comptable" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />

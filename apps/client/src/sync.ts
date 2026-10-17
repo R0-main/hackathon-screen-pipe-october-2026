@@ -7,13 +7,16 @@ import {
   chunkConversation,
   classifyZones,
   looksPersonal,
+  personalSignals,
   redact,
+  redactText,
   truncate,
   type Conversation,
   type KnowledgeItemInput,
+  type PersonalSignals,
   type ZoneHint,
 } from "@brain/core"
-import { BrainApi, type Workflow } from "./api"
+import { BrainApi, type IngestResult, type Workflow } from "./api"
 import { refreshCache, zoneHints } from "./cache"
 import {
   UserError,
@@ -32,7 +35,7 @@ import {
   type SourceName,
   type State,
 } from "./config"
-import { DISTILLER_LABELS, createDistiller, finalizeItems, type DistillerKind } from "./distill"
+import { DISTILLER_LABELS, apiAuthHelp, claudeAuthHelp, createDistiller, finalizeItems, type DistillerKind, type Failure } from "./distill"
 import { isBrainSetupText, maskOwnSecrets, ownSecrets } from "./secrets"
 import { readClaudeLogs } from "./sources/claude-logs"
 import { readCodexLogs } from "./sources/codex-logs"
@@ -141,37 +144,91 @@ async function mapPool<T, R>(items: T[], n: number, fn: (item: T, i: number) => 
   return out
 }
 
+
+/** Conversation écartée par le filtre vie privée (raison, et pour le contenu perso : les indices trouvés). */
+export type DroppedConversation = {
+  id: string
+  reason: string
+  ended_at?: string
+  /** Contenu personnel : indices trouvés par personalSignals (affichés en simulation et en --verbose). */
+  signals?: PersonalSignals
+  /** Contenu personnel sur indices faibles seulement : réexaminé tant que la conversation se poursuit. */
+  weakOnly?: boolean
+}
+
 /**
- * Masque secrets et données perso dans chaque message (y compris les jetons du poste lui-même) ;
+ * Masque secrets et données perso dans chaque message (y compris les secrets du poste, pris tels quels) ;
  * écarte les conversations perso, vides, internes, ou la session d'installation du cerveau.
  */
 export function applyPrivacy(
   convs: Conversation[],
   secrets: string[] = [],
-): { kept: Conversation[]; dropped: { id: string; reason: string }[]; redactions: Record<string, number> } {
+): { kept: Conversation[]; dropped: DroppedConversation[]; redactions: Record<string, number> } {
   const redactions: Record<string, number> = {}
   const kept: Conversation[] = []
-  const dropped: { id: string; reason: string }[] = []
+  const dropped: DroppedConversation[] = []
+  const add = (r: Record<string, number>) => {
+    for (const [k, v] of Object.entries(r)) {
+      const key = k === "literal" ? "secret_du_poste" : k
+      redactions[key] = (redactions[key] ?? 0) + v
+    }
+  }
   for (const c of convs) {
     const setup = c.messages.some((m) => isBrainSetupText(m.text, secrets))
     const messages = c.messages
       .map((m) => {
-        const r = redact(m.text)
-        for (const [k, v] of Object.entries(r.redactions)) redactions[k] = (redactions[k] ?? 0) + v
+        const r = redact(m.text, { literals: secrets })
+        add(r.redactions)
         const own = maskOwnSecrets(r.text, secrets)
         if (own.count) redactions.jeton_cerveau = (redactions.jeton_cerveau ?? 0) + own.count
         return { ...m, text: own.text.trim() }
       })
       .filter((m) => m.text)
     const all = messages.map((m) => m.text).join("\n")
+    const text = `${c.title ?? ""}\n${all}`
     if (!messages.length || !all.trim()) dropped.push({ id: c.id, reason: "vide" })
     else if (all.includes(DISTILL_MARKER)) dropped.push({ id: c.id, reason: "session interne de distillation" })
     else if (setup) dropped.push({ id: c.id, reason: "session d'installation du cerveau" })
-    else if (looksPersonal(`${c.title ?? ""}\n${all}`)) dropped.push({ id: c.id, reason: "contenu personnel" })
-    else kept.push({ ...c, title: c.title ? truncate(maskOwnSecrets(redact(c.title).text, secrets).text, 120) : undefined, messages })
+    else if (looksPersonal(text)) {
+      const signals = personalSignals(text)
+      dropped.push({ id: c.id, reason: "contenu personnel", ended_at: c.ended_at, signals, weakOnly: signals.strong.length === 0 })
+    } else kept.push({ ...c, title: c.title ? truncate(maskOwnSecrets(redactText(c.title, { literals: secrets }), secrets).text, 120) : undefined, messages })
   }
   return { kept, dropped, redactions }
 }
+
+/** « contenu personnel : divorce, médecin » ou « contenu personnel, indices faibles : whatsapp (vocabulaire pro : 1) ». */
+export function describeDrop(d: DroppedConversation): string {
+  if (!d.signals) return d.reason
+  const s = d.signals
+  if (s.strong.length) return `${d.reason} : ${s.strong.slice(0, 5).join(", ")}`
+  return `${d.reason}, indices faibles : ${s.weak.slice(0, 5).join(", ") || "?"} (vocabulaire pro : ${s.work})`
+}
+
+/** Une conversation écartée sur indices faibles est réexaminée tant qu'elle a bougé depuis moins de ce délai. */
+export const PERSONAL_RETRY_MS = 2 * 3_600_000
+/**
+ * Panne : après ce nombre d'échecs de panne consécutifs (réseau, limite d'abonnement…), ou d'échecs identiques sans que
+ * Claude ait répondu une seule fois (délai, même erreur), Claude n'est plus sollicité pendant la synchro. Une connexion
+ * perdue (jeton expiré ou révoqué) arrête tout de suite.
+ */
+export const MAX_SYSTEMIC_FAILURES = 3
+/**
+ * Une conversation que Claude n'arrive pas à distiller est abandonnée (rien n'est envoyé) au bout de N essais probants :
+ * le modèle a répondu sans JSON exploitable (refus, sortie illisible), ou l'appel a échoué (délai, erreur inconnue)
+ * pendant une synchro où Claude a répondu à un autre appel. Une panne reconnue (connexion perdue, réseau, limite
+ * d'abonnement, surcharge) n'est jamais décomptée.
+ */
+export const MAX_DISTILL_ATTEMPTS = 3
+/**
+ * Garde-fou contre le blocage : un échec qui ne prouve rien (délai ou erreur inconnue, sans qu'aucun autre appel de la
+ * synchro n'ait obtenu de réponse) ne fait abandonner une conversation que si ses échecs durent depuis au moins 24 h,
+ * sur au moins 5 essais. Une limite d'abonnement (5 h) n'abandonne donc rien, et une conversation vraiment bloquée
+ * libère le checkpoint (Screenpipe compris) en un jour.
+ */
+export const STUCK_ABANDON_MS = 24 * 3_600_000
+export const STUCK_ABANDON_TRIES = 5
+const FAILURE_TTL_MS = 7 * 86_400_000
 
 const SOURCE_LABELS: Record<SourceName, string> = { claude: "Claude Code", codex: "Codex", screenpipe: "Screenpipe" }
 const KIND_LABELS: Record<string, string> = { fact: "fait", decision: "décision", task: "tâche", procedure: "procédure", question: "question" }
@@ -184,6 +241,10 @@ function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n > 1 ? many : one}`
 }
 
+function hhmm(iso: string): string {
+  return new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+}
+
 export type SyncSummary = {
   skipped?: string
   conversations: Partial<Record<SourceName, number>>
@@ -191,9 +252,14 @@ export type SyncSummary = {
   sent: number
   /** Items que le cerveau avait déjà (dédoublonnage serveur). */
   duplicates?: number
+  /** Connaissances réellement insérées, par zone (d'après la réponse du cerveau). */
   zones: Record<string, number>
   distiller: DistillerKind
   deferred: number
+  /** Conversations que le LLM n'a pas distillées : rien d'envoyé pour elles, retentées à la prochaine synchro. */
+  failed?: number
+  /** Ce que la simulation ne montre pas (et que --confirm n'enverra pas). */
+  gaps?: string[]
 }
 
 /** Ce que `sync --dry-run` a montré, pour que `sync --confirm` envoie exactement cela. */
@@ -230,14 +296,55 @@ function removePreview() {
   }
 }
 
-function countZones(items: KnowledgeItemInput[]): { perZone: Record<string, number>; zoneLine: string } {
+function countZones(items: { zone: string }[]): { perZone: Record<string, number>; zoneLine: string } {
   const perZone: Record<string, number> = {}
   for (const i of items) perZone[i.zone] = (perZone[i.zone] ?? 0) + 1
-  const zoneLine = Object.entries(perZone)
+  return { perZone, zoneLine: zoneLineOf(perZone) }
+}
+
+function zoneLineOf(perZone: Record<string, number>): string {
+  return Object.entries(perZone)
+    .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1])
     .map(([z, n]) => `${z} : ${n}`)
     .join(", ")
-  return { perZone, zoneLine }
+}
+
+/**
+ * Répartition par zone des items réellement insérés d'un lot, d'après la réponse du cerveau : `per_zone` s'il le donne,
+ * sinon déduite de `inserted` et des zones touchées (`zones`). Null si la réponse ne permet pas de trancher.
+ */
+export function insertedByZone(batch: { zone: string }[], res: Pick<IngestResult, "inserted" | "zones" | "per_zone">): Record<string, number> | null {
+  if (res.per_zone && typeof res.per_zone === "object") return Object.fromEntries(Object.entries(res.per_zone).filter(([, n]) => typeof n === "number" && n > 0))
+  if (!(res.inserted > 0)) return {}
+  const touched = Array.isArray(res.zones) && res.zones.length ? new Set(res.zones) : null
+  if (touched?.size === 1) return { [[...touched][0]]: res.inserted }
+  const candidates = touched ? batch.filter((i) => touched.has(i.zone)) : batch
+  if (candidates.length === res.inserted) return countZones(candidates).perZone
+  return null
+}
+
+/** Cumul des insertions par zone sur plusieurs lots ; les lots ambigus sont comptés à part (« compta ou dev : 2 »). */
+export class ZoneTally {
+  exact: Record<string, number> = {}
+  unsure = new Map<string, number>()
+  add(batch: { zone: string }[], res: Pick<IngestResult, "inserted" | "zones" | "per_zone">) {
+    const by = insertedByZone(batch, res)
+    if (by) {
+      for (const [z, n] of Object.entries(by)) this.exact[z] = (this.exact[z] ?? 0) + n
+      return
+    }
+    const zones = [...new Set(res.zones?.length ? res.zones : batch.map((i) => i.zone))].sort()
+    const key = zones.join(" ou ")
+    this.unsure.set(key, (this.unsure.get(key) ?? 0) + res.inserted)
+  }
+  /** Pour last_sync.zones. */
+  record(): Record<string, number> {
+    return { ...this.exact, ...Object.fromEntries(this.unsure) }
+  }
+  line(): string {
+    return [zoneLineOf(this.exact), ...[...this.unsure].map(([k, n]) => `${k} : ${n}`)].filter(Boolean).join(", ")
+  }
 }
 
 function sentLine(sent: number, duplicates: number, zoneLine: string): string {
@@ -290,11 +397,14 @@ async function confirmPreview(cfg: Config, io: Io): Promise<SyncSummary> {
   io.log(`brain-sync — envoi de la simulation du ${new Date(preview.created_at).toLocaleString("fr-FR")} (${plural(preview.items.length, "connaissance")}, à l'identique).`)
   let sent = 0
   let duplicates = 0
+  const tally = new ZoneTally()
   try {
     for (let i = 0; i < preview.items.length; i += BATCH) {
-      const res = await api.ingest(preview.items.slice(i, i + BATCH), "brain-sync")
+      const batch = preview.items.slice(i, i + BATCH)
+      const res = await api.ingest(batch, "brain-sync")
       sent += res.inserted
       duplicates += res.skipped ?? 0
+      tally.add(batch, res)
     }
   } catch (err) {
     io.warn(`Envoi interrompu après ${plural(sent, "connaissance")} : relancez \`sync --confirm\` (ce que le cerveau a déjà reçu sera ignoré).`)
@@ -308,12 +418,13 @@ async function confirmPreview(cfg: Config, io: Io): Promise<SyncSummary> {
       io.warn(`Automatisations non remontées : ${(err as Error).message}`)
     }
   }
+  const zones = tally.record()
   const next: State = preview.next_state ?? {}
-  next.last_sync = { at: new Date().toISOString(), distiller: preview.distiller, items_sent: sent, conversations: preview.conversations, zones: preview.zones }
+  next.last_sync = { at: new Date().toISOString(), distiller: preview.distiller, items_sent: sent, conversations: preview.conversations, zones }
   saveState(next)
   removePreview()
-  io.log(sentLine(sent, duplicates, countZones(preview.items).zoneLine))
-  return { conversations: preview.conversations, items: preview.items, sent, duplicates, zones: preview.zones, distiller: preview.distiller, deferred: 0 }
+  io.log(sentLine(sent, duplicates, tally.line()))
+  return { conversations: preview.conversations, items: preview.items, sent, duplicates, zones, distiller: preview.distiller, deferred: 0 }
 }
 
 async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<SyncSummary> {
@@ -325,9 +436,11 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   const wanted: SourceName[] = !opts.source || opts.source === "all" ? cfg.sources : [opts.source]
   const secrets = ownSecrets(cfg)
   const baseState = loadState()
-  // Après install-schedule, rien d'antérieur à la mise en place qui n'ait déjà été relu (sauf --since explicite).
+  // Après install-schedule, rien d'antérieur à la mise en place qui n'ait déjà été relu (sauf --since explicite),
+  // pour toutes les sources : fichiers déjà suivis compris, et Screenpipe même avec un ancien checkpoint.
+  const baseline = !explicitSince && baseState.baseline_at && Number.isFinite(Date.parse(baseState.baseline_at)) ? new Date(baseState.baseline_at) : undefined
   let since = parseSince(opts.since)
-  if (!explicitSince && baseState.baseline_at && Date.parse(baseState.baseline_at) > since.getTime()) since = new Date(baseState.baseline_at)
+  if (baseline && baseline.getTime() > since.getTime()) since = baseline
 
   io.log(`brain-sync — ${new Date().toLocaleString("fr-FR")}${opts.dryRun ? " (simulation : rien ne sera envoyé)" : ""}`)
 
@@ -343,8 +456,9 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   // 2. Sources.
   const state = baseState
   const results: SourceResult[] = []
-  if (wanted.includes("claude")) results.push(readClaudeLogs({ dir: claudeDir(), state, since, explicitSince, reset: opts.reset, brainHome: brainHome(), secrets }))
-  if (wanted.includes("codex")) results.push(readCodexLogs({ dir: codexDir(), state, since, explicitSince, reset: opts.reset, secrets }))
+  if (wanted.includes("claude"))
+    results.push(readClaudeLogs({ dir: claudeDir(), state, since, explicitSince, reset: opts.reset, brainHome: brainHome(), secrets, floor: baseline }))
+  if (wanted.includes("codex")) results.push(readCodexLogs({ dir: codexDir(), state, since, explicitSince, reset: opts.reset, secrets, floor: baseline }))
   let workflows: Workflow[] = []
   let workflowsDropped = 0
   if (wanted.includes("screenpipe")) {
@@ -354,12 +468,15 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       state: opts.reset ? {} : state,
       since,
       explicitSince,
+      baseline,
       contentTypes: cfg.screenpipe_content_types,
       whitelist: cfg.app_whitelist,
+      meetings: cfg.screenpipe_meetings !== false,
+      selfNames: [cache.whoami?.name ?? ""].filter(Boolean),
     })
     results.push(sp)
     if (sp.available) {
-      const wf = await fetchScreenpipeWorkflows(cfg.screenpipe_url, cfg.screenpipe_token, zones, { whitelist: cfg.app_whitelist })
+      const wf = await fetchScreenpipeWorkflows(cfg.screenpipe_url, cfg.screenpipe_token, zones, { whitelist: cfg.app_whitelist, literals: secrets })
       workflows = wf.workflows.map((w) => ({ ...w, title: maskOwnSecrets(w.title, secrets).text, description: maskOwnSecrets(w.description, secrets).text }))
       workflowsDropped = wf.dropped
     }
@@ -372,7 +489,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     else {
       const extra =
         r.source === "screenpipe"
-          ? `${r.stats.items ?? 0} captures, type « ${r.stats.content_type ?? "?"} »`
+          ? `${r.stats.items ?? 0} captures, type « ${r.stats.content_type ?? "?"} »` + (r.stats.meetings !== undefined ? `, ${plural(Number(r.stats.meetings), "réunion")}` : "")
           : `${plural(Number(r.stats.files ?? 0), "fichier")} lu${Number(r.stats.files) > 1 ? "s" : ""}, ${kb(Number(r.stats.bytes ?? 0))}` +
             (Number(r.stats.internal) ? `, ${r.stats.internal} session(s) interne(s) ignorée(s)` : "") +
             (Number(r.stats.pending) ? `, ${plural(Number(r.stats.pending), "tour en cours", "tours en cours")} lu(s) au prochain passage` : "")
@@ -383,23 +500,29 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   }
 
   // 3. Vie privée.
+  const now = Date.now()
   const all = results.flatMap((r) => r.conversations)
   const privacy = applyPrivacy(all, secrets)
   const totalRedactions = Object.values(privacy.redactions).reduce((a, b) => a + b, 0)
-  const personal = privacy.dropped.filter((d) => d.reason === "contenu personnel").length
+  const personalDrops = privacy.dropped.filter((d) => d.reason === "contenu personnel")
+  // Indices faibles seulement, conversation encore active : pas marquée comme traitée, elle sera réexaminée en entier.
+  const retry = new Set(personalDrops.filter((d) => d.weakOnly && d.ended_at && now - Date.parse(d.ended_at) < PERSONAL_RETRY_MS).map((d) => d.id))
   io.log(
     `Vie privée : ${plural(totalRedactions, "élément masqué", "éléments masqués")}` +
       (verbose && totalRedactions ? ` (${Object.entries(privacy.redactions).map(([k, v]) => `${k} : ${v}`).join(", ")})` : "") +
-      `, ${plural(personal, "conversation perso écartée", "conversations perso écartées")}`,
+      `, ${plural(personalDrops.length, "conversation perso écartée", "conversations perso écartées")}`,
   )
-  if (verbose) for (const d of privacy.dropped) io.log(`    écartée : ${d.id} (${d.reason})`)
+  const shownDrops = verbose ? privacy.dropped : opts.dryRun ? personalDrops.slice(0, 20) : []
+  for (const d of shownDrops) io.log(`    écartée : ${d.id} (${describeDrop(d)}${retry.has(d.id) ? " ; réexaminée à la prochaine synchro tant qu'elle se poursuit" : ""})`)
+  if (!verbose && opts.dryRun && personalDrops.length > shownDrops.length) io.log(`    … et ${personalDrops.length - shownDrops.length} autre(s) (--verbose pour tout voir)`)
 
   // 4. Distillation, des plus anciennes aux plus récentes, dans la limite de --limit segments.
-  const processed = new Set(privacy.dropped.map((d) => d.id))
+  const processed = new Set(privacy.dropped.filter((d) => !retry.has(d.id)).map((d) => d.id))
   const queue = [...privacy.kept].sort((a, b) => a.ended_at.localeCompare(b.ended_at))
   const jobs: { conv: Conversation; chunk: Conversation }[] = []
   let budget = limit
   let deferred = 0
+  let cutChunks = 0
   for (const conv of queue) {
     let chunks = chunkConversation(conv)
     if (chunks.length > budget) {
@@ -407,6 +530,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
         deferred = queue.length - queue.indexOf(conv)
         break
       }
+      cutChunks += chunks.length - budget
       chunks = chunks.slice(-budget)
     }
     budget -= chunks.length
@@ -417,26 +541,148 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       break
     }
   }
-  if (deferred > 0) io.log(`Limite de ${limit} segments atteinte : ${plural(deferred, "conversation")} reportée(s) à la prochaine synchro.`)
+  if (deferred > 0 && !opts.dryRun) io.log(`Limite de ${limit} segments atteinte : ${plural(deferred, "conversation")} reportée(s) à la prochaine synchro.`)
 
-  const fallbacks: string[] = []
-  const distilled = await mapPool(jobs, distiller.concurrency, async ({ conv, chunk }) => {
+  // Un échec du LLM ne retombe jamais sur l'heuristique : la conversation n'est pas traitée et sera redistillée plus tard.
+  // Les conversations qui ont déjà échoué passent après les autres : une réussite montre d'abord que Claude fonctionne.
+  const prevFailures = baseState.distill_failures ?? {}
+  const order = jobs.map((_, i) => i).sort((a, b) => Number(Boolean(prevFailures[jobs[a].conv.id])) - Number(Boolean(prevFailures[jobs[b].conv.id])) || a - b)
+  const distilled: KnowledgeItemInput[][] = jobs.map(() => [])
+  const failedConvs = new Map<string, Failure>()
+  const untried = new Set<string>()
+  /** Appels où Claude a répondu (réussite, ou refus / sortie illisible) : la CLI et la connexion fonctionnent. */
+  let alive = 0
+  let outageStreak = 0
+  /** Échecs sans réponse du modèle (délai, erreur inconnue), par conversation : tous identiques et rien d'autre = panne. */
+  const blind = new Map<string, string>()
+  let stop: "auth" | "outage" | "same" | null = null
+  const sameWay = () => alive === 0 && blind.size >= MAX_SYSTEMIC_FAILURES && new Set(blind.values()).size === 1
+  await mapPool(order, distiller.concurrency, async (i) => {
+    const { conv, chunk } = jobs[i]
+    if (failedConvs.has(conv.id) || untried.has(conv.id)) return
+    if (stop) {
+      untried.add(conv.id)
+      return
+    }
     const text = chunk.messages.map((m) => m.text).join("\n")
     const fallbackZone = classifyZones(text, zones, 1)[0] ?? defaultZone
     const res = await distiller.distill(chunk, zones, fallbackZone)
-    if (res.error) fallbacks.push(`${conv.id} : ${res.error}`)
-    if (verbose) io.log(`    ${conv.tool} ${truncate(conv.title ?? conv.id, 60)} → ${plural(res.items.length, "item")} (${DISTILLER_LABELS[res.used]})`)
-    return res.items
+    if (res.failed) {
+      const f: Failure = { error: maskOwnSecrets(res.error ?? "échec", secrets).text, failure: res.failure ?? "conversation", signature: res.signature }
+      failedConvs.set(conv.id, f)
+      if (f.failure === "auth") stop = "auth"
+      else if (f.failure === "outage") {
+        if (++outageStreak >= MAX_SYSTEMIC_FAILURES) stop ??= "outage"
+      } else if (f.signature) {
+        blind.set(conv.id, f.signature)
+        if (sameWay()) stop ??= "same"
+      } else alive++
+    } else {
+      alive++
+      outageStreak = 0
+      distilled[i] = res.items
+    }
+    if (verbose) io.log(`    ${conv.tool} ${truncate(conv.title ?? conv.id, 60)} → ${res.failed ? `échec (${truncate(res.error ?? "?", 120)})` : plural(res.items.length, "item")} (${DISTILLER_LABELS[res.used]})`)
   })
-  if (fallbacks.length) io.warn(`  ${plural(fallbacks.length, "segment")} distillé(s) par l'heuristique faute de réponse LLM${verbose ? ` : ${fallbacks.join(" ; ")}` : ""}.`)
+  for (const id of untried) if (failedConvs.has(id)) untried.delete(id)
+  const notDistilled = new Set([...failedConvs.keys(), ...untried])
+
+  // Échecs propres à une conversation : décomptés (n) quand ils sont probants, c'est-à-dire quand le modèle a répondu
+  // (refus, sortie illisible) ou quand Claude a répondu à un autre appel de cette synchro ; abandon à MAX_DISTILL_ATTEMPTS,
+  // pour ne jamais bloquer la file ni le checkpoint Screenpipe. Sans aucune réponse de Claude (délai, erreur inconnue),
+  // l'échec ne prouve rien : seul le garde-fou des 24 h s'applique. Une panne reconnue (connexion perdue, CLI absente,
+  // réseau, limite d'abonnement, surcharge) n'est pas décomptée du tout.
+  const failures = [...failedConvs.values()]
+  const authFailure = failures.find((f) => f.failure === "auth")
+  const outageCount = failures.filter((f) => f.failure === "outage").length
+  /** Claude a répondu à au moins un appel de la synchro : la CLI, la connexion et l'abonnement fonctionnent. */
+  const witnessed = alive > 0
+  const nowIso = new Date(now).toISOString()
+  const failuresNext: NonNullable<State["distill_failures"]> = {}
+  for (const [id, f] of Object.entries(prevFailures)) if (now - Date.parse(f.at) < FAILURE_TTL_MS) failuresNext[id] = f
+  const givenUp: string[] = []
+  const stuck: string[] = []
+  const counted: { id: string; n: number }[] = []
+  let unproven = 0
+  for (const [id, f] of failedConvs) {
+    if (f.failure !== "conversation") continue // panne reconnue : l'historique éventuel est gardé tel quel
+    const prev = prevFailures[id]
+    const proven = !f.signature || witnessed
+    const n = (prev?.n ?? 0) + (proven ? 1 : 0)
+    const tries = (prev?.tries ?? prev?.n ?? 0) + 1
+    const firstAt = prev && Number.isFinite(Date.parse(prev.first_at ?? prev.at)) ? (prev.first_at ?? prev.at) : nowIso
+    if (n >= MAX_DISTILL_ATTEMPTS || (tries >= STUCK_ABANDON_TRIES && now - Date.parse(firstAt) >= STUCK_ABANDON_MS)) {
+      if (n >= MAX_DISTILL_ATTEMPTS) givenUp.push(id)
+      else stuck.push(id)
+      delete failuresNext[id]
+      continue
+    }
+    failuresNext[id] = { n, tries, first_at: firstAt, at: nowIso, error: truncate(f.error, 200) }
+    if (proven) counted.push({ id, n })
+    else unproven++
+  }
+  const abandoned = [...givenUp, ...stuck]
+  for (const id of notDistilled) processed.delete(id)
+  if (!opts.dryRun) for (const id of abandoned) processed.add(id)
+  for (const id of processed) delete failuresNext[id]
+
+  const retried = notDistilled.size - (opts.dryRun ? 0 : abandoned.length)
+  const them = (n: number, one: string, many: string) => (n > 1 ? many : one)
+  if (authFailure) {
+    io.warn(`  ${distiller.kind === "claude-api" ? apiAuthHelp(authFailure.error) : claudeAuthHelp(authFailure.error)}`)
+    io.warn(
+      `  Distillation interrompue : ${plural(notDistilled.size, "conversation non distillée", "conversations non distillées")}. ` +
+        `Rien n'est envoyé pour ${them(notDistilled.size, "elle", "elles")} et l'heuristique n'est pas utilisée à la place : ` +
+        `${them(notDistilled.size, "elle sera distillée", "elles seront distillées")} à la prochaine synchro, une fois Claude reconnecté (aucun essai décompté).`,
+    )
+  } else if (notDistilled.size) {
+    const first = (failures.find((f) => f.failure !== "conversation") ?? failures[0])?.error ?? "?"
+    let why = ""
+    if (counted.length)
+      why +=
+        ` Échec lié au contenu de ${plural(counted.length, "conversation")} (essai ${Math.max(...counted.map((c) => c.n))}/${MAX_DISTILL_ATTEMPTS}) :` +
+        ` au bout de ${MAX_DISTILL_ATTEMPTS} essais, ${them(counted.length, "elle sera abandonnée", "elles seront abandonnées")} sans rien envoyer, pour ne pas bloquer la synchro.`
+    if (outageCount || unproven) {
+      const label = outageCount ? "Claude injoignable ou saturé" : sameWay() ? "tous les appels échouent de la même façon" : "Claude n'a répondu à aucun appel"
+      why +=
+        ` Panne${witnessed ? "" : " générale"} (${label}) : ` +
+        (counted.length ? `aucun essai décompté pour ${plural(outageCount + unproven, "autre conversation", "autres conversations")}.` : "aucun essai n'est décompté.") +
+        (unproven
+          ? ` Une conversation qui échoue ainsi depuis plus de 24 h (au moins ${STUCK_ABANDON_TRIES} essais) sera abandonnée, pour ne pas bloquer la synchro.`
+          : "") +
+        (witnessed ? "" : " Vérifiez que `claude -p` fonctionne (connexion, quotas ; `init --claude-token`) ou distillez sans LLM avec --distiller heuristic.")
+    }
+    io.warn(
+      `  Distillation : ${plural(notDistilled.size, "conversation non distillée", "conversations non distillées")} par ${DISTILLER_LABELS[distiller.kind]}` +
+        ` (${truncate(first, 160)})${untried.size ? `, dont ${untried.size} non tentée(s) (Claude indisponible)` : ""}.` +
+        (retried > 0
+          ? ` Rien n'est envoyé pour ${them(retried, "elle", "elles")} et l'heuristique n'est pas utilisée à la place : ${them(retried, "elle sera retentée", "elles seront retentées")} à la prochaine synchro.`
+          : "") +
+        why,
+    )
+  }
+  if (verbose) for (const [id, f] of failedConvs) io.log(`    non distillée : ${id} (${truncate(f.error, 160)})`)
+  if (givenUp.length && !opts.dryRun)
+    io.warn(
+      `  ${plural(givenUp.length, "conversation abandonnée", "conversations abandonnées")} après ${MAX_DISTILL_ATTEMPTS} essais infructueux : ` +
+        `rien n'a été envoyé pour ${them(givenUp.length, "elle", "elles")}, la synchro continue sans ${them(givenUp.length, "elle", "elles")} (checkpoints avancés).`,
+    )
+  if (stuck.length && !opts.dryRun)
+    io.warn(
+      `  ${plural(stuck.length, "conversation abandonnée", "conversations abandonnées")} après plus de 24 h d'échecs (${STUCK_ABANDON_TRIES} essais au moins) : ` +
+        `rien n'a été envoyé pour ${them(stuck.length, "elle", "elles")}, la synchro continue sans ${them(stuck.length, "elle", "elles")} (checkpoints avancés).`,
+    )
 
   // Items rangés par conversation (dans l'ordre de traitement) : une conversation est « faite » quand tous ses items sont partis.
   const byConv = new Map<string, KnowledgeItemInput[]>()
-  jobs.forEach((j, n) => byConv.set(j.conv.id, [...(byConv.get(j.conv.id) ?? []), ...distilled[n]]))
+  jobs.forEach((j, n) => {
+    if (notDistilled.has(j.conv.id)) return
+    byConv.set(j.conv.id, [...(byConv.get(j.conv.id) ?? []), ...distilled[n]])
+  })
   const seenKeys = new Set<string>()
   const flat: { item: KnowledgeItemInput; conv: string; last: boolean }[] = []
   for (const [conv, list] of byConv) {
-    const kept = finalizeItems(list, seenKeys)
+    const kept = finalizeItems(list, seenKeys, secrets)
     kept.forEach((item, n) => flat.push({ item, conv, last: n === kept.length - 1 }))
   }
   const items = flat.map((f) => f.item)
@@ -445,6 +691,22 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   for (const r of results) convCounts[r.source] = r.conversations.length
 
   const commits = results.flatMap((r) => r.commits)
+
+  // Ce que l'aperçu ne contient pas : dit clairement (rien de tout cela ne partira avec --confirm).
+  const gaps: string[] = []
+  if (deferred > 0) gaps.push(`${plural(deferred, "conversation reportée", "conversations reportées")} : limite de ${limit} segments atteinte (--limit N pour en voir plus)`)
+  if (cutChunks > 0) gaps.push(`${plural(cutChunks, "segment ancien", "segments anciens")} d'une très longue conversation, ignoré${cutChunks > 1 ? "s" : ""} (seuls les ${limit} derniers sont lus)`)
+  for (const r of results) {
+    if (r.source === "screenpipe" && r.available && r.stats.truncated_until) gaps.push(`Screenpipe : captures lues jusqu'au ${hhmm(String(r.stats.truncated_until))} seulement (la suite n'a pas été lue)`)
+    if (Number(r.stats.pending)) gaps.push(`${SOURCE_LABELS[r.source]} : ${plural(Number(r.stats.pending), "tour de conversation en cours", "tours de conversation en cours")} (réponse pas encore écrite)`)
+  }
+  if (notDistilled.size) gaps.push(`${plural(notDistilled.size, "conversation que Claude n'a pas distillée", "conversations que Claude n'a pas distillées")}`)
+  if (retry.size)
+    gaps.push(
+      retry.size > 1
+        ? `${retry.size} conversations écartées pour l'instant (indices personnels faibles), réexaminées si elles se poursuivent`
+        : "1 conversation écartée pour l'instant (indices personnels faibles), réexaminée si elle se poursuit",
+    )
 
   // 5. Simulation : on montre tout ce qui partirait, on n'envoie rien, on n'avance pas les checkpoints.
   if (opts.dryRun) {
@@ -469,6 +731,14 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     }
     if (workflowsDropped) io.log(`  ${plural(workflowsDropped, "workflow Screenpipe écarté", "workflows Screenpipe écartés")} (app hors liste blanche ou contenu personnel).`)
     if (abridged) io.log("Textes abrégés : ajoutez --full pour voir chaque connaissance en entier.")
+    if (gaps.length) {
+      io.log("")
+      io.log("Attention, aperçu partiel : ceci n'y figure pas, et ne partira pas avec sync --confirm :")
+      for (const g of gaps) io.log(`  - ${g}`)
+      io.log(
+        "Pour le relire : sync --confirm, puis relancez sync --dry-run --full. Après install-schedule, ce qui n'a pas été relu n'est jamais envoyé.",
+      )
+    }
     // L'aperçu exact, pour `sync --confirm` (mêmes items, mêmes checkpoints).
     const next = structuredClone(loadState())
     for (const c of commits) if (c.covers.every((id) => processed.has(id))) c.apply(next)
@@ -488,7 +758,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     ensureHome()
     writeJson(paths.preview(), preview, 0o600)
     io.log("Rien n'a été envoyé (simulation). Pour envoyer exactement ce qui est affiché : sync --confirm (valable 24 h).")
-    return { conversations: convCounts, items, sent: 0, zones: perZone, distiller: distiller.kind, deferred }
+    return { conversations: convCounts, items, sent: 0, zones: perZone, distiller: distiller.kind, deferred, failed: notDistilled.size, gaps }
   }
 
   // 6. Envoi par lots de 50 ; après chaque lot, les checkpoints des conversations entièrement envoyées sont enregistrés.
@@ -502,16 +772,20 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       c.apply(next)
       applied.add(c)
     }
+    if (Object.keys(failuresNext).length) next.distill_failures = failuresNext
+    else delete next.distill_failures
     return next
   }
   let sent = 0
   let duplicates = 0
+  const tally = new ZoneTally()
   try {
     for (let i = 0; i < flat.length; i += BATCH) {
       const batch = flat.slice(i, i + BATCH)
       const res = await api.ingest(batch.map((b) => b.item), "brain-sync")
       sent += res.inserted
       duplicates += res.skipped ?? 0
+      tally.add(batch.map((b) => b.item), res)
       for (const b of batch) if (b.last) done.add(b.conv)
       saveState(checkpoint())
     }
@@ -527,10 +801,11 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       io.warn(`Automatisations non remontées : ${(err as Error).message}`)
     }
   }
+  const sentZones = tally.record()
   const next = checkpoint()
-  next.last_sync = { at: new Date().toISOString(), distiller: distiller.kind, items_sent: sent, conversations: convCounts, zones: perZone }
+  next.last_sync = { at: new Date().toISOString(), distiller: distiller.kind, items_sent: sent, conversations: convCounts, zones: sentZones }
   saveState(next)
   removePreview()
-  io.log(sentLine(sent, duplicates, zoneLine))
-  return { conversations: convCounts, items, sent, duplicates, zones: perZone, distiller: distiller.kind, deferred }
+  io.log(sentLine(sent, duplicates, tally.line()))
+  return { conversations: convCounts, items, sent, duplicates, zones: sentZones, distiller: distiller.kind, deferred, failed: notDistilled.size }
 }

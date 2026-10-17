@@ -9,7 +9,20 @@ import { Dot, ZoneTag, zoneColor } from "./ui"
 
 type ZoneLike = { name: string; color: string; position?: number }
 
-export function KnowledgeCard({ item, author, zone, now }: { item: KnowledgeItem; author?: string; zone?: ZoneView | ZoneLike; now?: number }) {
+/** `unreadableNote` : la zone de l'item n'est pas lisible par le spectateur (son propre item) ; texte de l'infobulle du badge. */
+export function KnowledgeCard({
+  item,
+  author,
+  zone,
+  now,
+  unreadableNote,
+}: {
+  item: KnowledgeItem
+  author?: string
+  zone?: ZoneView | ZoneLike
+  now?: number
+  unreadableNote?: string
+}) {
   const [open, setOpen] = useState(false)
   return (
     <article className="rounded-[6px] border border-line bg-surface p-3.5 transition-colors hover:border-line-strong">
@@ -19,6 +32,11 @@ export function KnowledgeCard({ item, author, zone, now }: { item: KnowledgeItem
           {zone && (
             <span className="chip">
               <ZoneTag name={zone.name} color={zoneColor(zone.color, zone.position ?? 0)} />
+            </span>
+          )}
+          {unreadableNote && (
+            <span className="chip text-trace" title={unreadableNote}>
+              zone non lisible
             </span>
           )}
           <span className="ml-auto text-trace">

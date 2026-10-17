@@ -1,10 +1,22 @@
 "use client"
 
 import type { ZoneView } from "@/lib/brain"
-import type { FeedEvent } from "./Dashboard"
+import type { FeedEvent } from "./BrainLive"
 import { AGENT_LABEL, EVENT_VERB, initials } from "./format"
 import { RelTime } from "./RelTime"
 import { ZoneTag, zoneColor } from "./ui"
+
+/**
+ * Pourquoi le contenu d'un événement est masqué : « zone » (une de ses zones n'est pas lisible) ou « private »
+ * (événement sans zone : prompt personnel, recherche hors de vos zones…). Un démarrage ou un arrêt de session privé
+ * n'affiche rien de plus (seul l'identifiant de session est caché). Repli pour les anciens événements sans motif.
+ */
+function hiddenReason(e: FeedEvent): "zone" | "private" | null {
+  if (!e.restricted) return null
+  const reason = e.restricted_reason ?? (e.zones.length ? "zone" : "private")
+  if (reason === "private" && (e.type === "started" || e.type === "stopped")) return null
+  return reason
+}
 
 export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; names: Record<string, string>; zones: ZoneView[]; now: number }) {
   const zone = (id: string) => zones.find((x) => x.id === id)
@@ -23,6 +35,7 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
         {events.map((e) => {
           const name = names[e.user_id] ?? "Quelqu'un"
           const zoneIds = [...new Set(e.zones)]
+          const hidden = hiddenReason(e)
           return (
             <li key={e.id} className={`rounded-[6px] px-2.5 py-2 hover:bg-bone ${e.fresh ? "feed-enter" : ""}`}>
               <div className="flex items-start gap-2.5">
@@ -34,7 +47,12 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
                     <b className="font-medium">{name.split(" ")[0]}</b> <span className="text-trace">{EVENT_VERB[e.type]}</span>
                     {e.type === "query" && e.summary && !e.restricted && <span> « {e.summary} »</span>}
                     {e.type === "write" && e.summary && !e.restricted && <span className="text-trace">, {e.summary}</span>}
-                    {e.restricted && <span className="text-trace"> dans une zone restreinte</span>}
+                    {hidden === "zone" && <span className="text-trace"> dans une zone restreinte</span>}
+                    {hidden === "private" && (
+                      <span className="text-trace" title="Visible seulement de la personne qui l'a envoyé et des admins">
+                        , contenu privé
+                      </span>
+                    )}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-trace">
                     <span>{AGENT_LABEL[e.agent]}</span>

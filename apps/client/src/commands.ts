@@ -20,8 +20,8 @@ import {
   type Config,
 } from "./config"
 import { DISTILLER_LABELS, pickDistiller } from "./distill"
-import { hooksInstalled, scheduleInstalled } from "./install"
-import { screenpipeHealth } from "./sources/screenpipe"
+import { hooksInstalled, pipeInstalled, pipePath, scheduleInstalled } from "./install"
+import { TOKEN_COMMAND, screenpipeHealth, screenpipeProbe } from "./sources/screenpipe"
 import { frDate } from "./format"
 
 type Log = (s: string) => void
@@ -35,6 +35,13 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
   if (str("screenpipe-url")) next.screenpipe_url = str("screenpipe-url")!.replace(/\/+$/, "")
   if (str("screenpipe-token")) next.screenpipe_token = str("screenpipe-token")
   if (str("anthropic-key")) next.anthropic_api_key = str("anthropic-key")
+  const claudeToken = str("claude-token")
+  if (flags["claude-token"] === true) throw new UserError("--claude-token : donnez le jeton affiché par `claude setup-token` (ou « aucun » pour le retirer).")
+  if (claudeToken !== undefined) {
+    if (["aucun", "none", "non", ""].includes(claudeToken.toLowerCase())) delete next.claude_oauth_token
+    else if (/\s/.test(claudeToken) || claudeToken.length < 20) throw new UserError("--claude-token : jeton invalide (une seule chaîne, celle affichée par `claude setup-token`).")
+    else next.claude_oauth_token = claudeToken
+  }
   const share = str("share-prompt-summaries")
   if (share !== undefined) {
     const v = share.toLowerCase()
@@ -42,12 +49,26 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
     else if (["non", "off", "false", "0", "no"].includes(v)) next.share_prompt_summaries = false
     else throw new UserError(`--share-prompt-summaries : « oui » ou « non » (reçu « ${share} »).`)
   }
+  const meetings = str("screenpipe-meetings")
+  if (meetings !== undefined) {
+    const v = meetings.toLowerCase()
+    if (["oui", "on", "true", "1", "yes"].includes(v)) next.screenpipe_meetings = true
+    else if (["non", "off", "false", "0", "no"].includes(v)) next.screenpipe_meetings = false
+    else throw new UserError(`--screenpipe-meetings : « oui » ou « non » (reçu « ${meetings} »).`)
+  }
   if (!next.url || !next.token) {
     throw new UserError("Première configuration : --url et --token sont obligatoires (ex. init --url https://cerveau.exemple --token cb_…).")
   }
   if (next.url && !/^https?:\/\//.test(next.url)) throw new UserError(`URL invalide : « ${next.url} » (attendu http:// ou https://).`)
   saveConfig(next)
   log(`Configuration enregistrée dans ${paths.config()} (mode 600, jeton ${maskSecret(next.token)}).`)
+  if (claudeToken !== undefined) {
+    log(
+      next.claude_oauth_token
+        ? `Jeton Claude Code enregistré (${maskSecret(next.claude_oauth_token)}) : chaque \`claude -p\` du client (distillation, refresh-status) l'utilise, synchro planifiée comprise. Il reste dans config.json, jamais dans le planificateur.`
+        : "Jeton Claude Code retiré de la config.",
+    )
+  }
 
   const api = new BrainApi(next.url, next.token)
   let code = 0
@@ -62,8 +83,16 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
     code = 1
   }
   if (str("screenpipe-token") || str("screenpipe-url")) {
-    const h = await screenpipeHealth(next.screenpipe_url ?? DEFAULT_SCREENPIPE_URL, next.screenpipe_token)
-    log(`Screenpipe (${next.screenpipe_url}) : ${h.ok ? "OK" : "KO"} — ${h.detail}.`)
+    const spUrl = next.screenpipe_url ?? DEFAULT_SCREENPIPE_URL
+    const h = await screenpipeHealth(spUrl, next.screenpipe_token)
+    log(`Screenpipe (${spUrl}) : ${h.ok ? "OK" : "KO"} — ${h.detail}.`)
+    if (h.ok) {
+      const p = await screenpipeProbe(spUrl, next.screenpipe_token)
+      log(`Screenpipe, lecture des données : ${p.detail}.`)
+      if (p.auth === "token_required") log(`  → affichez le jeton avec \`${TOKEN_COMMAND}\` puis relancez init --screenpipe-token <jeton>.`)
+      if (p.auth === "ok" && p.parsed === false)
+        log("  → activez le contexte sémantique dans Screenpipe (app : Settings → Recording → app context « memory » ; CLI : --enable-semantic-context), utilisez ChatGPT ou Claude quelques minutes, puis relancez `status`.")
+    }
   }
   return code
 }
@@ -88,7 +117,7 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   const cfg = requireConfig()
   const state = loadState()
   const cache = loadCache()
-  log("Cerveau d'entreprise — état du client")
+  log("NOS Brainer — état du client")
   log(`  Script        : ${selfScript()}`)
   log(`  Config        : ${paths.config()}`)
   log(`  Cerveau       : ${cfg.url} (jeton ${maskSecret(cfg.token)})`)
@@ -107,6 +136,11 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   log(`  Codex         : ${codexDir()} (${Object.keys(state.codex?.files ?? {}).length} fichier(s) suivis)`)
   const h = await screenpipeHealth(cfg.screenpipe_url, cfg.screenpipe_token)
   log(`  Screenpipe    : ${cfg.screenpipe_url} — ${h.ok ? "OK" : "KO"} (${h.detail})${cfg.screenpipe_token ? `, jeton ${maskSecret(cfg.screenpipe_token)}` : ""}`)
+  if (h.ok) {
+    const p = await screenpipeProbe(cfg.screenpipe_url, cfg.screenpipe_token)
+    log(`                  données : ${p.detail}${cfg.screenpipe_meetings === false ? " ; réunions non distillées (--screenpipe-meetings non)" : " ; réunions distillées"}`)
+  }
+  log(`  Pipe Screenpipe : ${pipeInstalled() ? `installé (${pipePath()})` : "non installé (install-pipe, si l'application Screenpipe est présente)"}`)
   log(`  Hooks Claude  : ${hooksInstalled() ? "installés" : "non installés"} (${paths.claudeSettings()})`)
   log(
     `  Résumés de prompts : ${cfg.share_prompt_summaries === false ? "désactivés (empreinte seule)" : "envoyés seulement pour les prompts classés dans une zone et non personnels"}`,
@@ -121,5 +155,6 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   const d = pickDistiller(cfg)
   log(`  Distillation  : ${DISTILLER_LABELS[d.kind]} — ${d.reason}`)
   log(`  Clé Anthropic : ${maskSecret(cfg.anthropic_api_key ?? process.env.ANTHROPIC_API_KEY)}`)
+  log(`  Jeton Claude Code : ${cfg.claude_oauth_token ? `${maskSecret(cfg.claude_oauth_token)} (passé à chaque \`claude -p\`)` : "(aucun) — `claude setup-token` puis `init --claude-token <jeton>` pour la synchro planifiée"}`)
   return 0
 }

@@ -7,6 +7,9 @@ import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 import { ErrorText, ZoneTag, zoneColor } from "./ui"
 
+/** Commande du client installé (voir lib/install-prompt.ts) qui fait rédiger l'état par Claude sur le poste, puis l'envoie. */
+const REFRESH_COMMAND = "node ~/.company-brain/brain.mjs refresh-status"
+
 export function StatusPanel({
   status,
   zones,
@@ -23,6 +26,8 @@ export function StatusPanel({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const zone = (id: string) => zones.find((z) => z.id === id)
+  // Spectateur qui ne lit pas toutes les zones : le titre est recalculé sur ses zones par le serveur (pas par Claude).
+  const headlineScoped = zones.some((z) => z.locked)
 
   async function refresh() {
     setBusy(true)
@@ -45,7 +50,19 @@ export function StatusPanel({
           <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">{status?.headline ?? "Pas encore de résumé. Lancez une première génération pour que le cerveau fasse le point."}</p>
           {status && (
             <p className="mt-1 text-[12px] text-trace">
-              Généré <RelTime iso={status.generated_at} now={now} /> {status.generator === "claude" ? "par Claude" : "par l'heuristique locale, sans Claude"}
+              Généré <RelTime iso={status.generated_at} now={now} />{" "}
+              {status.generator !== "claude"
+                ? "par l'heuristique locale, sans Claude"
+                : headlineScoped
+                  ? "à partir des résumés des zones rédigés par Claude"
+                  : "par Claude"}
+            </p>
+          )}
+          {/* Admins : sans clé API sur le serveur, Claude peut rédiger le résumé depuis un poste (abonnement de l'employé). */}
+          {canRefresh && status?.generator !== "claude" && (
+            <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-trace">
+              Pour un résumé rédigé par Claude avec votre abonnement (sans clé API), lancez sur votre poste :{" "}
+              <code className="mono select-all rounded-[4px] bg-bone px-1.5 py-0.5 text-ink [overflow-wrap:anywhere]">{REFRESH_COMMAND}</code>
             </p>
           )}
         </div>

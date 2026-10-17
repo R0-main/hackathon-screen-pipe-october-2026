@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { z } from "zod"
 import { viewerFromRequest, type Viewer } from "./auth"
+import { isStoreSetupError } from "./store"
 
 export function json(data: unknown, init?: number | ResponseInit) {
   return NextResponse.json(data, typeof init === "number" ? { status: init } : init)
@@ -21,10 +22,19 @@ export function withViewer<C = unknown>(handler: Handler<C>, opts: { admin?: boo
       if (opts.admin && viewer.real.role !== "admin") return error(403, "Réservé aux admins.")
       return await handler(req, viewer, ctx)
     } catch (err) {
-      console.error("[api]", err)
-      return error(500, "Erreur interne du cerveau.")
+      return internalError(err)
     }
   }
+}
+
+/** Erreur inattendue d'une route : 503 avec un message clair si le stockage n'est pas prêt (migration…), sinon 500. */
+export function internalError(err: unknown): Response {
+  if (isStoreSetupError(err)) {
+    console.error("[api]", err.message)
+    return error(503, err.message)
+  }
+  console.error("[api]", err)
+  return error(500, "Erreur interne du cerveau.")
 }
 
 export async function parseBody<T extends z.ZodType>(req: Request, schema: T): Promise<{ data: z.infer<T> } | { response: Response }> {

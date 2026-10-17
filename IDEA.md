@@ -1,4 +1,6 @@
-# Cerveau d'entreprise — le « brain » numérique de ta boîte
+# NOS Brainer — le cerveau numérique de ta boîte
+
+> Le nom : un *no-brainer*. Tu colles un prompt dans Claude Code, et ta boîte a un cerveau.
 
 > Hackathon Screenpipe — « Build Agents That Remember », 42 Paris, octobre 2026
 
@@ -18,7 +20,7 @@ Screenpipe devient le **pipe** entre le PC de l'utilisateur, ses agents IA et le
 - Résultat : une première version du cerveau, avant même que quelqu'un ait utilisé l'outil.
 
 ### 2. Onboarding de chaque utilisateur
-- On fournit **un prompt à coller dans Claude Code** qui installe Screenpipe et configure tout (connexion au cerveau, MCP, permissions).
+- On fournit **un prompt à coller dans Claude Code** : une seule commande installe Screenpipe, demande juste les autorisations macOS (écran, et accessibilité en option ; pas de micro), branche le MCP et les hooks, puis **ouvre directement le cerveau** dans le navigateur, où l'on voit le poste s'allumer et le cerveau s'alimenter au fil du travail.
 - Ensuite, rien à faire : **en utilisant simplement Claude / Codex au quotidien**, l'utilisateur alimente le cerveau.
 
 ### 3. Le dashboard

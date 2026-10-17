@@ -3,8 +3,9 @@ import { spawnSync } from "node:child_process"
 import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import { delimiter, join } from "node:path"
 import { test } from "node:test"
-import { applyScheduleEnv } from "../src/config"
+import { applyScheduleEnv, type State } from "../src/config"
 import {
+  baselineSources,
   cronLine,
   hookCommand,
   hooksInstalled,
@@ -162,7 +163,10 @@ test("applyScheduleEnv : complète l'environnement sans écraser, fusionne le PA
 test("prepareSchedule : la synchro planifiée part de maintenant (baseline) et l'environnement est noté dans la config", () => {
   const home = tempDir()
   const prev = process.env.COMPANY_BRAIN_HOME
+  const prevDirs = [process.env.CLAUDE_CONFIG_DIR, process.env.CODEX_HOME]
   process.env.COMPANY_BRAIN_HOME = home
+  process.env.CLAUDE_CONFIG_DIR = tempDir()
+  process.env.CODEX_HOME = tempDir()
   try {
     writeFileSync(join(home, "config.json"), JSON.stringify({ url: "http://x", token: "cb_test_token_123456" }))
     writeFileSync(join(home, "state.json"), JSON.stringify({ claude: { files: { "/a.jsonl": { offset: 10, size: 10, mtime: 1 } } } }))
@@ -179,6 +183,61 @@ test("prepareSchedule : la synchro planifiée part de maintenant (baseline) et l
   } finally {
     if (prev === undefined) delete process.env.COMPANY_BRAIN_HOME
     else process.env.COMPANY_BRAIN_HOME = prev
+    for (const [k, v] of [["CLAUDE_CONFIG_DIR", prevDirs[0]], ["CODEX_HOME", prevDirs[1]]] as const) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  }
+})
+
+test("PRIVACY-8b baselineSources : Screenpipe à maintenant, tous les fichiers Claude / Codex à leur fin, sessions internes repérées", () => {
+  const claude = tempDir()
+  const codex = tempDir()
+  const proj = join(claude, "projects", "p")
+  const day = join(codex, "sessions", "2026", "10", "16")
+  mkdirSync(proj, { recursive: true })
+  mkdirSync(join(proj, "subagents"), { recursive: true })
+  mkdirSync(day, { recursive: true })
+  const l = (o: unknown) => JSON.stringify(o) + "\n"
+  const known = join(proj, "known.jsonl")
+  const fresh = join(proj, "fresh.jsonl")
+  const install = join(proj, "install.jsonl")
+  const partial = join(day, "rollout-a.jsonl")
+  writeFileSync(known, l({ type: "user", message: { role: "user", content: "a" } }) + l({ type: "user", message: { role: "user", content: "b" } }))
+  writeFileSync(fresh, l({ type: "user", message: { role: "user", content: "c" } }))
+  writeFileSync(install, l({ type: "user", message: { role: "user", content: "Tu vas connecter ce poste au cerveau d'entreprise de Fournil." } }) + l({ type: "assistant", message: { role: "assistant", content: "OK" } }))
+  const done = l({ type: "response_item", payload: { type: "message", role: "user", content: "q" } })
+  writeFileSync(partial, done + '{"type":"response_item","payload":{"type":"mess')
+  writeFileSync(join(proj, "subagents", "s.jsonl"), l({ type: "user" }))
+  const state: State = { claude: { files: { [known]: { offset: 3, size: 3, mtime: 1 } } }, screenpipe: { last_timestamp: "2026-10-10T00:00:00.000Z", span_ms: 60000 } }
+  const at = new Date()
+  const r = baselineSources(state, at, { claudeDir: claude, codexDir: codex, secrets: [], brainHome: "/nulle-part" })
+  assert.equal(state.baseline_at, at.toISOString())
+  assert.equal(state.screenpipe?.last_timestamp, at.toISOString())
+  assert.equal(state.screenpipe?.span_ms, 60000)
+  assert.equal(state.claude?.files[known].offset, statSync(known).size)
+  assert.equal(state.claude?.files[fresh].offset, statSync(fresh).size)
+  assert.equal(state.claude?.files[install].internal, true)
+  assert.equal(state.claude?.files[fresh].internal, undefined)
+  // Dernière ligne en cours d'écriture : l'offset s'arrête avant elle.
+  assert.equal(state.codex?.files[partial].offset, Buffer.byteLength(done))
+  assert.equal(Object.keys(state.claude?.files ?? {}).some((f) => f.includes("subagents")), false)
+  assert.deepEqual(r, { files: 4, internal: 1 })
+  // Un checkpoint Screenpipe déjà plus récent n'est pas reculé.
+  const later: State = { screenpipe: { last_timestamp: "2999-01-01T00:00:00.000Z" } }
+  baselineSources(later, at, { claudeDir: tempDir(), codexDir: tempDir() })
+  assert.equal(later.screenpipe?.last_timestamp, "2999-01-01T00:00:00.000Z")
+})
+
+test("F-claude-token : le jeton Claude Code n'est jamais écrit dans le crontab, le plist ni schedule_env", () => {
+  const token = ["sk-ant-", "oat01-", "Zq9", "y".repeat(40)].join("")
+  const env = scheduleEnv({ PATH: "/usr/bin", CLAUDE_CODE_OAUTH_TOKEN: token, ANTHROPIC_API_KEY: token }, "/usr/local/bin/node", "/h/.company-brain")
+  assert.deepEqual(Object.keys(env).sort(), ["COMPANY_BRAIN_HOME", "PATH"])
+  const cron = cronLine("/usr/local/bin/node", "/h/brain.mjs", "/h/.company-brain", env)
+  const plist = launchdPlist("/usr/local/bin/node", "/h/brain.mjs", "/h/.company-brain", env)
+  for (const text of [cron, plist, JSON.stringify(env)]) {
+    assert.ok(!text.includes(token))
+    assert.ok(!text.includes("CLAUDE_CODE_OAUTH_TOKEN"))
   }
 })
 

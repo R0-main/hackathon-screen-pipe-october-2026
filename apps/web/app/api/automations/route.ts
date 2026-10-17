@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { redactText, truncate } from "@brain/core"
 import { getStore } from "@/lib/store"
 import { json, parseBody, withViewer } from "@/lib/http"
 
@@ -27,18 +28,24 @@ const WorkflowSchema = z.object({
     .max(50),
 })
 
-/** brain-sync remonte ici les workflows répétitifs détectés en local par Screenpipe. */
+/**
+ * brain-sync remonte ici les workflows répétitifs détectés en local par Screenpipe. Titre, description et horaire sont
+ * re-masqués côté serveur (secrets, emails, numéros…), même si le poste l'a déjà fait (anciens clients).
+ */
 export const POST = withViewer(async (req, viewer) => {
   const body = await parseBody(req, WorkflowSchema)
   if ("response" in body) return body.response
-  const saved = await getStore().upsertAutomations(
+  const store = getStore()
+  const known = new Set((await store.listZones()).map((z) => z.id))
+  const clean = (s: string, max: number) => truncate(redactText(s), max)
+  const saved = await store.upsertAutomations(
     body.data.workflows.map((w) => ({
       key: `screenpipe:${viewer.real.id}:${w.id}`,
       user_id: viewer.real.id,
-      zone: w.zone,
-      title: w.title,
-      description: w.description || `Workflow répétitif détecté par Screenpipe sur le poste de ${viewer.real.name}.`,
-      schedule: w.schedule,
+      zone: w.zone && known.has(w.zone) ? w.zone : undefined,
+      title: clean(w.title, 200),
+      description: w.description ? clean(w.description, 1000) : `Workflow répétitif détecté par Screenpipe sur le poste de ${viewer.real.name}.`,
+      schedule: w.schedule ? clean(w.schedule, 120) : undefined,
       evidence: { occurrences: w.occurrences, days: w.days },
       minutes_saved_per_week: w.minutes_saved_per_week,
       source: "screenpipe" as const,

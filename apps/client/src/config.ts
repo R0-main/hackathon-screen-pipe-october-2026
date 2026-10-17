@@ -18,10 +18,14 @@ export type Config = {
   screenpipe_url: string
   screenpipe_token?: string
   anthropic_api_key?: string
+  /** Jeton Claude Code longue durée (`claude setup-token`) : passé à chaque `claude -p` (CLAUDE_CODE_OAUTH_TOKEN). */
+  claude_oauth_token?: string
   use_claude_cli: boolean
   sources: SourceName[]
   app_whitelist?: string[]
   screenpipe_content_types?: string[]
+  /** Réunions Screenpipe (transcriptions) distillées comme les sessions IA (défaut : oui). */
+  screenpipe_meetings?: boolean
   /** Hook UserPromptSubmit : envoyer un court résumé masqué des prompts classés dans une zone (défaut : oui). */
   share_prompt_summaries?: boolean
   /** Environnement relevé par install-schedule, réappliqué par `sync --scheduled` (utile sous Windows). */
@@ -44,9 +48,17 @@ export type State = {
     seen?: Record<string, SeenLines>
     /** Taille de fenêtre de lecture apprise quand Screenpipe ne donne pas le total (ms). */
     span_ms?: number
+    /** Fin de la dernière réunion distillée : les réunions terminées avant sont faites. */
+    meetings_last_end?: string
   }
   /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
   baseline_at?: string
+  /**
+   * Conversations que Claude n'a pas su distiller (elles passent après les autres). n : essais probants (le modèle a
+   * répondu, ou Claude a répondu à un autre appel de la synchro), abandon à MAX_DISTILL_ATTEMPTS ; tries : tous les essais
+   * décomptés, probants ou non, depuis first_at (garde-fou : abandon après 24 h et 5 essais) ; at : dernier échec.
+   */
+  distill_failures?: Record<string, { n: number; at: string; error?: string; tries?: number; first_at?: string }>
   last_sync?: {
     at: string
     distiller: string
@@ -129,6 +141,7 @@ export function withDefaults(raw: Partial<Config>): Partial<Config> {
     screenpipe_url: DEFAULT_SCREENPIPE_URL,
     use_claude_cli: true,
     share_prompt_summaries: true,
+    screenpipe_meetings: true,
     sources: [...SOURCE_NAMES],
     ...raw,
     url: raw.url?.replace(/\/+$/, ""),

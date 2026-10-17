@@ -100,11 +100,12 @@ type AgentEvent = {
 5. *(Stretch)* Connecteurs Notion et Calendar.
 
 ### 2. Onboarding employé (le « prompt magique »)
-L'admin invite quelqu'un → la personne reçoit **un prompt à coller dans Claude Code**, qui :
-- installe et lance Screenpipe s'il est absent, puis récupère le token local ;
-- installe le pipe `brain-sync` avec la clé de l'org et l'ID utilisateur ;
-- ajoute le MCP `company-brain` et les hooks dans la config Claude Code ;
-- fait un test de bout en bout (un événement « hello » qui s'allume sur le dashboard).
+L'admin invite quelqu'un → la personne reçoit **un prompt à coller dans Claude Code**, qui lance une seule commande,
+`brain.mjs setup` (détail et autorisations : [install/PROMPT.md](install/PROMPT.md)) :
+- installe et lance Screenpipe s'il est absent (CLI officiel en service, micro coupé), puis récupère le token local ;
+- ouvre les bons Réglages macOS et reprend tout seul dès que l'Enregistrement de l'écran (et l'Accessibilité, facultative) est accordé ;
+- ajoute le MCP `company-brain` et les hooks dans la config Claude Code, planifie `brain-sync` toutes les 15 min ;
+- fait un test de bout en bout (un événement « hello » qui s'allume) et ouvre le dashboard déjà connecté (lien de connexion de 2 min).
 
 ### 3. Capture → cerveau (`brain-sync`, toutes les 15-30 min)
 1. `GET /search?content_type=parsed&start_time=<dernier checkpoint>` filtré sur les apps IA (Claude, Terminal/iTerm pour Claude Code, Codex, onglets ChatGPT/Claude du navigateur), avec un fallback `accessibility`.
@@ -170,5 +171,7 @@ Le code suit les contrats ci-dessus (`KnowledgeItem`, `AgentEvent`, tables) avec
 | react-force-graph | SVG maison : deux hémisphères découpés en zones (Voronoï), neurones = entités, synapses = entités partagées | Effet « néon » maîtrisé et lisible en démo. |
 
 Détection d'automatisations : les hooks envoient une **empreinte** du prompt normalisé (dates et nombres neutralisés) et un résumé masqué de 160 caractères. Une suggestion naît quand la même personne lance le même prompt sur au moins 3 jours, avec au moins 80 % des journées à ±40 min de l'heure médiane (fuseau `BRAIN_TIMEZONE`, Europe/Paris par défaut). Les workflows détectés par Screenpipe peuvent aussi être remontés (`POST /api/automations`).
+
+Robustesse de la synchro : chaque source garde son checkpoint et les conversations en attente. Une panne (limite d'abonnement, surcharge, réseau, jeton expiré) n'est jamais comptée contre une conversation ; une conversation n'est abandonnée qu'après 3 échecs avérés (ou 5 essais sur 24 h si Claude ne répond plus du tout), pour que le checkpoint avance sans perdre de données sur une simple panne.
 
 Étapes suivantes : connecteurs Notion / Calendar / Todoist, pgvector, interview d'onboarding vocale, consentement et durée de conservation (RGPD), exécution réelle des automatisations validées.

@@ -12,6 +12,8 @@ npm run simulate -- --speed 1.5  # 2e terminal, à lancer au moment voulu (Ctrl-
 
 Onglets à préparer : le dashboard connecté en **Claire (CEO, admin)**, `/admin`, et un terminal avec Claude Code sur un vrai projet si un poste est branché.
 
+Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données fictives, amorcées automatiquement sur une base vide).
+
 ## Déroulé
 
 1. **Le problème (30 s).** « Chez Fournil, tout le monde bosse avec Claude Code ou ChatGPT. Mais quand Hugo trouve comment déployer, ou que Jean-Marc met au point son rapprochement bancaire, ce savoir reste dans leur session. »
@@ -23,11 +25,11 @@ Onglets à préparer : le dashboard connecté en **Claire (CEO, admin)**, `/admi
 
 4. **Les accès par zone (60 s).** Dans la barre du haut : « Voir en tant que : Jean-Marc Dubois ». Le cerveau se verrouille sauf la Compta. Demander « comment déployer en production ? » → rien, et le bandeau indique que la zone Dev pourrait en savoir plus mais lui est fermée. Demander « rapprochement Qonto » → la procédure, et seule la zone Compta s'allume. Revenir en admin.
 
-5. **Où en est la boîte (45 s).** Bouton « Rafraîchir l'état » (Claude si `ANTHROPIC_API_KEY`) : objectifs, avancement, prochaines étapes et qui a fait quoi, par zone.
+5. **Où en est la boîte (45 s).** Objectifs, avancement, prochaines étapes et qui a fait quoi, par zone. Pour une version rédigée par Claude avec ton abonnement : lancer avant la démo `node ~/.company-brain/brain.mjs refresh-status` sur le poste admin (le bouton « Rafraîchir l'état » recalcule la version heuristique côté serveur). Montrer aussi « Voir en tant que : Jean-Marc » : Jean-Marc ne reçoit que la compta, avec un titre calculé sur sa zone.
 
 6. **L'automatisation (45 s).** La carte verte : « Jean-Marc lance ce prompt presque chaque jour vers 9h07 (6 jours sur 6) → l'exécuter automatiquement à 9h02 ». Détectée à partir des empreintes de prompts envoyées par les hooks, sans stocker le texte brut. « Mettre en place ».
 
-7. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, son remplaçant récupère ça. »
+7. **La passation (30 s).** `/admin` → « Passation » sur Hugo : ses zones, ses outils, ses prompts récurrents et ses connaissances. « Le jour où Hugo part en congé, la personne qui remplace Hugo récupère ça. »
 
 ## Phrases clés
 

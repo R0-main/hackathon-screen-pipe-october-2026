@@ -1,11 +1,16 @@
-// Installation locale : hooks Claude Code (settings.json), synchro planifiée (launchd / crontab / schtasks), désinstallation.
+// Installation locale : hooks Claude Code (settings.json), synchro planifiée (launchd / crontab / schtasks),
+// pipe Screenpipe « brain-sync » (~/.screenpipe/pipes), désinstallation.
 
 import { spawnSync } from "node:child_process"
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
-import { brainHome, loadPartialConfig, loadState, paths, saveConfig, saveState, selfScript } from "./config"
+import { DISTILL_MARKER } from "@brain/core"
+import { brainHome, claudeDir, codexDir, loadPartialConfig, loadState, paths, saveConfig, saveState, selfScript, type FileCheckpoint, type State } from "./config"
 import { findOnPath } from "./distill"
+import { isBrainSetupText, ownSecrets } from "./secrets"
+import { completeLinesEnd, listJsonlFiles } from "./sources/jsonl"
+import { uninstallScreenpipeService } from "./screenpipe-cli"
 
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const
 export const HOOK_TIMEOUT_S = 5
@@ -251,21 +256,89 @@ export function windowsTaskArgs(execPath = process.execPath, script = selfScript
   return ["/Create", "/SC", "MINUTE", "/MO", "15", "/TN", WINDOWS_TASK, "/TR", tr, "/F"]
 }
 
+const RECENT_MS = 24 * 3_600_000
+const MAX_SCAN_BYTES = 64 * 1024 * 1024
+
+/** Session interne (nos `claude -p`, la session d'installation, un secret du poste collé) : jamais remontée, même sa suite. */
+function looksInternalFile(file: string, secrets: string[], home: string): boolean {
+  try {
+    const st = statSync(file)
+    if (Date.now() - st.mtimeMs > RECENT_MS || st.size > MAX_SCAN_BYTES) return false
+    const buf = Buffer.alloc(st.size)
+    const fd = openSync(file, "r")
+    try {
+      readSync(fd, buf, 0, st.size, 0)
+    } finally {
+      closeSync(fd)
+    }
+    const text = buf.toString("utf8")
+    return text.includes(DISTILL_MARKER) || isBrainSetupText(text, secrets) || text.includes(`"cwd":${JSON.stringify(home)}`)
+  } catch {
+    return false
+  }
+}
+
 /**
- * Avant de planifier : la synchro automatique part de maintenant (rien d'antérieur qui n'ait été relu ne partira tout
- * seul) et l'environnement courant est noté dans config.json pour `sync --scheduled`.
+ * Point de départ de la synchro planifiée, pour TOUTES les sources : checkpoint Screenpipe à `at` (même s'il était plus
+ * ancien, ou absent) et offsets de tous les fichiers Claude Code / Codex à leur fin actuelle. Ce qui précède n'a pas été
+ * relu dans la simulation (ou y était reporté, ou tronqué) : il ne partira jamais tout seul.
+ */
+export function baselineSources(
+  state: State,
+  at = new Date(),
+  opts: { claudeDir?: string; codexDir?: string; secrets?: string[]; brainHome?: string } = {},
+): { files: number; internal: number } {
+  const iso = at.toISOString()
+  state.baseline_at = iso
+  state.screenpipe ??= {}
+  if (!state.screenpipe.last_timestamp || state.screenpipe.last_timestamp < iso) state.screenpipe.last_timestamp = iso
+  const home = opts.brainHome ?? brainHome()
+  let files = 0
+  let internal = 0
+  const roots: ["claude" | "codex", string[]][] = [
+    ["claude", listJsonlFiles(join(opts.claudeDir ?? claudeDir(), "projects"), (name) => name === "subagents")],
+    ["codex", listJsonlFiles(join(opts.codexDir ?? codexDir(), "sessions"))],
+  ]
+  for (const [source, list] of roots) {
+    for (const file of list) {
+      const end = completeLinesEnd(file)
+      if (!end) continue
+      state[source] ??= { files: {} }
+      const prev = state[source]!.files[file]
+      const isInternal = Boolean(prev?.internal) || looksInternalFile(file, opts.secrets ?? [], home)
+      const cp: FileCheckpoint = { offset: prev && prev.offset > end.offset && prev.offset <= end.size ? prev.offset : end.offset, size: end.size, mtime: end.mtime }
+      if (isInternal) {
+        cp.internal = true
+        internal++
+      }
+      state[source]!.files[file] = cp
+      files++
+    }
+  }
+  return { files, internal }
+}
+
+/**
+ * Avant de planifier : la synchro automatique part de maintenant pour toutes les sources (rien d'antérieur qui n'ait été
+ * relu ne partira tout seul) et l'environnement courant est noté dans config.json pour `sync --scheduled`.
  */
 export function prepareSchedule(env: Record<string, string>, log: (s: string) => void = console.log) {
-  const state = loadState()
-  state.baseline_at = new Date().toISOString()
-  saveState(state)
   const cfg = loadPartialConfig()
+  const state = loadState()
+  const b = baselineSources(state, new Date(), { secrets: ownSecrets(cfg) })
+  saveState(state)
   if (cfg.url && cfg.token) saveConfig({ ...cfg, schedule_env: env })
-  log("La synchro planifiée part de maintenant : elle n'envoie que l'activité à venir, jamais l'historique non relu.")
+  log(
+    `La synchro planifiée part de maintenant : elle n'envoie que l'activité à venir, jamais l'historique non relu` +
+      ` (Screenpipe à partir de maintenant, ${b.files} fichier(s) Claude Code / Codex repris à leur fin actuelle).`,
+  )
   const claude = findOnPath("claude", env.PATH ?? "")
   if (cfg.anthropic_api_key) log("Distillation planifiée : Claude (API Anthropic), clé enregistrée dans la config.")
-  else if (cfg.use_claude_cli !== false && claude) log(`Distillation planifiée : Claude Code en local (\`claude -p\`, ${claude}).`)
-  else log(`Distillation planifiée : heuristique locale (${cfg.use_claude_cli === false ? "CLI Claude désactivée" : "CLI `claude` introuvable dans le PATH transmis"}).`)
+  else if (cfg.use_claude_cli !== false && claude) {
+    log(`Distillation planifiée : Claude Code en local (\`claude -p\`, ${claude})${cfg.claude_oauth_token ? ", avec le jeton Claude Code de la config" : ""}.`)
+    if (!cfg.claude_oauth_token)
+      log("Si la synchro planifiée n'arrive pas à utiliser votre session Claude Code : `claude setup-token`, puis `init --claude-token <jeton>` (le jeton reste dans config.json).")
+  } else log(`Distillation planifiée : heuristique locale (${cfg.use_claude_cli === false ? "CLI Claude désactivée" : "CLI `claude` introuvable dans le PATH transmis"}).`)
   if (!cfg.anthropic_api_key && process.env.ANTHROPIC_API_KEY) {
     log("ANTHROPIC_API_KEY n'est pas transmise à la synchro planifiée (elle n'est jamais écrite dans le planificateur) : `init --anthropic-key <clé>` pour l'utiliser.")
   }
@@ -360,6 +433,80 @@ export function uninstallSchedule(log: (s: string) => void = console.log) {
   log(w.ok ? "Ligne company-brain retirée du crontab." : `Impossible de modifier le crontab (${w.stderr.trim()}) : retirez la ligne « brain.mjs sync » avec \`crontab -e\`.`)
 }
 
+// --- Pipe Screenpipe ------------------------------------------------------------------------------------------------
+
+export const PIPE_NAME = "brain-sync"
+/** Reconnaît notre pipe par son titre et sa commande, quel que soit le chemin du script (brain.mjs ou source). */
+export const PIPE_TITLE = "Cerveau d'entreprise, synchro"
+
+/** Commande CLI Screenpipe (celle du skill officiel ; `bun x` marche aussi). */
+export const SCREENPIPE_CLI = "npx -y screenpipe@latest"
+
+/** Dossier de Screenpipe (~/.screenpipe), surchargeable pour les tests. */
+export function screenpipeDir(): string {
+  return resolve(process.env.COMPANY_BRAIN_SCREENPIPE_DIR ?? join(homedir(), ".screenpipe"))
+}
+
+export function pipePath(): string {
+  return join(screenpipeDir(), "pipes", PIPE_NAME, "pipe.md")
+}
+
+/**
+ * Le pipe : Screenpipe exécute ce prompt toutes les 15 minutes et à la fin de chaque réunion, avec un jeton borné
+ * aux lectures listées (permissions.allow) et le masquage natif (privacy_filter). Il ne fait que lancer brain-sync.
+ */
+export function pipeMarkdown(execPath = process.execPath, script = selfScript(), home = brainHome()): string {
+  return `---
+schedule: every 15m
+enabled: true
+title: ${PIPE_TITLE}
+description: Distille les sessions IA et les réunions de ce poste vers le cerveau partagé (rien de brut ne quitte le poste)
+trigger:
+  events:
+    - meeting_ended
+permissions:
+  allow:
+    - Api(GET /search)
+    - Api(GET /meetings)
+    - Api(GET /meetings/*)
+    - Api(GET /workflows)
+    - Api(GET /workflows/*)
+privacy_filter: true
+---
+
+Lance exactement cette commande dans un shell, puis rapporte sa sortie en une ou deux phrases (connaissances envoyées,
+avertissements). Ne lis aucune donnée toi-même, n'envoie rien ailleurs, ne modifie aucun fichier. Si la commande échoue,
+rapporte l'erreur telle quelle.
+
+\`"${execPath}" "${script}" sync --scheduled --home "${home}"\`
+`
+}
+
+export function pipeInstalled(file = pipePath()): boolean {
+  try {
+    if (!existsSync(file)) return false
+    const text = readFileSync(file, "utf8")
+    return text.includes(`title: ${PIPE_TITLE}`) && /\bsync --scheduled\b/.test(text)
+  } catch {
+    return false
+  }
+}
+
+export function installPipe(log: (s: string) => void = console.log, file = pipePath()): string {
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, pipeMarkdown())
+  log(`Pipe « ${PIPE_NAME} » écrit dans ${file}.`)
+  log(`Activer : ${SCREENPIPE_CLI} pipe enable ${PIPE_NAME} — tester : ${SCREENPIPE_CLI} pipe run ${PIPE_NAME} — journaux : ${SCREENPIPE_CLI} pipe logs ${PIPE_NAME}`)
+  log("Il faut l'application Screenpipe (le moteur de pipes) ; avec le CLI seul, la synchro planifiée de install-schedule suffit.")
+  return file
+}
+
+export function uninstallPipe(log: (s: string) => void = console.log, file = pipePath()) {
+  if (!pipeInstalled(file)) return log("Pipe Screenpipe : rien à retirer.")
+  rmSync(dirname(file), { recursive: true, force: true })
+  log(`Pipe « ${PIPE_NAME} » retiré de Screenpipe.`)
+}
+
 export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = console.log) {
   try {
     uninstallHooks(log)
@@ -367,9 +514,19 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
     log(`Hooks : ${(err as Error).message}`)
   }
   try {
+    uninstallPipe(log)
+  } catch (err) {
+    log(`Pipe Screenpipe : ${(err as Error).message}`)
+  }
+  try {
     uninstallSchedule(log)
   } catch (err) {
     log(`Planification : ${(err as Error).message}`)
+  }
+  try {
+    uninstallScreenpipeService(log)
+  } catch (err) {
+    log(`Screenpipe : ${(err as Error).message}`)
   }
   const r = spawnSync("claude", ["mcp", "remove", "company-brain", "--scope", "user"], {
     encoding: "utf8",

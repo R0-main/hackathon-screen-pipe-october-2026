@@ -61,11 +61,11 @@ export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
     if (req.method === "POST" && path === "/api/ingest") {
       ingestCalls++
       if (opts.failIngestAt?.includes(ingestCalls)) return { status: 500, body: { error: "panne simulée" } }
-      const items = (req.body as { items: { zone: string; title: string }[] }).items
+      const items = (req.body as { items: { zone: string; title: string; body: string }[] }).items
       received.push(...items)
-      // Comme le vrai cerveau : un item déjà reçu (même zone, même titre) est ignoré et compté dans `skipped`.
+      // Comme le vrai cerveau (E1) : un item déjà reçu (même zone, même titre ET même contenu) est ignoré, compté dans `skipped`.
       const fresh = items.filter((i) => {
-        const k = `${i.zone}:${i.title.toLowerCase()}`
+        const k = JSON.stringify([i.zone, i.title.toLowerCase().trim(), (i.body ?? "").replace(/\s+/g, " ").toLowerCase().trim()])
         if (keys.has(k)) return false
         keys.add(k)
         return true

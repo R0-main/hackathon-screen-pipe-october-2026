@@ -2,11 +2,15 @@
 
 import type { Conversation, ZoneHint } from "./distill"
 import { renderConversation } from "./distill"
+import type { StatusInput } from "./status"
+import { truncate } from "./text"
 
 export const DISTILL_MARKER = "[company-brain:distill]"
 
 export const DISTILL_SYSTEM = `Tu alimentes le « cerveau » d'une entreprise : une base de connaissances partagée entre les équipes.
-On te donne une session de travail entre un employé et un assistant IA (Claude Code, Codex, ChatGPT…), déjà filtrée sur le poste.
+On te donne une session de travail entre un employé et un assistant IA (Claude Code, Codex, ChatGPT…), déjà filtrée sur le poste,
+ou la transcription d'une réunion (outil « meeting », lignes « Prénom : texte »). Pour une réunion, les décisions, les engagements
+(qui fait quoi, pour quand) et les faits annoncés priment ; une opinion en l'air n'est pas une décision.
 Ton travail : en extraire uniquement la connaissance RÉUTILISABLE par l'entreprise.
 
 À garder :
@@ -70,11 +74,53 @@ Sans texte autour, sans bloc de code.`
 }
 
 export const STATUS_SYSTEM = `Tu rédiges l'écran « Où en est la boîte ? » du cerveau d'une entreprise, pour ses dirigeants.
-À partir des connaissances récentes et des tâches de chaque zone, tu produis :
-- headline : 1 à 2 phrases sur l'état global de l'entreprise cette semaine ;
+On te donne, zone par zone, les connaissances récentes et les tâches de chaque zone. Tu produis :
+- headline : 1 à 2 phrases sur l'état global de l'entreprise ; c'est le seul endroit où tu peux résumer l'ensemble des zones ;
 - pour chaque zone fournie : summary (2 phrases max), objectives (0 à 3), progress (une phrase sur l'avancement),
   next_steps (0 à 3 prochaines étapes concrètes), who_did_what (qui a fait quoi, 0 à 4 lignes, avec le prénom de la personne).
-Factuel, en français, sans inventer : si une zone est vide, dis-le simplement.`
+Cloisonnement strict : la section d'une zone s'appuie UNIQUEMENT sur les connaissances et les tâches listées sous cette zone.
+N'y cite jamais un fait, un chiffre, un client ou une personne qui n'apparaît que dans une autre zone : certains lecteurs
+ne voient que quelques zones.
+Factuel, en français, sans inventer : si une zone est vide, dis-le simplement.
+Formulations neutres : ne présume jamais du genre d'une personne (pas d'accord au féminin ou au masculin deviné d'après un prénom).`
+
+/** Corps du prompt de résumé : entreprise, date, puis une section par zone avec SES connaissances et SES tâches. */
+export function buildStatusPrompt(input: StatusInput): string {
+  const sections = input.zones.map((z) => {
+    const items = input.items
+      .filter((i) => i.zone === z.id)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 40)
+      .map((i) => `- [${i.kind}] ${truncate(i.title, 160)} — ${truncate(i.body.replace(/\s+/g, " "), 220)} (par ${i.author}, ${i.created_at.slice(0, 10)})`)
+    const tasks = input.tasks
+      .filter((t) => t.zone === z.id)
+      .sort((a, b) => Number(a.status === "done") - Number(b.status === "done"))
+      .slice(0, 20)
+      .map((t) => `- [${t.status === "done" ? "fait" : "à faire"}] ${truncate(t.title, 160)}${t.assignee ? ` (${t.assignee})` : ""}`)
+    return (
+      `## Zone ${z.id} (${z.name})${z.description ? ` — ${z.description}` : ""}\n` +
+      `Connaissances récentes de cette zone :\n${items.join("\n") || "(aucune)"}\n` +
+      `Tâches de cette zone :\n${tasks.join("\n") || "(aucune)"}`
+    )
+  })
+  return `Entreprise : ${input.company_name}\nDate : ${input.generated_for}\n\n${sections.join("\n\n")}`
+}
+
+/**
+ * Version « texte » pour `claude -p` sur le poste d'un admin (abonnement Claude, sans clé API).
+ * Commence par DISTILL_MARKER : brain-sync n'ingère jamais cette session.
+ */
+export function buildCliStatusPrompt(input: StatusInput): string {
+  return `${DISTILL_MARKER}
+${STATUS_SYSTEM}
+
+${buildStatusPrompt(input)}
+
+Réponds UNIQUEMENT avec un objet JSON de la forme :
+{"headline":"…","zones":[{"zone":"<id>","summary":"…","objectives":["…"],"progress":"…","next_steps":["…"],"who_did_what":[{"person":"…","did":"…"}]}]}
+Une entrée par zone fournie, avec son identifiant exact (${input.zones.map((z) => z.id).join(", ") || "aucune zone"}).
+Sans texte autour, sans bloc de code.`
+}
 
 export const ONBOARDING_SYSTEM = `Tu construis la première version du « cerveau » d'une entreprise à partir d'une interview de son dirigeant
 et du contenu de quelques pages web qu'il a fournies.
