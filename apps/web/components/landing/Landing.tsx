@@ -7,6 +7,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
 import { BrainIcon, ZoneTag, zoneColor } from "../ui"
+import { InstallActions } from "./InstallActions"
 import { ScrollBrain } from "./ScrollBrain"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
 
@@ -118,7 +119,7 @@ export function Landing({ demo }: { demo: boolean }) {
             <nav className="landing-wrap flex items-center justify-between py-4" aria-label="Principal">
               <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
                 <BrainIcon size={26} />
-                <span className="text-[15px] font-medium">Cerveau d'entreprise</span>
+                <span className="text-[15px] font-medium">NOS Brainer</span>
               </Link>
               <div className="flex items-center gap-2">
                 {demo && (
@@ -193,7 +194,7 @@ export function Landing({ demo }: { demo: boolean }) {
       </section>
 
       <Dashboard />
-      <Install />
+      <Install demo={demo} />
       <Privacy />
       <Close primary={primary} demo={demo} />
     </main>
@@ -256,22 +257,7 @@ function Dashboard() {
   )
 }
 
-const PROMPT_EXCERPT = `Tu vas connecter ce poste au cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois.
-Fais chaque étape dans l'ordre, vérifie qu'elle a marché, et explique-moi brièvement ce que tu fais.
-
-Paramètres :
-- URL du cerveau : https://cerveau.example.com
-- Mon jeton personnel : cb_XXXXXXXXXXXXXXXXXXXXXXXX
-- Zones auxquelles j'ai accès : compta
-
-1. Prérequis : vérifie que Node.js ≥ 20 est installé.
-2. Client du cerveau : télécharge brain.mjs et lance init.
-3. Test de connexion : brain.mjs hello, mon néon doit s'allumer.
-4. Screenpipe : vérifie qu'il tourne, sinon installe-le.
-5. MCP company-brain, pour que mes agents interrogent le cerveau.
-6. Hooks Claude Code, pour que le cerveau s'allume quand je travaille.`
-
-function Install() {
+function Install({ demo }: { demo: boolean }) {
   return (
     <section className="landing-section border-t border-line" aria-labelledby="installer">
       <div className="landing-wrap">
@@ -280,13 +266,13 @@ function Install() {
         </h2>
         <div className="mt-12 grid gap-10 lg:mt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
           <div className="max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-            <p>L'admin invite quelqu'un et le dashboard génère son prompt, avec son jeton personnel. Claude Code installe le client, Screenpipe, le MCP et les hooks en expliquant chaque étape.</p>
-            <p className="mt-4">Rien ne part avant que la personne ait relu exactement ce qui serait envoyé et dit oui. Ensuite, elle n'a plus rien à faire.</p>
+            <p>
+              Le prompt contient votre jeton personnel. Claude Code lance une seule commande : elle installe Screenpipe, branche le MCP et les hooks, puis ouvre le
+              cerveau déjà connecté.
+            </p>
+            <p className="mt-4">Aucun historique n'est envoyé : le cerveau apprend à partir de l'installation. Ensuite, il n'y a plus rien à faire.</p>
           </div>
-          <figure>
-            <pre className="landing-prompt mono">{PROMPT_EXCERPT}</pre>
-            <figcaption className="mt-3 text-[12px] text-trace">Extrait du prompt d'installation, jeton fictif.</figcaption>
-          </figure>
+          <InstallActions demo={demo} />
         </div>
       </div>
     </section>
@@ -388,7 +374,7 @@ function Close({ primary, demo }: { primary: string; demo: boolean }) {
         </div>
       </div>
       <footer className="landing-wrap mt-[clamp(96px,12vw,160px)] flex flex-col gap-2 border-t border-line pt-6 text-[13px] text-trace sm:flex-row sm:justify-between">
-        <span>Cerveau d'entreprise</span>
+        <span>NOS Brainer</span>
         <span>Fait à 42 Paris pendant le hackathon Screenpipe, octobre 2026.</span>
       </footer>
     </section>
