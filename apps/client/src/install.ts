@@ -1,4 +1,5 @@
-// Installation locale : hooks Claude Code (settings.json), synchro planifiée (launchd / crontab / schtasks), désinstallation.
+// Installation locale : hooks Claude Code (settings.json), synchro planifiée (launchd / crontab / schtasks),
+// pipe Screenpipe « brain-sync » (~/.screenpipe/pipes), désinstallation.
 
 import { spawnSync } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
@@ -6,6 +7,7 @@ import { homedir } from "node:os"
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import { brainHome, loadPartialConfig, loadState, paths, saveConfig, saveState, selfScript } from "./config"
 import { findOnPath } from "./distill"
+import { uninstallScreenpipeService } from "./screenpipe-cli"
 
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const
 export const HOOK_TIMEOUT_S = 5
@@ -360,6 +362,80 @@ export function uninstallSchedule(log: (s: string) => void = console.log) {
   log(w.ok ? "Ligne company-brain retirée du crontab." : `Impossible de modifier le crontab (${w.stderr.trim()}) : retirez la ligne « brain.mjs sync » avec \`crontab -e\`.`)
 }
 
+// --- Pipe Screenpipe ------------------------------------------------------------------------------------------------
+
+export const PIPE_NAME = "brain-sync"
+/** Reconnaît notre pipe par son titre et sa commande, quel que soit le chemin du script (brain.mjs ou source). */
+export const PIPE_TITLE = "Cerveau d'entreprise, synchro"
+
+/** Commande CLI Screenpipe (celle du skill officiel ; `bun x` marche aussi). */
+export const SCREENPIPE_CLI = "npx -y screenpipe@latest"
+
+/** Dossier de Screenpipe (~/.screenpipe), surchargeable pour les tests. */
+export function screenpipeDir(): string {
+  return resolve(process.env.COMPANY_BRAIN_SCREENPIPE_DIR ?? join(homedir(), ".screenpipe"))
+}
+
+export function pipePath(): string {
+  return join(screenpipeDir(), "pipes", PIPE_NAME, "pipe.md")
+}
+
+/**
+ * Le pipe : Screenpipe exécute ce prompt toutes les 15 minutes et à la fin de chaque réunion, avec un jeton borné
+ * aux lectures listées (permissions.allow) et le masquage natif (privacy_filter). Il ne fait que lancer brain-sync.
+ */
+export function pipeMarkdown(execPath = process.execPath, script = selfScript(), home = brainHome()): string {
+  return `---
+schedule: every 15m
+enabled: true
+title: ${PIPE_TITLE}
+description: Distille les sessions IA et les réunions de ce poste vers le cerveau partagé (rien de brut ne quitte le poste)
+trigger:
+  events:
+    - meeting_ended
+permissions:
+  allow:
+    - Api(GET /search)
+    - Api(GET /meetings)
+    - Api(GET /meetings/*)
+    - Api(GET /workflows)
+    - Api(GET /workflows/*)
+privacy_filter: true
+---
+
+Lance exactement cette commande dans un shell, puis rapporte sa sortie en une ou deux phrases (connaissances envoyées,
+avertissements). Ne lis aucune donnée toi-même, n'envoie rien ailleurs, ne modifie aucun fichier. Si la commande échoue,
+rapporte l'erreur telle quelle.
+
+\`"${execPath}" "${script}" sync --scheduled --home "${home}"\`
+`
+}
+
+export function pipeInstalled(file = pipePath()): boolean {
+  try {
+    if (!existsSync(file)) return false
+    const text = readFileSync(file, "utf8")
+    return text.includes(`title: ${PIPE_TITLE}`) && /\bsync --scheduled\b/.test(text)
+  } catch {
+    return false
+  }
+}
+
+export function installPipe(log: (s: string) => void = console.log, file = pipePath()): string {
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, pipeMarkdown())
+  log(`Pipe « ${PIPE_NAME} » écrit dans ${file}.`)
+  log(`Activer : ${SCREENPIPE_CLI} pipe enable ${PIPE_NAME} — tester : ${SCREENPIPE_CLI} pipe run ${PIPE_NAME} — journaux : ${SCREENPIPE_CLI} pipe logs ${PIPE_NAME}`)
+  log("Il faut l'application Screenpipe (le moteur de pipes) ; avec le CLI seul, la synchro planifiée de install-schedule suffit.")
+  return file
+}
+
+export function uninstallPipe(log: (s: string) => void = console.log, file = pipePath()) {
+  if (!pipeInstalled(file)) return log("Pipe Screenpipe : rien à retirer.")
+  rmSync(dirname(file), { recursive: true, force: true })
+  log(`Pipe « ${PIPE_NAME} » retiré de Screenpipe.`)
+}
+
 export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = console.log) {
   try {
     uninstallHooks(log)
@@ -367,9 +443,19 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
     log(`Hooks : ${(err as Error).message}`)
   }
   try {
+    uninstallPipe(log)
+  } catch (err) {
+    log(`Pipe Screenpipe : ${(err as Error).message}`)
+  }
+  try {
     uninstallSchedule(log)
   } catch (err) {
     log(`Planification : ${(err as Error).message}`)
+  }
+  try {
+    uninstallScreenpipeService(log)
+  } catch (err) {
+    log(`Screenpipe : ${(err as Error).message}`)
   }
   const r = spawnSync("claude", ["mcp", "remove", "company-brain", "--scope", "user"], {
     encoding: "utf8",

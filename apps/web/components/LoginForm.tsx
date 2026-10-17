@@ -54,7 +54,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
           <BrainIcon size={56} />
-          <h1 className="mt-3 text-[24px] font-medium leading-tight">Cerveau d&apos;entreprise</h1>
+          <h1 className="mt-3 text-[24px] font-medium leading-tight">NOS Brainer</h1>
           <p className="mt-1 text-[13px] text-trace">Le contexte de toute l&apos;équipe, capté par Screenpipe, distillé, partagé.</p>
         </div>
         <form onSubmit={login} className="panel space-y-3 p-5" aria-busy={busy}>

@@ -9,7 +9,7 @@ const sans = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk
 const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-plex-mono", display: "swap" })
 
 export const metadata: Metadata = {
-  title: "Cerveau d'entreprise",
+  title: "NOS Brainer",
   description: "Le cerveau numérique de votre entreprise, alimenté par les sessions IA de chaque poste via Screenpipe.",
 }
 

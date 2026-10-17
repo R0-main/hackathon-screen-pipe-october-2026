@@ -1,4 +1,6 @@
-# Cerveau d'entreprise
+# NOS Brainer
+
+> Le cerveau d'entreprise qui est un *no-brainer* : un prompt à coller dans Claude Code, et ta boîte a un cerveau.
 
 > Hackathon Screenpipe « Build Agents That Remember » — 42 Paris, octobre 2026.
 > Le pitch est dans [IDEA.md](IDEA.md), l'architecture dans [ARCHITECTURE.md](ARCHITECTURE.md), le déroulé de la démo dans [demo/DEMO.md](demo/DEMO.md).
@@ -69,8 +71,9 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 ## Brancher un vrai poste
 
 1. Dans `/admin`, invitez la personne et choisissez ses zones : le dashboard génère son prompt (voir [install/PROMPT.md](install/PROMPT.md)).
-2. Elle le colle dans Claude Code, qui télécharge `brain.mjs`, vérifie/installe Screenpipe, ajoute le MCP et les hooks, planifie `sync` toutes les 15 min et fait un test (`hello` → son néon s'allume).
-3. Ensuite rien à faire : en travaillant avec Claude Code, elle nourrit le cerveau.
+2. Elle le colle dans Claude Code, qui lance **une seule commande** (`brain.mjs setup`) : Screenpipe installé et lancé, autorisations macOS
+   (écran, et accessibilité en option ; pas de micro) avec reprise automatique, MCP, hooks, synchro toutes les 15 min, néon allumé.
+3. Le cerveau s'ouvre dans son navigateur, déjà connecté. Ensuite rien à faire : en travaillant avec Claude Code, elle le nourrit.
 
 Le dashboard doit être joignable par les postes (URL publique ou réseau local) : définissez `BRAIN_PUBLIC_URL`.
 

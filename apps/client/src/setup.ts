@@ -1,0 +1,352 @@
+// `brain.mjs setup` : tout le branchement du poste en une commande, pour que le prompt d'installation ne demande qu'une
+// autorisation dans Claude Code. Cerveau (config) → Screenpipe (installé et lancé s'il ne tourne pas) → autorisations
+// macOS (réglages ouverts au bon endroit, reprise automatique dès qu'elles sont accordées) → MCP + hooks → synchro
+// planifiée (activité à venir seulement) → néon (hello) → le cerveau s'ouvre dans le navigateur, déjà connecté.
+// Idempotent : `setup` sans paramètres reprend là où ça s'est arrêté.
+
+import { spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { BrainApi } from "./api"
+import { cmdHello, cmdInit } from "./commands"
+import { loadPartialConfig, maskSecret, requireConfig, saveConfig, selfScript, UserError, type Config } from "./config"
+import { findOnPath } from "./distill"
+import { installHooks, installSchedule, scheduleInstalled } from "./install"
+import {
+  installedScreenpipeBin,
+  installScreenpipeCli,
+  readScreenpipeToken,
+  restartScreenpipeService,
+  runCommand,
+  startScreenpipe,
+} from "./screenpipe-cli"
+import { CLIENT_HEADERS, TOKEN_COMMAND, screenpipeProbe } from "./sources/screenpipe"
+
+type Log = (s: string) => void
+
+/** Code de sortie quand tout est branché sauf l'autorisation d'enregistrer l'écran : relancer `setup` une fois cochée. */
+export const EXIT_PERMISSIONS_PENDING = 3
+export const DEFAULT_WAIT_S = 300
+
+export const MACOS_PANES = {
+  screen: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+}
+
+export type CaptureState = {
+  /** L'API locale de Screenpipe répond. */
+  up: boolean
+  /** Au moins une image capturée : l'autorisation « Enregistrement de l'écran » est accordée. */
+  screen: boolean
+  /** Lecture de l'accessibilité active (texte propre des fenêtres) ; null si Screenpipe ne le dit pas. */
+  accessibility: boolean | null
+  detail?: string
+}
+
+/** Lit l'état de capture dans la réponse de GET /health (qui répond 200 même quand la capture n'a pas démarré). */
+export function captureState(health: unknown): CaptureState {
+  if (health === null || health === undefined) return { up: false, screen: false, accessibility: null }
+  const h = health as { last_frame_timestamp?: unknown; frame_status?: unknown; ui_recorder?: unknown; message?: unknown }
+  const frame = typeof h.frame_status === "string" ? h.frame_status.toLowerCase() : ""
+  const ui = h.ui_recorder && typeof h.ui_recorder === "object" ? (h.ui_recorder as { running?: unknown }) : null
+  return {
+    up: true,
+    screen: Boolean(h.last_frame_timestamp) || ["ok", "healthy", "active", "running", "recording"].includes(frame),
+    accessibility: ui && "running" in ui ? ui.running === true : null,
+    detail: typeof h.message === "string" ? h.message : undefined,
+  }
+}
+
+export async function readHealth(url: string, token?: string, timeoutMs = 3000): Promise<unknown | null> {
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, "")}/health`, {
+      headers: { accept: "application/json", ...CLIENT_HEADERS, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const text = await res.text()
+    try {
+      return text ? JSON.parse(text) : {}
+    } catch {
+      return {}
+    }
+  } catch {
+    return null
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+async function waitUntil(url: string, token: string | undefined, ok: (s: CaptureState) => boolean, deadline: number, pollMs: number, onTick?: (left: number) => void) {
+  let st = captureState(await readHealth(url, token))
+  let lastTick = Date.now()
+  while (!ok(st) && Date.now() < deadline) {
+    await sleep(pollMs)
+    st = captureState(await readHealth(url, token))
+    if (onTick && Date.now() - lastTick >= 30_000) {
+      lastTick = Date.now()
+      onTick(Math.max(0, Math.round((deadline - Date.now()) / 1000)))
+    }
+  }
+  return st
+}
+
+function openUrl(url: string, platform: NodeJS.Platform = process.platform): boolean {
+  const [cmd, args] = platform === "darwin" ? ["open", [url]] : platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]]
+  const r = spawnSync(cmd, args as string[], { stdio: "ignore", timeout: 10_000, windowsHide: true })
+  return !r.error && r.status === 0
+}
+
+function copyToClipboard(text: string): boolean {
+  if (process.platform !== "darwin") return false
+  const r = spawnSync("pbcopy", [], { input: text, timeout: 5000 })
+  return !r.error && r.status === 0
+}
+
+export type PermissionOptions = {
+  url: string
+  token?: string
+  waitMs: number
+  pollMs?: number
+  platform?: NodeJS.Platform
+  /** Binaire à ajouter à la main dans les réglages s'il n'apparaît pas dans la liste. */
+  bin?: string | null
+  open?: (url: string) => void
+  restart?: () => boolean
+  log?: Log
+}
+
+/**
+ * Attend que Screenpipe capture vraiment. Sur macOS, ouvre le bon panneau des Réglages et reprend tout seul dès que
+ * l'autorisation est accordée : personne n'a à revenir au terminal pour dire « c'est fait ».
+ * Écran : obligatoire. Accessibilité : recommandée (texte propre des terminaux au lieu de l'OCR), sans bloquer.
+ */
+export async function waitForCapture(o: PermissionOptions): Promise<CaptureState> {
+  const log = o.log ?? console.log
+  const open = o.open ?? ((u: string) => void openUrl(u))
+  const poll = o.pollMs ?? 2000
+  const platform = o.platform ?? process.platform
+  const deadline = Date.now() + o.waitMs
+  let st = captureState(await readHealth(o.url, o.token))
+  if (!st.up) return st
+
+  if (platform !== "darwin") {
+    // Pas d'autorisation à demander : on laisse un peu de temps à la première capture.
+    st = await waitUntil(o.url, o.token, (s) => s.screen, Math.min(deadline, Date.now() + 20_000), poll)
+    if (!st.screen) log(`Screenpipe tourne mais n'a encore rien capturé${st.detail ? ` (${st.detail})` : ""} ; sous Wayland, accepte le partage d'écran s'il est proposé.`)
+    return st
+  }
+
+  if (!st.screen) {
+    log("→ Autorisation 1/2 : Réglages Système → Confidentialité et sécurité → Enregistrement de l'écran et de l'audio système → active « screenpipe ».")
+    log("  Si macOS propose « Quitter et rouvrir », choisis « Plus tard » : Screenpipe reprend tout seul.")
+    if (o.bin) {
+      const copied = copyToClipboard(o.bin)
+      log(`  Si « screenpipe » n'est pas dans la liste : bouton « + », puis ⌘⇧G et colle ce chemin${copied ? " (déjà copié dans le presse-papiers)" : ""} : ${o.bin}`)
+    }
+    open(MACOS_PANES.screen)
+    log(`  En attente de l'autorisation (jusqu'à ${Math.round(o.waitMs / 1000)} s)…`)
+    st = await waitUntil(o.url, o.token, (s) => s.screen, deadline, poll, (left) => log(`  … toujours en attente de l'Enregistrement de l'écran (${left} s restantes).`))
+    if (!st.screen) return st
+    log("✓ Enregistrement de l'écran autorisé : la capture a démarré.")
+  }
+
+  if (st.accessibility === false) {
+    log("→ Autorisation 2/2 (recommandée) : Réglages Système → Confidentialité et sécurité → Accessibilité → active « screenpipe » (même méthode avec « + » s'il manque).")
+    log("  Elle permet de lire le texte des fenêtres (terminal, Claude) proprement au lieu de le déchiffrer à l'image.")
+    open(MACOS_PANES.accessibility)
+    const axDeadline = Date.now() + Math.min(o.waitMs, 120_000)
+    let restarted = false
+    st = await waitUntil(o.url, o.token, (s) => s.accessibility !== false && s.up, axDeadline, poll, () => {
+      // Une autorisation accordée à un service déjà lancé n'est parfois prise en compte qu'au redémarrage.
+      if (!restarted && o.restart) restarted = o.restart()
+    })
+    if (st.accessibility === false) {
+      log("  Accessibilité pas encore accordée : la capture marche quand même. Coche « screenpipe » dans Accessibilité quand tu veux, rien d'autre à relancer.")
+    } else if (st.accessibility) {
+      log("✓ Accessibilité autorisée.")
+    }
+  }
+  return st
+}
+
+/** MCP company-brain dans Claude Code (portée utilisateur), sauf s'il y est déjà. */
+export function ensureMcp(log: Log = console.log): boolean {
+  const script = selfScript()
+  const manual = `claude mcp add company-brain --scope user -- "${process.execPath}" "${script}" mcp`
+  const claude = findOnPath("claude")
+  if (!claude) {
+    log(`MCP : CLI \`claude\` introuvable dans le PATH. À lancer à la main : ${manual}`)
+    return false
+  }
+  if (runCommand(claude, ["mcp", "get", "company-brain"], 30_000).ok) {
+    log("MCP company-brain : déjà branché dans Claude Code.")
+    return true
+  }
+  const r = runCommand(claude, ["mcp", "add", "company-brain", "--scope", "user", "--", process.execPath, script, "mcp"], 30_000)
+  log(r.ok ? "MCP company-brain branché dans Claude Code (actif dès la prochaine session)." : `MCP : échec (${r.stderr.trim().slice(0, 200)}). À lancer à la main : ${manual}`)
+  return r.ok
+}
+
+/** Ouvre le cerveau, déjà connecté grâce à un lien de connexion à usage court ; à défaut, la page de connexion. */
+async function openBrain(cfg: Config, noOpen: boolean, log: Log) {
+  if (noOpen) return log(`Le cerveau : ${cfg.url}`)
+  let target = `${cfg.url}/login`
+  try {
+    const { path } = await new BrainApi(cfg.url, cfg.token, 8000).loginLink()
+    if (path.startsWith("/")) target = `${cfg.url}${path}`
+  } catch {
+    // cerveau plus ancien, sans lien de connexion : page de connexion avec le jeton
+  }
+  log(openUrl(target) ? `Le cerveau s'ouvre dans ton navigateur : ${cfg.url}` : `Ouvre le cerveau dans ton navigateur : ${cfg.url}`)
+}
+
+function desktopApp(): string | null {
+  if (process.platform !== "darwin") return null
+  for (const dir of ["/Applications", join(homedir(), "Applications")]) {
+    for (const name of ["screenpipe.app", "Screenpipe.app"]) if (existsSync(join(dir, name))) return join(dir, name)
+  }
+  return null
+}
+
+async function waitUp(url: string, token: string | undefined, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms
+  while (Date.now() < deadline) {
+    if ((await readHealth(url, token)) !== null) return true
+    await sleep(1500)
+  }
+  return false
+}
+
+function yesNo(v: string | boolean | undefined, flag: string): boolean | undefined {
+  if (v === undefined) return undefined
+  if (v === true) return true
+  const s = String(v).toLowerCase()
+  if (["oui", "on", "true", "1", "yes"].includes(s)) return true
+  if (["non", "off", "false", "0", "no"].includes(s)) return false
+  throw new UserError(`--${flag} : « oui » ou « non » (reçu « ${v} »).`)
+}
+
+type ScreenpipeResult = { how: "existing" | "app" | "service" | "background"; bin: string | null }
+
+/** Screenpipe déjà lancé (CLI ou application) : on le garde. Sinon l'application si elle est là, sinon le CLI en service. */
+async function ensureScreenpipe(cfg: Config, audio: boolean | undefined, log: Log): Promise<ScreenpipeResult> {
+  let bin = installedScreenpipeBin()
+  const running = (await readHealth(cfg.screenpipe_url, cfg.screenpipe_token)) !== null
+  if (running && !(audio !== undefined && bin)) {
+    log(`Screenpipe tourne déjà (${cfg.screenpipe_url}) : on le garde tel quel.`)
+    return { how: "existing", bin }
+  }
+  if (!running && !bin) {
+    const app = desktopApp()
+    if (app) {
+      log(`Application Screenpipe trouvée (${app}) : lancement.`)
+      runCommand("open", ["-a", app], 15_000)
+      if (await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, 60_000)) return { how: "app", bin: null }
+      log("L'application ne répond pas : installation du CLI à la place.")
+    }
+  }
+  bin = bin ?? installScreenpipeCli(log)
+  const how = startScreenpipe(bin, { audio }, log)
+  if (!(await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, 60_000))) {
+    throw new UserError(`Screenpipe ne répond pas sur ${cfg.screenpipe_url} après une minute. Diagnostic : "${bin}" doctor, puis "${bin}" status.`)
+  }
+  if (audio) log("Micro activé : les réunions seront transcrites (macOS demandera aussi l'autorisation Micro).")
+  else log("Micro coupé : seul l'écran est capté (relance `setup --audio oui` pour transcrire aussi les réunions).")
+  return { how, bin }
+}
+
+/** Jeton d'API local de Screenpipe : lu et enregistré s'il manque ou ne marche plus. */
+async function ensureScreenpipeToken(cfg: Config, bin: string | null, log: Log): Promise<Config> {
+  let probe = await screenpipeProbe(cfg.screenpipe_url, cfg.screenpipe_token)
+  if (probe.auth === "token_required") {
+    const token = readScreenpipeToken(bin)
+    if (token) {
+      saveConfig({ ...loadPartialConfig(), screenpipe_token: token })
+      cfg = { ...cfg, screenpipe_token: token }
+      log(`Jeton d'API local de Screenpipe enregistré (${maskSecret(token)}).`)
+      probe = await screenpipeProbe(cfg.screenpipe_url, token)
+    } else {
+      log(`Jeton Screenpipe introuvable : affiche-le avec \`${TOKEN_COMMAND}\`, puis \`node "${selfScript()}" init --screenpipe-token <jeton>\`.`)
+    }
+  }
+  log(`Lecture des données Screenpipe : ${probe.detail}.`)
+  return cfg
+}
+
+export async function cmdSetup(flags: Record<string, string | boolean>, log: Log = console.log): Promise<number> {
+  const audio = yesNo(flags.audio, "audio")
+  const waitS = typeof flags.wait === "string" ? Number.parseInt(flags.wait, 10) : DEFAULT_WAIT_S
+  if (!(waitS >= 0)) throw new UserError("--wait : un nombre de secondes.")
+  const me = `node "${selfScript()}"`
+
+  log("[1/6] Connexion au cerveau")
+  if (flags.url || flags.token) {
+    if ((await cmdInit(flags, log)) !== 0) {
+      log("Le cerveau n'a pas accepté la connexion : vérifie l'URL et le jeton, puis relance setup.")
+      return 1
+    }
+  }
+  let cfg = requireConfig()
+  if (!(flags.url || flags.token)) {
+    try {
+      const who = await new BrainApi(cfg.url, cfg.token, 8000).whoami()
+      log(`Connexion au cerveau OK : ${who.profile.name} chez ${who.org.name}.`)
+    } catch (err) {
+      log(`Le cerveau ne répond pas (${(err as Error).message}).`)
+      return 1
+    }
+  }
+
+  let capture: CaptureState | null = null
+  if (flags["skip-screenpipe"]) {
+    log("[2/6] Screenpipe : ignoré (--skip-screenpipe) ; brain-sync lira seulement les sessions Claude Code et Codex.")
+    log("[3/6] Autorisations : rien à demander.")
+  } else {
+    log("[2/6] Screenpipe (capture locale de l'écran ; rien de brut ne quitte le poste)")
+    const sp = await ensureScreenpipe(cfg, audio, log)
+    cfg = await ensureScreenpipeToken(cfg, sp.bin, log)
+    log("[3/6] Autorisations")
+    capture = await waitForCapture({
+      url: cfg.screenpipe_url,
+      token: cfg.screenpipe_token,
+      waitMs: waitS * 1000,
+      // Aussi quand setup est relancé (Screenpipe « déjà lancé » par nous) : c'est le cas typique après un code 3.
+      bin: sp.how === "app" ? null : sp.bin,
+      restart: sp.bin ? restartScreenpipeService : undefined,
+      log,
+    })
+    if (capture.screen) log("Screenpipe capture l'écran.")
+  }
+
+  log("[4/6] Claude Code : MCP company-brain et hooks")
+  ensureMcp(log)
+  installHooks(log)
+
+  log("[5/6] Synchro automatique")
+  if (scheduleInstalled()) log("Déjà planifiée toutes les 15 min : rien à changer.")
+  else installSchedule(log)
+
+  log("[6/6] Ton néon et le cerveau")
+  try {
+    await cmdHello(log)
+  } catch (err) {
+    log(`Néon : ${(err as Error).message}`)
+  }
+  await openBrain(cfg, Boolean(flags["no-open"]), log)
+
+  log("")
+  log("C'est branché. Continue à travailler avec Claude Code : chaque session allume ta zone, et les connaissances distillées arrivent dans le cerveau toutes les 15 minutes.")
+  log(`Voir ce qui partirait : ${me} sync --dry-run --full — état : ${me} status — tout retirer : ${me} uninstall`)
+  if (capture && !capture.up) {
+    log("")
+    log(`EN ATTENTE : Screenpipe ne répond plus sur ${cfg.screenpipe_url}. Relance : ${me} setup`)
+    return EXIT_PERMISSIONS_PENDING
+  }
+  if (capture && !capture.screen && process.platform === "darwin") {
+    log("")
+    log(`EN ATTENTE : autorisation « Enregistrement de l'écran » pour screenpipe pas encore accordée. Une fois cochée, relance : ${me} setup`)
+    return EXIT_PERMISSIONS_PENDING
+  }
+  return 0
+}
