@@ -15,6 +15,7 @@ export type FakeClaudeCall = { args: string[]; token: string | null; internal: s
  * réponse normale, is_error false, code 0). En mode normal : un prompt avec QZXBAD reçoit un refus en prose (sortie
  * illisible), un prompt avec QZXERR une erreur inconnue (code 1) ; sinon une décision par étiquette QZX… trouvée (zone dev).
  * `allow(n)` : les n prochains appels répondent normalement quel que soit le mode (limite atteinte en cours de synchro).
+ * Agent Screenpipe (`--mcp-config` dans les arguments) : en mode normal, une connaissance de travail et une personnelle.
  */
 export function fakeClaude(opts: { help?: string } = {}) {
   const dir = tempDir("fake-claude-")
@@ -46,6 +47,14 @@ process.stdin.on("end", () => {
   if (mode === "limit") { out({ type: "result", subtype: "success", is_error: true, api_error_status: 429, duration_ms: 640, result: limit }); process.exit(1) }
   if (mode === "limit-text") { process.stderr.write("You've hit your weekly limit · resets Oct 20, 3pm\\n"); process.exit(1) }
   if (mode === "limit-ok") { out({ type: "result", subtype: "success", is_error: false, result: limit }); return }
+  if (process.argv.includes("--mcp-config")) {
+    const items = [
+      { zone: "dev", kind: "fact", title: "Ticket FOUR-42 : litige facture Boulangerie Martin", body: "Le client conteste la facture 2026-118, relance prévue.", entities: [], confidence: 0.8 },
+      { zone: "dev", kind: "fact", title: "Rendez-vous chez le médecin", body: "Mon arrêt maladie commence lundi.", entities: [], confidence: 0.8 },
+    ]
+    out({ type: "result", is_error: false, result: JSON.stringify({ items }) })
+    return
+  }
   if (/QZXBAD/.test(input)) { out({ type: "result", is_error: false, result: "Désolé, je préfère ne pas traiter cette conversation." }); return }
   if (/QZXERR/.test(input)) { process.stderr.write("Erreur inattendue\\n"); process.exit(1) }
   if (status) {

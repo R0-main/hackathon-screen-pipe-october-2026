@@ -52,7 +52,8 @@ Commandes :
                      Chaque point KO donne la commande qui répare. --json : le même rapport pour Claude Code (champ « safe »
                      sur les commandes qui ne font que rebrancher le poste). Code de sortie 1 s'il reste un point KO.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
-       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non] [--ca <pem>]
+       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
+       [--screenpipe-agent oui|non|claude|codex] [--agent-model <modèle>] [--ca <pem>]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
                      --ca : certificat (PEM) de l'autorité d'un cerveau auto-hébergé en HTTPS local ; le client lui fait
                      confiance pour tous ses appels, en plus des certificats publics (« aucun » pour le retirer).
@@ -61,6 +62,10 @@ Commandes :
                      passé à chaque \`claude -p\` du client, synchro planifiée comprise (« aucun » pour le retirer).
                      --share-prompt-summaries non : le hook n'envoie plus aucun résumé de prompt (empreinte seule).
                      --screenpipe-meetings non : les réunions transcrites par Screenpipe ne sont pas distillées.
+                     --screenpipe-agent : à chaque synchro, Claude Code (sinon Codex) regarde lui-même l'activité récente
+                     via le MCP Screenpipe, en lecture seule, et en tire les connaissances utiles. « claude » ou « codex »
+                     impose le moteur, « non » coupe l'agent. --agent-model : son modèle (défaut : sonnet pour Claude Code,
+                     celui de Codex sinon, avec un effort de raisonnement bas ; « défaut » pour y revenir).
   hello              Test de bout en bout : vos zones s'allument sur le dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
                      Lit les sessions IA locales, filtre (secrets, perso), distille et envoie au cerveau.

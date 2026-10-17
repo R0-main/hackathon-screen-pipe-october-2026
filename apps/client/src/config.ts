@@ -26,6 +26,13 @@ export type Config = {
   screenpipe_content_types?: string[]
   /** Réunions Screenpipe (transcriptions) distillées comme les sessions IA (défaut : oui). */
   screenpipe_meetings?: boolean
+  /**
+   * Agent Screenpipe : à chaque synchro, Claude Code ou Codex regarde l'activité récente via le MCP Screenpipe.
+   * true (défaut) : Claude Code s'il est là, sinon Codex ; "claude" / "codex" : ce moteur seulement ; false : coupé.
+   */
+  screenpipe_agent?: boolean | "claude" | "codex"
+  /** Modèle de l'agent Screenpipe (défaut : sonnet pour Claude Code, celui de Codex sinon). */
+  agent_model?: string
   /** Hook UserPromptSubmit : envoyer un court résumé masqué des prompts classés dans une zone (défaut : oui). */
   share_prompt_summaries?: boolean
   /** Certificat (PEM) de l'autorité qui signe un cerveau auto-hébergé : le client lui fait confiance en plus des certificats publics. */
@@ -52,6 +59,8 @@ export type State = {
     span_ms?: number
     /** Fin de la dernière réunion distillée : les réunions terminées avant sont faites. */
     meetings_last_end?: string
+    /** Fin de la dernière fenêtre regardée par l'agent Screenpipe. */
+    agent_until?: string
   }
   /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
   baseline_at?: string
@@ -187,6 +196,7 @@ export function withDefaults(raw: Partial<Config>): Partial<Config> {
     use_claude_cli: true,
     share_prompt_summaries: true,
     screenpipe_meetings: true,
+    screenpipe_agent: true,
     sources: [...SOURCE_NAMES],
     ...raw,
     url: raw.url?.replace(/\/+$/, ""),

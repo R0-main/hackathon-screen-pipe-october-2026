@@ -57,6 +57,21 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
     else if (["non", "off", "false", "0", "no"].includes(v)) next.screenpipe_meetings = false
     else throw new UserError(`--screenpipe-meetings : « oui » ou « non » (reçu « ${meetings} »).`)
   }
+  const agent = str("screenpipe-agent")
+  if (agent !== undefined) {
+    const v = agent.toLowerCase()
+    if (["oui", "on", "true", "1", "yes"].includes(v)) next.screenpipe_agent = true
+    else if (["non", "off", "false", "0", "no"].includes(v)) next.screenpipe_agent = false
+    else if (v === "claude" || v === "codex") next.screenpipe_agent = v
+    else throw new UserError(`--screenpipe-agent : « oui », « non », « claude » ou « codex » (reçu « ${agent} »).`)
+  }
+  const agentModel = str("agent-model")
+  if (flags["agent-model"] === true) throw new UserError("--agent-model : donnez un modèle (ex. sonnet), ou « défaut » pour revenir au modèle par défaut.")
+  if (agentModel !== undefined) {
+    if (["défaut", "defaut", "default", ""].includes(agentModel.toLowerCase())) delete next.agent_model
+    else if (/\s/.test(agentModel)) throw new UserError(`--agent-model : nom de modèle invalide (« ${agentModel} »).`)
+    else next.agent_model = agentModel
+  }
   const ca = str("ca")
   if (flags.ca === true) throw new UserError("--ca : donnez le fichier PEM du certificat du cerveau (ou « aucun » pour le retirer).")
   let caInfo: CaInfo | null = null
