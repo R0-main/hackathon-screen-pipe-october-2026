@@ -2,6 +2,9 @@
 
 import {
   DEFAULT_TIMEZONE,
+  STATUS_MAX_ITEMS,
+  STATUS_WINDOW_DAYS,
+  buildStatusInput,
   classifyZones,
   detectAutomations,
   heuristicStatus,
@@ -9,6 +12,7 @@ import {
   normalize,
   promptFingerprint,
   redactText,
+  scoreZones,
   truncate,
   type AgentEvent,
   type AgentEventInput,
@@ -16,7 +20,9 @@ import {
   type CompanyStatus,
   type KnowledgeItem,
   type KnowledgeItemInput,
+  type StatusInput,
   type Zone,
+  type ZoneStatus,
 } from "@brain/core"
 import { summarizeStatus } from "@brain/core/claude"
 import { getStore } from "./store"
@@ -39,11 +45,17 @@ function resolveZone(zone: string, text: string, zones: Zone[]): string {
   return classifyZones(text, zones, 1)[0] ?? zones[0]?.id ?? zone
 }
 
-/** Fenêtre de déduplication à l'ingestion (même auteur, même zone, même titre normalisé). */
+/** Fenêtre de déduplication à l'ingestion (même auteur, même zone, même titre et même contenu normalisés). */
 const DEDUPE_DAYS = 30
 
-function dedupeKey(zone: string, title: string): string {
-  return `${zone}|${normalize(title).replace(/\s+/g, " ").trim()}`
+const dedupeText = (s: string) => normalize(s).replace(/\s+/g, " ").trim()
+
+/**
+ * Un titre identique ne suffit pas : une même fenêtre (titre de conversation) produit plusieurs faits successifs.
+ * Seul un item identique (titre ET contenu, après masquage) est un doublon.
+ */
+function dedupeKey(zone: string, title: string, body: string): string {
+  return JSON.stringify([zone, dedupeText(title), dedupeText(body)])
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`
@@ -52,13 +64,14 @@ const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`
  * POST /api/ingest — les connaissances distillées sur le poste entrent dans le cerveau.
  * Tout le monde nourrit le cerveau : n'importe quelle zone existante est acceptée (seule la lecture est restreinte),
  * l'auteur garde toujours la main sur ses items (getPersonContext, queryBrain, suppression).
- * Idempotent : un item déjà reçu de ce même auteur, dans la même zone, avec le même titre depuis 30 jours est ignoré.
+ * Idempotent : un item déjà reçu de ce même auteur, dans la même zone, avec le même titre et le même contenu
+ * (normalisés) depuis 30 jours est ignoré.
  */
 export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], agent: AgentName = "brain-sync") {
   const zones = await store().listZones()
   const authorId = viewer.real.id
   const since = new Date(Date.now() - DEDUPE_DAYS * 86400_000).toISOString()
-  const seen = new Set((await store().listItems({ authorId, sinceIso: since, limit: 100_000 })).map((i) => dedupeKey(i.zone, i.title)))
+  const seen = new Set((await store().listItems({ authorId, sinceIso: since, limit: 100_000 })).map((i) => dedupeKey(i.zone, i.title, i.body)))
   const prepared: NewItem[] = []
   let skipped = 0
   for (const i of items) {
@@ -66,7 +79,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     const title = redactText(i.title)
     const body = redactText(i.body)
     const zone = resolveZone(i.zone, `${title} ${body}`, zones)
-    const key = dedupeKey(zone, title)
+    const key = dedupeKey(zone, title, body)
     if (seen.has(key)) {
       skipped++
       continue
@@ -108,7 +121,7 @@ export async function recordEvents(viewer: Viewer, inputs: AgentEventInput[]) {
   const known = new Set(zones.map((z) => z.id))
   const events = inputs.map((e) => {
     let summary = e.summary ? truncate(redactText(e.summary), 200) : undefined
-    let eventZones = (e.zones ?? []).filter((z) => known.has(z))
+    let eventZones = [...new Set((e.zones ?? []).filter((z) => known.has(z)))]
     if (eventZones.length === 0 && summary && e.type !== "started" && e.type !== "stopped") eventZones = classifyZones(summary, zones, 2)
     // Prompt saisi : son résumé n'est conservé que s'il se rattache à une zone et n'a rien de personnel (sinon l'empreinte seule).
     if (summary && e.type === "query" && PROMPT_AGENTS.has(e.agent) && (eventZones.length === 0 || looksPersonal(summary))) summary = undefined
@@ -126,6 +139,16 @@ export async function recordEvents(viewer: Viewer, inputs: AgentEventInput[]) {
   return store().insertEvents(events)
 }
 
+/**
+ * Zones dont parle un texte : son classement (toutes les zones retenues, pas seulement les 2 premières), plus toute
+ * zone dont un mot-clé est cité tel quel.
+ */
+function zonesMentioned(text: string, zones: Zone[]): string[] {
+  const out = new Set(classifyZones(text, zones, zones.length))
+  for (const s of scoreZones(text, zones)) if (s.score >= 1) out.add(s.zone)
+  return [...out]
+}
+
 /** POST /api/query — un agent cherche du contexte. La zone trouvée s'allume. */
 export async function queryBrain(viewer: Viewer, input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
   const allZones = await store().listZones()
@@ -140,13 +163,22 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
   let hit = [...new Set(results.filter((r) => readable.includes(r.zone)).slice(0, 3).map((r) => r.zone))]
   if (hit.length === 0) hit = classifyZones(input.query, allZones, 2).filter((z) => readable.includes(z))
   const restricted = classifyZones(input.query, allZones, 2).filter((z) => !readable.includes(z) && !hit.includes(z))
+  // Le texte de la recherche n'est conservé (et montré aux lecteurs des zones allumées) que s'il ne touche aucune zone
+  // que l'utilisateur ne lit pas (classement, filtre demandé, ses propres items trouvés) et n'a rien de personnel.
+  const asked = (input.zones ?? []).filter((z) => allZones.some((x) => x.id === z))
+  const touched = [...zonesMentioned(input.query, allZones), ...asked, ...results.map((r) => r.zone)]
+  const touchesUnreadable = touched.some((z) => !canRead(viewer.access, z))
+  const keepSummary = !touchesUnreadable && !looksPersonal(input.query)
+  // Avec son texte, l'événement porte toutes les zones que la recherche touche (pas seulement celles des résultats) :
+  // D2 ne montre alors le texte qu'aux lecteurs de TOUTES ces zones.
+  const eventZones = keepSummary ? [...new Set([...hit, ...touched])] : hit
   await store().insertEvents([
     {
       user_id: viewer.real.id,
       agent: input.agent ?? "mcp",
       type: "query",
-      zones: hit,
-      summary: truncate(redactText(input.query), 200),
+      zones: eventZones,
+      summary: keepSummary ? truncate(redactText(input.query), 200) : undefined,
       at: new Date().toISOString(),
     },
   ])
@@ -278,6 +310,20 @@ async function scopedHeadline(zones: Zone[]): Promise<string> {
   return `${zones.length > 1 ? "Dans vos zones" : "Dans votre zone"} (${zones.map((z) => z.name).join(", ")}) : ${headline}`
 }
 
+/** Néon « mise à jour de l'état » : toutes les zones s'allument pendant la génération. */
+async function emitStatusEvent(viewer: Viewer, zones: Zone[]) {
+  await store().insertEvents([
+    {
+      user_id: viewer.real.id,
+      agent: "job",
+      type: "query",
+      zones: zones.map((z) => z.id),
+      summary: "Mise à jour de l'état de l'entreprise",
+      at: new Date().toISOString(),
+    },
+  ])
+}
+
 /** Régénère l'écran « où en est la boîte » (Claude si dispo, sinon heuristique). */
 export async function refreshStatus(viewer: Viewer) {
   const s = store()
@@ -289,20 +335,70 @@ export async function refreshStatus(viewer: Viewer) {
     s.listProfiles(),
     s.getOrg(),
   ])
-  await s.insertEvents([
-    {
-      user_id: viewer.real.id,
-      agent: "job",
-      type: "query",
-      zones: zones.map((z) => z.id),
-      summary: "Mise à jour de l'état de l'entreprise",
-      at: new Date().toISOString(),
-    },
-  ])
+  await emitStatusEvent(viewer, zones)
   const claude = getClaude()
   const status =
     (claude && (await summarizeStatus(claude, { zones, items, tasks, profiles, companyName: org.name }))) ||
     heuristicStatus({ zones, items, tasks, profiles })
+  await s.setStatus(status)
+  return status
+}
+
+/** Jour (AAAA-MM-JJ) dans le fuseau de l'entreprise. */
+function today(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE }).format(new Date())
+}
+
+/**
+ * GET /api/status/input (admins) : les connaissances des 30 derniers jours (400 au plus, les plus récentes d'abord,
+ * auteur = nom du membre) et les tâches, pour générer le résumé sur un poste avec `claude -p`.
+ */
+export async function getStatusInput(): Promise<StatusInput> {
+  const s = store()
+  const since = new Date(Date.now() - STATUS_WINDOW_DAYS * 86400_000).toISOString()
+  const [org, zones, items, tasks, profiles] = await Promise.all([
+    s.getOrg(),
+    s.listZones(),
+    s.listItems({ sinceIso: since, limit: STATUS_MAX_ITEMS }),
+    s.listTasks({}),
+    s.listProfiles(),
+  ])
+  return buildStatusInput({ companyName: org.name, zones, items, tasks, profiles, generatedFor: today() })
+}
+
+/** Résumé produit hors du serveur (poste d'un admin), déjà validé par la route. */
+export type ExternalStatus = { headline: string; zones: ZoneStatus[] }
+
+/**
+ * POST /api/status avec un résumé : re-masqué (défense en profondeur), zones inconnues ou en double écartées,
+ * enregistré comme généré par Claude maintenant. Null si aucune zone connue.
+ */
+export async function saveExternalStatus(viewer: Viewer, input: ExternalStatus): Promise<CompanyStatus | null> {
+  const s = store()
+  const zones = await s.listZones()
+  const known = new Set(zones.map((z) => z.id))
+  const clean = (t: string, max: number) => truncate(redactText(t.replace(/\s+/g, " ").trim()), max)
+  const list = (xs: string[], n: number, max: number) => xs.map((x) => clean(x, max)).filter(Boolean).slice(0, n)
+  const seen = new Set<string>()
+  const zoneStatuses: ZoneStatus[] = []
+  for (const z of input.zones) {
+    if (!known.has(z.zone) || seen.has(z.zone)) continue
+    seen.add(z.zone)
+    zoneStatuses.push({
+      zone: z.zone,
+      summary: clean(z.summary, 1500),
+      objectives: list(z.objectives, 10, 300),
+      progress: clean(z.progress, 800),
+      next_steps: list(z.next_steps, 10, 300),
+      who_did_what: z.who_did_what
+        .map((w) => ({ person: clean(w.person, 80), did: clean(w.did, 300) }))
+        .filter((w) => w.person && w.did)
+        .slice(0, 12),
+    })
+  }
+  if (zoneStatuses.length === 0) return null
+  const status: CompanyStatus = { headline: clean(input.headline, 600), zones: zoneStatuses, generated_at: new Date().toISOString(), generator: "claude" }
+  await emitStatusEvent(viewer, zones)
   await s.setStatus(status)
   return status
 }

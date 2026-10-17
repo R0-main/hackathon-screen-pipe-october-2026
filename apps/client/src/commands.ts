@@ -35,6 +35,13 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
   if (str("screenpipe-url")) next.screenpipe_url = str("screenpipe-url")!.replace(/\/+$/, "")
   if (str("screenpipe-token")) next.screenpipe_token = str("screenpipe-token")
   if (str("anthropic-key")) next.anthropic_api_key = str("anthropic-key")
+  const claudeToken = str("claude-token")
+  if (flags["claude-token"] === true) throw new UserError("--claude-token : donnez le jeton affiché par `claude setup-token` (ou « aucun » pour le retirer).")
+  if (claudeToken !== undefined) {
+    if (["aucun", "none", "non", ""].includes(claudeToken.toLowerCase())) delete next.claude_oauth_token
+    else if (/\s/.test(claudeToken) || claudeToken.length < 20) throw new UserError("--claude-token : jeton invalide (une seule chaîne, celle affichée par `claude setup-token`).")
+    else next.claude_oauth_token = claudeToken
+  }
   const share = str("share-prompt-summaries")
   if (share !== undefined) {
     const v = share.toLowerCase()
@@ -55,6 +62,13 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
   if (next.url && !/^https?:\/\//.test(next.url)) throw new UserError(`URL invalide : « ${next.url} » (attendu http:// ou https://).`)
   saveConfig(next)
   log(`Configuration enregistrée dans ${paths.config()} (mode 600, jeton ${maskSecret(next.token)}).`)
+  if (claudeToken !== undefined) {
+    log(
+      next.claude_oauth_token
+        ? `Jeton Claude Code enregistré (${maskSecret(next.claude_oauth_token)}) : chaque \`claude -p\` du client (distillation, refresh-status) l'utilise, synchro planifiée comprise. Il reste dans config.json, jamais dans le planificateur.`
+        : "Jeton Claude Code retiré de la config.",
+    )
+  }
 
   const api = new BrainApi(next.url, next.token)
   let code = 0
@@ -141,5 +155,6 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   const d = pickDistiller(cfg)
   log(`  Distillation  : ${DISTILLER_LABELS[d.kind]} — ${d.reason}`)
   log(`  Clé Anthropic : ${maskSecret(cfg.anthropic_api_key ?? process.env.ANTHROPIC_API_KEY)}`)
+  log(`  Jeton Claude Code : ${cfg.claude_oauth_token ? `${maskSecret(cfg.claude_oauth_token)} (passé à chaque \`claude -p\`)` : "(aucun) — `claude setup-token` puis `init --claude-token <jeton>` pour la synchro planifiée"}`)
   return 0
 }

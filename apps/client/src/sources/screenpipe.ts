@@ -33,7 +33,7 @@ export type ScreenpipeItem = {
   window: string
   at: string
   frameId?: string
-  /** URL de l'onglet (parsed, ocr, input) : permet de reconnaître ChatGPT / Claude web quel que soit le titre. */
+  /** URL de l'onglet quand Screenpipe la donne (navigateurs) : décide si un onglet est un assistant IA. */
   browserUrl?: string
   messages?: ConversationMessage[]
 }
@@ -224,7 +224,7 @@ export function normalizeScreenpipeItem(raw: unknown, opts: NormalizeOptions = {
   }
   if (!text && !messages) return null
   const frame = c.frame_id ?? c.frameId ?? c.id ?? c.chunk_id
-  const browserUrl = str(c.browser_url ?? c.browserUrl).trim()
+  const browserUrl = str(c.browser_url ?? c.browserUrl ?? r.browser_url).trim()
   return {
     type: str(r.type) || "unknown",
     text,
@@ -709,13 +709,18 @@ function bumpMeetings(state: State, iso: string) {
 
 // --- Lecture complète (captures + réunions) ---------------------------------------------------------------------
 
+/**
+ * `baseline` (posé par install-schedule) : rien d'antérieur n'est lu sans --since explicite, même si le checkpoint
+ * Screenpipe est plus ancien (captures jamais relues dans une simulation).
+ */
 export async function readScreenpipe(
-  opts: Omit<ScreenpipeOptions, "since"> & { state: State; since: Date; explicitSince?: boolean; meetings?: boolean },
+  opts: Omit<ScreenpipeOptions, "since"> & { state: State; since: Date; explicitSince?: boolean; baseline?: Date; meetings?: boolean },
 ): Promise<SourceResult> {
   const result: SourceResult = { source: "screenpipe", available: true, conversations: [], commits: [], warnings: [], stats: {} }
   const sp = opts.state.screenpipe
   const last = sp?.last_timestamp
-  const since = last && !opts.explicitSince ? new Date(Math.max(Date.parse(last), 0)) : opts.since
+  let since = last && !opts.explicitSince ? new Date(Math.max(Date.parse(last), 0)) : opts.since
+  if (opts.baseline && !opts.explicitSince && opts.baseline.getTime() > since.getTime()) since = opts.baseline
   const until = opts.until ?? new Date()
   let fetched: ScreenpipeFetch
   try {
@@ -733,6 +738,7 @@ export async function readScreenpipe(
   }
   result.stats.items = fetched.items.length
   result.stats.content_type = fetched.contentType ?? `aucune donnée (${fetched.tried.join(", ")})`
+  if (fetched.status || fetched.truncated) result.stats.truncated_until = fetched.coveredUntil
   if (fetched.status) result.warnings.push(`${httpProblem(fetched.status)} Lecture arrêtée là ; la suite sera relue à la prochaine synchro.`)
   else if (fetched.truncated)
     result.warnings.push(`Screenpipe : beaucoup de captures sur la période, lues jusqu'au ${hhmm(fetched.coveredUntil)} ; la suite sera lue aux prochaines synchros.`)
@@ -763,7 +769,8 @@ export async function readScreenpipe(
 
   // Réunions terminées : la source la plus riche en décisions, hors de portée des logs d'agents.
   if (opts.meetings !== false) {
-    const m = await readScreenpipeMeetings({ url: opts.url, token: opts.token, state: opts.state, since: opts.since, until, timeoutMs: opts.timeoutMs, explicitSince: opts.explicitSince })
+    const meetingsSince = opts.baseline && !opts.explicitSince && opts.baseline.getTime() > opts.since.getTime() ? opts.baseline : opts.since
+    const m = await readScreenpipeMeetings({ url: opts.url, token: opts.token, state: opts.state, since: meetingsSince, until, timeoutMs: opts.timeoutMs, explicitSince: opts.explicitSince })
     result.conversations.push(...m.conversations)
     result.commits.push(...m.commits)
     result.warnings.push(...m.warnings)
@@ -815,7 +822,11 @@ function appsOf(w: Record<string, unknown>): string[] {
   return out
 }
 
-export type WorkflowOptions = { whitelist?: string[] }
+export type WorkflowOptions = {
+  whitelist?: string[]
+  /** Secrets du poste (jetons, clés) à masquer tels quels. */
+  literals?: string[]
+}
 
 /**
  * Correspondance « au mieux » des workflows détectés par Screenpipe vers POST /api/automations, avec les mêmes
@@ -845,8 +856,9 @@ export function mapWorkflowsDetailed(
       dropped++
       continue
     }
-    const title = truncate(redact(rawTitle).text, 200)
-    const description = truncate(redact(rawDescription).text, 1000)
+    const red = (t: string) => redact(t, { literals: opts.literals }).text
+    const title = truncate(red(rawTitle), 200)
+    const description = truncate(red(rawDescription), 1000)
     const occurrences = int(w.occurrences ?? w.count ?? w.frequency ?? w.times ?? w.runs)
     const days = int(w.days ?? w.unique_days ?? w.day_count ?? w.distinct_days)
     const schedule = str(w.schedule ?? w.cron ?? w.typical_time ?? w.time).trim()
@@ -854,10 +866,10 @@ export function mapWorkflowsDetailed(
     const zone = zones.length ? classifyZones(`${title} ${description}`, zones, 1)[0] : undefined
     const rawId = str(w.id ?? w.key ?? w.name ?? rawTitle)
     out.push({
-      id: truncate(redact(rawId).text, 200),
+      id: truncate(red(rawId), 200),
       title,
       description,
-      ...(schedule ? { schedule: truncate(redact(schedule).text, 120) } : {}),
+      ...(schedule ? { schedule: truncate(red(schedule), 120) } : {}),
       occurrences,
       days,
       ...(zone ? { zone } : {}),

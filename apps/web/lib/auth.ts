@@ -5,7 +5,7 @@
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import type { Profile } from "@brain/core"
-import { getStore } from "./store"
+import { getStore, isStoreSetupError } from "./store"
 import { getAccess, type Access } from "./access"
 
 export const SESSION_COOKIE = "brain_session"
@@ -62,6 +62,8 @@ export const sessionCookieOptions = {
   maxAge: SESSION_DAYS * 86400,
 }
 
+let warnedSetup = false
+
 async function verifySigned(value: string | undefined, purpose: string): Promise<string | null> {
   if (!value) return null
   const parts = value.split(".")
@@ -70,8 +72,20 @@ async function verifySigned(value: string | undefined, purpose: string): Promise
   if (!/^\d{10,16}$/.test(exp) || Number(exp) < Date.now()) return null
   const tokenHash = await getStore().getTokenHash(userId)
   if (!tokenHash) return null
+  let expected: string
+  try {
+    expected = await sign(userId, exp, tokenHash, purpose)
+  } catch (err) {
+    // Secret introuvable (migration non appliquée) : session invérifiable, donc refusée (401 / page de connexion).
+    if (!isStoreSetupError(err)) throw err
+    if (!warnedSetup) {
+      warnedSetup = true
+      console.error(`[auth] ${err.message}`)
+    }
+    return null
+  }
   const a = Buffer.from(sig)
-  const b = Buffer.from(await sign(userId, exp, tokenHash, purpose))
+  const b = Buffer.from(expected)
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null
   return userId
 }

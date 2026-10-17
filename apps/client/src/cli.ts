@@ -40,23 +40,33 @@ Commandes :
                      seulement), néon, puis le cerveau s'ouvre dans le navigateur. Relançable sans paramètres.
                      Code de sortie 3 : tout est branché sauf l'autorisation d'enregistrer l'écran.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
-       [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
+       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
                      Chaque option peut être donnée seule pour compléter une config existante.
+                     --claude-token : jeton longue durée créé par \`claude setup-token\` (abonnement Claude, sans clé API),
+                     passé à chaque \`claude -p\` du client, synchro planifiée comprise (« aucun » pour le retirer).
                      --share-prompt-summaries non : le hook n'envoie plus aucun résumé de prompt (empreinte seule).
                      --screenpipe-meetings non : les réunions transcrites par Screenpipe ne sont pas distillées.
   hello              Test de bout en bout : vos zones s'allument sur le dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
                      Lit les sessions IA locales, filtre (secrets, perso), distille et envoie au cerveau.
-                     --dry-run montre ce qui partirait sans rien envoyer (--full : chaque connaissance en entier).
+                     --dry-run montre ce qui partirait sans rien envoyer (--full : chaque connaissance en entier),
+                     et dit ce que l'aperçu ne contient pas (limite atteinte, captures non lues, tours en cours).
+                     Si Claude échoue, la conversation est retentée plus tard (jamais distillée sans LLM en secours),
+                     et abandonnée après 3 échecs dus à son contenu ; une panne, une limite d'abonnement ou un
+                     jeton expiré ne compte pas (si Claude ne répond plus du tout : abandon après 24 h d'échecs).
   sync --confirm     Envoie exactement ce que la dernière simulation a montré (valable 24 h).
                      Options avancées : --distiller heuristic|claude-cli|claude-api, --reset (ignore les checkpoints).
+  refresh-status [--dry-run]
+                     Admins : rédige « où en est la boîte » sur ce poste avec Claude (\`claude -p\`, votre abonnement ;
+                     sinon la clé API) et l'envoie au dashboard. --dry-run : affiche le résumé sans l'envoyer.
   status             État du client : connexion, dernière synchro, Screenpipe, hooks, planification.
   mcp                Serveur MCP stdio « company-brain » (à brancher avec : claude mcp add company-brain --scope user -- node ${selfScript()} mcp).
   hook               Gestionnaire des hooks Claude Code (lit le JSON du hook sur l'entrée standard).
   install-hooks      Ajoute les hooks SessionStart, UserPromptSubmit et Stop à ~/.claude/settings.json.
-  install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows), à partir de maintenant :
-                     l'historique non relu n'est jamais envoyé automatiquement. À lancer après sync --confirm.
+  install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows), à partir de maintenant pour
+                     toutes les sources (Screenpipe, Claude Code, Codex) : l'historique non relu n'est jamais envoyé
+                     automatiquement. À lancer après sync --confirm.
   install-pipe       Écrit le pipe Screenpipe « brain-sync » (~/.screenpipe/pipes/brain-sync/pipe.md) : la synchro apparaît dans les tâches
                      planifiées de Screenpipe et se relance à la fin de chaque réunion. Demande l'application Screenpipe (moteur de pipes).
   uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP et le service Screenpipe installé par setup ;
@@ -122,6 +132,10 @@ async function main(argv: string[]): Promise<number> {
         confirm: Boolean(flags.confirm),
       })
       return 0
+    }
+    case "refresh-status": {
+      const { cmdRefreshStatus } = await import("./refresh-status")
+      return cmdRefreshStatus({ dryRun: Boolean(flags["dry-run"]), verbose: Boolean(flags.verbose) })
     }
     case "mcp": {
       const { runMcpServer } = await import("./mcp")

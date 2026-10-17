@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { getPersonContext } from "@/lib/brain"
+import { canRead } from "@/lib/access"
 import { getStore } from "@/lib/store"
 import { requirePageViewer } from "@/lib/session"
 import { BrainIcon } from "@/components/TopBar"
@@ -20,6 +21,10 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const zone = (zid: string) => zones.find((z) => z.id === zid)
   const isSelf = viewer.real.id === id
   const maxWeight = Math.max(1, ...ctx.zones.map((z) => z.weight))
+  // Zones que la personne ne lit pas mais où se trouvent ses propres connaissances (unreadable_zones) ou son activité
+  // (sur son propre contexte) : signalées, jamais masquées (droit de regard).
+  const own = viewer.profile.id === id
+  const unreadable = new Set([...(ctx.unreadable_zones ?? []), ...(own ? ctx.zones.map((z) => z.zone).filter((z) => !canRead(viewer.access, z)) : [])])
 
   return (
     <div className="min-h-dvh">
@@ -46,17 +51,24 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           </p>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <section className="panel p-5">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <section className="panel min-w-0 p-5">
             <h2 className="panel-title">Zones du poste</h2>
             <ul className="mt-3 space-y-2.5">
               {ctx.zones.map((z) => {
                 const zv = zone(z.zone)
                 return (
                   <li key={z.zone}>
-                    <div className="flex justify-between text-[13px]">
-                      <ZoneTag name={zv?.name ?? z.zone} color={zoneColor(zv?.color, zv?.position ?? 0)} />
-                      <span className="tabular-nums text-trace">{z.weight}</span>
+                    <div className="flex items-center justify-between gap-2 text-[13px]">
+                      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <ZoneTag name={zv?.name ?? z.zone} color={zoneColor(zv?.color, zv?.position ?? 0)} />
+                        {unreadable.has(z.zone) && (
+                          <span className="chip !py-0 text-[11px] text-trace" title="Zone non lisible : seules les connaissances issues de ce poste y sont visibles ici">
+                            zone non lisible
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-trace">{z.weight}</span>
                     </div>
                     <div className="mt-1 h-1.5 rounded-full bg-line" aria-hidden>
                       <div className="h-full rounded-full bg-ink" style={{ width: `${(z.weight / maxWeight) * 100}%` }} />
@@ -67,7 +79,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               {ctx.zones.length === 0 && <li className="text-[13px] text-trace">Pas encore d&apos;activité.</li>}
             </ul>
           </section>
-          <section className="panel p-5">
+          <section className="panel min-w-0 p-5">
             <h2 className="panel-title">Sujets et outils récurrents</h2>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {ctx.entities.map((e) => (
@@ -78,7 +90,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               {ctx.entities.length === 0 && <span className="text-[13px] text-trace">Rien pour l&apos;instant.</span>}
             </div>
           </section>
-          <section className="panel p-5">
+          <section className="panel min-w-0 p-5">
             <h2 className="panel-title">Prompts les plus fréquents</h2>
             <ul className="mt-3 space-y-2 text-[13px]">
               {ctx.frequent_prompts.map((p, i) => (
@@ -92,7 +104,14 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           </section>
         </div>
 
-        <PersonItems items={ctx.items} zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color, position: z.position }))} canDelete={isSelf || viewer.real.role === "admin"} now={Date.now()} />
+        <PersonItems
+          items={ctx.items}
+          zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color, position: z.position }))}
+          canDelete={isSelf || viewer.real.role === "admin"}
+          now={Date.now()}
+          unreadableZones={[...unreadable]}
+          personName={isSelf ? undefined : ctx.person.name}
+        />
       </main>
     </div>
   )

@@ -7,9 +7,10 @@ import zlib from "node:zlib"
 import { fork } from "node:child_process"
 import { createHash, createHmac } from "node:crypto"
 import { fileURLToPath } from "node:url"
+import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
-import { tokenize, type KnowledgeItemInput } from "@brain/core"
-import { getStore } from "../lib/store"
+import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput } from "@brain/core"
+import { getStore, isStoreSetupError, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
 import { getAccess, redactEvent } from "../lib/access"
@@ -28,6 +29,12 @@ import {
 } from "../lib/brain"
 import { createLoginCode, createSessionValue, hashToken, newToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
+import * as automationsRoute from "../app/api/automations/route"
+import * as adminZonesRoute from "../app/api/admin/zones/route"
+import * as statusRoute from "../app/api/status/route"
+import * as statusInputRoute from "../app/api/status/input/route"
+import * as stateRoute from "../app/api/state/route"
+import * as demoSessionRoute from "../app/api/session/demo/route"
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`ÉCHEC : ${msg}`)
@@ -44,6 +51,127 @@ async function viewer(name: string): Promise<Viewer> {
 
 function item(zone: string, title: string, kind: KnowledgeItemInput["kind"] = "fact"): KnowledgeItemInput {
   return { zone, kind, title, body: `${title}. Test de fumée.`, entities: [], source: { app: "Terminal", tool: "claude-code", at: new Date().toISOString() }, confidence: 0.7 }
+}
+
+type Handler = (req: Request, ctx: any) => Promise<Response>
+
+/** Appelle une route de l'API comme le ferait Next (cookie de session du dashboard). */
+async function call(handler: Handler, url: string, opts: { method?: string; session?: string; body?: unknown; raw?: string } = {}) {
+  const headers: Record<string, string> = { "content-type": "application/json" }
+  if (opts.session) headers.cookie = `brain_session=${opts.session}`
+  const body = opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined)
+  const res = await handler(new Request(`http://smoke.test${url}`, { method: opts.method ?? "GET", headers, body }), { params: Promise.resolve({}) })
+  return { status: res.status, data: (await res.json().catch(() => null)) as any }
+}
+
+function pgClient(url: string, max = 2) {
+  const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url) || url.includes("host=/")
+  return postgres(url, { prepare: false, max, ssl: local || process.env.DATABASE_SSL === "disable" ? false : "require", onnotice: () => {} })
+}
+
+/** Applique les migrations sur `url` (scripts/migrate.ts dans un processus enfant). */
+function migrate(url: string): Promise<void> {
+  const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "migrate.ts")
+  return new Promise((resolve, reject) => {
+    const child = fork(script, [], { env: { ...process.env, DATABASE_URL: url }, execArgv: process.execArgv, stdio: "ignore" })
+    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`migrations : code ${code}`))))
+  })
+}
+
+/**
+ * E3 : reset() pendant qu'une autre instance relit l'organisation. Dans une base jetable (le reset vide tout) :
+ * ignoré si le rôle ne peut pas créer de base.
+ */
+async function orgRaceTest(baseUrl: string, run: string) {
+  const dbName = `brain_smoke_e3_${run}`.replace(/[^a-z0-9_]/g, "_")
+  const admin = pgClient(baseUrl, 1)
+  try {
+    await admin.unsafe(`create database "${dbName}"`)
+  } catch (err) {
+    console.log(`⚠ test de course E3 ignoré (création d'une base jetable impossible : ${(err as Error).message})`)
+    await admin.end({ timeout: 5 })
+    return
+  }
+  const u = new URL(baseUrl)
+  u.pathname = `/${dbName}`
+  const url = u.toString()
+  const stores: PostgresStore[] = []
+  const open = () => {
+    const st = new PostgresStore(url)
+    stores.push(st)
+    return st as any
+  }
+  const sql = pgClient(url)
+  try {
+    await migrate(url)
+    const [first, second] = [open(), open()]
+    const [o1, o2] = await Promise.all([first.getOrg(), second.getOrg()])
+    const [{ n: fresh }] = await sql`select count(*)::int as n from orgs`
+    assert(fresh === 1 && o1.id === o2.id, "base neuve : deux instances qui démarrent ensemble ne créent qu'une organisation")
+
+    // B fait le reseed (latence ajoutée DANS la transaction, entre la purge et la création, comme depuis un laptop) ;
+    // A relit son org en continu (cache expiré), C fait comme une instance qui démarre (aucun cache).
+    const [A, B, C] = [open(), open(), open()]
+    const insertOrg = B.insertOrg.bind(B)
+    B.insertOrg = async (tx: unknown, o: unknown) => {
+      await sleep(150)
+      return insertOrg(tx, o)
+    }
+    await A.getOrg()
+    let stop = false
+    let refreshes = 0
+    let starts = 0
+    let failures = 0
+    const refreshLoop = (async () => {
+      while (!stop) {
+        if (A.orgCache) A.orgCache.at = 0
+        await A.getOrg().then(() => refreshes++, () => failures++)
+        await sleep(5)
+      }
+    })()
+    const startLoop = (async () => {
+      while (!stop) {
+        C.orgCache = null
+        await C.getOrg().then(() => starts++, () => failures++)
+        await sleep(5)
+      }
+    })()
+    const counts: number[] = []
+    let wrong = 0
+    for (let k = 0; k < 20; k++) {
+      await B.reset({ name: `Smoke org ${k}`, description: "" })
+      const rows = await sql`select name from orgs`
+      counts.push(rows.length)
+      if (rows[0]?.name !== `Smoke org ${k}`) wrong++
+      await sleep(20)
+    }
+    stop = true
+    await Promise.all([refreshLoop, startLoop])
+    assert(
+      counts.every((c) => c === 1) && wrong === 0 && failures === 0 && refreshes > 0 && starts > 0,
+      `20 reseeds pendant que deux autres instances relisent l'org : jamais d'org parasite (${refreshes} relectures, ${starts} démarrages)`,
+    )
+    A.orgCache.at = 0
+    assert((await A.getOrg()).name === "Smoke org 19", "l'autre instance suit la nouvelle organisation")
+
+    // Purge faite par un autre outil (ancien seed : truncate puis création séparée) : un rafraîchissement ne crée rien.
+    await sql`truncate orgs cascade`
+    A.orgCache.at = 0
+    const kept = await A.getOrg()
+    const [{ n: afterPurge }] = await sql`select count(*)::int as n from orgs`
+    assert(afterPurge === 0 && kept.name === "Smoke org 19", "table vidée ailleurs : un rafraîchissement du cache ne crée jamais d'organisation")
+    const [x1, x2] = await Promise.all([open().getOrg(), open().getOrg()])
+    const [{ n: recreated }] = await sql`select count(*)::int as n from orgs`
+    assert(recreated === 1 && x1.id === x2.id, "base vide : deux premiers chargements simultanés créent une seule organisation (insertion atomique)")
+    await open().createProfile({ name: "Smoke", role: "admin", token_hash: `smoke-${run}` })
+    await sql`insert into orgs (name, description, created_at) values ('Org parasite', '', now() - interval '1 day')`
+    assert((await open().getOrg()).id === x1.id, "une organisation vide plus ancienne (parasite) est ignorée au profit de celle qui a des comptes")
+  } finally {
+    await Promise.all(stores.map((st) => st.end().catch(() => {})))
+    await sql.end({ timeout: 5 })
+    await admin.unsafe(`drop database if exists "${dbName}" with (force)`).catch((err) => console.log(`⚠ base jetable ${dbName} non supprimée : ${err.message}`))
+    await admin.end({ timeout: 5 })
+  }
 }
 
 /** Processus enfant (test du verrou du stockage fichier) : écrit des événements et des items dans `dir`. */
@@ -138,6 +266,16 @@ async function main() {
   const dup = await ingestItems(hugo, [item("dev", `Smoke ${run} doublon`), item("dev", `smoke ${run} doublon`), item("produit", `Smoke ${run} doublon`)])
   created.push(...dup.ids)
   assert(dup.inserted === 2 && dup.skipped === 1, "doublon dans un même lot ignoré, même titre dans une autre zone gardé")
+  const sameTitle = `Smoke ${run} claude — fournil`
+  const fact1 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "On a décidé de passer à Pennylane." }])
+  const fact2 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "On a aussi décidé de garder Qonto pour la trésorerie." }])
+  created.push(...fact1.ids, ...fact2.ids)
+  assert(fact1.inserted === 1 && fact2.inserted === 1 && fact2.skipped === 0, "même titre mais contenu différent : les deux faits sont gardés (E1)")
+  const fact3 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "On a aussi  décidé de garder QONTO pour la trésorerie. " }])
+  assert(fact3.inserted === 0 && fact3.skipped === 1, "même titre et même contenu (normalisés) : ignoré")
+  const partly = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "On a décidé de passer à Pennylane." }, item("produit", `Smoke ${run} idée produit`)])
+  created.push(...partly.ids)
+  assert(partly.inserted === 1 && partly.skipped === 1 && partly.zones.join() === "produit", "réponse d'ingestion : seules les zones qui ont vraiment reçu un item")
 
   console.log("\n— Événements d'écriture par zone et résumés (D2)")
   const batch = await ingestItems(claire, [item("compta", `Smoke ${run} trésorerie : 2 mois de cash restants`), item("dev", `Smoke ${run} migration Postgres des précommandes`)])
@@ -167,11 +305,40 @@ async function main() {
   ])
   assert(!hookPersonal.summary && hookPersonal.fingerprint === "fp-perso", "prompt personnel (hook) : empreinte seule, pas de résumé stocké")
   assert(!hookOff.summary && hookOff.zones.length === 0, "prompt hors zone (hook) : pas de résumé stocké")
+  const [dupZones] = await recordEvents(hugo, [{ agent: "mcp", type: "query", zones: ["dev", "dev", "produit", "dev"], summary: `Smoke ${run} zones` }])
+  assert(dupZones.zones.join() === "dev,produit", "zones d'un événement dédoublonnées")
+
+  console.log("\n— Recherches : texte gardé seulement sans zone illisible ni contenu personnel (E2)")
+  const lastEvent = async (v: Viewer) => (await store.listEvents({ userId: v.real.id, limit: 1 }))[0]
   const inesQuery = await queryBrain(ines, { query: "quel est le salaire urssaf" })
   assert(inesQuery.zones_hit.length === 0 && inesQuery.zones_restricted.includes("compta"), "recherche d'Inès sur la compta : rien de lisible")
-  const inesEvent = (await store.listEvents({ userId: ines.profile.id, limit: 1 }))[0]
+  const inesEvent = await lastEvent(ines)
   const sarahView = (await getState(sarah)).events.find((e) => e.id === inesEvent?.id)
-  assert(inesEvent?.summary === "quel est le salaire urssaf" && sarahView && !sarahView.summary, "cette recherche n'est pas diffusée à Sarah")
+  assert(inesEvent && !inesEvent.summary && sarahView && !sarahView.summary, "cette recherche n'est ni conservée ni diffusée à Sarah")
+  const mixedText = "licenciement de Hugo et son salaire, prévoir la mise à jour du déploiement"
+  const mixed = await queryBrain(ines, { query: mixedText })
+  const mixedEvent = await lastEvent(ines)
+  assert(mixed.zones_hit.includes("dev") && mixed.zones_restricted.includes("compta"), "recherche d'Inès sur dev ET compta : dev s'allume, compta signalée")
+  assert(mixedEvent.zones.join() === mixed.zones_hit.join() && !mixedEvent.summary, "l'événement garde les zones allumées, sans le texte de la recherche")
+  const leo = await viewer("Léo")
+  assert(
+    !redactEvent(mixedEvent, leo.access, leo.profile.id).summary && !(await getState(hugo)).events.find((e) => e.id === mixedEvent.id)?.summary,
+    "Léo et Hugo (dev, sans compta) ne lisent pas ce texte",
+  )
+  await queryBrain(hugo, { query: "écris une lettre à mon médecin pour ma dépression, et le déploiement" })
+  const persoEvent = await lastEvent(hugo)
+  assert(persoEvent.zones.includes("dev") && !persoEvent.summary, "recherche personnelle : zone allumée, texte non conservé")
+  await queryBrain(hugo, { query: `Smoke ${run} déployer en production` })
+  assert((await lastEvent(hugo)).summary === `Smoke ${run} déployer en production`, "recherche dans ses zones, sans rien de personnel : texte conservé")
+  const both = `Smoke ${run} imprimante de tickets du support et déploiement`
+  await queryBrain(hugo, { query: both })
+  const bothEvent = await lastEvent(hugo)
+  assert(bothEvent.summary === both && bothEvent.zones.includes("dev") && bothEvent.zones.includes("support"), "texte conservé : l'événement porte toutes les zones touchées (dev + support)")
+  assert(!redactEvent(bothEvent, ines.access, ines.profile.id).summary, "Inès (dev sans support) ne lit pas ce texte qui parle aussi du support")
+  await queryBrain(claire, { query: "salaire urssaf et déploiement vercel" })
+  assert((await lastEvent(claire)).summary === "salaire urssaf et déploiement vercel", "l'admin lit toutes les zones : texte conservé")
+  const jmOwn = await queryBrain(jm, { query: `Smoke ${run}` })
+  assert(jmOwn.items.some((i) => i.id === jmDev.ids[0]) && !(await lastEvent(jm)).summary, "recherche qui retrouve son propre item rangé dans une zone non lisible : texte non conservé")
 
   console.log("\n— « Où en est la boîte » limité aux zones lisibles (D4)")
   const jmStatus = await statusForViewer(jm)
@@ -180,6 +347,108 @@ async function main() {
   assert((await getState(jm)).status?.headline === jmStatus?.headline, "même titre dans l'état du dashboard")
   assert((await statusForViewer(hugo))?.headline.startsWith("Dans vos zones ("), "Hugo : titre sur ses trois zones")
   assert((await statusForViewer(claire))?.headline === status.headline, "l'admin garde le titre global")
+
+  console.log("\n— API : automatisations remontées par Screenpipe")
+  const hugoSession = await createSessionValue(hugo.profile.id)
+  const claireSession = await createSessionValue(claire.profile.id)
+  const wf = await call(automationsRoute.POST, "/api/automations", {
+    method: "POST",
+    session: hugoSession,
+    body: {
+      workflows: [
+        {
+          id: `smoke-${run}`,
+          title: "Relancer marie.durand@gmail.com au 06 12 34 56 78",
+          description: "Exporter les relevés, clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+          schedule: "chaque lundi, écrire à jean@perso.fr",
+          zone: "inconnue",
+        },
+      ],
+    },
+  })
+  const savedWf = (await store.listAutomations()).find((a) => a.key === `screenpipe:${hugo.profile.id}:smoke-${run}`)
+  assert(wf.status === 201 && savedWf, "POST /api/automations enregistre le workflow")
+  const wfText = `${savedWf!.title} ${savedWf!.description} ${savedWf!.schedule}`
+  assert(!/marie\.durand|06 12 34 56 78|sk-ant|jean@perso/.test(wfText) && wfText.includes("masqué"), `titre, description et horaire masqués côté serveur (« ${savedWf!.title} »)`)
+  assert(savedWf!.zone === undefined, "zone inconnue écartée")
+  await store.updateAutomation(savedWf!.id, { status: "dismissed" })
+
+  console.log("\n— API : création de zone")
+  const existing = zones.find((z) => slugify(z.name) === z.id)!
+  const clash = await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: claireSession, body: { name: existing.name.toUpperCase() } })
+  const untouched = (await store.listZones()).find((z) => z.id === existing.id)!
+  assert(clash.status === 409 && /existe déjà/.test(clash.data?.error ?? ""), `nom déjà pris sans identifiant explicite : 409 (« ${clash.data?.error} »)`)
+  assert(untouched.keywords.length === existing.keywords.length && untouched.description === existing.description, "la zone existante n'est pas écrasée")
+  const edit = await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: claireSession, body: { id: existing.id, name: existing.name } })
+  const edited = (await store.listZones()).find((z) => z.id === existing.id)!
+  assert(edit.status === 200 && edited.keywords.length === existing.keywords.length && edited.description === existing.description, "avec son identifiant : mise à jour, mots-clés et description conservés")
+  assert((await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: hugoSession, body: { name: `Smoke ${run}` } })).status === 403, "réservé aux admins (403)")
+
+  console.log("\n— État de l'entreprise produit sur un poste (E4)")
+  const originalStatus = await store.getStatus()
+  try {
+    const denied = await call(statusInputRoute.GET, "/api/status/input", { session: hugoSession })
+    assert(denied.status === 403 && denied.data?.error, "GET /api/status/input : réservé aux admins (403)")
+    const inputRes = await call(statusInputRoute.GET, "/api/status/input", { session: claireSession })
+    const si = inputRes.data as StatusInput
+    assert(inputRes.status === 200 && si.company_name === (await store.getOrg()).name && /^\d{4}-\d{2}-\d{2}$/.test(si.generated_for), `matière du résumé : ${si.company_name}, ${si.generated_for}`)
+    assert(si.zones.length === zones.length && si.zones.every((z) => z.id && z.name && typeof z.description === "string"), "toutes les zones (id, nom, description)")
+    const oldest = Date.now() - 30 * 86400_000 - 60_000
+    assert(si.items.length > 0 && si.items.length <= 400 && si.items.every((i) => Date.parse(i.created_at) >= oldest), `connaissances des 30 derniers jours, 400 au plus (${si.items.length})`)
+    assert(si.items.every((i, k) => k === 0 || si.items[k - 1].created_at >= i.created_at), "les plus récentes d'abord")
+    const names = new Set((await store.listProfiles()).map((p) => p.name))
+    assert(si.items.every((i) => names.has(i.author)) && !JSON.stringify(si).includes(hugo.profile.id), "auteur = nom du membre (aucun identifiant)")
+    assert(si.tasks.length > 0 && si.tasks.some((t) => t.assignee) && si.tasks.every((t) => (t.status === "open" || t.status === "done") && (!t.assignee || names.has(t.assignee))), "tâches avec le nom de la personne assignée")
+
+    const pushedStatus = {
+      headline: `Smoke ${run} : la boîte avance, détails à claire.perso@gmail.com`,
+      zones: [
+        { zone: "dev", summary: "Mise en prod prête, clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz", objectives: ["Tenir la mise en prod"], progress: "80 %", next_steps: ["Relire la PR"], who_did_what: [{ person: "Hugo Bernard", did: "a migré Postgres" }] },
+        { zone: "compta", summary: "Trésorerie : 2 mois de cash", objectives: [], progress: "", next_steps: [], who_did_what: [] },
+        { zone: "inconnue", summary: "zone inventée", objectives: [], progress: "", next_steps: [], who_did_what: [] },
+        { zone: "dev", summary: "doublon", objectives: [], progress: "", next_steps: [], who_did_what: [] },
+      ],
+    }
+    assert((await call(statusRoute.POST, "/api/status", { method: "POST", session: hugoSession, body: { status: pushedStatus } })).status === 403, "POST /api/status avec un résumé : réservé aux admins (403)")
+    const evBefore = (await store.listEvents({ limit: 1 }))[0]?.id ?? 0
+    const pushed = await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, body: { status: pushedStatus } })
+    const saved = pushed.data as CompanyStatus
+    assert(pushed.status === 200 && saved.generator === "claude" && Math.abs(Date.parse(saved.generated_at) - Date.now()) < 60_000, "résumé du poste enregistré (généré par Claude, maintenant)")
+    assert(saved.zones.map((z) => z.zone).join() === "dev,compta", "zones inconnues et doublons écartés")
+    assert(!/sk-ant|claire\.perso/.test(JSON.stringify(saved)) && saved.headline.includes("masqué"), "texte masqué côté serveur")
+    assert(isDeepStrictEqual(await store.getStatus(), saved), "c'est l'état stocké qui est renvoyé")
+    const statusEvent = (await store.listEvents({ afterId: evBefore, limit: 50 })).find((e) => e.agent === "job" && e.summary === "Mise à jour de l'état de l'entreprise")
+    assert(statusEvent && statusEvent.zones.length === zones.length && statusEvent.user_id === claire.profile.id, "le même événement « Mise à jour de l'état de l'entreprise » est émis")
+    const jmPushed = await statusForViewer(jm)
+    assert(jmPushed?.zones.map((z) => z.zone).join() === "compta" && jmPushed.headline !== saved.headline, "Jean-Marc n'en reçoit que la compta, avec son propre titre (D4)")
+    assert((await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, raw: "{pas du json" })).status === 400, "corps illisible : 400")
+    assert((await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, body: { status: { headline: "x", zones: "dev" } } })).status === 400, "résumé mal formé : 400")
+    assert((await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, body: { headline: "Résumé sans enveloppe", zones: [{ zone: "dev" }] } })).status === 400, "résumé sans { status } : 400, pas de recalcul qui l'écraserait")
+    const unknownOnly = await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, body: { status: { headline: "x", zones: [{ zone: "inconnue" }] } } })
+    assert(unknownOnly.status === 400 && /aucune zone/.test(unknownOnly.data?.error ?? ""), "aucune zone connue : 400")
+    assert(isDeepStrictEqual(await store.getStatus(), saved), "un résumé refusé ne remplace pas l'état")
+    // Chaîne complète du poste : prompt (cœur) → réponse de `claude -p --output-format json` → parseStatusJson → POST.
+    const prompt = buildCliStatusPrompt(si)
+    assert(prompt.startsWith(DISTILL_MARKER) && prompt.includes(si.company_name) && si.zones.every((z) => prompt.includes(z.id)), "prompt du poste : marqueur anti-ingestion et matière du serveur")
+    const answer = JSON.stringify({
+      headline: `Smoke ${run} via le poste`,
+      zones: [
+        { zone: "dev", summary: "Prod prête", objectives: ["Livrer"], progress: "80 %", next_steps: ["PR"], who_did_what: [{ person: "Hugo Bernard", did: "migration" }] },
+        { zone: "zz", summary: "x", objectives: [], progress: "", next_steps: [], who_did_what: [] },
+      ],
+    })
+    const envelope = JSON.stringify({ type: "result", is_error: false, result: `Voici l'état :\n\`\`\`json\n${answer}\n\`\`\`` })
+    const parsedReply = parseStatusJson(envelope, si.zones.map((z) => z.id))
+    const viaCli = await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, body: { status: parsedReply } })
+    assert(
+      parsedReply && viaCli.status === 200 && viaCli.data.headline === `Smoke ${run} via le poste` && viaCli.data.zones.map((z: { zone: string }) => z.zone).join() === "dev",
+      "réponse de Claude lue par le cœur (parseStatusJson) puis acceptée par POST /api/status",
+    )
+    const regen = await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession })
+    assert(regen.status === 200 && regen.data.zones.length >= 1 && regen.data.generated_at !== saved.generated_at, `sans corps : régénération côté serveur comme avant (${regen.data.generator})`)
+  } finally {
+    if (originalStatus) await store.setStatus(originalStatus)
+  }
 
   console.log("\n— Sessions du dashboard (D5)")
   const savedSecret = process.env.BRAIN_SESSION_SECRET
@@ -279,6 +548,41 @@ async function main() {
     await other.updateOrg({ name: orgBefore.name })
     await other.end()
     assert(seen === `${orgBefore.name} (smoke)`, "une instance voit le changement d'organisation fait ailleurs, sans redémarrer")
+
+    console.log("\n— Postgres : table brain_settings absente (migration non appliquée)")
+    const g = globalThis as unknown as { __brainStore?: BrainStore }
+    const current = g.__brainStore
+    const savedEnvSecret = process.env.BRAIN_SESSION_SECRET
+    const savedDemo = process.env.BRAIN_DEMO
+    delete process.env.BRAIN_SESSION_SECRET
+    const oldCookie = await createSessionValue(hugo.profile.id)
+    const ddl = pgClient(url, 1)
+    const blank = new PostgresStore(url)
+    await ddl`alter table brain_settings rename to brain_settings_smoke`
+    g.__brainStore = blank
+    try {
+      assert((await viewerFromCookies(oldCookie, undefined)) === null, "session invérifiable : refusée sans planter (retour à la connexion)")
+      assert((await call(stateRoute.GET, "/api/state", { session: oldCookie })).status === 401, "route du dashboard : 401 et non 500")
+      let setupErr: unknown
+      await createSessionValue(hugo.profile.id).catch((err) => (setupErr = err))
+      assert(isStoreSetupError(setupErr) && setupErr.status === 503 && /db:migrate/.test(setupErr.message), "connexion : erreur de configuration claire")
+      process.env.BRAIN_DEMO = "1"
+      const login = await call(demoSessionRoute.POST, "/api/session/demo", { method: "POST", body: { userId: hugo.profile.id } })
+      assert(login.status === 503 && /migrations/.test(login.data?.error ?? ""), `POST /api/session/demo : 503 (« ${login.data?.error} »)`)
+    } finally {
+      g.__brainStore = current
+      await blank.end()
+      await ddl`alter table brain_settings_smoke rename to brain_settings`
+      await ddl.end({ timeout: 5 })
+      if (savedEnvSecret === undefined) delete process.env.BRAIN_SESSION_SECRET
+      else process.env.BRAIN_SESSION_SECRET = savedEnvSecret
+      if (savedDemo === undefined) delete process.env.BRAIN_DEMO
+      else process.env.BRAIN_DEMO = savedDemo
+    }
+    assert((await viewerFromCookies(oldCookie, undefined))?.real.id === hugo.profile.id, "table rétablie : la session redevient valide")
+
+    console.log("\n— Postgres : reset atomique, jamais d'organisation parasite (E3)")
+    await orgRaceTest(url, run)
   }
 
   if (store.kind === "file") {

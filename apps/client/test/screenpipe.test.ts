@@ -286,6 +286,25 @@ test("mapWorkflows : workflows perso ou hors liste blanche écartés, texte masq
   assert.equal(mapWorkflows(raw, [], { whitelist: ["claude", "mail", "excel"] }).length, 2)
 })
 
+test("H-browser-url : l'URL de l'onglet (browser_url) décide pour un navigateur, avant le titre", () => {
+  const tab = (id: number, window: string, url: string | undefined, text: string) => ({
+    type: "OCR",
+    content: { frame_id: id, text, timestamp: at(id), app_name: "Google Chrome", window_name: window, ...(url ? { browser_url: url } : {}) },
+  })
+  const items = [
+    tab(1, "Trésorerie 2026", "https://claude.ai/chat/abc", "On a décidé de garder Qonto pour la trésorerie."),
+    tab(2, "Claude", "https://mail.google.com/mail/u/0", "Re: dîner samedi"),
+    tab(3, "Trésorerie 2026", undefined, "Tableau perso"),
+  ].map((r) => normalizeScreenpipeItem(r)!)
+  assert.equal(items[0].browserUrl, "https://claude.ai/chat/abc")
+  assert.equal(items[2].browserUrl, undefined)
+  const convs = groupScreenpipeItems(items)
+  assert.equal(convs.length, 1, JSON.stringify(convs.map((c) => c.title)))
+  assert.match(convs[0].messages[1].text, /garder Qonto/)
+  // Format camelCase accepté aussi.
+  assert.equal(normalizeScreenpipeItem({ content: { text: "x", timestamp: at(0), app_name: "Arc", browserUrl: "https://chatgpt.com/c/1" } })?.browserUrl, "https://chatgpt.com/c/1")
+})
+
 test("readScreenpipe : en-têtes d'attribution, jeton, filter_pii et pages de 100 par défaut", async () => {
   const srv = await mockServer((req) => {
     const u = new URL(req.url, "http://x")

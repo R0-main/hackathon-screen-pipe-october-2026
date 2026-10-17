@@ -96,3 +96,31 @@ test("onboarding : les items suivent le renommage des identifiants de zone", asy
   assert.equal(zoneId("sales"), "sales")
   assert.equal(zoneId("Commerce"), "ventes-2")
 })
+
+test("zones (2e passe) : le sigle CI reste un signal Dev, la particule « -ci » non", () => {
+  // Zones déjà stockées en production : « ci » et « pr » dans Dev, ni « gitlab » ni « cicd ».
+  const stored = DEFAULT_ZONES.map((z) =>
+    z.id === "dev" ? { ...z, keywords: [...z.keywords.filter((k) => !["ci", "cicd", "github", "gitlab"].includes(k)), "ci", "pr"] } : z,
+  )
+  // [texte, première zone attendue] ; hors Dev, « dev » ne doit apparaître nulle part. Zones par défaut puis stockées.
+  const cases: [string, string][] = [
+    ["Le pipeline CI/CD échoue", "dev"],
+    ["Pourquoi la CI est lente ?", "dev"],
+    ["gitlab-ci.yml ne passe pas", "dev"],
+    ["La CI-CD de GitHub est rouge", "dev"],
+    ["Le job .github-ci casse sur main", "dev"],
+    ["Quel est le montant des factures impayées ce mois-ci ?", "compta"],
+    ["Envoie la facture ci-jointe au client", "sales"],
+    ["Voir le devis ci-dessous", "sales"],
+    ["Comme ci comme ça, le devis du client", "sales"],
+  ]
+  for (const zones of [DEFAULT_ZONES, stored]) {
+    const wrong = cases
+      .map(([t, want]) => ({ t, want, got: classifyZones(t, zones, 2) }))
+      .filter(({ want, got }) => got[0] !== want || (want !== "dev" && got.includes("dev")))
+    assert.deepEqual(wrong, [], zones === stored ? "zones stockées" : "zones par défaut")
+  }
+  assert.deepEqual(tokenize("gitlab-ci.yml"), ["gitlab", "ci", "yml"])
+  assert.deepEqual(tokenize("ci-joint ce mois-ci"), ["joint", "mois"])
+  assert.ok(tokenize("CI/CD").includes("cicd"))
+})

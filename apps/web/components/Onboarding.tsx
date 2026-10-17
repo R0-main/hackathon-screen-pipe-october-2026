@@ -102,7 +102,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
               <span className="mt-1 shrink-0" aria-hidden>
                 <BrainIcon size={24} />
               </span>
-              <div className="panel bubble-in max-w-[85%] px-4 py-3 text-[14px]">
+              <div className="panel bubble-in max-w-[85%] break-words px-4 py-3 text-[14px]">
                 <span className="mr-2 text-[12px] tabular-nums text-trace">
                   {i + 1}/{questions.length}
                 </span>
@@ -111,7 +111,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
             </div>
             {answers[q.id] !== undefined && (
               <div className="flex justify-end">
-                <div className="bubble-in max-w-[85%] whitespace-pre-line rounded-[8px] bg-ink px-4 py-3 text-[14px] text-surface">
+                <div className="bubble-in max-w-[85%] whitespace-pre-line break-words rounded-[8px] bg-ink px-4 py-3 text-[14px] text-surface">
                   {answers[q.id] || <span className="text-line-strong">(passé)</span>}
                 </div>
               </div>

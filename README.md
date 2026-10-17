@@ -48,9 +48,10 @@ demo/                 Script de démo
 | **Équipe & accès** | `/admin` | Matrice membres × zones, invitation → prompt d'installation avec jeton personnel, rôles. |
 | **Onboarding** | `/onboarding` | Interview guidée de 7 questions + lecture des liens → zones et premières connaissances, validées avant application. |
 | **Passation** | `/people/:id` | Zones, sujets, prompts fréquents et connaissances d'un poste (et droit de regard : l'employé supprime ses items). |
-| **brain-sync** | `brain.mjs sync` | Lit les logs Claude Code / Codex et l'API locale de Screenpipe, filtre (liste blanche d'apps, secrets, données perso), distille, envoie. |
+| **brain-sync** | `brain.mjs sync` | Lit les logs Claude Code / Codex et l'API locale de Screenpipe, filtre (liste blanche d'apps, secrets, données perso), distille avec Claude, envoie. `--dry-run --full` montre tout ce qui partirait, `--confirm` envoie exactement ce qui a été relu. |
+| **État par Claude** | `brain.mjs refresh-status` | Admins : rédige « où en est la boîte » sur le poste avec Claude (abonnement) et l'envoie au dashboard. |
 | **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
-| **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements (néons fiables + détection des prompts répétitifs par empreinte, sans stocker le prompt brut). |
+| **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
 
 ## API du cerveau
 
@@ -64,7 +65,8 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET | `/api/zones`, `/api/zones/:id` | Zones (avec mots-clés pour les hooks), résumé d'une zone. |
 | GET | `/api/whoami`, `/api/people/:id` | Contexte du poste (passation). |
 | GET | `/api/stream` | Flux SSE des événements, filtré selon les droits. |
-| GET/POST | `/api/status` | État de l'entreprise / régénération (admin). |
+| GET/POST | `/api/status` | État de l'entreprise (titre global réservé à qui lit toutes les zones). POST admin : sans corps, recalcul côté serveur ; avec `{status}`, résumé rédigé sur un poste. |
+| GET | `/api/status/input` | Admin : matière du résumé (30 derniers jours) pour `refresh-status`. |
 | GET/POST/PATCH | `/api/automations…` | Suggestions (heuristique + workflows Screenpipe), validation par un admin. |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
 
@@ -74,6 +76,7 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 2. Elle le colle dans Claude Code, qui lance **une seule commande** (`brain.mjs setup`) : Screenpipe installé et lancé, autorisations macOS
    (écran, et accessibilité en option ; pas de micro) avec reprise automatique, MCP, hooks, synchro toutes les 15 min, néon allumé.
 3. Le cerveau s'ouvre dans son navigateur, déjà connecté. Ensuite rien à faire : en travaillant avec Claude Code, elle le nourrit.
+   `sync --dry-run --full` permet de revoir à tout moment ce qui partirait, `uninstall` retire tout.
 
 Le dashboard doit être joignable par les postes (URL publique ou réseau local) : définissez `BRAIN_PUBLIC_URL`.
 
@@ -95,15 +98,21 @@ Variables : voir [apps/web/.env.example](apps/web/.env.example).
 ### Claude sans clé API (abonnement Claude Code)
 
 - **brain-sync** distille sur chaque poste avec `claude -p` : il utilise l'abonnement Claude Code de l'employé.
-- Pour la synchro planifiée en arrière-plan, un jeton longue durée généré par `claude setup-token` permettra au client d'appeler Claude sans session ouverte (option `init --claude-token`, en cours d'ajout ; le jeton reste sur le poste).
-- Le serveur n'a besoin d'aucune clé : sans `ANTHROPIC_API_KEY`, le résumé « où en est la boîte » et l'onboarding utilisent les heuristiques locales.
-- Limite : les quotas de l'abonnement s'appliquent ; pour proposer l'outil à d'autres entreprises, il faut une clé API (conditions d'Anthropic).
+- Synchro planifiée (sans session ouverte) : générez un jeton avec `claude setup-token` puis `node ~/.company-brain/brain.mjs init --claude-token <jeton>`. Le jeton reste sur le poste (config en mode 600), il est passé à chaque `claude -p` du client et n'apparaît jamais dans la crontab ni dans les logs. Il est valable **un an** et ne se renouvelle pas tout seul : à expiration, le client l'indique ; relancez `claude setup-token` puis `init --claude-token`.
+- « Où en est la boîte » rédigé par Claude : un admin lance `node ~/.company-brain/brain.mjs refresh-status` sur son poste (planifiable chaque matin) ; sans cela, le serveur garde le résumé heuristique. Le serveur n'a besoin d'aucune clé (`ANTHROPIC_API_KEY` reste possible).
+- Chaque employé utilise **son propre** abonnement et son propre jeton : les conditions d'Anthropic interdisent de faire passer les requêtes de plusieurs personnes par l'abonnement d'une seule. Pour proposer l'outil à d'autres entreprises, il faut des clés API.
+- Si `ANTHROPIC_API_KEY` est définie sur le poste, c'est elle que Claude Code utilise ; `claude auth status` indique l'authentification active.
+- Pannes et limites : une limite d'abonnement atteinte (« You've hit your session limit », quota hebdomadaire…), une surcharge ou une erreur réseau n'est jamais imputée à une conversation : rien n'est perdu, la synchro suivante réessaie. Un jeton expiré ou révoqué arrête la synchro avec la marche à suivre (`claude setup-token`, puis `init --claude-token`).
+- Une conversation n'est abandonnée (rien envoyé, checkpoint avancé, avertissement affiché) qu'après 3 échecs avérés : Claude a répondu sans JSON exploitable, ou l'appel a échoué pendant une synchro où Claude a répondu aux autres. Si Claude ne répond plus du tout, il faut en plus 5 essais étalés sur 24 h, pour qu'une capture Screenpipe bloquée ne fige pas le poste.
+- `claude -p` est toujours lancé sans mode `--bare` (ni `CLAUDE_CODE_SIMPLE`), qui ignorerait le jeton.
 
 ## Vie privée et sécurité (MVP)
 
 - Sur le poste : liste blanche d'apps (sessions IA, terminaux, éditeurs), exclusion des contenus perso, masquage des secrets (clés API, jetons, mots de passe, clés privées), emails, téléphones, IBAN, cartes (Luhn), n° de sécu. Rien de brut n'est envoyé.
-- Côté serveur : nouveau masquage à l'ingestion, lecture filtrée par zone sur **toutes** les routes (même règle que les politiques RLS SQL), événements des zones restreintes visibles sans leur contenu, jetons stockés hachés, protection SSRF sur le scraping d'onboarding.
-- Droit de regard : chaque employé voit et supprime les connaissances issues de son poste.
+- Côté serveur : nouveau masquage à l'ingestion, lecture filtrée par zone sur **toutes** les routes (même règle que les politiques RLS SQL), jetons stockés hachés, secret de session aléatoire conservé en base et lié au jeton, protection SSRF vérifiée à la connexion sur le scraping d'onboarding.
+- Activité : une zone s'allume pour tout le monde, mais le contenu d'un événement (résumé, empreinte) n'est visible que de la personne concernée, des admins, ou de qui lit **toutes** ses zones. Une recherche ne garde son texte que si elle ne touche aucune zone illisible pour la personne qui cherche et n'a rien de personnel.
+- Écriture : tout le monde nourrit le cerveau, dans n'importe quelle zone existante ; seule la lecture est restreinte (`zone_access.can_write` est réservé). Doublons écartés (même auteur, même zone, même titre et même contenu sur 30 jours).
+- Droit de regard : chaque personne voit et supprime les connaissances issues de son poste, y compris celles rangées dans une zone qu'elle ne peut pas lire.
 - À trancher avant une vraie mise en production : consentement des salariés et information CSE, durée de conservation, hébergement UE, audit des accès.
 
 ## Tests
