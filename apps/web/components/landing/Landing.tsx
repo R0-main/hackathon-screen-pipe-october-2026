@@ -325,7 +325,7 @@ function Privacy() {
     { term: "Droit de regard", def: "Chacun voit ce qu'il a apporté au cerveau et peut le supprimer." },
   ]
   return (
-    <section className="landing-section relative border-t border-line" aria-labelledby="vie-privee">
+    <section data-hold="1.4" className="landing-section relative border-t border-line" aria-labelledby="vie-privee">
       <Bead />
       <div className="landing-wrap">
         <div className="grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">

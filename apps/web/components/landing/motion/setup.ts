@@ -71,19 +71,24 @@ export function setupLandingMotion(variant: MotionVariant, root: HTMLElement, ct
 
 /* ---------- Rythme : arrêts et calage ---------- */
 
+/** La section tient dans l'écran : elle s'arrête alignée dessus (sinon, quand on voit son bas). */
+const fits = (el: HTMLElement) => el.offsetHeight <= window.innerHeight + 2
+
 /**
- * Chaque section (sauf la dernière) s'arrête alignée sur l'écran pendant `HOLD` hauteur d'écran de scroll.
+ * Chaque section (sauf la dernière) s'arrête alignée sur l'écran pendant `HOLD` hauteur d'écran de scroll, ou
+ * pendant la durée donnée par son attribut `data-hold` (une section qui a plus à montrer s'arrête plus longtemps).
  * Si son contenu dépasse l'écran (petit écran), elle s'arrête quand on voit son bas.
  */
 function holdSections(root: HTMLElement): Holds {
   const holds: Holds = new Map()
   for (const el of all(root, ".landing-section:not([data-close])")) {
+    const length = Number(el.dataset.hold) || HOLD
     holds.set(
       el,
       ScrollTrigger.create({
         trigger: el,
-        start: () => (el.offsetHeight > window.innerHeight + 2 ? "bottom bottom" : "top top"),
-        end: () => `+=${Math.round(window.innerHeight * HOLD)}`,
+        start: () => (fits(el) ? "top top" : "bottom bottom"),
+        end: () => `+=${Math.round(window.innerHeight * length)}`,
         pin: true,
         anticipatePin: 1,
         invalidateOnRefresh: true,
@@ -383,11 +388,17 @@ function recit(root: HTMLElement, holds: Holds) {
     gsap.from(el, { autoAlpha: 0, y: 24, ease: "none", scrollTrigger: at(el, { start: "top 90%", end: "top 55%", scrub: true }) })
   }
 
-  /** De l'arrivée de la section à l'écran jusqu'à la fin de son arrêt. */
-  const throughHold = (el: Element): ScrollTrigger.Vars => {
-    const sec = section(el)
+  /**
+   * De l'arrivée de la section à l'écran jusqu'à la fin de son arrêt. Avec `centred`, rien ne bouge avant que la
+   * section soit calée sur l'écran : on lit d'abord le titre et le texte, puis l'illustration se joue pendant
+   * l'arrêt. Sur petit écran (section plus haute que l'écran, arrêtée sur son bas), l'illustration serait déjà
+   * sortie par le haut au début de l'arrêt : elle démarre alors plus tôt, quand on la voit.
+   */
+  const throughHold = (el: Element, centred = false): ScrollTrigger.Vars => {
+    const sec = section(el) as HTMLElement | undefined
     const hold = sec && holds.get(sec)
-    return hold && sec ? { trigger: sec, start: "top 40%", end: () => hold.end, scrub: true, invalidateOnRefresh: true } : at(el, { start: "top 80%", end: "bottom 40%", scrub: true })
+    if (!hold || !sec) return at(el, { start: "top 80%", end: "bottom 40%", scrub: true })
+    return { trigger: sec, start: centred ? () => (fits(sec) ? hold.start : "top 40%") : "top 40%", end: () => hold.end, scrub: true, invalidateOnRefresh: true }
   }
 
   // Le panneau se remplit ligne par ligne, puis le prompt de Jean-Marc s'écrit caractère par caractère.
@@ -407,7 +418,7 @@ function recit(root: HTMLElement, holds: Holds) {
   // Le brut reste sur le poste : le filtre écarte, masque, distille, et seules trois connaissances montent.
   const fig = root.querySelector("[data-privacy]")
   if (fig) {
-    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(fig) })
+    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(fig, true) })
     privacyStory(fig, tl, 0, 0.78)
     // Le trait encre et les engagements, à la suite, toujours pendant l'arrêt.
     for (const rule of all(root, "[data-rule]")) enter(tl, rule, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.2, ease: "none" }, 0.8)
