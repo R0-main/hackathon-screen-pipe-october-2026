@@ -21,8 +21,9 @@ type Props = {
 const ReturnTo = createContext<McpReturn>("connecteurs")
 
 const CUSTOM_COLOR = "#52525B"
-/** Serveurs du catalogue montrés avant « Voir les … autres ». */
+/** Serveurs du catalogue montrés avant « Voir les … autres » : 3 rangées pleines, en 3 colonnes ou en 2 (étape 8 de /creer). */
 const PREVIEW = 9
+const PREVIEW_BARE = 8
 
 /** Serveurs MCP : ceux déjà branchés, puis le catalogue (recherche, catégories) et l'ajout d'un serveur quelconque. */
 export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", bare = false }: Props) {
@@ -63,7 +64,8 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", 
     .filter((e) => !category || e.category === category)
     .filter((e) => !needle || `${e.name} ${e.description.fr} ${e.description.en} ${e.id}`.toLowerCase().includes(needle))
   // Sans recherche ni catégorie, un aperçu (la liste complète fait plusieurs écrans sur mobile).
-  const collapsed = !showAll && !needle && !category && catalog.length > PREVIEW + 3
+  const preview = bare ? PREVIEW_BARE : PREVIEW
+  const collapsed = !showAll && !needle && !category && catalog.length > preview + 3
 
   return (
     <ReturnTo.Provider value={returnTo}>
@@ -114,13 +116,13 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", 
           ) : (
             <>
               <div className={`grid items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
-                {(collapsed ? catalog.slice(0, PREVIEW) : catalog).map((e) => (
+                {(collapsed ? catalog.slice(0, preview) : catalog).map((e) => (
                   <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
                 ))}
               </div>
               {collapsed && (
                 <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
-                  {fmt(k.showAll, { n: catalog.length - PREVIEW })}
+                  {fmt(k.showAll, { n: catalog.length - preview })}
                 </button>
               )}
             </>
@@ -172,7 +174,9 @@ function CatalogTile({ entry, redirectUri, onAdded }: { entry: McpCatalogEntry; 
         <McpLogo logo={entry.logo} name={entry.name} color={entry.color} />
         <div className="min-w-0 flex-1">
           <h4 className="truncate text-[14px] font-medium leading-tight">{entry.name}</h4>
-          <p className="mt-0.5 text-[11px] text-trace">{k.auth[entry.auth]}</p>
+          <p className="mt-0.5 truncate text-[11px] text-trace" title={k.auth[entry.auth]}>
+            {k.auth[entry.auth]}
+          </p>
         </div>
         <button type="button" className={`btn btn-sm ${entry.auth === "manual" ? "" : "btn-primary"}`} onClick={primary} disabled={busy}>
           {busy ? k.redirecting : entry.auth === "none" ? k.add : entry.auth === "manual" ? k.configure : k.connect}
