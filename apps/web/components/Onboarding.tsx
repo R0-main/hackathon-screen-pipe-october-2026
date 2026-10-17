@@ -71,7 +71,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
         method: "POST",
         json: { company_name: draft.company_name, description: draft.description, zones: draft.zones, items: draft.items.filter((_, i) => keep[i]) },
       })
-      router.push("/")
+      router.push("/dashboard")
       router.refresh()
     } catch (e) {
       setErr(`Application impossible : ${errorMessage(e)}`)

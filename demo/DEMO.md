@@ -10,7 +10,7 @@ BRAIN_DEMO=1 npm run dev         # ou l'URL déployée
 npm run simulate -- --speed 1.5  # 2e terminal, à lancer au moment voulu (Ctrl-C pour arrêter)
 ```
 
-Onglets à préparer : le dashboard connecté en **Claire (CEO, admin)**, `/admin`, et un terminal avec Claude Code sur un vrai projet si un poste est branché.
+Onglets à préparer : le dashboard (`/dashboard`, entrée par `/demo`) connecté en **Claire (CEO, admin)**, `/admin`, et un terminal avec Claude Code sur un vrai projet si un poste est branché.
 
 Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données fictives, amorcées automatiquement sur une base vide).
 

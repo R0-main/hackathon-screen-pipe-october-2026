@@ -17,7 +17,7 @@ Prérequis : Node.js ≥ 20.
 ```bash
 npm install
 npm run seed                 # entreprise fictive « Fournil » : 6 comptes, 34 connaissances, 10 jours d'activité
-BRAIN_DEMO=1 npm run dev     # http://localhost:3000 → connexion en un clic (mode démo)
+BRAIN_DEMO=1 npm run dev     # http://localhost:3000/demo → connexion en un clic (mode démo)
 npm run simulate             # dans un 2e terminal : des agents travaillent, le cerveau s'allume
 ```
 
