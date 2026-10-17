@@ -6,7 +6,7 @@ import { gsap } from "gsap"
 import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
-import { BrainIcon, ZoneTag, zoneColor } from "../ui"
+import { Logo, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
 import { Hosting, Pricing } from "./Offer"
 import { PrivacyFlow } from "./PrivacyFlow"
@@ -141,9 +141,8 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
 
           <header className="absolute inset-x-0 top-0 z-10">
             <nav data-hero="nav" className="landing-wrap flex items-center justify-between py-4" aria-label="Principal">
-              <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
-                <BrainIcon size={26} />
-                <span className="text-[15px] font-medium">NOS Brainer</span>
+              <Link href="/" className="flex items-center rounded-[6px]">
+                <Logo height={28} />
               </Link>
               <div className="flex items-center gap-2">
                 <a href="#tarifs" onClick={toSection} className="btn btn-ghost hidden sm:inline-flex">

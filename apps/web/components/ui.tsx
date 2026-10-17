@@ -254,21 +254,37 @@ export function LogoutIcon(props: IconProps) {
   )
 }
 
-/** Pictogramme du cerveau : un trait d'encre, deux points. Jamais de couleur. */
+/**
+ * Pictogramme NOS Brainer (même dessin que public/brand/logo-mark.svg) : six billes d'encre reliées, la bille
+ * centrale en phosphore. L'encre suit la couleur du texte.
+ */
 export function BrainIcon({ size = 30, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className={className}>
+    <svg width={size} height={size} viewBox="0 0 97 97" aria-hidden className={className}>
       <path
-        d="M15 5c-2.2-1.6-5.6-.8-6.4 1.9C6 7.3 4.6 9.7 5.4 12c-2 1.4-2 4.5 0 6-.8 2.4.7 4.8 3.2 5.1.9 2.7 4.2 3.5 6.4 1.9V5zM17 5c2.2-1.6 5.6-.8 6.4 1.9 2.6.4 4 2.8 3.2 5.1 2 1.4 2 4.5 0 6 .8 2.4-.7 4.8-3.2 5.1-.9 2.7-4.2 3.5-6.4 1.9V5z"
+        d="M24.6 15.95L8.05 50.35L25.75 80.8L48.35 49.5L24.6 15.95M48.35 49.5L72.35 17.2L84.55 51.35L69.1 82.65M48.35 49.5L84.55 51.35"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
+        strokeWidth="1.7"
       />
-      <circle cx="10.5" cy="12" r="1.5" fill="currentColor" />
-      <circle cx="21.5" cy="18" r="1.5" fill="currentColor" />
+      <g fill="currentColor">
+        <circle cx="24.6" cy="15.95" r="13.6" />
+        <circle cx="72.35" cy="17.2" r="8.4" />
+        <circle cx="84.55" cy="51.35" r="12.5" />
+        <circle cx="8.05" cy="50.35" r="8" />
+        <circle cx="25.75" cy="80.8" r="13.8" />
+        <circle cx="69.1" cy="82.65" r="8.3" />
+      </g>
+      <circle cx="48.35" cy="49.5" r="9" fill="var(--color-phosphor)" />
     </svg>
   )
+}
+
+/** Logo complet (pictogramme et « NOS Brainer ») : horizontal pour les en-têtes, empilé pour les pages centrées. */
+export function Logo({ stacked = false, height, className = "" }: { stacked?: boolean; height: number; className?: string }) {
+  const [src, ratio] = stacked ? ["/brand/logo-stacked.svg", 342.375 / 260.25] : ["/brand/logo.svg", 404.31 / 88.25]
+  // eslint-disable-next-line @next/next/no-img-element -- SVG statique, rien à optimiser
+  return <img src={src} alt="NOS Brainer" width={Math.round(height * ratio)} height={height} className={className} />
 }
 
 /** Message d'erreur affiché à côté de l'action, annoncé aux lecteurs d'écran. */

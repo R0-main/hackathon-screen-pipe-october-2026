@@ -32,6 +32,14 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 - Les nombres en `tabular-nums`. Titres en `text-balance`, paragraphes en `text-pretty` (par défaut dans le CSS).
 - Pas d'emoji, pas de point d'exclamation, pas de « A · B · C », pas de flèche collée à un lien.
 
+## Logo
+
+- Fichiers dans `public/brand/` : `logo.svg` (horizontal), `logo-stacked.svg` (empilé), `logo-mark.svg`
+  (pictogramme seul). Favicon `app/icon.svg`, `app/apple-icon.png` et `app/opengraph-image.png` en dérivent.
+- Le pictogramme est `<BrainIcon>`, le logo complet `<Logo>` (`components/ui.tsx`) : horizontal dans les en-têtes
+  (28 px de haut), empilé sur les pages centrées (connexion).
+- Sa bille centrale est en phosphore : c'est la seule exception à la règle du phosphore, elle fait partie de la marque.
+
 ## Formes
 
 - Rayons : 8 px panneaux, 6 px contrôles et blocs internes, 4 px étiquettes, 0 pour le canvas 3D.

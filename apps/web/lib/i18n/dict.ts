@@ -70,7 +70,6 @@ export const fr = {
   },
   login: {
     tagline: "Le contexte de toute l'équipe, capté par Screenpipe, distillé, partagé.",
-    home: "Page d'accueil",
     tokenLabel: "Votre jeton personnel",
     tokenHelp: "Le même jeton que celui de votre prompt d'installation, fourni par l'admin.",
     submit: "Se connecter",
@@ -309,7 +308,6 @@ export const en: Dict = {
   },
   login: {
     tagline: "The whole team's context, captured by Screenpipe, distilled, shared.",
-    home: "Home page",
     tokenLabel: "Your personal token",
     tokenHelp: "The same token as in your install prompt, provided by the admin.",
     submit: "Sign in",
