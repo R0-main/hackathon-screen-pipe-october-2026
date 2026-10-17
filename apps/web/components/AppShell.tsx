@@ -62,7 +62,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const openTasks = state.tasks.filter((t) => t.status === "open").length
   const proposed = state.automations.filter((a) => a.status === "proposed").length
   const main: NavItem[] = [
-    { href: "/", label: "Cerveau", icon: NavBrainIcon },
+    { href: "/dashboard", label: "Cerveau", icon: NavBrainIcon },
     { href: "/activite", label: "Agents en direct", icon: PulseIcon },
     { href: "/etat", label: "Où en est la boîte", icon: DocIcon },
     { href: "/connaissances", label: "Connaissances", icon: StackIcon, count: state.totals.items },
@@ -103,7 +103,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     window.location.replace("/login")
   }
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`))
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
   const meHref = `/people/${state.me.id}`
 
   return (
@@ -114,7 +114,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       aria-label="Barre latérale"
     >
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-[6px]">
+        <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-[6px]">
           <BrainIcon size={26} className="shrink-0" />
           <span className="min-w-0 truncate text-[14px] font-medium leading-tight">Le cerveau de {state.org.name}</span>
         </Link>
