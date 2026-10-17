@@ -26,10 +26,8 @@ const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
 const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
-/** Liaisons hors zone (cervelet, tronc, zone verrouillée). */
-const BARE = 0xc4c4bc
-/** Au repos, la couleur d'une zone est adoucie vers le blanc ; elle revient pleine quand la zone est active ou choisie. */
-const SOFTEN = 0.5
+/** Réseau à l'encre : les traits un peu adoucis vers le blanc, les neurones en noir plein. */
+const SOFTEN = 0.35
 /** Chaque couche interne est un peu plus pâle et ses neurones un peu plus petits : la profondeur se lit. */
 const DEPTH_SOFTEN = 0.15
 /** Part de blanc sur la face cachée : il n'en reste qu'un souffle, qui garde la silhouette. */
@@ -56,8 +54,6 @@ type ZoneGfx = {
   linkMat: THREE.LineBasicMaterial
   active: boolean
   selected: boolean
-  /** Liaisons et neurones du territoire en pleine couleur. */
-  strong: boolean
 }
 
 type SynapseGfx = { a: string; b: string; mat: THREE.LineBasicMaterial; baseOpacity: number; active: boolean }
@@ -68,7 +64,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 
 /**
  * Le cerveau en trois dimensions : un réseau de neurones sur la surface d'un cerveau (lobes, cervelet,
- * tronc) dessine la silhouette, chaque territoire dans la couleur de sa zone. Les billes (les connaissances)
+ * tronc) dessine la silhouette à l'encre ; seules les zones portent la couleur. Les billes (les connaissances)
  * sont groupées par zone sur le cortex, reliées à leur centre et entre zones par des traits fins. On le fait tourner à la
  * souris, on zoome à la molette, en pinçant ou avec les boutons. Il remplit son conteneur : la page ne défile
  * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
@@ -281,13 +277,12 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     group.add(new T.LineSegments(linkGeo, linkMat))
     geometries.push(linkGeo)
     materials.push(centerMat, nodeMat, linkMat)
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false, strong: false })
+    gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
   })
 
-  // Le réseau qui dessine le cerveau : des liaisons en arcs, en dégradé entre les couleurs des territoires qu'elles relient.
+  // Le réseau qui dessine le cerveau : des liaisons en arcs, à l'encre ; seules les zones portent la couleur.
   const net = brainNetwork(owner)
   const curves = curveNetwork(net)
-  const zoneList = [...gfx.values()]
   const netCol = new Float32Array(curves.positions.length)
   const netGeo = new T.BufferGeometry()
   netGeo.setAttribute("position", new T.BufferAttribute(curves.positions, 3))
@@ -304,27 +299,18 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   geometries.push(netGeo)
   materials.push(netMat, neuronMat)
 
-  const bareC = new T.Color(BARE)
+  const inkC = new T.Color(INK)
   const whiteC = new T.Color(WHITE)
   const tone = new T.Color()
   // Couleurs de base par neurone (liaison et point), puis estompées chaque image selon la face visible.
   const linkBase = new Float32Array(net.points.length * 3)
   const dotBase = net.points.map(() => new T.Color())
   const fade = new Float32Array(net.points.length)
-  /** Couleur d'un neurone selon son territoire et l'état de sa zone. */
-  const neuronColor = (zone: number, soften: number, out: THREE.Color) => {
-    const g = zone >= 0 ? zoneList[zone] : undefined
-    if (!g || g.locked) return out.copy(bareC)
-    return out.setHex(g.color).lerp(whiteC, g.strong ? 0 : soften)
-  }
-  const paintNetwork = () => {
-    net.points.forEach((_, i) => {
-      const deeper = net.depth[i] * DEPTH_SOFTEN
-      neuronColor(net.zone[i], SOFTEN + deeper, tone).toArray(linkBase, i * 3)
-      neuronColor(net.zone[i], SOFTEN * 0.4 + deeper, dotBase[i])
-    })
-  }
-  paintNetwork()
+  net.points.forEach((_, i) => {
+    const deeper = net.depth[i] * DEPTH_SOFTEN
+    tone.copy(inkC).lerp(whiteC, SOFTEN + deeper).toArray(linkBase, i * 3)
+    dotBase[i].copy(inkC).lerp(whiteC, deeper)
+  })
   const camLocal = new T.Vector3()
   const shadeNetwork = () => {
     camLocal.copy(camera.position)
@@ -479,7 +465,6 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
     const act = refs.activityRef.current
     const sel = refs.selectedRef.current
-    let repaint = false
     for (const g of gfx.values()) {
       const a = act[g.id]
       const on = Boolean(a && a.until > nowMs)
@@ -493,17 +478,11 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       if (isSel !== g.selected) {
         g.selected = isSel
       }
-      const strong = g.active || g.selected
-      if (strong !== g.strong) {
-        g.strong = strong
-        repaint = true
-      }
       g.outline.visible = g.active || g.selected
       const target = CENTER_R * (on ? 1.3 : 1)
       g.center.scale.setScalar(g.center.scale.x + (target - g.center.scale.x) * Math.min(1, dt * 10))
       g.outline.scale.setScalar(g.center.scale.x * 1.3)
     }
-    if (repaint) paintNetwork()
     shadeNetwork()
     for (const s of syn) {
       const on = Boolean(gfx.get(s.a)?.active || gfx.get(s.b)?.active)
