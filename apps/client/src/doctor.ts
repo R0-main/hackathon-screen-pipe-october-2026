@@ -217,7 +217,8 @@ export function captureDiagnosis(
 export function reinstallCommand(url: string, platform: NodeJS.Platform = process.platform): string {
   // Les commandes du prompt d'installation, sans le jeton.
   const c = installCommands(url)
-  return platform === "win32" ? c.windows : c.posix
+  // Sans certificat privé, la commande Windows existe toujours ; sinon on rend celle de sh (Git Bash).
+  return platform === "win32" && c.windows ? c.windows : c.posix
 }
 
 type Ctx = {

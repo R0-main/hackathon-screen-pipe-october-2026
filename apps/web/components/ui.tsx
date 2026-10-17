@@ -121,14 +121,6 @@ export function NavBrainIcon(props: IconProps) {
   )
 }
 
-export function PulseIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M1.5 8.5h3l1.8-4 3.2 8 1.8-4h3.2" />
-    </Icon>
-  )
-}
-
 export function DocIcon(props: IconProps) {
   return (
     <Icon {...props}>

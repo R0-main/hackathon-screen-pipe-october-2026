@@ -2,6 +2,7 @@
 
 import { z } from "zod"
 import type { BrainStore } from "./store"
+import { caFingerprint } from "./ca"
 import { buildJoinPrompt } from "./install-prompt"
 
 /** Demandes en attente au-delà desquelles une entreprise n'en reçoit plus (un code diffusé trop largement). */
@@ -25,5 +26,5 @@ export const prefilledEmail = prefilled(200).transform((v) => (v && /^[^\s@]+@[^
 
 export async function joinPromptFor(store: BrainStore, baseUrl: string) {
   const [code, org] = await Promise.all([store.getJoinCode(), store.getOrg()])
-  return { code, prompt: buildJoinPrompt({ baseUrl, code, orgName: org.name }) }
+  return { code, prompt: buildJoinPrompt({ baseUrl, code, orgName: org.name, caFingerprint: caFingerprint() }) }
 }

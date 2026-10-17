@@ -3,7 +3,7 @@
 > Le cerveau d'entreprise qui est un *no-brainer* : un prompt à coller dans Claude Code, et ta boîte a un cerveau.
 
 > Hackathon Screenpipe « Build Agents That Remember » — 42 Paris, octobre 2026.
-> Le pitch est dans [IDEA.md](IDEA.md), l'architecture dans [ARCHITECTURE.md](ARCHITECTURE.md), le déroulé de la démo dans [demo/DEMO.md](demo/DEMO.md).
+> Le pitch est dans [IDEA.md](IDEA.md), l'architecture dans [ARCHITECTURE.md](ARCHITECTURE.md), le déroulé de la démo dans [demo/DEMO.md](demo/DEMO.md), l'hébergement sur une machine de l'entreprise dans [docs/LOCAL.md](docs/LOCAL.md).
 
 Chaque employé travaille déjà avec Claude Code, Codex ou ChatGPT, mais ce contexte reste enfermé dans des sessions individuelles.
 **Screenpipe** capte ces sessions sur chaque poste, **brain-sync** les distille en connaissances (décisions, procédures, faits, tâches) et les envoie à **un cerveau unique de l'entreprise**. Les agents de chacun interrogent ce cerveau via un **MCP**, avec des **accès par zone**, et le dashboard montre le cerveau s'allumer en direct.
@@ -44,7 +44,7 @@ demo/                 Script de démo
 
 | Brique | Où | Rôle |
 |---|---|---|
-| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »). Pages séparées : agents en direct (`/activite`), « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
+| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »), avec le fil « Agents en direct » posé à côté : on lit l'événement pendant que sa zone s'allume, et une zone du fil ouvre son tiroir. Pages séparées : « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
 | **Équipe & accès** | `/admin` | Organigramme (qui est rattaché à qui, agents actifs, zones de chacun ; cliquer une carte pour régler rattachement, rôle et zones), matrice membres × zones, invitation → prompt d'installation avec jeton personnel. |
 | **Skills** | `/skills` | Les skills Claude Code de l'entreprise (SKILL.md et les scripts qu'ils utilisent), regroupés par cortex. Publier demande un droit accordé dans `/admin` (les admins l'ont toujours) ; un skill attribué à un cortex (une zone) n'est donné qu'à ceux qui lisent cette zone. Un script qui contient un secret est refusé. |
 | **Onboarding** | `/onboarding` | Interview guidée de 7 questions + lecture des liens → zones et premières connaissances, validées avant application. |
@@ -152,6 +152,18 @@ L'interview en 7 questions reste disponible en dessous. Le lien est aussi propos
    `sync --dry-run --full` permet de revoir à tout moment ce qui partirait, `uninstall` retire tout.
 
 Le dashboard doit être joignable par les postes (URL publique ou réseau local) : définissez `BRAIN_PUBLIC_URL`.
+
+## Héberger le cerveau sur une machine de l'entreprise (Docker, HTTPS local)
+
+Rien ne sort de l'entreprise : Postgres, le dashboard et HTTPS tournent sur un ordinateur allumé en permanence, les postes
+le joignent sur le réseau local, et le prompt d'installation épingle le certificat du cerveau.
+
+```bash
+sh deploy/local/brain-local.sh up      # .env, image Docker, Postgres + cerveau + Caddy, adresse affichée
+```
+
+Puis `https://<adresse>/creer` pour créer l'entreprise. Tout le détail (certificats, sauvegarde, mise à jour, options) :
+[docs/LOCAL.md](docs/LOCAL.md).
 
 ## Déployer le cerveau partagé (Vercel + Neon, offres gratuites)
 

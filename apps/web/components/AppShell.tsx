@@ -9,7 +9,7 @@ import { api, errorMessage, initials } from "./format"
 import { LanguageSwitch, useT } from "./I18n"
 import { usePendingJoins } from "./TeamJoin"
 import { ADMIN_VIEWS } from "./admin-views"
-import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LinkIcon, LogoutIcon, MenuIcon, NavBrainIcon, PulseIcon, SkillIcon, StackIcon, TagIcon, TaskIcon, UsersIcon, WatchIcon } from "./ui"
+import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LinkIcon, LogoutIcon, MenuIcon, NavBrainIcon, SkillIcon, StackIcon, TagIcon, TaskIcon, UsersIcon, WatchIcon } from "./ui"
 
 type SubItem = { href: string; label: string; count?: number }
 type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number; children?: SubItem[] }
@@ -71,7 +71,6 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const proposed = state.automations.filter((a) => a.status === "proposed").length
   const main: NavItem[] = [
     { href: "/dashboard", label: t.nav.brain, icon: NavBrainIcon },
-    { href: "/activite", label: t.nav.activity, icon: PulseIcon },
     { href: "/etat", label: t.nav.status, icon: DocIcon },
     { href: "/connaissances", label: t.nav.knowledge, icon: StackIcon, count: state.totals.items },
     { href: "/entites", label: t.nav.entities, icon: TagIcon },

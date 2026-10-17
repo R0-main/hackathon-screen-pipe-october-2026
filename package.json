@@ -18,7 +18,8 @@
     "smoke": "npm run smoke -w @brain/web",
     "eval": "npm run eval -w @brain/web",
     "embed": "npm run embed -w @brain/web",
-    "db:migrate": "npm run db:migrate -w @brain/web"
+    "db:migrate": "npm run db:migrate -w @brain/web",
+    "local": "sh deploy/local/brain-local.sh"
   },
   "engines": {
     "node": ">=20"

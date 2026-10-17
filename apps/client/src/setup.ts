@@ -10,7 +10,8 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { BrainApi } from "./api"
 import { cmdHello, cmdInit } from "./commands"
-import { brainHome, loadPartialConfig, maskSecret, requireConfig, saveConfig, selfCommand, UserError, type Config } from "./config"
+import { fingerprintOfFile, trustInBrowsers } from "./ca"
+import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
 import { refreshSkills } from "./skills"
@@ -304,6 +305,16 @@ async function ensureScreenpipeToken(cfg: Config, bin: string | null, log: Log):
   return cfg
 }
 
+/** Cerveau auto-hébergé : son certificat est installé pour les navigateurs du poste, une seule fois par certificat. */
+export function trustCaForBrowsers(file: string, log: Log) {
+  const state = loadState()
+  const fp = fingerprintOfFile(file)
+  if (fp && state.ca_trusted === fp) return log(`Certificat du cerveau déjà installé pour les navigateurs (${file}).`)
+  const t = trustInBrowsers(file)
+  log(t.message)
+  if (t.ok && fp) saveState({ ...state, ca_trusted: fp })
+}
+
 export async function cmdSetup(flags: Record<string, string | boolean>, log: Log = console.log): Promise<number> {
   const audio = yesNo(flags.audio, "audio")
   const waitS = typeof flags.wait === "string" ? Number.parseInt(flags.wait, 10) : DEFAULT_WAIT_S
@@ -327,6 +338,8 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
       return 1
     }
   }
+
+  if (cfg.ca_file) trustCaForBrowsers(cfg.ca_file, log)
 
   let capture: CaptureState | null = null
   let noScreenpipe: string | null = null
