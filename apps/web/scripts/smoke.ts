@@ -36,6 +36,7 @@ import {
   forgetAccount,
   hashToken,
   isRemembered,
+  latestRemembered,
   listRememberedAccounts,
   newToken,
   profileFromToken,
@@ -787,6 +788,18 @@ async function main() {
         "une session retenue modifiée ou illisible est écartée",
       )
       assert((await listRememberedAccounts(await forgetAccount(both, boss.id))).map((a) => a.org.id).join() === fournil.id, "oublier une entreprise la retire de la liste")
+      const [entry] = both.split("~")
+      assert(!(await viewerFromCookies(entry, undefined)), "une entreprise retenue ne vaut pas cookie de session (usage à part)")
+      assert(Number(entry.split(".")[1]) > Date.now() + 300 * 86400_000, "une entreprise retenue vaut un an, pas les 14 jours d'une session")
+      assert((await latestRemembered(both)) === boss.id, "reconnexion automatique : l'entreprise retenue la plus récente")
+      assert((await rememberAccounts(both)) === both, "une entrée encore valable est gardée telle quelle")
+      const bossHash = await acmeStore.getTokenHash(boss.id)
+      await acmeStore.updateProfile(boss.id, { token_hash: hashToken(newToken()) })
+      try {
+        assert((await latestRemembered(both)) === claire.profile.id, "régénérer le jeton invalide aussi l'entreprise retenue")
+      } finally {
+        await acmeStore.updateProfile(boss.id, { token_hash: bossHash! })
+      }
       const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
       assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviter un collègue : prompt à son nom, zones de l'entreprise seulement")
       assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "le collègue rejoint l'entreprise, pas Fournil")

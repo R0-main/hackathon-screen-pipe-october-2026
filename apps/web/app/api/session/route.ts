@@ -1,6 +1,6 @@
 import { cookies } from "next/headers"
 import { z } from "zod"
-import { ACCOUNTS_COOKIE, profileFromToken, rememberAccounts, SESSION_COOKIE, sessionCookieOptions, VIEW_AS_COOKIE } from "@/lib/auth"
+import { accountsCookieOptions, ACCOUNTS_COOKIE, profileFromToken, rememberAccounts, SESSION_COOKIE, SIGNED_OUT_COOKIE, VIEW_AS_COOKIE } from "@/lib/auth"
 import { error, internalError, json, parseBody } from "@/lib/http"
 import { openSession } from "@/lib/session"
 import { isStoreSetupError } from "@/lib/store"
@@ -27,13 +27,13 @@ export async function POST(req: Request) {
 
 /**
  * Déconnexion. L'entreprise reste retenue par ce navigateur : la page de connexion la propose en un clic
- * (« Oublier » la retire). Une session ouverte avant les entreprises retenues y est ajoutée au passage.
+ * (« Oublier » la retire). La marque de déconnexion suspend la reconnexion automatique jusqu'à la prochaine ouverture.
  */
 export async function DELETE() {
   const jar = await cookies()
   try {
     const accounts = await rememberAccounts(jar.get(SESSION_COOKIE)?.value, jar.get(ACCOUNTS_COOKIE)?.value)
-    if (accounts) jar.set(ACCOUNTS_COOKIE, accounts, sessionCookieOptions)
+    if (accounts) jar.set(ACCOUNTS_COOKIE, accounts, accountsCookieOptions)
     else jar.delete(ACCOUNTS_COOKIE)
   } catch (err) {
     // Stockage pas prêt (ou en panne) : la déconnexion passe quand même, sans retenir l'entreprise.
@@ -41,5 +41,6 @@ export async function DELETE() {
   }
   jar.delete(SESSION_COOKIE)
   jar.delete(VIEW_AS_COOKIE)
+  jar.set(SIGNED_OUT_COOKIE, "1", accountsCookieOptions)
   return json({ ok: true })
 }
