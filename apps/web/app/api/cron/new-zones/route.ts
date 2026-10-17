@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto"
-import { localDay, localHour, NEW_ZONES_HOUR, runNewZones, type NewZonesRun } from "@/lib/new-zones"
+import { runDailyReview, type DailyReview } from "@/lib/daily-review"
+import { localDay, localHour, NEW_ZONES_HOUR } from "@/lib/new-zones"
 import { getRootStore, runInOrg } from "@/lib/store"
 import { error, internalError, json } from "@/lib/http"
 
@@ -19,10 +20,10 @@ function authorized(req: Request): boolean {
   return timingSafeEqual(digest(got), digest(secret))
 }
 
-type OrgResult = { org_id: string } & (NewZonesRun | { status: "already_ran" } | { status: "error"; message: string })
+type OrgResult = { org_id: string } & ({ status: "done"; review: DailyReview } | { status: "already_ran" } | { status: "error"; message: string })
 
 /**
- * Job quotidien « nouvelles zones », pour toutes les entreprises du cerveau. Déclenché par vercel.json à 8 h et 9 h UTC :
+ * Revue quotidienne (nouvelles zones, automatisations, « où en est la boîte »), pour toutes les entreprises du cerveau. Déclenché par vercel.json à 8 h et 9 h UTC :
  * seul le passage qui tombe à 10 h (heure de l'entreprise) travaille, et une seule fois par jour et par entreprise
  * (claimOnce), même si Vercel relance l'appel. `?force=1` (avec le secret) lance un passage tout de suite.
  */
@@ -46,8 +47,8 @@ export async function GET(req: Request) {
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, orgIds.length) }, worker))
-    const created = results.flatMap((r) => (r.status === "created" ? r.zones.map((z) => z.name) : []))
-    console.log(`[new-zones] ${day} : ${orgIds.length} entreprise(s), ${created.length} zone(s) créée(s)${created.length ? ` (${created.join(", ")})` : ""}`)
+    const created = results.flatMap((r) => (r.status === "done" && r.review.zones.status === "created" ? r.review.zones.zones.map((z) => z.name) : []))
+    console.log(`[new-zones] ${day} : ${orgIds.length} entreprise(s), ${created.length} zone(s) créée(s)${created.length ? ` (${created.join(", ")})` : ""}, ${results.filter((r) => r.status === "done" && r.review.status === "claude").length} état(s) rédigé(s) par Claude`)
     return json({ ran: true, day, orgs: results })
   } catch (err) {
     return internalError(err)
@@ -59,9 +60,9 @@ async function runForOrg(orgId: string, day: string, force: boolean): Promise<Or
   const key = `new-zones:${orgId}:${day}`
   if (!force && !(await store.claimOnce(key))) return { org_id: orgId, status: "already_ran" }
   try {
-    const run = await runInOrg(orgId, () => runNewZones())
+    const review = await runInOrg(orgId, () => runDailyReview())
     if (!force) await store.finishClaim(key)
-    return { org_id: orgId, ...run }
+    return { org_id: orgId, status: "done", review }
   } catch (err) {
     // Rendu pour que le passage de l'heure suivante (ou une relance) puisse réessayer.
     if (!force) await store.releaseClaim(key).catch(() => {})

@@ -9,7 +9,7 @@ import { createHash, createHmac } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
-import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, posteHealth, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type NewZonesInput, type StatusInput, type Task } from "@brain/core"
+import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, posteHealth, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type AutomationReviewInput, type NewZonesInput, type StatusInput, type Task } from "@brain/core"
 import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
@@ -257,6 +257,27 @@ async function main() {
 
   const autos = await runAutomationDetection()
   assert(autos.some((a) => a.title.includes("Qonto")), "l'automatisation du rapprochement de 9 h est détectée")
+  {
+    // Revue par Claude (simulée) : la suggestion est réécrite, une autre écartée ; les faits ne bougent pas.
+    let seen: AutomationReviewInput | null = null
+    const reviewed = await runAutomationDetection({
+      review: async (input) => {
+        seen = input
+        return input.candidates.map((c) =>
+          c.sample?.includes("Qonto")
+            ? { ref: c.ref, keep: true, title: `Préparer chaque matin le rapprochement Qonto (${run})`, description: "Claude prépare le rapprochement avant 9 h. Contact : jm@fournil.example" }
+            : { ref: c.ref, keep: false, title: "", description: "" },
+        )
+      },
+    })
+    const qonto = reviewed.find((a) => a.title.includes(`(${run})`))
+    const before = autos.find((a) => a.key === qonto?.key)
+    assert(seen!.candidates.length === autos.length && seen!.context.some((z) => z.titles.length > 0), "Claude relit chaque suggestion, avec les connaissances de sa zone")
+    assert(qonto && before && qonto.schedule === before.schedule && qonto.minutes_saved_per_week === before.minutes_saved_per_week, "la suggestion est réécrite, son créneau et son temps gagné restent ceux de l'heuristique")
+    assert(!qonto!.description.includes("@fournil"), "le texte de Claude est masqué (emails, secrets)")
+    assert(reviewed.length === 1, "une suggestion jugée sans intérêt n'est pas reproposée")
+    await runAutomationDetection()
+  }
   const status = await refreshStatus(claire)
   assert(status.zones.length >= 6 && status.headline.length > 10, `état de l'entreprise généré (${status.generator})`)
   const ctx = await getPersonContext(claire, hugo.profile.id)
@@ -906,8 +927,11 @@ async function main() {
           if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
             const res = await cron({ authorization: `Bearer secret-${run}` }, "?force=1")
             const body = (await res.json()) as { ran: boolean; orgs: { org_id: string; status: string; reason?: string }[] }
-            const acmeRun = body.orgs.find((o) => o.org_id === acme.id)
-            assert(res.status === 200 && body.orgs[0].org_id === fournil.id && acmeRun?.reason === "no_claude", "cron : toutes les entreprises sont passées en revue ; sans clé API, rien n'est créé")
+            const acmeRun = body.orgs.find((o) => o.org_id === acme.id) as { status: string; review?: { zones: { reason?: string }; automations: { reviewed: boolean }; status: string } } | undefined
+            assert(
+              res.status === 200 && body.orgs[0].org_id === fournil.id && acmeRun?.review?.zones.reason === "no_claude" && acmeRun.review.status === "skipped" && !acmeRun.review.automations.reviewed,
+              "cron : revue quotidienne de toutes les entreprises ; sans Claude, rien n'est créé et l'état n'est pas écrasé",
+            )
           }
         } finally {
           if (prevSecret === undefined) delete process.env.CRON_SECRET

@@ -183,9 +183,10 @@ Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgr
    - Désactivez « Vercel Authentication » : les postes appellent l'API avec leur jeton personnel.
 3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Fournil au premier passage sur `/login`. Le secret de session est généré tout seul et conservé dans la base.
 
-4. **Job quotidien « nouvelles zones »** : définissez `CRON_SECRET` (une longue chaîne aléatoire, `openssl rand -hex 32`) et
-   `BRAIN_SECRET_KEY` (idem, chiffre les clés Claude des entreprises). `apps/web/vercel.json` déclare le cron. La clé Claude,
-   elle, se règle dans l'appli : chaque admin colle celle de son entreprise dans **Équipe et accès → Zones**.
+4. **Revue quotidienne par Claude** (nouvelles zones, automatisations, état) : définissez `ANTHROPIC_API_KEY` (la clé du
+   cerveau, utilisée pour toutes les entreprises qui n'ont pas la leur), `CRON_SECRET` (une longue chaîne aléatoire,
+   `openssl rand -hex 32`) et `BRAIN_SECRET_KEY` (idem, chiffre les clés Claude que des entreprises voudraient régler
+   elles-mêmes dans **Équipe et accès → Zones**). `apps/web/vercel.json` déclare le cron.
 
 Variables : voir [apps/web/.env.example](apps/web/.env.example).
 
@@ -193,7 +194,13 @@ Variables : voir [apps/web/.env.example](apps/web/.env.example).
 
 Chaque jour à 10 h, Claude relit les zones et les connaissances des 30 derniers jours d'une entreprise, repère un domaine de
 travail récurrent qui n'a pas de zone à lui (du juridique rangé faute de mieux dans « Direction »…) et la zone est **créée tout
-de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisit, dans Équipe et accès → Zones, qui fait l'analyse :
+de suite, sans validation**. Le même passage relit les suggestions d'automatisation (Claude écarte celles qui n'ont pas de
+sens et réécrit les autres en proposition concrète, sans toucher au créneau ni au temps gagné) et rédige « où en est la
+boîte » (jamais remplacé par l'heuristique). Aucun PC n'a besoin d'être allumé. L'admin choisit, dans Équipe et accès → Zones,
+qui fait l'analyse :
+
+- **Inclus (Claude du cerveau)**, par défaut quand le serveur a sa propre clé (`ANTHROPIC_API_KEY`) : tout tourne sur nos
+  serveurs, l'entreprise n'a rien à configurer. « Lancer maintenant » fait la revue tout de suite.
 
 - **Abonnement Claude (Claude Code)**, sans clé API : un workflow GitHub Actions dans un repo de l'entreprise (le dashboard
   le donne prêt à copier) lance chaque jour à 10 h `brain.mjs refresh-zones` avec deux secrets, `CLAUDE_CODE_OAUTH_TOKEN`
@@ -201,7 +208,8 @@ de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisi
   (`claude -p`, `GET /api/admin/zones/auto/input`) : le jeton Claude ne quitte jamais sa CI, le cerveau ne reçoit que les
   zones proposées (`POST /api/admin/zones/auto`, connaissances désignées par identifiant) et les applique avec ses garde-fous.
   `~/.company-brain/brain refresh-zones [--dry-run]` fait la même chose à la main sur le poste d'un admin.
-- **Clé API Claude** : Vercel Cron appelle `/api/cron/new-zones` et le serveur fait l'analyse avec la clé de l'entreprise.
+- **Clé API Claude de l'entreprise** : même chose, facturé à l'entreprise. Dans les deux cas, Vercel Cron appelle
+  `/api/cron/new-zones` (revue quotidienne de toutes les entreprises).
 - **Cerveau hébergé sur une machine de l'entreprise (Docker)** : pas de Vercel Cron. En mode clé API, faites appeler
   `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://<adresse>/api/cron/new-zones` par le cron de la machine, à 8 h
   et 9 h UTC comme `vercel.json`. En mode abonnement, GitHub ne joint pas un cerveau du réseau local : lancez `refresh-zones`

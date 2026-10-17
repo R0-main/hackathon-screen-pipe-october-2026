@@ -2,6 +2,7 @@
 
 import type { Conversation, ZoneHint } from "./distill"
 import { renderConversation } from "./distill"
+import type { AutomationReviewInput } from "./automation-review"
 import type { NewZonesInput } from "./new-zones"
 import type { StatusInput } from "./status"
 import { truncate } from "./text"
@@ -170,4 +171,35 @@ ${buildNewZonesPrompt(input)}
 Réponds UNIQUEMENT avec un objet JSON de la forme :
 {"zones":[{"name":"…","description":"…","keywords":["…"],"items":[12,15,18,21]}]}
 {"zones":[]} si aucune zone ne s'impose. Sans texte autour, sans bloc de code.`
+}
+
+export const AUTOMATION_REVIEW_SYSTEM = `Tu relis les suggestions d'automatisation du « cerveau » d'une entreprise, à destination de ses dirigeants.
+Chaque suggestion vient d'une heuristique : une personne relance le même prompt (dans Claude Code ou Codex) au même créneau
+plusieurs jours de suite. On te donne le prompt (résumé et masqué), le créneau, le nombre de fois, et les connaissances
+récentes de la zone concernée.
+
+Pour chaque suggestion, rends un avis :
+- keep : false si l'automatiser n'a pas de sens (prompt trop vague ou exploratoire, travail de réflexion qui demande la
+  personne, simple coïncidence d'horaire) ; true sinon ;
+- title : une proposition concrète, à l'infinitif, sans guillemets (≤ 90 caractères), par exemple « Préparer chaque matin
+  le rapprochement Qonto / Pennylane » ;
+- description : 2 ou 3 phrases : ce que l'automatisation ferait exactement, quand, pour qui, et ce que la personne
+  reçoit (un résumé, un fichier, une liste à valider). Appuie-toi sur les connaissances de la zone, sans rien inventer.
+En français, neutre (ne présume jamais du genre d'une personne). Jamais de secret ni de donnée personnelle.`
+
+/** Corps du prompt : une ligne par suggestion (`#numéro`), puis les connaissances récentes de chaque zone. */
+export function buildAutomationReviewPrompt(input: AutomationReviewInput): string {
+  const lines = input.candidates.map(
+    (c) => `#${c.ref} — ${c.person}${c.zone ? `, zone ${c.zone}` : ""} : « ${c.sample ?? "prompt inconnu"} » — ${c.occurrences} fois sur ${c.days} jours${c.schedule ? `, ${c.schedule.toLowerCase()}` : ""}`,
+  )
+  const context = input.context.map((z) => `${z.zone} :\n${z.titles.map((t) => `- ${t}`).join("\n") || "- (rien de récent)"}`).join("\n\n")
+  return `Entreprise : ${input.company_name}
+
+Suggestions :
+${lines.join("\n") || "(aucune)"}
+
+Connaissances récentes par zone :
+${context || "(aucune)"}
+
+Rends un avis par suggestion, avec son numéro.`
 }

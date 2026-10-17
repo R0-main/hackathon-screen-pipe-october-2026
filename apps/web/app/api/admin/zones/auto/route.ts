@@ -1,5 +1,6 @@
 import { z } from "zod"
-import { applyAgentProposals, loadNewZonesLog, runNewZones } from "@/lib/new-zones"
+import { runDailyReview } from "@/lib/daily-review"
+import { applyAgentProposals, loadNewZonesLog } from "@/lib/new-zones"
 import { error, json, publicBaseUrl, withViewer } from "@/lib/http"
 
 export const runtime = "nodejs"
@@ -23,14 +24,18 @@ const AgentSchema = z.object({
 })
 
 /**
- * Admins. Sans corps : le serveur lance tout de suite un passage avec la clé API de l'entreprise.
+ * Admins. Sans corps : le serveur lance tout de suite la revue quotidienne (nouvelles zones, automatisations, état) avec
+ * Claude (clé de l'entreprise, sinon celle du serveur).
  * Avec `{zones: [...]}` : applique ce qu'a proposé le Claude Code de l'entreprise (`brain refresh-zones`, abonnement),
  * avec les mêmes garde-fous. Le jeton Claude ne quitte jamais le poste ou la CI de l'entreprise.
  */
 export const POST = withViewer(
   async (req) => {
     const raw = await req.text()
-    if (!raw.trim()) return json(await runNewZones())
+    if (!raw.trim()) {
+      const review = await runDailyReview()
+      return json({ ...review.zones, review: { automations: review.automations, status: review.status } })
+    }
     let data: unknown
     try {
       data = JSON.parse(raw)

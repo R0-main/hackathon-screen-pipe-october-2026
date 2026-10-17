@@ -18,6 +18,8 @@ type Stored = { v: 1; iv: string; tag: string; data: string; last4: string; upda
 export type ClaudeKeyInfo = {
   /** `org` : clé de l'entreprise ; `server` : ANTHROPIC_API_KEY du déploiement ; null : pas de Claude côté serveur. */
   source: "org" | "server" | null
+  /** Le serveur a sa propre clé (ANTHROPIC_API_KEY) : l'analyse est incluse, sans rien à régler pour l'entreprise. */
+  server: boolean
   last4?: string
   updated_at?: string
   updated_by?: string
@@ -67,7 +69,7 @@ export async function setOrgClaudeKey(store: BrainStore, key: string, updatedBy:
     updated_by: updatedBy,
   }
   await store.setOrgSetting(SETTING, JSON.stringify(stored))
-  return { source: "org", last4: stored.last4, updated_at: stored.updated_at, updated_by: updatedBy }
+  return { source: "org", server: serverHasClaude(), last4: stored.last4, updated_at: stored.updated_at, updated_by: updatedBy }
 }
 
 export async function clearOrgClaudeKey(store: BrainStore): Promise<void> {
@@ -81,8 +83,9 @@ export function serverHasClaude(): boolean {
 /** Ce que l'admin voit : d'où vient Claude pour son entreprise, sans jamais la clé elle-même. */
 export async function claudeKeyInfo(store: BrainStore): Promise<ClaudeKeyInfo> {
   const s = await readStored(store)
-  if (s) return { source: "org", last4: s.last4, updated_at: s.updated_at, updated_by: s.updated_by }
-  return { source: serverHasClaude() ? "server" : null }
+  const server = serverHasClaude()
+  if (s) return { source: "org", server, last4: s.last4, updated_at: s.updated_at, updated_by: s.updated_by }
+  return { source: server ? "server" : null, server }
 }
 
 /**
