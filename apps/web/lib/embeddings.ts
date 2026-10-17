@@ -55,7 +55,7 @@ async function post(url: string, key: string, body: unknown): Promise<number[][]
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   })
-  if (!res.ok) throw new Error(`embeddings : ${res.status} ${(await res.text()).slice(0, 200)}`)
+  if (!res.ok) throw new Error(`embeddings: ${res.status} ${(await res.text()).slice(0, 200)}`)
   const data = (await res.json()) as { data?: { index?: number; embedding?: number[] }[] }
   const rows = (data.data ?? []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
   const out = rows.map((r) => r.embedding ?? [])

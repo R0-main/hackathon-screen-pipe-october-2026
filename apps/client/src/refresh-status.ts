@@ -73,7 +73,7 @@ export async function generateStatus(
     const res = client ? await summarizeStatusInput(client, input) : null
     if (!res) throw new UserError("Claude (Anthropic API) did not produce a summary (invalid key, quota or refusal).")
     const known = new Set(zoneIds)
-    return { status: { headline: res.headline, zones: res.zones.filter((z) => known.has(z.zone)) }, via: "Claude (API Anthropic)" }
+    return { status: { headline: res.headline, zones: res.zones.filter((z) => known.has(z.zone)) }, via: "Claude (Anthropic API)" }
   }
   throw new UserError(
     cfg.use_claude_cli === false

@@ -161,7 +161,7 @@ export function lastLoggedRun(text: string): LastRun | null {
   const lines = text.split(/\r?\n/)
   let start = -1
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^brain-sync — /.test(lines[i]) && !/simulation/.test(lines[i])) {
+    if (/^brain-sync — /.test(lines[i]) && !/dry run|simulation/.test(lines[i])) {
       start = i
       break
     }
@@ -401,7 +401,7 @@ function checkConfig(ctx: Ctx): boolean {
       })
       return true
     }
-    mode = ", droits 600"
+    mode = ", permissions 600"
   }
   add(ctx, { id: "config", group: "Brain", status: "ok", detail: `${file} (brain ${ctx.cfg.url}, token saved${mode})` })
   return true

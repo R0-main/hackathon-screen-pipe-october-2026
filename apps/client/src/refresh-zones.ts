@@ -52,7 +52,7 @@ export async function proposeZones(cfg: Config, input: NewZonesInput, opts: { ti
     const client = createClaude(key)
     const proposals = client ? await proposeNewZones(client, input) : null
     if (!proposals) throw new UserError("Claude (Anthropic API) did not answer (invalid key, quota or refusal).")
-    return { proposals, via: "Claude (API Anthropic)" }
+    return { proposals, via: "Claude (Anthropic API)" }
   }
   throw new UserError("Neither a `claude` CLI in the PATH nor an API key: install Claude Code (`npm install -g @anthropic-ai/claude-code`) and give it a token (`claude setup-token`).")
 }

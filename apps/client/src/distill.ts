@@ -22,7 +22,7 @@ import { UserError, brainHome, selfCommand, type Config } from "./config"
 export type DistillerKind = "claude-api" | "claude-cli" | "heuristic"
 
 export const DISTILLER_LABELS: Record<DistillerKind, string> = {
-  "claude-api": "Claude (API Anthropic)",
+  "claude-api": "Claude (Anthropic API)",
   "claude-cli": "Local Claude Code (`claude -p`)",
   heuristic: "local heuristic (no LLM)",
 }
@@ -318,7 +318,7 @@ export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120
       // Classified on the envelope's HTTP status if there is one, otherwise on the error text (stderr, `result` field),
       // never on the raw envelope (durations, tokens…).
       const failure = statusFailure(envelope?.api_error_status) ?? classifyFailure(`${stderr}\n${text}`)
-      const error = `code ${code}${text ? ` : ${truncate(text, 200)}` : ""}`
+      const error = `code ${code}${text ? `: ${truncate(text, 200)}` : ""}`
       done(failure === "conversation" ? { stdout, error, failure, signature: truncate(hideToken(text, opts), 160) || `code ${code}` } : { stdout, error, failure })
     })
     child.stdin.on("error", () => {})
@@ -376,7 +376,7 @@ export function apiFailure(trace: { status?: number; body?: string; network?: st
   if (s === 401) return { error: `Anthropic API: ${detail}`, failure: "auth" }
   if (s === 403 || s === 408 || s === 429 || s >= 500) return { error: `Anthropic API: ${detail}`, failure: "outage" }
   const failure = classifyFailure(trace.body ?? "")
-  return failure === "conversation" ? { error: `API Anthropic : ${detail}`, failure, signature: `HTTP ${s}` } : { error: `API Anthropic : ${detail}`, failure }
+  return failure === "conversation" ? { error: `Anthropic API: ${detail}`, failure, signature: `HTTP ${s}` } : { error: `Anthropic API: ${detail}`, failure }
 }
 
 export async function createDistiller(cfg: Config, force?: DistillerKind): Promise<Distiller & { reason: string }> {
