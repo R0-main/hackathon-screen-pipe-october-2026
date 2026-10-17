@@ -1,4 +1,4 @@
-// Le « prompt magique » de NOS Brainer : l'employé le colle dans Claude Code, qui lance UNE commande, lit son code de
+// Le « prompt magique » de NOS Brainer : l'employé le colle dans Claude Code (ou Codex), qui lance UNE commande, lit son code de
 // sortie et dépanne si besoin. Tout le travail est dans notre CLI (docs/CLI.md) : `install.sh` trouve ou installe Node.js,
 // télécharge `brain.mjs` et lance `brain setup`, qui installe Screenpipe, ouvre les bons Réglages macOS, branche le MCP et
 // les hooks, planifie la synchro et ouvre le cerveau déjà connecté. Aucun historique n'est envoyé : la synchro part de
@@ -47,7 +47,7 @@ export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: 
   const brain = BRAIN_CLI
   return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY}
 
-1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
+1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md ou AGENTS.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
 2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).
 3. Lance cette commande en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée), en remplaçant les valeurs entre chevrons :
    curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${baseUrl} --join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"
