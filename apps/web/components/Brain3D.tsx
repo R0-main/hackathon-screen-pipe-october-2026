@@ -212,11 +212,11 @@ export function Brain3D(props: Brain3DProps) {
               data-live={live ? "1" : undefined}
               onClick={() => onSelect?.(z.id)}
             >
-              <span className="flex items-start gap-1.5 rounded-[4px] bg-surface/90 px-1.5 py-0.5">
-                <Dot color={zoneColor(z.color, z.position)} className="mt-[4px] sm:mt-[5px]" />
+              <span className="flex items-start gap-1.5 rounded-[4px] bg-surface/70 px-1.5 py-0.5">
+                <Dot color={zoneColor(z.color, z.position)} size={7} className="mt-[4px]" />
                 <span>
-                  <span className={`block whitespace-nowrap text-[12px] font-medium leading-tight sm:text-[13px] ${isSel ? "underline underline-offset-4" : ""}`}>{z.name}</span>
-                  <span className="hidden whitespace-nowrap text-[12px] tabular-nums leading-tight text-trace sm:block">
+                  <span className={`block whitespace-nowrap text-[11px] font-medium leading-tight sm:text-[12px] ${isSel ? "underline underline-offset-4" : ""}`}>{z.name}</span>
+                  <span className="hidden whitespace-nowrap text-[10.5px] tabular-nums leading-tight text-trace sm:block">
                     {z.locked ? (
                       <span className="inline-flex items-center gap-1">
                         <LockIcon size={11} /> accès restreint
@@ -640,15 +640,20 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     renderer.render(scene, camera)
 
     const centerDepth = tmp.set(0, 0, 0).project(camera).z
+    // Pixels par unité de scène à distance 1 : sert à mesurer la bille de chaque zone à l'écran.
+    const focal = (size.h / 2 / Math.tan((camera.fov * Math.PI) / 360)) * camera.zoom
     for (const g of gfx.values()) {
       const el = refs.labelsRef.current.get(g.id)
       if (!el) continue
-      tmp.setFromMatrixPosition(g.center.matrixWorld).project(camera)
+      tmp.setFromMatrixPosition(g.center.matrixWorld)
+      // Le libellé se pose toujours à côté de la bille (et de son cercle), jamais dessus, quel que soit le zoom.
+      const gap = (g.outline.scale.x * focal) / tmp.distanceTo(camera.position) + 6
+      tmp.project(camera)
       const x = (tmp.x * 0.5 + 0.5) * size.w
       const y = (-tmp.y * 0.5 + 0.5) * size.h
       const behind = tmp.z > centerDepth
       const flip = x > size.w * 0.62
-      el.style.transform = flip ? `translate(${(x - 10).toFixed(1)}px, ${(y - 14).toFixed(1)}px) translateX(-100%)` : `translate(${(x + 10).toFixed(1)}px, ${(y - 14).toFixed(1)}px)`
+      el.style.transform = flip ? `translate(${(x - gap).toFixed(1)}px, ${(y - 12).toFixed(1)}px) translateX(-100%)` : `translate(${(x + gap).toFixed(1)}px, ${(y - 12).toFixed(1)}px)`
       el.classList.toggle("is-flip", flip)
       el.style.opacity = behind ? "0.45" : "1"
       el.style.zIndex = behind ? "1" : el.dataset.live ? "3" : "2"
