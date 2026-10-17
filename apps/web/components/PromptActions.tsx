@@ -12,11 +12,11 @@ const MAX_LINK_PROMPT = 5000
 
 /**
  * Liens Claude Code ; le prompt arrive pré-rempli, rien ne part sans que la personne appuie sur Entrée.
- * - `terminal` (claude-cli://) : toujours sur ce poste. C'est le lien principal, nos prompts ont besoin du poste
- *   (installer le client, lire l'historique des sessions).
+ * - `desktop` (claude://code/new) : l'app de bureau, onglet Code. C'est le bouton principal. Elle peut ouvrir une session
+ *   dans le cloud et aucun paramètre documenté ne choisit l'environnement, d'où le rappel de choisir « Local » : nos
+ *   prompts ont besoin du poste (installer le client, lire l'historique des sessions).
+ * - `terminal` (claude-cli://) : toujours sur ce poste, en lien discret sous les boutons.
  * - `vscode` : l'extension Claude Code, sur ce poste aussi.
- * - `desktop` (claude://code/new) : l'app de bureau, qui peut ouvrir une session dans le cloud ; aucun paramètre
- *   documenté ne choisit l'environnement, d'où le rappel de choisir « Local ».
  */
 export function claudeCodeUrl(app: App, prompt: string): string {
   const q = encodeURIComponent(prompt)
@@ -89,7 +89,7 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
   return (
     <div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
-        <button type="button" className={`btn ${btn}`} onClick={() => onOpen("terminal")} disabled={busy} title="Ouvre un terminal avec claude, sur ce poste">
+        <button type="button" className={`btn ${btn}`} onClick={() => onOpen("desktop")} disabled={busy} title="Ouvre l'app Claude, onglet Code">
           <ClaudeLogo size={logo} />
           Ouvrir dans Claude Code
         </button>
@@ -102,15 +102,19 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
         </button>
       </div>
       <p className="mt-3 text-[13px] leading-relaxed text-trace">
-        Claude Code s&apos;ouvre dans un terminal, sur ce poste : il y a tout votre contexte. Avec Codex, le prompt est copié et la commande à lancer s&apos;affiche. Claude Code peut aussi s&apos;ouvrir dans{" "}
-        <button type="button" className="landing-link text-ink" onClick={() => onOpen("vscode")} disabled={busy}>
-          VS Code
+        Claude Code s&apos;ouvre dans l&apos;app Claude, onglet Code : choisissez l&apos;environnement « Local », sur ce poste. Avec Codex, le prompt est copié et la
+        commande à lancer s&apos;affiche.
+      </p>
+      <p className="mt-1.5 text-[12px] text-trace">
+        Plutôt le terminal ?{" "}
+        <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => onOpen("terminal")} disabled={busy}>
+          Cliquez ici pour l&apos;ouvrir dans le terminal
         </button>{" "}
         ou{" "}
-        <button type="button" className="landing-link text-ink" onClick={() => onOpen("desktop")} disabled={busy}>
-          l&apos;app Claude de bureau
-        </button>{" "}
-        (choisissez alors l&apos;environnement « Local »).
+        <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => onOpen("vscode")} disabled={busy}>
+          dans VS Code
+        </button>
+        .
       </p>
 
       {sends && (
