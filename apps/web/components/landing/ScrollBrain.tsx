@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz } from "../BrainViz"
-import { backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
+import { arcBetween, backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
 import { Dot, zoneColor } from "../ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -275,14 +275,14 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   group.add(dustMesh)
   materials.push(dustMat)
 
-  // Synapses : cordes entre zones qui partagent des entités.
+  // Synapses : arcs entre zones qui partagent des entités, par-dessus le cerveau.
   const index = new Map(gfx.map((g, i) => [g.id, i]))
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const a = index.get(s.a)
     const b = index.get(s.b)
     if (a === undefined || b === undefined) continue
-    const geo = new T.BufferGeometry().setFromPoints([gfx[a].pos, gfx[b].pos])
+    const geo = new T.BufferGeometry().setFromPoints(arcBetween(gfx[a].pos.toArray(), gfx[b].pos.toArray()).map((p) => new T.Vector3(...p)))
     const mat = new T.LineBasicMaterial({ color: TRACE, transparent: true, opacity: 0 })
     group.add(new T.Line(geo, mat))
     geometries.push(geo)
@@ -410,7 +410,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     camera.lookAt(0, 0, 0)
     fog.near = z - 0.4
     fog.far = z + 3.4
-    shellMat.opacity = intro * (1 - 0.35 * smooth(0.6, 0.86, s))
+    shellMat.opacity = 0.65 * intro * (1 - 0.35 * smooth(0.6, 0.86, s))
     group.position.x = lerp(lerp(layout.hero[0], layout.full[0], toFull), 0, toEnd)
     group.position.y = lerp(lerp(layout.hero[1], layout.full[1], toFull), 0, toEnd)
     group.rotation.x = lerp(0.3, 0.16, toFull)
@@ -421,7 +421,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const named = still ? 1 : smooth(0.39, 0.5, s)
     paintNetwork(named)
     shadeNetwork()
-    neuronMat.opacity = shellMat.opacity
+    neuronMat.opacity = shellMat.opacity / 0.65
     const lit = new Set(agents.filter((a) => s > a.from && s < a.to).map((a) => a.zone))
 
     for (let i = 0; i < nodes.length; i++) {

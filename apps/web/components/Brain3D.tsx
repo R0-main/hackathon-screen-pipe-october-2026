@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
+import { arcBetween, backFade, brainNetwork, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -276,7 +276,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       pickables.push(node)
       linkPts.push(centerPos.clone(), p)
     }
-    const linkMat = new T.LineBasicMaterial({ color: LINE, transparent: true, opacity: 1 })
+    const linkMat = new T.LineBasicMaterial({ color: LINE, transparent: true, opacity: 0.7 })
     const linkGeo = new T.BufferGeometry().setFromPoints(linkPts)
     group.add(new T.LineSegments(linkGeo, linkMat))
     geometries.push(linkGeo)
@@ -292,7 +292,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const netGeo = new T.BufferGeometry()
   netGeo.setAttribute("position", new T.BufferAttribute(curves.positions, 3))
   netGeo.setAttribute("color", new T.BufferAttribute(netCol, 3))
-  const netMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 })
+  const netMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6 })
   const neuronMat = new T.MeshBasicMaterial({ color: WHITE })
   const neurons = new T.InstancedMesh(geoSphere, neuronMat, net.points.length)
   const mtx = new T.Matrix4()
@@ -336,13 +336,13 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
   }
 
-  // Synapses : cordes entre deux zones qui partagent des entités, plus marquées quand elles sont actives.
+  // Synapses : arcs entre deux zones qui partagent des entités, plus marqués quand elles sont actives.
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const A = gfx.get(s.a)
     const B = gfx.get(s.b)
     if (!A || !B) continue
-    const pts = [A.center.position.clone(), B.center.position.clone()]
+    const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
     const baseOpacity = 0.18 + Math.min(0.27, Math.log2(1 + s.weight) * 0.06)
     const mat = new T.LineBasicMaterial({ color: TRACE, transparent: true, opacity: baseOpacity })
     const geo = new T.BufferGeometry().setFromPoints(pts)

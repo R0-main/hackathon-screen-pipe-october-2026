@@ -536,6 +536,24 @@ export function shadeCurves(c: Curves, base: Float32Array, fade: Float32Array, b
 }
 
 /**
+ * Arc entre deux zones : une courbe de Bézier bombée vers l'extérieur, plus marquée pour les zones
+ * éloignées, mais dont le sommet ne dépasse jamais la surface : l'arc reste dans la silhouette.
+ */
+export function arcBetween(a: V3, b: V3, steps = 40): V3[] {
+  const mid: V3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]
+  const m = Math.hypot(mid[0], mid[1], mid[2])
+  const dir: V3 = m > 1e-3 ? [mid[0] / m, mid[1] / m, mid[2] / m] : [0, 1, 0]
+  const chord = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])
+  const peak = Math.min(0.9 * Math.max(Math.hypot(a[0], a[1], a[2]), Math.hypot(b[0], b[1], b[2])), m + chord * 0.3)
+  // Le sommet d'une Bézier quadratique est à mi-chemin entre le milieu de la corde et le point de contrôle.
+  const C: V3 = [dir[0] * (2 * peak - m), dir[1] * (2 * peak - m), dir[2] * (2 * peak - m)]
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps
+    return [0, 1, 2].map((k) => (1 - u) ** 2 * a[k] + 2 * (1 - u) * u * C[k] + u ** 2 * b[k]) as V3
+  })
+}
+
+/**
  * Estompe de la face cachée : 0 pour un neurone tourné vers la caméra, 1 pour un neurone de dos.
  * `cam` est la position de la caméra dans le repère du cerveau.
  */
