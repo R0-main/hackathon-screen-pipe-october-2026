@@ -43,7 +43,7 @@ import {
   type HookCommand,
 } from "./install"
 import { joinStatePath } from "./join"
-import { installedScreenpipeBin, screenpipeLoadError, screenpipeSupported, SCREENPIPE_LAUNCHD_LABEL } from "./screenpipe-cli"
+import { externalScreenpipeBin, installedScreenpipeBin, managedScreenpipeBin, screenpipeLoadError, screenpipeSupported, SCREENPIPE_LAUNCHD_LABEL } from "./screenpipe-cli"
 import { maskOwnSecrets, ownSecrets } from "./secrets"
 import { desktopApp, readHealth } from "./setup"
 import { screenpipeProbe } from "./sources/screenpipe"
@@ -481,13 +481,15 @@ async function checkScreenpipe(ctx: Ctx) {
   }
   const url = cfg?.screenpipe_url ?? "http://localhost:3030"
   const token = cfg?.screenpipe_token
-  const bin = installedScreenpipeBin()
+  const bin = managedScreenpipeBin()
+  const ours = bin !== null && bin === installedScreenpipeBin()
+  const other = bin ? null : externalScreenpipeBin()
   const app = desktopApp()
   const health = (await readHealth(url, token, 4000)) as Record<string, unknown> | null
   const setup = { command: `${ctx.me} setup`, safe: true }
 
   if (!health) {
-    if (!bin && !app && !screenpipeSupported(ctx.platform)) {
+    if (!bin && !other && !app && !screenpipeSupported(ctx.platform)) {
       return add(ctx, {
         id: "screenpipe",
         group: "Screenpipe",
@@ -515,12 +517,12 @@ async function checkScreenpipe(ctx: Ctx) {
       id: "screenpipe",
       group: "Screenpipe",
       status: "fail",
-      detail: `Screenpipe ne répond pas sur ${url}${bin ? " (installé par le client, arrêté)" : app ? ` (application ${app} fermée)` : " (pas installé)"}`,
-      fix: "setup le (ré)installe et le relance, sans toucher au reste.",
+      detail: `Screenpipe ne répond pas sur ${url}${bin ? (ours ? " (installé par le client, arrêté)" : ` (${bin}, arrêté)`) : app ? ` (application ${app} fermée)` : other ? ` (${other} installé, arrêté)` : " (pas installé)"}`,
+      fix: bin || other || app ? "setup le relance, sans toucher au reste." : "setup l'installe et le lance, sans toucher au reste.",
       ...setup,
     })
   }
-  const how = bin ? "CLI installé par le client" : app ? `application ${app}` : "lancé à part"
+  const how = ours ? "CLI installé par le client" : bin ? `CLI ${bin}` : app ? `application ${app}` : "lancé à part"
   const status = typeof health.status === "string" ? `, état « ${health.status} »` : ""
   add(ctx, { id: "screenpipe", group: "Screenpipe", status: "ok", detail: `répond sur ${url} (${how}${status})` })
 

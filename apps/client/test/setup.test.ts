@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { parseAuthToken, recordArgs, screenpipeBinPath } from "../src/screenpipe-cli"
+import { createServer } from "node:http"
+import { externalScreenpipeBin, parseAuthToken, recordArgs, screenpipeBinPath } from "../src/screenpipe-cli"
 import { MACOS_PANES, captureState, waitForCapture } from "../src/setup"
 import { mockServer, tempDir } from "./helpers"
 import { mockBrain } from "./mock-brain"
@@ -32,6 +33,15 @@ test("screenpipeBinPath : binaire du paquet de la plateforme, null si non publi�
   assert.equal(screenpipeBinPath("/h/sp", "darwin", "arm64"), join("/h/sp", "node_modules", "@screenpipe", "cli-darwin-arm64", "bin", "screenpipe"))
   assert.match(screenpipeBinPath("/h/sp", "win32", "x64") ?? "", /cli-win32-x64[\\/]bin[\\/]screenpipe\.exe$/)
   assert.equal(screenpipeBinPath("/h/sp", "linux", "arm64"), null)
+})
+
+test("externalScreenpipeBin : CLI déjà installé dans le PATH ; sous Windows, un .exe seulement", { skip: process.platform === "win32" }, () => {
+  const dir = tempDir("brain-sp-path-")
+  assert.equal(externalScreenpipeBin(join(dir, "vide")), null)
+  writeFileSync(join(dir, "screenpipe"), "#!/bin/sh\n", { mode: 0o755 })
+  assert.equal(externalScreenpipeBin(dir), join(dir, "screenpipe"))
+  // Windows : seul un .exe compte (un raccourci .cmd de npm -g ne se lance pas sans shell).
+  assert.equal(externalScreenpipeBin(dir, "win32"), null)
 })
 
 test("parseAuthToken : ignore les journaux, garde la ligne du jeton", () => {
@@ -164,6 +174,45 @@ test("setup : Screenpipe qui ne démarre pas (bibliothèque manquante) → le re
     assert.match(readFileSync(join(home, "claude", "settings.json"), "utf8"), /brain\.mjs\\" hook/)
     assert.ok(brain.requests.some((r) => r.method === "POST" && r.url === "/api/events"), "néon envoyé")
   } finally {
+    await brain.close()
+  }
+})
+
+test("setup : Screenpipe déjà installé dans le PATH → lancé tel quel, rien n'est réinstallé", { skip: process.platform === "win32" }, async () => {
+  const brain = await mockBrain()
+  const home = tempDir("brain-setup-sp-")
+  const brainDir = join(home, "brain")
+  const binDir = join(home, "bin")
+  const marker = join(home, "service-install")
+  mkdirSync(binDir, { recursive: true })
+  // Faux CLI installé à part (Homebrew, npm -g…) : `service install` note ses arguments ; Screenpipe « démarre » alors.
+  writeFileSync(join(binDir, "screenpipe"), `#!/bin/sh\necho "$@" >> "${marker}"\n`, { mode: 0o755 })
+  const sp = createServer((req, res) => {
+    if (!existsSync(marker)) return req.socket.destroy()
+    res.writeHead(200, { "content-type": "application/json" })
+    res.end(JSON.stringify(req.url?.startsWith("/health") ? ALL_GOOD : { data: [] }))
+  })
+  await new Promise<void>((r) => sp.listen(0, "127.0.0.1", r))
+  const port = (sp.address() as { port: number }).port
+  try {
+    const { out } = await runCli(
+      ["setup", "--url", brain.url, "--token", "cb_test_token_123456", "--screenpipe-url", `http://127.0.0.1:${port}`, "--no-open"],
+      {
+        HOME: home,
+        COMPANY_BRAIN_HOME: brainDir,
+        COMPANY_BRAIN_SCRIPT: join(brainDir, "brain.mjs"),
+        CLAUDE_CONFIG_DIR: join(home, "claude"),
+        PATH: binDir,
+      },
+    )
+    assert.ok(out.includes(`Screenpipe déjà installé sur le poste (${join(binDir, "screenpipe")}) : on s'en sert, sans le réinstaller.`), out)
+    assert.match(readFileSync(marker, "utf8"), /^service install --record-args=--disable-audio --app-context memory/m)
+    assert.ok(!existsSync(join(brainDir, "screenpipe")), "pas de seconde installation")
+    assert.doesNotMatch(out, /Installation de Screenpipe/)
+    assert.equal(JSON.parse(readFileSync(join(brainDir, "state.json"), "utf8")).screenpipe_bin, join(binDir, "screenpipe"))
+    assert.match(out, /Screenpipe capture l'écran\./)
+  } finally {
+    sp.close()
     await brain.close()
   }
 })

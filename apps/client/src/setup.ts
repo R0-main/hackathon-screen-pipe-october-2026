@@ -18,8 +18,9 @@ import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpT
 import { companiesWithIds, mcpSpecs, probeMcp, registerMcpServers } from "./mcp-config"
 import { refreshSkills } from "./skills"
 import {
-  installedScreenpipeBin,
+  externalScreenpipeBin,
   installScreenpipeCli,
+  managedScreenpipeBin,
   readScreenpipeToken,
   restartScreenpipeService,
   runCommand,
@@ -279,14 +280,18 @@ function yesNo(v: string | boolean | undefined, flag: string): boolean | undefin
 
 type ScreenpipeResult = { how: "existing" | "app" | "service" | "background"; bin: string | null }
 
-/** Screenpipe déjà lancé (CLI ou application) : on le garde. Sinon l'application si elle est là, sinon le CLI en service. */
+/**
+ * Screenpipe déjà lancé (CLI ou application) : on le garde. Sinon l'application si elle est là, sinon un CLI déjà
+ * installé sur le poste, sinon le CLI du client en service : jamais de seconde installation de Screenpipe.
+ */
 async function ensureScreenpipe(cfg: Config, audio: boolean | undefined, log: Log): Promise<ScreenpipeResult> {
-  let bin = installedScreenpipeBin()
+  let bin = managedScreenpipeBin()
   const running = (await readHealth(cfg.screenpipe_url, cfg.screenpipe_token)) !== null
   if (running && !(audio !== undefined && bin)) {
     log(`Screenpipe tourne déjà (${cfg.screenpipe_url}) : on le garde tel quel.`)
     return { how: "existing", bin }
   }
+  const upMs = process.platform === "win32" ? 180_000 : 60_000
   if (!running && !bin) {
     const app = desktopApp()
     if (app) {
@@ -294,6 +299,17 @@ async function ensureScreenpipe(cfg: Config, audio: boolean | undefined, log: Lo
       runCommand("open", ["-a", app], 15_000)
       if (await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, 60_000)) return { how: "app", bin: null }
       log("L'application ne répond pas : installation du CLI à la place.")
+    }
+    const other = externalScreenpipeBin()
+    if (other && !screenpipeLoadError(other)) {
+      log(`Screenpipe déjà installé sur le poste (${other}) : on s'en sert, sans le réinstaller.`)
+      const how = startScreenpipe(other, { audio }, log)
+      if (await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, upMs)) {
+        saveState({ ...loadState(), screenpipe_bin: other })
+        logAudio(audio, log)
+        return { how, bin: other }
+      }
+      log(`${other} ne répond pas sur ${cfg.screenpipe_url} (version trop ancienne ?) : installation du CLI du client à la place.`)
     }
   }
   if (!bin && !screenpipeSupported()) {
@@ -310,18 +326,24 @@ async function ensureScreenpipe(cfg: Config, audio: boolean | undefined, log: Lo
     throw new UserError(`Screenpipe ne démarre pas sur ce poste (« ${loadError} »)${why}.`)
   }
   const how = startScreenpipe(bin, { audio }, log)
-  if (!(await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, process.platform === "win32" ? 180_000 : 60_000))) {
+  if (!(await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, upMs))) {
     throw new UserError(`Screenpipe ne répond pas sur ${cfg.screenpipe_url} (journal : ${join(brainHome(), "screenpipe.log")}, ou \`"${bin}" service status\`).`)
   }
-  if (audio) log("Micro activé : les réunions seront transcrites (macOS demandera aussi l'autorisation Micro).")
-  else log("Micro coupé : seul l'écran est capté (relance `setup --audio oui` pour transcrire aussi les réunions).")
+  logAudio(audio, log)
   return { how, bin }
 }
 
+function logAudio(audio: boolean | undefined, log: Log) {
+  if (audio) log("Micro activé : les réunions seront transcrites (macOS demandera aussi l'autorisation Micro).")
+  else log("Micro coupé : seul l'écran est capté (relance `setup --audio oui` pour transcrire aussi les réunions).")
+}
+
 /** Jeton d'API local de Screenpipe : lu et enregistré s'il manque ou ne marche plus. */
-async function ensureScreenpipeToken(cfg: Config, bin: string | null, log: Log): Promise<Config> {
+async function ensureScreenpipeToken(cfg: Config, started: string | null, log: Log): Promise<Config> {
   let probe = await screenpipeProbe(cfg.screenpipe_url, cfg.screenpipe_token)
   if (probe.auth === "token_required") {
+    // Un CLI installé à part lit aussi le jeton (sans npx, qui téléchargerait Screenpipe).
+    const bin = started ?? externalScreenpipeBin()
     const token = readScreenpipeToken(bin)
     if (token) {
       saveConfig({ ...loadPartialConfig(), screenpipe_token: token })

@@ -7,7 +7,7 @@ import { spawn, spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
-import { brainHome, UserError } from "./config"
+import { brainHome, loadState, UserError } from "./config"
 import { findOnPath, spawnTarget } from "./distill"
 
 type Log = (s: string) => void
@@ -67,6 +67,26 @@ const LOAD_ERROR_RE = /error while loading shared libraries|cannot open shared o
 export function installedScreenpipeBin(): string | null {
   const bin = screenpipeBinPath()
   return bin && existsSync(bin) ? bin : null
+}
+
+/**
+ * CLI Screenpipe déjà installé sur le poste hors du client (Homebrew, `npm install -g`, script officiel) : setup s'en
+ * sert plutôt que d'en installer un second. Cherché dans le PATH et les dossiers habituels (setup peut tourner avec un
+ * PATH réduit). Sous Windows, seulement un .exe (un raccourci .cmd ne se lance pas en arrière-plan sans shell).
+ */
+export function externalScreenpipeBin(pathEnv = process.env.PATH ?? "", platform: string = process.platform): string | null {
+  const usual = platform === "win32" ? [] : ["/opt/homebrew/bin", "/usr/local/bin", join(homedir(), ".local", "bin")]
+  const bin = findOnPath("screenpipe", [pathEnv, ...usual].filter(Boolean).join(delimiter))
+  if (!bin || bin.startsWith(screenpipePrefix())) return null
+  return platform === "win32" && !/\.exe$/i.test(bin) ? null : bin
+}
+
+/** Le binaire que setup fait tourner : le sien, sinon le CLI installé à part qu'il a lancé (noté dans l'état). */
+export function managedScreenpipeBin(): string | null {
+  const own = installedScreenpipeBin()
+  if (own) return own
+  const other = loadState().screenpipe_bin
+  return other && existsSync(other) ? other : null
 }
 
 /**
@@ -187,7 +207,7 @@ export function readScreenpipeToken(bin: string | null): string | null {
 
 /** Arrête Screenpipe s'il a été lancé par `setup` (service ou arrière-plan) ; les données de ~/.screenpipe restent. */
 export function uninstallScreenpipeService(log: Log = console.log) {
-  const bin = installedScreenpipeBin()
+  const bin = managedScreenpipeBin()
   if (!bin) return log("Screenpipe : pas installé par le client, rien à arrêter (une application Screenpipe reste à gérer à part).")
   const pid = Number.parseInt(existsSync(pidFile()) ? readFileSync(pidFile(), "utf8") : "", 10)
   if (pid > 0) {

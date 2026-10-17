@@ -77,6 +77,8 @@ export type State = {
   baseline_at?: string
   /** Empreinte du certificat du cerveau déjà installé pour les navigateurs du poste (setup ne le redemande pas). */
   ca_trusted?: string
+  /** CLI Screenpipe installé à part (Homebrew, npm -g…) que setup a lancé au lieu d'installer le sien. */
+  screenpipe_bin?: string
   /**
    * Conversations que Claude n'a pas su distiller (elles passent après les autres). n : essais probants (le modèle a
    * répondu, ou Claude a répondu à un autre appel de la synchro), abandon à MAX_DISTILL_ATTEMPTS ; tries : tous les essais

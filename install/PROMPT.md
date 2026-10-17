@@ -19,7 +19,8 @@ notre CLI (pourquoi : [docs/CLI.md](../docs/CLI.md)) :
 - `brain setup` (`apps/client/src/setup.ts`) fait le reste :
 
 1. **Cerveau** : enregistre l'URL et le jeton (`~/.company-brain/config.json`, mode 600) et teste la connexion.
-2. **Screenpipe** : s'il tourne déjà (application ou CLI), on le garde. Sinon l'application si elle est installée, sinon le
+2. **Screenpipe** : s'il tourne déjà (application ou CLI), on le garde. Sinon l'application si elle est installée, sinon un
+   CLI `screenpipe` déjà installé (PATH, Homebrew, `~/.local/bin`) lancé en service, sans rien réinstaller ; sinon le
    CLI officiel (paquet npm `screenpipe`, version figée dans `SCREENPIPE_VERSION`) installé dans `~/.company-brain/screenpipe`
    et lancé en service (`screenpipe service install` : launchd sur macOS, systemd sous Linux ; en arrière-plan à défaut).
    Options d'enregistrement : micro coupé, contexte d'app « memory » (les données `parsed` que lit brain-sync), vidéos et
