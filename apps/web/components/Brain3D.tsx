@@ -64,7 +64,11 @@ const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
 /** Intervalle entre deux ondes tant qu'une zone est choisie. */
-const PULSE_MS = 1000
+const PULSE_MS = 2000
+/** Retour à l'état normal quand la zone n'est plus choisie : couleur, cercle et ondes s'éteignent en douceur. */
+const SETTLE_MS = 600
+/** Le cercle d'encre autour d'une zone allumée, relatif à sa bille. */
+const RIM = 1.14
 /** Onde de choc : poussée maximale des points (unités de scène), et portée au-delà du bord de la zone. */
 const SHOCK = 0.03
 const SHOCK_AROUND = 0.22
@@ -93,10 +97,16 @@ type ZoneGfx = {
   selected: boolean
   /** Allumée : touchée en direct ou choisie au clic. */
   lit: boolean
+  /** Part d'allumage affichée, de 0 (normale) à 1 (allumée), qui suit `lit` en douceur. */
+  mix: number
+  outlineMat: THREE.MeshBasicMaterial
+  /** Quand elle a cessé d'être choisie : l'activité de ce clic (qui revient du serveur) ne la rallume pas. */
+  dismissedAt: number
 }
 
 type SynapseGfx = { a: string; b: string; mat: THREE.MeshBasicMaterial; baseOpacity: number; active: boolean }
-type RippleGfx = { key: string; zone: ZoneGfx; mesh: RingMesh; start: number }
+/** `fade` : instant où l'onde commence à s'éteindre avant son terme (zone désélectionnée). */
+type RippleGfx = { key: string; zone: ZoneGfx; mesh: RingMesh; start: number; fade?: number }
 type View = { rx: number; ry: number; zoom: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -298,10 +308,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   scene.add(group)
 
   const geoSphere = new T.SphereGeometry(1, 20, 14)
-  const geoRing = new T.RingGeometry(0.93, 1, 48)
-  const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
+  const geoRing = new T.RingGeometry(0.975, 1, 64)
   const geometries: THREE.BufferGeometry[] = [geoSphere, geoRing]
-  const materials: THREE.Material[] = [outlineMat]
+  const materials: THREE.Material[] = []
 
   const surface = brainSurface()
   const anchors = zoneAnchors(zones.length)
@@ -326,9 +335,11 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     center.position.copy(centerPos)
     center.scale.setScalar(CENTER_R)
     center.userData.zone = z.id
+    const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide, transparent: true, opacity: 0 })
+    materials.push(outlineMat)
     const outline: SphereMesh = new T.Mesh(geoSphere, outlineMat)
     outline.position.copy(centerPos)
-    outline.scale.setScalar(CENTER_R * 1.3)
+    outline.scale.setScalar(CENTER_R * RIM)
     outline.visible = false
     group.add(outline, center)
     pickables.push(center)
@@ -360,7 +371,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     materials.push(centerMat, nodeMat, linkMat)
     const glow = new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
     const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false })
+    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false, mix: 0, outlineMat, dismissedAt: -Infinity })
   })
 
   // Le réseau qui dessine le cerveau : des liaisons en arcs, à l'encre ; seules les zones portent la couleur.
@@ -463,7 +474,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       if (r.zone !== g) continue
       const k = (t - r.start) / RIPPLE_MS
       const off = (d - rippleRadius(r, k)) / 0.08
-      const push = (SHOCK * edge * Math.exp(-off * off) * (1 - k)) / d
+      const push = (SHOCK * edge * Math.exp(-off * off) * (1 - k) * rippleGain(r, t)) / d
       out[o] += vx * push
       out[o + 1] += vy * push
       out[o + 2] += vz * push
@@ -684,6 +695,10 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const live: RippleGfx[] = []
   /** Rayon de l'onde à l'instant k (0 → 1) : elle part du centre et s'éteint un peu après la connaissance la plus lointaine. */
   const rippleRadius = (r: RippleGfx, k: number) => 0.05 + (r.zone.reach + 0.08) * k
+  /** Force d'une onde : 1, puis vers 0 en SETTLE_MS une fois sa zone quittée. */
+  const rippleGain = (r: RippleGfx, t: number) => (r.fade === undefined ? 1 : Math.max(0, 1 - (t - r.fade) / SETTLE_MS))
+  /** Activité (en ms, horloge du navigateur) qui date du clic qu'on vient de quitter, ou qui en revient en retard. */
+  const dismissed = (g: ZoneGfx, at: number) => at < g.dismissedAt + 3000
   const spawnRipple = (g: ZoneGfx, key: string, t: number) => {
     const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: g.glow, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
     mesh.position.copy(g.center.position)
@@ -709,9 +724,15 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
     const act = refs.activityRef.current
     const sel = refs.selectedRef.current
-    // Zone choisie au clic : une onde part tout de suite (sans attendre l'aller-retour du serveur), puis une par seconde
+    // Zone choisie au clic : une onde part tout de suite (sans attendre l'aller-retour du serveur), puis une toutes les deux secondes
     // tant qu'elle reste choisie.
     if (sel !== pulse.zone) {
+      // La zone quittée s'éteint : ses ondes en cours s'effacent, l'activité de son clic ne la rallume pas.
+      const left = pulse.zone ? gfx.get(pulse.zone) : undefined
+      if (left) {
+        left.dismissedAt = nowMs
+        for (const r of live) if (r.zone === left && r.fade === undefined) r.fade = t
+      }
       pulse.zone = sel ?? null
       pulse.next = t
     }
@@ -722,14 +743,18 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     }
     for (const g of gfx.values()) {
       const a = act[g.id]
-      g.active = Boolean(a && a.until > nowMs)
+      g.active = Boolean(a && a.until > nowMs && !dismissed(g, a.startedAt))
       const isSel = sel === g.id
       g.selected = isSel
       const on = g.active || isSel
-      if (on !== g.lit) {
-        g.lit = on
-        g.center.material.color.setHex(on ? g.glow : g.locked ? NEUTRAL : g.color)
-        g.linkMat.color.setHex(on ? INK : LINE)
+      g.lit = on
+      // Allumer et éteindre en douceur : couleur, traits et cercle d'encre suivent la même part d'allumage.
+      const mix = g.mix + ((on ? 1 : 0) - g.mix) * Math.min(1, (dt * 1000) / (SETTLE_MS / 4))
+      if (Math.abs(mix - g.mix) > 1e-4 || (on ? mix < 1 : mix > 0)) {
+        g.mix = Math.abs(mix - (on ? 1 : 0)) < 0.003 ? (on ? 1 : 0) : mix
+        g.center.material.color.setHex(g.locked ? NEUTRAL : g.color).lerp(tone.setHex(g.glow), g.mix)
+        g.linkMat.color.setHex(LINE).lerp(tone.setHex(INK), g.mix)
+        g.outlineMat.opacity = g.mix
       }
       // L'onde traverse les connaissances de la zone : chacune gonfle quand le front de l'onde l'atteint.
       for (const node of g.nodes) {
@@ -740,14 +765,13 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
             const k = (t - r.start) / RIPPLE_MS
             const front = rippleRadius(r, k)
             const off = ((node.userData.d as number) - front) / 0.07
-            pulse = Math.max(pulse, Math.exp(-off * off) * (1 - k * 0.6))
+            pulse = Math.max(pulse, Math.exp(-off * off) * (1 - k * 0.6) * rippleGain(r, t))
           }
-        node.scale.setScalar((node.userData.r as number) * (on ? 1.6 : 1) * (1 + 1.4 * pulse))
+        node.scale.setScalar((node.userData.r as number) * (1 + 0.6 * g.mix) * (1 + 1.4 * pulse))
       }
-      g.outline.visible = on
-      const target = CENTER_R * (on ? 1.3 : 1)
-      g.center.scale.setScalar(g.center.scale.x + (target - g.center.scale.x) * Math.min(1, dt * 10))
-      g.outline.scale.setScalar(g.center.scale.x * 1.3)
+      g.outline.visible = g.mix > 0.01
+      g.center.scale.setScalar(CENTER_R * (1 + 0.3 * g.mix))
+      g.outline.scale.setScalar(g.center.scale.x * RIM)
     }
     shadeNetwork()
     for (const s of syn) {
@@ -764,20 +788,22 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       seen.add(r.key)
       const g = gfx.get(r.zone)
       // La zone choisie a déjà ses ondes à la seconde : celle du serveur (le clic qui revient) ferait doublon.
-      if (g && r.zone !== sel) spawnRipple(g, r.key, t)
+      // Celle d'une zone qu'on vient de quitter aussi : c'est le même clic, revenu en retard.
+      if (g && r.zone !== sel && !dismissed(g, nowMs)) spawnRipple(g, r.key, t)
     }
     for (const k of seen) if (!wanted.some((r) => r.key === k)) seen.delete(k)
     for (let i = live.length - 1; i >= 0; i--) {
       const r = live[i]
       const k = (t - r.start) / RIPPLE_MS
-      if (k >= 1) {
+      const gain = rippleGain(r, t)
+      if (k >= 1 || gain <= 0) {
         group.remove(r.mesh)
         r.mesh.material.dispose()
         live.splice(i, 1)
         continue
       }
       r.mesh.scale.setScalar(rippleRadius(r, k))
-      r.mesh.material.opacity = 0.9 * (1 - k)
+      r.mesh.material.opacity = 0.9 * (1 - k) * gain
       r.mesh.lookAt(camera.position)
     }
 
