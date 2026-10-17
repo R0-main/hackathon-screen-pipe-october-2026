@@ -113,7 +113,7 @@ export function Pricing({ cloud }: { cloud: string }) {
       where: "On your servers",
       price: () => "€0",
       unit: () => "forever",
-      features: ["Unlimited seats", "The whole brain: zones, agents, automations", "Your Postgres, your infrastructure", "Community help on GitHub"],
+      features: ["Unlimited seats", "The whole brain: zones, agents, automations, connectors", "Your Postgres, your infrastructure", "Community help on GitHub"],
       cta: { href: GUIDE, label: "Read the guide", external: true },
     },
     {

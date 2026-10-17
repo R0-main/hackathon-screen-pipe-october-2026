@@ -6,6 +6,8 @@ import { gsap } from "gsap"
 import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
+import { MCP_CATALOG, catalogEntry } from "@brain/core"
+import { McpLogo } from "../mcp-logos"
 import { LogoMark, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
 import { Hosting, Pricing } from "./Offer"
@@ -235,6 +237,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
       <div data-after className="relative">
         <span data-thread className="landing-thread" aria-hidden />
         <Dashboard />
+        <Connectors />
         <Install demo={demo} signup={signup} />
         <Privacy />
         <Hosting onAnchor={toSection} />
@@ -306,6 +309,66 @@ function Dashboard() {
           </div>
           <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Excerpt of the demo dashboard. Butine is a fictional company.</figcaption>
         </figure>
+      </div>
+    </section>
+  )
+}
+
+/** The company's tools, connected through their official MCP server: their content feeds the brain, agents use them. */
+const SHOWN_TOOLS = ["notion", "linear", "github", "atlassian", "slack", "google-drive", "hubspot", "stripe", "figma", "sentry", "gitlab", "airtable", "asana", "intercom", "gmail", "vercel"]
+
+function Connectors() {
+  const tools = SHOWN_TOOLS.map((id) => catalogEntry(id)).filter((e) => e !== undefined)
+  const steps = [
+    { term: "Connect in one click", def: "Official MCP servers: you sign in on the tool's own page, tokens stay on the brain's server." },
+    { term: "Its content feeds the brain", def: "Claude reads the tool, read-only, and keeps the decisions, procedures and facts, in the right zone." },
+    { term: "Agents use it through the brain", def: "\"Find the Notion page on deploying\" from Claude Code: read-only by default, the admin decides." },
+  ]
+  return (
+    <section className="landing-section relative border-t border-line" aria-labelledby="connectors">
+      <Bead />
+      <div className="landing-wrap grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
+        <div className="lg:pt-6">
+          <h2 id="connectors" data-reveal="title" className="landing-h2 max-w-[12em]">
+            Your tools feed it too.
+          </h2>
+          <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
+            Notion, Linear, GitHub, Slack, Stripe… Connect them while you create the brain: Claude reads them alongside your conversations to draw the first zones and
+            knowledge, then keeps importing what changes.
+          </p>
+        </div>
+
+        <figure data-reveal="panel" className="panel overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <span className="panel-title">Connectors</span>
+            <span className="text-[12px] text-trace">{MCP_CATALOG.length} official MCP servers</span>
+          </div>
+          {/* Rules on the tiles, not a coloured grid background: while the rows reveal, the empty cells stay white. */}
+          <ul data-rows className="grid grid-cols-2 sm:grid-cols-4" aria-label="Some of the tools you can connect">
+            {tools.map((e) => (
+              <li
+                key={e.id}
+                className="flex min-w-0 items-center gap-2.5 border-b border-r border-line px-3.5 py-3 [&:nth-child(2n)]:border-r-0 sm:[&:nth-child(2n)]:border-r sm:[&:nth-child(4n)]:border-r-0"
+              >
+                <McpLogo logo={e.logo} name={e.name} color={e.color} size={30} />
+                <span className="truncate text-[13px]">{e.name}</span>
+              </li>
+            ))}
+          </ul>
+          <figcaption className="px-5 py-3 text-[12px] text-trace">
+            And {MCP_CATALOG.length - tools.length} more, or any remote MCP server.
+          </figcaption>
+        </figure>
+      </div>
+      <div className="landing-wrap">
+        <dl data-reveal="cards" className="mt-16 grid border-t border-ink sm:grid-cols-3">
+          {steps.map((f) => (
+            <div key={f.term} className="border-b border-line py-5 sm:border-b-0 sm:pr-8 sm:pt-6">
+              <dt className="text-[15px] font-medium">{f.term}</dt>
+              <dd className="mt-1.5 text-[15px] leading-relaxed text-trace">{f.def}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </section>
   )
