@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz } from "../BrainViz"
-import { arcBetween, backFade, bendBetween, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
+import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
 import { Dot, zoneColor } from "../ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -43,6 +43,10 @@ const DEPTH_SOFTEN = 0.15
 /** Part de bone sur la face cachée du réseau : il n'en reste qu'un souffle, qui garde la silhouette. */
 const BACK = 0.86
 const NEURON_R = 0.007
+/** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
+const SYNAPSE_R = 0.004
+const TUBULAR = 64
+const RADIAL = 6
 /** Avancement de l'assemblage sur la page d'accueil : un quart des connaissances est déjà en place. */
 const HERO_ASSEMBLY = 0.32
 /** Le dernier tiers des billes arrive plus tard : décalage maximal d'une bille dans l'assemblage. */
@@ -167,7 +171,7 @@ type BuildArgs = {
 
 type Node = { zone: number; end: THREE.Vector3; start: THREE.Vector3; r: number; delay: number; wobble: number }
 type ZoneGfx = { id: string; color: THREE.Color; center: SphereMesh; outline: SphereMesh; pos: THREE.Vector3; first: number; last: number }
-type SynapseGfx = { a: number; b: number; mat: THREE.LineBasicMaterial; base: number }
+type SynapseGfx = { a: number; b: number; mat: THREE.MeshBasicMaterial; base: number }
 type Layout = { heroZ: number; fullZ: number; endZ: number; hero: [number, number]; full: [number, number] }
 
 /** Construit la scène et lance la boucle de rendu. Renvoie la fonction de nettoyage. */
@@ -277,13 +281,10 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   group.add(dustMesh)
   materials.push(dustMat)
 
-  // Les connaissances reliées entre elles une fois posées, au-delà de leur zone, en dégradé de couleur.
+  // Les connaissances reliées entre elles une fois posées, par des traits droits, chacune à ses plus proches voisines.
   const ends = nodes.map((nd) => nd.end.toArray())
   const knownSeg = gradientSegments(
-    knowledgeLinks(
-      ends,
-      nodes.map((nd) => nd.zone),
-    ).map(([a, b]) => ({ pts: bendBetween(ends[a], ends[b]), from: gfx[nodes[a].zone].color.toArray(), to: gfx[nodes[b].zone].color.toArray() })),
+    knowledgeLinks(ends).map(([a, b]) => ({ pts: [ends[a], ends[b]], from: gfx[nodes[a].zone].color.toArray(), to: gfx[nodes[b].zone].color.toArray() })),
   )
   const knownGeo = new T.BufferGeometry()
   knownGeo.setAttribute("position", new T.BufferAttribute(knownSeg.positions, 3))
@@ -300,14 +301,15 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const a = index.get(s.a)
     const b = index.get(s.b)
     if (a === undefined || b === undefined) continue
-    const pts = arcBetween(gfx[a].pos.toArray(), gfx[b].pos.toArray())
-    const geo = new T.BufferGeometry().setFromPoints(pts.map((p) => new T.Vector3(...p)))
-    const cols = new Float32Array(pts.length * 3)
+    const pts = arcBetween(gfx[a].pos.toArray(), gfx[b].pos.toArray()).map((p) => new T.Vector3(...p))
+    const geo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), TUBULAR, SYNAPSE_R, RADIAL, false)
+    const cols = new Float32Array(geo.attributes.position.count * 3)
     const tone = new T.Color()
-    pts.forEach((_, k) => tone.copy(gfx[a].color).lerp(gfx[b].color, k / (pts.length - 1)).toArray(cols, k * 3))
+    // Les sommets du tube vont anneau par anneau : l'anneau donne la position le long de l'arc.
+    for (let v = 0; v < geo.attributes.position.count; v++) tone.copy(gfx[a].color).lerp(gfx[b].color, Math.floor(v / (RADIAL + 1)) / TUBULAR).toArray(cols, v * 3)
     geo.setAttribute("color", new T.BufferAttribute(cols, 3))
-    const mat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 })
-    group.add(new T.Line(geo, mat))
+    const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false })
+    group.add(new T.Mesh(geo, mat))
     geometries.push(geo)
     materials.push(mat)
     syn.push({ a, b, mat, base: 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08) })
@@ -479,7 +481,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       g.outline.scale.setScalar(target * 1.3)
       g.outline.visible = on
     }
-    knownMat.opacity = 0.45 * (still ? 1 : smooth(0.43, 0.55, s))
+    knownMat.opacity = 0.55 * (still ? 1 : smooth(0.43, 0.55, s))
     for (const sy of syn) {
       const on = lit.has(gfx[sy.a].id) || lit.has(gfx[sy.b].id)
       sy.mat.opacity = on ? 1 : sy.base * (still ? 1 : smooth(0.43, 0.55, s))

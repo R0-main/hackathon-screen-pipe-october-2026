@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { arcBetween, backFade, bendBetween, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
+import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -35,6 +35,8 @@ const DEPTH_SOFTEN = 0.15
 /** Part de blanc sur la face cachée : il n'en reste qu'un souffle, qui garde la silhouette. */
 const BACK = 0.86
 const NEURON_R = 0.008
+/** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
+const SYNAPSE_R = 0.0045
 
 const CENTER_R = 0.042
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
@@ -58,7 +60,7 @@ type ZoneGfx = {
   selected: boolean
 }
 
-type SynapseGfx = { a: string; b: string; mat: THREE.LineBasicMaterial; baseOpacity: number; active: boolean }
+type SynapseGfx = { a: string; b: string; mat: THREE.MeshBasicMaterial; baseOpacity: number; active: boolean }
 type RippleGfx = { key: string; mesh: RingMesh; start: number }
 type View = { rx: number; ry: number; zoom: number }
 
@@ -329,24 +331,21 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
   }
 
-  // Les connaissances reliées entre elles, au-delà de leur zone, en dégradé de la couleur de l'une à celle de l'autre.
-  const known = [...gfx.values()].flatMap((g, zi) => g.nodes.map((node) => ({ p: node.position.toArray(), zone: zi, color: new T.Color(g.locked ? NEUTRAL : g.color).toArray() })))
-  const knownSeg = gradientSegments(
-    knowledgeLinks(
-      known.map((k) => k.p),
-      known.map((k) => k.zone),
-    ).map(([a, b]) => ({ pts: bendBetween(known[a].p, known[b].p), from: known[a].color, to: known[b].color })),
-  )
+  // Les connaissances reliées entre elles par des traits droits, chacune à ses plus proches voisines, quelle que soit leur zone.
+  const known = [...gfx.values()].flatMap((g) => g.nodes.map((node) => ({ p: node.position.toArray(), color: new T.Color(g.locked ? NEUTRAL : g.color).toArray() })))
+  const knownSeg = gradientSegments(knowledgeLinks(known.map((k) => k.p)).map(([a, b]) => ({ pts: [known[a].p, known[b].p], from: known[a].color, to: known[b].color })))
   const knownGeo = new T.BufferGeometry()
   knownGeo.setAttribute("position", new T.BufferAttribute(knownSeg.positions, 3))
   knownGeo.setAttribute("color", new T.BufferAttribute(knownSeg.colors, 3))
-  const knownMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.45 })
+  const knownMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55 })
   group.add(new T.LineSegments(knownGeo, knownMat))
   geometries.push(knownGeo)
   materials.push(knownMat)
 
   // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
   // l'autre, plus marqués quand elles sont actives.
+  const TUBULAR = 64
+  const RADIAL = 6
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const A = gfx.get(s.a)
@@ -354,14 +353,15 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (!A || !B) continue
     const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
     const baseOpacity = 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08)
-    const mat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity })
-    const geo = new T.BufferGeometry().setFromPoints(pts)
+    const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
+    const geo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), TUBULAR, SYNAPSE_R, RADIAL, false)
     const from = new T.Color(A.locked ? NEUTRAL : A.color)
     const to = new T.Color(B.locked ? NEUTRAL : B.color)
-    const cols = new Float32Array(pts.length * 3)
-    pts.forEach((_, k) => tone.copy(from).lerp(to, k / (pts.length - 1)).toArray(cols, k * 3))
+    const cols = new Float32Array(geo.attributes.position.count * 3)
+    // Les sommets du tube vont anneau par anneau : l'anneau donne la position le long de l'arc.
+    for (let v = 0; v < geo.attributes.position.count; v++) tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / TUBULAR).toArray(cols, v * 3)
     geo.setAttribute("color", new T.BufferAttribute(cols, 3))
-    group.add(new T.Line(geo, mat))
+    group.add(new T.Mesh(geo, mat))
     geometries.push(geo)
     materials.push(mat)
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false })
