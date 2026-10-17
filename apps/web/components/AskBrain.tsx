@@ -54,7 +54,7 @@ export function AskBrain({ me, zones }: { me: DashboardState["me"]; zones: ZoneV
       </form>
       {err && <ErrorText className="mt-2">{err}</ErrorText>}
       {res && (
-        <div className="inset mt-3 p-3">
+        <div className="inset scroll-thin mt-3 max-h-[min(60dvh,560px)] overflow-y-auto p-3">
           <div className="flex flex-wrap items-center gap-2 text-[12px] text-trace">
             <span>
               <span className="tabular-nums">{res.items.length}</span> résultat{res.items.length > 1 ? "s" : ""} pour « {res.query} » dans{" "}

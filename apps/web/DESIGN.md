@@ -51,4 +51,13 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
   d'encre ; traits fins vers le centre ; arcs entre zones qui partagent des entités.
 - Zone active : phosphore sur ses billes et son centre, onde phosphore, bulle blanche avec le libellé.
 - Libellés = vrais boutons HTML projetés sur la scène (clavier et lecteur d'écran), glisser pour tourner,
-  Ctrl + molette ou boutons pour zoomer. Sans WebGL : `BrainViz` (2D, même monochrome).
+  molette, pincer ou boutons pour zoomer. Sans WebGL : `BrainViz` (2D, même monochrome).
+
+## Gabarit (`components/AppShell.tsx`)
+
+- Barre latérale à gauche (fond bone, trait de 1 px) : le cerveau, ses pages (agents en direct, état, connaissances,
+  tâches, automatisations), la configuration pour les admins (équipe et accès, onboarding), puis « voir en tant que »,
+  mon contexte et la déconnexion. Sous 768 px, elle s'ouvre par le bouton menu.
+- À droite, la page. La fenêtre ne défile jamais : le cerveau remplit tout l'espace (la molette zoome), les autres
+  pages défilent dans leur colonne.
+- L'état vivant (flux SSE, zones allumées) est dans le layout (`components/BrainLive.tsx`) : il survit à la navigation.

@@ -30,7 +30,7 @@ const PHOSPHOR = 0xc7ff3e
 const RADIUS = 1.25
 const AXES = { x: 1.3, y: 1, z: 0.95 }
 const CENTER_R = 0.06
-const ZOOM = { min: 2.8, max: 7.5, start: 4.4, step: 0.6 }
+const ZOOM = { min: 2.6, max: 8, start: 5, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
 
@@ -76,7 +76,8 @@ function scatter(dir: [number, number, number], rand: () => number, spread: numb
 /**
  * Le cerveau en trois dimensions : des billes (les connaissances) groupées par zone sur une coque
  * ellipsoïdale, reliées à leur centre et entre zones par des traits fins. On le fait tourner à la
- * souris, on zoome avec Ctrl + molette ou les boutons. Sans WebGL, on retombe sur la vue 2D.
+ * souris, on zoome à la molette, en pinçant ou avec les boutons. Il remplit son conteneur : la page ne défile
+ * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
  */
 export function Brain3D(props: Brain3DProps) {
   const { zones, synapses, activity, ripples, now, selected, onSelect } = props
@@ -125,12 +126,17 @@ export function Brain3D(props: Brain3DProps) {
   }, [sceneKey, fallback])
 
   if (fallback) {
-    return <BrainViz zones={zones} synapses={synapses} activity={activity} ripples={ripples} now={now} selected={selected} onSelect={onSelect} />
+    return (
+      <div className="grid h-full w-full place-items-center overflow-hidden bg-surface p-6">
+        <div className="w-full max-w-[1100px]">
+          <BrainViz zones={zones} synapses={synapses} activity={activity} ripples={ripples} now={now} selected={selected} onSelect={onSelect} />
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div>
-    <div ref={containerRef} className="relative aspect-square max-h-[640px] w-full overflow-hidden rounded-[6px] bg-surface sm:aspect-[16/10]">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-surface">
       <canvas ref={canvasRef} className="block h-full w-full cursor-grab touch-none active:cursor-grabbing" aria-hidden />
 
       {/* Libellés : de vrais boutons, positionnés chaque image sur la projection de leur zone. */}
@@ -178,7 +184,7 @@ export function Brain3D(props: Brain3DProps) {
         })}
       </div>
 
-      <div className="absolute right-3 top-3 flex gap-1.5">
+      <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
         <button type="button" className="btn btn-icon" aria-label="Zoomer" onClick={() => zoomRef.current(-ZOOM.step)}>
           <PlusIcon />
         </button>
@@ -186,8 +192,7 @@ export function Brain3D(props: Brain3DProps) {
           <MinusIcon />
         </button>
       </div>
-    </div>
-    <p className="mt-2 text-[12px] text-trace">Glisser pour tourner. Pincer, Ctrl + molette ou les boutons pour zoomer.</p>
+      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Glisser pour tourner, molette ou pincer pour zoomer.</p>
     </div>
   )
 }
@@ -302,14 +307,14 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     size.h = h
     renderer.setSize(w, h, false)
     camera.aspect = w / h
-    camera.zoom = Math.min(1, camera.aspect / 1.3)
+    camera.zoom = Math.min(1, camera.aspect / 1.1)
     camera.updateProjectionMatrix()
   }
   const ro = new ResizeObserver(resize)
   ro.observe(container)
   resize()
 
-  // Interaction : glisser pour tourner, clic pour ouvrir une zone, Ctrl + molette pour zoomer.
+  // Interaction : glisser pour tourner, clic pour ouvrir une zone, molette (ou pincer au pavé tactile) pour zoomer.
   const raycaster = new T.Raycaster()
   const ndc = new T.Vector2()
   const pick = (e: PointerEvent): string | null => {
@@ -325,19 +330,39 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   let lastX = 0
   let lastY = 0
   let downAt = 0
+  // Doigts posés : à deux, l'écart entre eux zoome (pincer sur écran tactile).
+  const pointers = new Map<number, { x: number; y: number }>()
+  let pinch = 0
+  const spreadOf = () => {
+    const [a, b] = [...pointers.values()]
+    return Math.hypot(a.x - b.x, a.y - b.y)
+  }
   const onDown = (e: PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    canvas.setPointerCapture(e.pointerId)
+    state.lastInteraction = performance.now()
+    if (pointers.size === 2) {
+      dragging = false
+      moved = Infinity
+      pinch = spreadOf()
+      return
+    }
     dragging = true
     moved = 0
     lastX = e.clientX
     lastY = e.clientY
     downAt = performance.now()
-    state.lastInteraction = performance.now()
     canvas.style.cursor = "grabbing"
-    canvas.setPointerCapture(e.pointerId)
   }
   const onMove = (e: PointerEvent) => {
-    if (dragging) {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.size >= 2) {
+      const d = spreadOf()
+      state.zoomTarget = clamp(state.zoomTarget - (d - pinch) * 0.01, ZOOM.min, ZOOM.max)
+      pinch = d
+      state.lastInteraction = performance.now()
+    } else if (dragging) {
       const dx = e.clientX - lastX
       const dy = e.clientY - lastY
       lastX = e.clientX
@@ -351,19 +376,21 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     }
   }
   const onUp = (e: PointerEvent) => {
+    pointers.delete(e.pointerId)
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
     if (!dragging) return
     dragging = false
     canvas.style.cursor = "grab"
-    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
     if (moved < 6 && performance.now() - downAt < 600) {
       const zone = pick(e)
       if (zone) refs.onSelectRef.current?.(zone)
     }
   }
   const onWheel = (e: WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return
     e.preventDefault()
-    state.zoomTarget = clamp(state.zoomTarget + e.deltaY * 0.004, ZOOM.min, ZOOM.max)
+    // Pincer au pavé tactile arrive en molette + Ctrl, avec de petits deltas : on l'amplifie.
+    const k = e.ctrlKey ? 0.012 : e.deltaMode === 1 ? 0.12 : 0.004
+    state.zoomTarget = clamp(state.zoomTarget + e.deltaY * k, ZOOM.min, ZOOM.max)
     state.lastInteraction = performance.now()
   }
   canvas.addEventListener("pointerdown", onDown)

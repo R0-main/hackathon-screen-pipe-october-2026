@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { BrainIcon } from "./TopBar"
 import { api } from "./format"
-import { ErrorText } from "./ui"
+import { BrainIcon, ErrorText } from "./ui"
 
 type DemoUser = { id: string; name: string; title?: string; role: string }
 

@@ -1,10 +1,9 @@
-import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { getPersonContext } from "@/lib/brain"
 import { canRead } from "@/lib/access"
 import { getStore } from "@/lib/store"
 import { requirePageViewer } from "@/lib/session"
-import { BrainIcon } from "@/components/TopBar"
+import { PageScroll } from "@/components/AppShell"
 import { PersonItems } from "@/components/PersonItems"
 import { ZoneTag, zoneColor } from "@/components/ui"
 
@@ -27,17 +26,9 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const unreadable = new Set([...(ctx.unreadable_zones ?? []), ...(own ? ctx.zones.map((z) => z.zone).filter((z) => !canRead(viewer.access, z)) : [])])
 
   return (
-    <div className="min-h-dvh">
-      <header className="border-b border-line bg-bone">
-        <div className="mx-auto flex max-w-[1200px] items-center gap-3 px-4 py-3 sm:px-6">
-          <BrainIcon />
-          <div className="text-[15px] font-medium">{isSelf ? "Mon contexte" : `Passation de ${ctx.person.name}`}</div>
-          <Link href="/" className="btn ml-auto">
-            Retour au cerveau
-          </Link>
-        </div>
-      </header>
-      <main className="mx-auto max-w-[1200px] space-y-4 px-4 py-6 sm:px-6">
+    <PageScroll width="max-w-[1200px]">
+      <div className="space-y-4">
+        <p className="text-[13px] text-trace">{isSelf ? "Mon contexte" : `Passation de ${ctx.person.name}`}</p>
         <section className="panel p-5">
           <h1 className="text-[22px] font-medium leading-tight">{ctx.person.name}</h1>
           <p className="text-[13px] text-trace">
@@ -112,7 +103,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           unreadableZones={[...unreadable]}
           personName={isSelf ? undefined : ctx.person.name}
         />
-      </main>
-    </div>
+      </div>
+    </PageScroll>
   )
 }
