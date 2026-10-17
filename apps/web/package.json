@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "npm run build -w @brain/client --if-present",
     "dev": "next dev -p ${PORT:-3000}",
-    "prebuild": "npm run build -w @brain/client --if-present",
+    "prebuild": "npm run build -w @brain/client --if-present && tsx scripts/migrate.ts --on-build",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
     "seed": "tsx scripts/seed.ts",
@@ -15,7 +15,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "eval": "tsx scripts/eval-search.ts",
     "embed": "tsx scripts/embed-backfill.ts",
-    "db:migrate": "tsx scripts/migrate.ts"
+    "db:migrate": "tsx scripts/migrate.ts",
+    "test": "node --import tsx --test scripts/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
