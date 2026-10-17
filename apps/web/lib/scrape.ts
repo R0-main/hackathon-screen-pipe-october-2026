@@ -105,9 +105,9 @@ const systemResolve = (host: string) =>
     dnsLookup(host, { all: true, verbatim: true }, (err, addrs) => (err ? reject(err) : resolve(addrs as LookupAddress[]))),
   )
 
-const DEFAULT_DEPS: ScrapeDeps = { resolve: systemResolve, isBlocked: isBlockedAddress }
+export const DEFAULT_DEPS: ScrapeDeps = { resolve: systemResolve, isBlocked: isBlockedAddress }
 
-class BlockedError extends Error {
+export class BlockedError extends Error {
   constructor() {
     super("adresse interne refusée")
   }
@@ -116,7 +116,7 @@ class BlockedError extends Error {
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void
 
 /** Lookup utilisé par le socket lui-même : l'adresse vérifiée est celle à laquelle on se connecte. */
-function guardedLookup(deps: ScrapeDeps) {
+export function guardedLookup(deps: ScrapeDeps) {
   return (hostname: string, options: { family?: number | string; all?: boolean }, callback: LookupCallback) => {
     deps.resolve(hostname).then(
       (addrs) => {
@@ -135,7 +135,7 @@ function guardedLookup(deps: ScrapeDeps) {
 }
 
 /** Refuse les URL non http(s) et les noms ou IP littérales internes (les noms DNS sont revérifiés à la connexion). */
-function checkUrl(raw: string, deps: ScrapeDeps): URL {
+export function checkUrl(raw: string, deps: ScrapeDeps): URL {
   const url = new URL(raw)
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("seuls http et https sont acceptés")
   if (url.username || url.password) throw new Error("identifiants dans l'URL refusés")

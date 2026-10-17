@@ -57,8 +57,12 @@ export async function parseBody<T extends z.ZodType>(req: Request, schema: T): P
 }
 
 export function publicBaseUrl(req: Request): string {
+  return publicBaseUrlFrom(req.headers)
+}
+
+/** Comme publicBaseUrl, à partir des en-têtes (pages serveur : `await headers()`). */
+export function publicBaseUrlFrom(h: Headers): string {
   if (process.env.BRAIN_PUBLIC_URL) return process.env.BRAIN_PUBLIC_URL.replace(/\/+$/, "")
-  const h = req.headers
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https")
   return `${proto}://${host}`

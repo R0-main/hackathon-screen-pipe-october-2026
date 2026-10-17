@@ -77,6 +77,14 @@ demo/                 Script de démo
 - **Connecteurs** (`/connecteurs`, admins) : Notion (pages → connaissances), Linear et Todoist (issues et tâches →
   tâches, fermées quand elles disparaissent chez l'outil), calendrier ICS (réunions → connaissances). Synchro à la
   demande et toutes les heures en arrière-plan. Le jeton reste côté serveur.
+- **Serveurs MCP** (`/connecteurs`, admins) : catalogue de 44 serveurs MCP distants officiels (Notion, Linear, GitHub,
+  Jira/Confluence, Stripe, Figma, Slack, Google Drive…) avec leur logo, recherche et catégories, plus tout serveur MCP
+  personnalisé. « Se connecter » redirige vers la page de connexion du fournisseur (OAuth 2.1 de la spec MCP :
+  découverte RFC 9728 / RFC 8414, enregistrement dynamique du client, PKCE S256, paramètre `resource`), puis revient sur
+  `/api/connectors/mcp/callback`. Les fournisseurs sans enregistrement dynamique (GitHub, Slack, HubSpot, Google…)
+  demandent un client OAuth déclaré à la main : l'adresse de retour à déclarer est affichée. Jetons rafraîchis
+  automatiquement, test de connexion (liste des outils), protection SSRF sur toutes les requêtes. Les jetons, secrets et
+  vérificateurs PKCE restent côté serveur.
 - **Langues** : l'interface existe en français et en anglais (sélecteur dans la barre latérale et sur la connexion, cookie
   `brain_lang`, sinon la langue du navigateur). Les pages les plus anciennes restent en français pour l'instant.
 - **Flux temps réel** : le stockage prévient le flux SSE dès qu'un événement est inséré (émetteur local, ou
@@ -116,6 +124,9 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | POST | `/api/sync/report` | Compte rendu d'une synchro du poste (compteurs, erreur masquée) : page Supervision. |
 | GET | `/api/admin/monitoring` | Admin : état des postes, incidents du serveur, instance. `GET /api/health` : sonde publique (200 / 503). |
 | GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin : connecteurs Notion, Linear, Todoist, calendrier ICS (réglages sans le jeton, synchro à la demande). |
+| GET/POST | `/api/connectors/mcp` | Admin : serveurs MCP ajoutés (sans jeton) et adresse de retour OAuth ; ajout depuis le catalogue ou d'un serveur personnalisé. |
+| PUT/DELETE/POST | `/api/connectors/mcp/:id`, `/api/connectors/mcp/:id/authorize`, `/api/connectors/mcp/:id/test` | Admin : client OAuth manuel ou jeton, retrait ; adresse de la page de connexion du fournisseur ; test (liste des outils). |
+| GET | `/api/connectors/mcp/callback` | Retour OAuth du fournisseur (session de l'admin, état anti-CSRF lié au compte, 15 min). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
 
 ## Créer son entreprise à partir de zéro
