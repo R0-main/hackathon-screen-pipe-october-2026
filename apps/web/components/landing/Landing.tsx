@@ -8,6 +8,7 @@ import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
 import { BrainIcon, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
+import { Hosting, Pricing } from "./Offer"
 import { PrivacyFlow } from "./PrivacyFlow"
 import { ScrollBrain } from "./ScrollBrain"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
@@ -116,6 +117,15 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
     lenis.scrollTo(st.start + (st.end - st.start) * 0.2, { duration: 1.6 })
   }
 
+  // Lien vers une section de la page (« Tarifs ») : en douceur avec Lenis, saut normal sinon.
+  const toSection = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    const lenis = lenisRef.current
+    const target = document.getElementById(e.currentTarget.hash.slice(1))
+    if (!lenis || !target) return
+    e.preventDefault()
+    lenis.scrollTo(target, { duration: 2 })
+  }
+
   // Déjà connecté : droit au dashboard. Sinon créer son entreprise, et à côté la démo (mode démo) ou la connexion par jeton.
   const visit = demo ? { href: "/demo", label: "Ouvrir la démo" } : { href: "/login", label: "Se connecter" }
   const create = { href: "/creer", label: "Créer mon entreprise" }
@@ -136,6 +146,9 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                 <span className="text-[15px] font-medium">NOS Brainer</span>
               </Link>
               <div className="flex items-center gap-2">
+                <a href="#tarifs" onClick={toSection} className="btn btn-ghost hidden sm:inline-flex">
+                  Tarifs
+                </a>
                 {demo && !signedIn && (
                   <Link href="/login" className="btn btn-ghost hidden sm:inline-flex">
                     Se connecter
@@ -224,6 +237,8 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
         <Dashboard />
         <Install demo={demo} signup={signup} />
         <Privacy />
+        <Hosting onAnchor={toSection} />
+        <Pricing cloud={signup ? create.href : visit.href} />
         <Close cta={cta} second={second} demo={demo} signup={signup && !signedIn} />
       </div>
     </main>
