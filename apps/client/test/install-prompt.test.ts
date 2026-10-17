@@ -146,6 +146,30 @@ test("prompt d'onboarding par un agent : lit l'historique, envoie sans rien appl
   assert.match(p, /~\/\.claude\/projects/)
   assert.match(p, /~\/\.codex\/sessions/)
   assert.match(p, /Jamais de secrets/)
-  assert.match(p, /Rien n'est appliqué tout de suite/)
+  assert.match(p, /Rien n'est appliqué : je relis et valide/)
+  const ask = p.indexOf("Acceptes-tu de donner accès à ces données à ce site ?")
+  assert.ok(ask > 0 && ask < p.indexOf("Historique : Claude Code"), "l'accord est demandé avant toute lecture")
+  assert.match(p, /Sans un oui clair, arrête-toi sans rien lire ni envoyer/)
+  assert.match(p, /envoyer à cerveau\.example\.com/, "le site qui reçoit est nommé")
   assert.ok(p.includes(`curl -fsS -X POST https://cerveau.example.com/api/onboarding/import -H "Authorization: Bearer ${code}"`))
+})
+
+test("prompts : une session Claude Code dans le cloud s'arrête au lieu d'agir hors du poste", () => {
+  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
+    assert.match(p, /Si tu ne tournes pas sur mon poste \(session cloud, conteneur distant\), arrête-toi/)
+  }
+})
+
+test("prompt d'onboarding : cadré par ce que l'entreprise fait, pour laisser de côté les conversations sans rapport", () => {
+  const p = buildOnboardingAgentPrompt({
+    baseUrl: "https://cerveau.example.com",
+    code: "co_x",
+    orgName: "Atelier Lumen",
+    description: "Studio de design produit pour les start-up de la santé.",
+    zones: [],
+  })
+  assert.match(p, /L'entreprise, c'est Atelier Lumen : « Studio de design produit pour les start-up de la santé\. »/)
+  assert.match(p, /une conversation sans rapport \(projet perso, autre entreprise ou autre client, question générale\) se laisse de côté/)
+  const sansDescription = buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Orbite", zones: [] })
+  assert.match(sansDescription, /L'entreprise, c'est Orbite\. Ne garde que ce qui la concerne/)
 })

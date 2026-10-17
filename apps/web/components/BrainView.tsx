@@ -49,6 +49,17 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
         <div className="panel pointer-events-auto p-3">
           <AskBrain me={state.me} zones={state.zones} />
         </div>
+        {isAdmin && state.totals.items === 0 && !state.impersonating && (
+          <div className="panel pointer-events-auto flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+            <p className="min-w-0 flex-1 text-[13px] leading-snug">
+              <span className="font-medium">Le cerveau est vide.</span>{" "}
+              <span className="text-trace">Donnez-lui le contexte de vos comptes : Claude Code ou Codex relit vos anciennes conversations.</span>
+            </p>
+            <Link href="/onboarding" className="btn btn-primary shrink-0">
+              Remplir le cerveau
+            </Link>
+          </div>
+        )}
         {welcome && (
           <div className="pointer-events-auto">
             <WelcomeBanner name={state.me.name} meId={state.me.id} />
