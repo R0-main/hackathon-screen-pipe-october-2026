@@ -53,6 +53,7 @@ prompt  →  curl …/install.sh  →  sh install.sh --url … --token …
 | `apps/web/public/install.sh` | Amorce POSIX, servie sur `/install.sh`. |
 | `apps/client/src/cli.ts`, `setup.ts` | Le CLI, empaqueté en un seul fichier `brain.mjs` (servi sur `/brain.mjs`). |
 | `apps/web/lib/install-prompt.ts` | Le prompt court, généré avec le jeton de chaque employé. |
+| `apps/web/lib/ca.ts`, `app/ca.crt/route.ts` | Cerveau auto-hébergé : certificat de l'autorité privée servi sur `/ca.crt`, empreinte épinglée dans le prompt (`--ca` côté `install.sh` et client). |
 | `apps/client/test/install-prompt.test.ts` | Le prompt ne cite que des commandes qui existent ; `install.sh` lance bien `setup` et rend son code. |
 
 Codes de sortie : **0** tout est branché, **3** autorisation macOS en attente (relancer `~/.company-brain/brain setup`

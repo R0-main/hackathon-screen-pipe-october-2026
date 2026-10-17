@@ -9,21 +9,36 @@
 /** Le raccourci écrit par install.sh : marche même quand Node.js est une copie privée hors du PATH. */
 export const BRAIN_CLI = "~/.company-brain/brain"
 
+/** Où install.sh et le client gardent le certificat d'un cerveau auto-hébergé. */
+export const CA_FILE = "~/.company-brain/ca.crt"
+
+/**
+ * La commande unique. Cerveau auto-hébergé en HTTPS local (empreinte donnée) : son certificat est d'abord récupéré
+ * puis vérifié par son empreinte SHA-256 ; tout le reste (install.sh, brain.mjs, le client) passe ensuite par lui.
+ */
+export function installCommand(baseUrl: string, args: string, caFingerprint?: string): string {
+  if (!caFingerprint) return `curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${baseUrl} ${args}`
+  const check = `[ "$(openssl x509 -in ${CA_FILE} -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "${caFingerprint}" ]`
+  return `mkdir -p ~/.company-brain && curl -ksSL ${baseUrl}/ca.crt -o ${CA_FILE} && ${check} && curl -fsSL --cacert ${CA_FILE} ${baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${baseUrl} ${args} --ca ${CA_FILE}`
+}
+
+const CA_NOTE = "   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; si cette vérification échoue, arrête-toi et préviens-moi.)\n"
+
 /** « de Fournil », « d'Atelier Lumen » : l'élision devant une voyelle ou un h. */
 export function deNom(name: string): string {
   return /^[aeiouyhàâäéèêëîïôöùûüœæ]/i.test(name.trim()) ? `d'${name.trim()}` : `de ${name.trim()}`
 }
 
-export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; zones: string[] }): string {
-  const { baseUrl, token, name, orgName, zones } = opts
+export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; zones: string[]; caFingerprint?: string }): string {
+  const { baseUrl, token, name, orgName, zones, caFingerprint } = opts
   const brain = BRAIN_CLI
   return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}. Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
 2. Lance cette commande telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
-   curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${baseUrl} --token ${token}
-3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance \`${brain} setup\`. Autre erreur : explique-la simplement et relance \`${brain} setup\`, qui reprend où il s'était arrêté (\`${brain} status\` donne l'état).
+   ${installCommand(baseUrl, `--token ${token}`, caFingerprint)}
+${caFingerprint ? CA_NOTE : ""}3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance \`${brain} setup\`. Autre erreur : explique-la simplement et relance \`${brain} setup\`, qui reprend où il s'était arrêté (\`${brain} status\` donne l'état).
 4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (\`${brain} uninstall\`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord \`${brain} sync --dry-run --full --since 24h\` en entier ; rien ne part avant mon accord explicite, puis \`${brain} sync --confirm\` envoie exactement ce que j'ai relu.`
 }
 
@@ -35,8 +50,8 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 /** Codes de sortie de `brain join` (apps/client/src/join.ts). */
 export const JOIN_EXIT = { pending: 5, rejected: 6 } as const
 
-export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string }): string {
-  const { baseUrl, code, orgName } = opts
+export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string; caFingerprint?: string }): string {
+  const { baseUrl, code, orgName, caFingerprint } = opts
   const org = deNom(orgName)
   const brain = BRAIN_CLI
   return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
@@ -44,7 +59,7 @@ export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: 
 1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
 2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).
 3. Lance cette commande en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée), en remplaçant les valeurs entre chevrons :
-   curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${baseUrl} --join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"
-4. Code 0 : demande acceptée et poste branché, le cerveau s'est ouvert dans mon navigateur. Code ${JOIN_EXIT.pending} (« EN ATTENTE D'ACCEPTATION ») : dis-moi que ma demande attend un admin et propose de relancer \`${brain} join\`, qui reprend la même demande. Code ${JOIN_EXIT.rejected} : la demande a été refusée. Code 3 : redis-moi où cocher, puis relance \`${brain} setup\`. Autre erreur : explique-la simplement et relance \`${brain} join\`.
+   ${installCommand(baseUrl, `--join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"`, caFingerprint)}
+${caFingerprint ? CA_NOTE : ""}4. Code 0 : demande acceptée et poste branché, le cerveau s'est ouvert dans mon navigateur. Code ${JOIN_EXIT.pending} (« EN ATTENTE D'ACCEPTATION ») : dis-moi que ma demande attend un admin et propose de relancer \`${brain} join\`, qui reprend la même demande. Code ${JOIN_EXIT.rejected} : la demande a été refusée. Code 3 : redis-moi où cocher, puis relance \`${brain} setup\`. Autre erreur : explique-la simplement et relance \`${brain} join\`.
 5. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (\`${brain} uninstall\`).`
 }

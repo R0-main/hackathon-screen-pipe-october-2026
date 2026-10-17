@@ -3,6 +3,8 @@
 #
 #   sh install.sh --url https://cerveau.example.com --token cb_…        (prompt personnel, jeton remis par un admin)
 #   sh install.sh --url https://cerveau.example.com --join cj_… --name …  (message d'équipe : demande à rejoindre)
+#   … --ca ~/.company-brain/ca.crt   (cerveau auto-hébergé en HTTPS local : certificat de son autorité, déjà vérifié par
+#                                     son empreinte dans le prompt ; sert au téléchargement puis au client)
 #
 # 1. Trouve Node.js ≥ 20. S'il manque (macOS, Linux), installe une copie privée de Node dans ~/.company-brain/node,
 #    sans droits administrateur, en vérifiant son empreinte SHA-256.
@@ -28,14 +30,18 @@ fail() {
   exit "$code"
 }
 
-# --url (ou --url=…) : l'adresse du cerveau, d'où vient brain.mjs. Toutes les options passent ensuite à setup.
+# --url (ou --url=…) : l'adresse du cerveau, d'où vient brain.mjs. --ca : certificat (PEM) d'un cerveau auto-hébergé.
+# Toutes les options passent ensuite à setup.
 url=""
+ca=""
 command="setup"
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--url" ]; then url="$arg"; fi
+  if [ "$prev" = "--ca" ]; then ca="$arg"; fi
   case "$arg" in
     --url=*) url="${arg#--url=}" ;;
+    --ca=*) ca="${arg#--ca=}" ;;
     --join | --join=*) command="join" ;;
   esac
   prev="$arg"
@@ -43,6 +49,12 @@ done
 [ -n "$url" ] || fail 2 "Usage : sh install.sh --url <adresse du cerveau> --token <jeton personnel>  (ou --join <code d'équipe>)"
 url="${url%/}"
 command -v curl >/dev/null 2>&1 || fail 4 "curl est introuvable : installe-le, puis relance ce script."
+if [ -n "$ca" ] && [ ! -f "$ca" ]; then fail 2 "Certificat introuvable : $ca"; fi
+
+# Téléchargement depuis le cerveau : avec son certificat quand il est auto-hébergé.
+fetch() {
+  if [ -n "$ca" ]; then curl -fsSL --cacert "$ca" "$1" -o "$2"; else curl -fsSL "$1" -o "$2"; fi
+}
 
 mkdir -p "$HOME_DIR"
 
@@ -106,7 +118,7 @@ else
 fi
 
 # Client du cerveau : remplacé d'un bloc, pour ne jamais laisser un fichier à moitié téléchargé.
-curl -fsSL "$url/brain.mjs" -o "$HOME_DIR/brain.mjs.download"
+fetch "$url/brain.mjs" "$HOME_DIR/brain.mjs.download"
 mv "$HOME_DIR/brain.mjs.download" "$HOME_DIR/brain.mjs"
 
 # Raccourci : ~/.company-brain/brain <commande> marche même quand node n'est pas dans le PATH (copie privée).

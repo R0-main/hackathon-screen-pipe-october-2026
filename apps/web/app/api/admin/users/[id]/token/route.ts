@@ -1,5 +1,6 @@
 import { getStore } from "@/lib/store"
 import { hashToken, newToken } from "@/lib/auth"
+import { caFingerprint } from "@/lib/ca"
 import { buildInstallPrompt } from "@/lib/install-prompt"
 import { error, json, publicBaseUrl, withViewer } from "@/lib/http"
 
@@ -18,7 +19,7 @@ export const POST = withViewer<Ctx>(
     if (!profile) return error(404, "Membre introuvable.")
     const zones = (await store.listZoneAccess(id)).map((a) => a.zone_id)
     const org = await store.getOrg()
-    return json({ token, prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones }) })
+    return json({ token, prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones, caFingerprint: caFingerprint() }) })
   },
   { admin: true },
 )

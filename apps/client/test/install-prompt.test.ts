@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert"
 import { spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
+import { createServer as createHttpsServer } from "node:https"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -133,5 +134,57 @@ test("install.sh --join : lance join (et non setup) avec les mêmes options", as
   } finally {
     server.close()
     rmSync(home, { recursive: true, force: true })
+  }
+})
+
+const FP = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49"
+
+test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, empreinte vérifiée, puis tout passe par lui", () => {
+  const p = buildInstallPrompt({ ...EXAMPLE, caFingerprint: FP })
+  const check = `[ "$(openssl x509 -in ~/.company-brain/ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "${FP}" ]`
+  assert.ok(p.includes(`mkdir -p ~/.company-brain && curl -ksSL ${EXAMPLE.baseUrl}/ca.crt -o ~/.company-brain/ca.crt && ${check} && curl -fsSL --cacert ~/.company-brain/ca.crt ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token} --ca ~/.company-brain/ca.crt`), p)
+  assert.equal(p.split(EXAMPLE.token).length, 2, "le jeton n'apparaît qu'une fois")
+  assert.equal(p.split("curl -k").length, 2, "-k ne sert qu'à récupérer le certificat, jamais pour install.sh")
+  assert.match(p, /si cette vérification échoue, arrête-toi/)
+  assert.ok(INSTALL_PROMPT_RE.test(p))
+  assert.ok(p.length < 2600, `prompt court (${p.length} caractères)`)
+  const j = buildJoinPrompt({ ...JOIN, caFingerprint: FP })
+  assert.ok(j.includes(`${check} && curl -fsSL --cacert ~/.company-brain/ca.crt ${JOIN.baseUrl}/install.sh`))
+  assert.ok(j.includes(`--join ${JOIN.code} --name "<prénom nom>" --title "<poste>" --email "<email>" --ca ~/.company-brain/ca.crt`))
+  assert.ok(!prompt.includes("ca.crt") && !joinPrompt.includes("ca.crt"), "sans empreinte (cloud) : rien ne change")
+})
+
+test("install.sh --ca : brain.mjs téléchargé avec le certificat (HTTPS privé), option transmise à setup ; refusé sans", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "brain-install-ca-"))
+  const cert = join(dir, "cert.pem")
+  const key = join(dir, "key.pem")
+  const gen = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "2", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"], { encoding: "utf8" })
+  if (gen.error || gen.status !== 0) return t.skip(`openssl indisponible (${gen.error?.message ?? gen.stderr.trim().split("\n")[0]})`)
+  const fake = "console.log(JSON.stringify(process.argv.slice(2))); process.exit(3)"
+  const server = createHttpsServer({ cert: readFileSync(cert), key: readFileSync(key) }, (req, res) => {
+    if (req.url === "/brain.mjs") res.end(fake)
+    else res.writeHead(404).end()
+  })
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
+  const url = `https://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const run = (args: string[]) =>
+    new Promise<{ status: number | null; stdout: string }>((ok) => {
+      const home = mkdtempSync(join(dir, "home-"))
+      const child = spawn("sh", [installSh, "--url", url, ...args], { env: { ...process.env, COMPANY_BRAIN_HOME: home } })
+      let stdout = ""
+      child.stdout.on("data", (d) => (stdout += d))
+      child.on("close", (status) => ok({ status, stdout }))
+    })
+  try {
+    const ok = await run(["--token", "cb_test", "--ca", cert])
+    assert.equal(ok.status, 3, ok.stdout)
+    assert.ok(ok.stdout.includes(JSON.stringify(["setup", "--url", url, "--token", "cb_test", "--ca", cert])), ok.stdout)
+    const ko = await run(["--token", "cb_test"])
+    assert.notEqual(ko.status, 3, "sans --ca, le certificat privé est refusé : rien n'est lancé")
+    const absent = await run(["--token", "cb_test", "--ca", join(dir, "absent.pem")])
+    assert.equal(absent.status, 2)
+  } finally {
+    server.close()
+    rmSync(dir, { recursive: true, force: true })
   }
 })
