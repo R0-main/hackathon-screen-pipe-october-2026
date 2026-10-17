@@ -122,7 +122,7 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET | `/api/admin/zones/auto/input` | Admin : matière d'un passage (zones, connaissances récentes numérotées) pour `refresh-zones`. |
 | GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`) : job quotidien « nouvelles zones », toutes entreprises confondues. |
 | POST | `/api/sync/report` | Compte rendu d'une synchro du poste (compteurs, erreur masquée) : page Supervision. |
-| GET | `/api/admin/monitoring` | Admin : état des postes, incidents du serveur, instance. `GET /api/health` : sonde publique (200 / 503). |
+| GET | `/api/admin/monitoring` | Admin : état des postes, incidents du serveur, instance. `GET /api/health` : sonde publique (200 / 503), avec en Postgres l'état des migrations (`migrations.up_to_date`). |
 | GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin : connecteurs Notion, Linear, Todoist, calendrier ICS (réglages sans le jeton, synchro à la demande). |
 | GET/POST | `/api/connectors/mcp` | Admin : serveurs MCP ajoutés (sans jeton) et adresse de retour OAuth ; ajout depuis le catalogue ou d'un serveur personnalisé. |
 | PUT/DELETE/POST | `/api/connectors/mcp/:id`, `/api/connectors/mcp/:id/authorize`, `/api/connectors/mcp/:id/test` | Admin : client OAuth manuel ou jeton, retrait ; adresse de la page de connexion du fournisseur ; test (liste des outils). |

@@ -48,6 +48,7 @@ import {
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as zoneRoute from "../app/api/zones/[id]/route"
+import * as healthRoute from "../app/api/health/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
@@ -726,6 +727,23 @@ async function main() {
     assert(second.some((e) => e.id === slowId), "l'événement validé en retard est quand même livré")
     assert(!(await poller.poll()).some((e) => e.id === slowId || e.id === fast.id), "sans doublon")
     await sql.end({ timeout: 5 })
+
+    console.log("\n— Sonde de santé : migrations appliquées comparées à celles livrées avec le code")
+    {
+      const files = fs.readdirSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../supabase/migrations")).filter((f) => f.endsWith(".sql")).sort()
+      const saved = process.env.BRAIN_EXPECTED_MIGRATION
+      process.env.BRAIN_EXPECTED_MIGRATION = files.at(-1)
+      try {
+        const h = (await (await healthRoute.GET()).json()) as { migrations?: { applied: number; last: string | null; expected: string | null; up_to_date: boolean | null } }
+        assert(h.migrations?.up_to_date === true && h.migrations.last === files.at(-1) && h.migrations.applied >= files.length, `base à jour : ${JSON.stringify(h.migrations)}`)
+        process.env.BRAIN_EXPECTED_MIGRATION = "99999999999999_future.sql"
+        const late = (await (await healthRoute.GET()).json()) as { ok: boolean; migrations?: { up_to_date: boolean | null } }
+        assert(late.ok && late.migrations?.up_to_date === false, "une migration livrée mais pas appliquée : signalée, sans faire échouer la sonde")
+      } finally {
+        if (saved === undefined) delete process.env.BRAIN_EXPECTED_MIGRATION
+        else process.env.BRAIN_EXPECTED_MIGRATION = saved
+      }
+    }
 
     console.log("\n— Postgres : organisation relue (reseed, onboarding sur une autre instance)")
     const other = new PostgresStore(url)

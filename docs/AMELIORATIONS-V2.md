@@ -18,6 +18,8 @@ supervision sans comptes rendus, connecteurs de tâches refusés avec un message
 - **Alertes** : `BRAIN_ALERT_WEBHOOK` reçoit un JSON `{ text }` (Slack, Discord `/slack`, Mattermost, n8n…) pour une
   erreur de route, une synchro en échec sur un poste, un connecteur en échec. Au plus une alerte par cause et par heure.
 - **Sonde** : `GET /api/health` répond 200 avec version, uptime, stockage, mode du flux ; 503 si le stockage ne répond pas.
+  En Postgres, `migrations` donne la dernière migration appliquée en base, la dernière livrée avec le code et
+  `up_to_date` : de quoi vérifier de l'extérieur qu'un déploiement a bien migré la base.
 - API : `GET /api/admin/monitoring`.
 
 ## 2. Connecteurs (`/connecteurs`, admins)
