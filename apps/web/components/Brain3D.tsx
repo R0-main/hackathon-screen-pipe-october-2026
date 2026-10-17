@@ -54,12 +54,14 @@ const NEURON_R = 0.008
 /** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
 const SYNAPSE_R = 0.0045
 /**
- * Flux entre zones : des billes qui circulent à l'intérieur des arcs, dans les deux sens. Par sens et par arc,
- * leur nombre ; leur vitesse (en tours d'arc par seconde) et leur rayon, relatif à celui de l'arc.
+ * Flux entre zones : de toutes petites billes claires qui circulent à l'intérieur des arcs, dans les deux sens.
+ * Par sens et par arc, leur nombre ; leur vitesse (en tours d'arc par seconde) ; leur rayon, relatif à celui de
+ * l'arc (sous 1 : elles restent dans le trait) ; leur part de blanc, qui les fait ressortir sur sa couleur.
  */
-const BEADS_PER_WAY = 2
-const BEAD_SPEED = 0.12
-const BEAD_R = 2.4
+const BEADS_PER_WAY = 4
+const BEAD_SPEED = 0.1
+const BEAD_R = 0.9
+const BEAD_LIGHT = 0.75
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
@@ -569,15 +571,17 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, curve, from, to, phase: (hashString(`${s.a}|${s.b}`) % 1000) / 1000 })
   }
-  // Les billes du flux, toutes dans un seul maillage : chacune prend la couleur de l'arc là où elle passe, avivée.
-  const beads = new T.InstancedMesh(geoSphere, new T.MeshBasicMaterial({ color: WHITE }), Math.max(1, syn.length * BEADS_PER_WAY * 2))
+  // Les billes du flux, toutes dans un seul maillage : chacune prend la couleur de l'arc là où elle passe, très
+  // éclaircie. Dessinées après les arcs (qui sont transparents), elles se voient dans le trait au lieu d'être teintées par lui.
+  const beads = new T.InstancedMesh(geoSphere, new T.MeshBasicMaterial({ color: WHITE, transparent: true, depthWrite: false }), Math.max(1, syn.length * BEADS_PER_WAY * 2))
+  beads.renderOrder = 2
   beads.count = reducedFlow ? 0 : syn.length * BEADS_PER_WAY * 2
   beads.frustumCulled = false
   group.add(beads)
   materials.push(beads.material as THREE.Material)
   const beadAt = new T.Vector3()
   /**
-   * Le flux entre zones : sur chaque arc, des billes vont de A vers B et d'autres de B vers A, en continu et
+   * Le flux entre zones : dans chaque arc, de petites billes vont de A vers B et d'autres de B vers A, en continu et
    * régulièrement espacées. Elles rapetissent jusqu'à disparaître en arrivant sur une zone, et accélèrent quand
    * une des deux zones est active.
    */
@@ -593,7 +597,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         s.curve.getPointAt(u, beadAt)
         const r = SYNAPSE_R * BEAD_R * Math.min(1, u / 0.1, (1 - u) / 0.1)
         beads.setMatrixAt(n, mtx.makeScale(r, r, r).setPosition(beadAt))
-        beads.setColorAt(n, tone.copy(s.from).lerp(s.to, u).offsetHSL(0, 0.12, -0.06))
+        beads.setColorAt(n, tone.copy(s.from).lerp(s.to, u).lerp(whiteC, BEAD_LIGHT))
         n++
       }
     }
