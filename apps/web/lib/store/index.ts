@@ -9,7 +9,7 @@ export { StoreSetupError, isStoreSetupError } from "./errors"
 
 // À incrémenter quand l'interface ou le comportement des stockages change : en `next dev`, le singleton survit au
 // rechargement à chaud et garderait sinon une instance de l'ancienne classe (méthodes manquantes).
-const STORE_VERSION = 5
+const STORE_VERSION = 6
 
 const g = globalThis as unknown as { __brainStore?: BrainStore; __brainStoreVersion?: number; __brainOrgContext?: AsyncLocalStorage<string> }
 

@@ -36,12 +36,13 @@ export async function GET(req: Request) {
     const root = getRootStore()
     const day = localDay()
     const orgIds = await root.listOrgIds()
-    const results: OrgResult[] = []
+    // Rangés dans l'ordre des entreprises (la base d'abord), quel que soit l'ordre dans lequel elles finissent.
+    const results: OrgResult[] = new Array(orgIds.length)
     let next = 0
     const worker = async () => {
       while (next < orgIds.length) {
-        const orgId = orgIds[next++]
-        results.push(await runForOrg(orgId, day, force))
+        const i = next++
+        results[i] = await runForOrg(orgIds[i], day, force)
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, orgIds.length) }, worker))

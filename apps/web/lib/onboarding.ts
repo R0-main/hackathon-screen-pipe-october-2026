@@ -90,7 +90,7 @@ function heuristicDraft(answers: OnboardingAnswers, pages: ScrapedPage[], existi
 
 export async function draftOnboarding(answers: OnboardingAnswers, existing: Zone[]): Promise<OnboardingResult> {
   const links = extractLinks(`${answers.liens ?? ""}\n${answers.activite ?? ""}`)
-  const pages = await Promise.all(links.map(scrapeUrl))
+  const pages = await Promise.all(links.map((u) => scrapeUrl(u)))
   const claude = await getClaude()
   const qa = ONBOARDING_QUESTIONS.filter((q) => answers[q.id]?.trim()).map((q) => ({ question: q.question, answer: answers[q.id]!.trim() }))
   const draft =

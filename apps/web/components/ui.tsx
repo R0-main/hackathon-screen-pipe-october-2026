@@ -121,14 +121,6 @@ export function NavBrainIcon(props: IconProps) {
   )
 }
 
-export function PulseIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M1.5 8.5h3l1.8-4 3.2 8 1.8-4h3.2" />
-    </Icon>
-  )
-}
-
 export function DocIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -187,6 +179,36 @@ export function ChatIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z" />
+    </Icon>
+  )
+}
+
+/** Chaîne (connecteurs). */
+export function LinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6.5 9.5l3-3" />
+      <path d="M7 11.5l-1.2 1.2a2.3 2.3 0 01-3.3-3.3L4.3 7.6M9 4.5l1.2-1.2a2.3 2.3 0 013.3 3.3L11.7 8.4" />
+    </Icon>
+  )
+}
+
+/** Cadran (supervision). */
+export function WatchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 5v3l2 1.5" />
+    </Icon>
+  )
+}
+
+/** Étiquette (entités). */
+export function TagIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.5 3.5v4.2l6 6 5-5-6-6H3.5a1 1 0 00-1 .8z" />
+      <circle cx="5.5" cy="6" r="0.8" />
     </Icon>
   )
 }

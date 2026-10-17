@@ -1,6 +1,6 @@
 // Client HTTP de l'API du cerveau (jeton Bearer personnel).
 
-import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, NewZonesInput, Profile, Skill, SkillFile, StatusInput, Zone, ZoneStatus } from "@brain/core"
+import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, NewZonesInput, Profile, Skill, SkillFile, StatusInput, SyncReport, Zone, ZoneStatus } from "@brain/core"
 
 export class ApiError extends Error {
   constructor(
@@ -187,6 +187,10 @@ export class BrainApi {
   }
   automations(workflows: Workflow[]) {
     return this.request<{ saved: number }>("POST", "/api/automations", { workflows })
+  }
+  /** Compte rendu d'une synchro (réussie ou non) pour la page Supervision. */
+  report(report: SyncReport) {
+    return this.request<{ saved: boolean; health: string }>("POST", "/api/sync/report", report, 10000)
   }
   skills() {
     return this.request<{ can_publish: boolean; skills: ApiSkill[] }>("GET", "/api/skills", undefined, 30000)

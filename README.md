@@ -3,7 +3,7 @@
 > Le cerveau d'entreprise qui est un *no-brainer* : un prompt à coller dans Claude Code, et ta boîte a un cerveau.
 
 > Hackathon Screenpipe « Build Agents That Remember » — 42 Paris, octobre 2026.
-> Le pitch est dans [IDEA.md](IDEA.md), l'architecture dans [ARCHITECTURE.md](ARCHITECTURE.md), le déroulé de la démo dans [demo/DEMO.md](demo/DEMO.md).
+> Le pitch est dans [IDEA.md](IDEA.md), l'architecture dans [ARCHITECTURE.md](ARCHITECTURE.md), le déroulé de la démo dans [demo/DEMO.md](demo/DEMO.md), l'hébergement sur une machine de l'entreprise dans [docs/LOCAL.md](docs/LOCAL.md).
 
 Chaque employé travaille déjà avec Claude Code, Codex ou ChatGPT, mais ce contexte reste enfermé dans des sessions individuelles.
 **Screenpipe** capte ces sessions sur chaque poste, **brain-sync** les distille en connaissances (décisions, procédures, faits, tâches) et les envoie à **un cerveau unique de l'entreprise**. Les agents de chacun interrogent ce cerveau via un **MCP**, avec des **accès par zone**, et le dashboard montre le cerveau s'allumer en direct.
@@ -44,7 +44,7 @@ demo/                 Script de démo
 
 | Brique | Où | Rôle |
 |---|---|---|
-| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »). Pages séparées : agents en direct (`/activite`), « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
+| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »), avec le fil « Agents en direct » posé à côté : on lit l'événement pendant que sa zone s'allume, et une zone du fil ouvre son tiroir. Pages séparées : « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
 | **Équipe & accès** | `/admin` | Organigramme (qui est rattaché à qui, agents actifs, zones de chacun ; cliquer une carte pour régler rattachement, rôle et zones), matrice membres × zones, invitation → prompt d'installation avec jeton personnel. |
 | **Skills** | `/skills` | Les skills Claude Code de l'entreprise (SKILL.md et les scripts qu'ils utilisent), regroupés par cortex. Publier demande un droit accordé dans `/admin` (les admins l'ont toujours) ; un skill attribué à un cortex (une zone) n'est donné qu'à ceux qui lisent cette zone. Un script qui contient un secret est refusé. |
 | **Onboarding** | `/onboarding` | Interview guidée de 7 questions + lecture des liens → zones et premières connaissances, validées avant application. |
@@ -56,6 +56,26 @@ demo/                 Script de démo
 | **Diagnostic** | `brain.mjs doctor` | Passe le poste en revue sans rien modifier (Node, raccourci, cerveau, Screenpipe, MCP, hooks, synchro, distillation) et donne la commande qui répare chaque point KO ; `--json` pour Claude Code. |
 | **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
 | **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
+
+## Supervision, connecteurs, langues
+
+> Détail et choix techniques : [docs/AMELIORATIONS-V2.md](docs/AMELIORATIONS-V2.md).
+
+- **Supervision** (`/supervision`, admins) : l'état de chaque poste (dernière synchro, retard, erreur) d'après les comptes
+  rendus que `brain sync` envoie à la fin de chaque passage (compteurs seulement, jamais de contenu), les incidents du
+  serveur, et une sonde `GET /api/health` pour un superviseur externe. `BRAIN_ALERT_WEBHOOK` reçoit une alerte (JSON
+  `{ text }`, compatible Slack) pour une route en erreur, une synchro en échec ou un connecteur en panne.
+- **Connecteurs** (`/connecteurs`, admins) : Notion (pages → connaissances), Linear et Todoist (issues et tâches →
+  tâches, fermées quand elles disparaissent chez l'outil), calendrier ICS (réunions → connaissances). Synchro à la
+  demande et toutes les heures en arrière-plan. Le jeton reste côté serveur.
+- **Langues** : l'interface existe en français et en anglais (sélecteur dans la barre latérale et sur la connexion, cookie
+  `brain_lang`, sinon la langue du navigateur). Les pages les plus anciennes restent en français pour l'instant.
+- **Flux temps réel** : le stockage prévient le flux SSE dès qu'un événement est inséré (émetteur local, ou
+  `LISTEN/NOTIFY` en Postgres) ; la relecture périodique ne sert plus que de filet de sécurité.
+- **Qualité du cerveau** : synonymes FR/EN dans la recherche, recherche sémantique optionnelle (`VOYAGE_API_KEY` ou un
+  point de terminaison compatible OpenAI, Ollama compris : `npm run embed` pour l'existant), remplacement automatique
+  d'une décision ou procédure revue (l'ancienne sort des recherches), pages Entités (`/entites`), et `npm run eval`
+  qui mesure la recherche sur la démo Fournil.
 
 ## API du cerveau
 
@@ -82,6 +102,9 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET/POST | `/api/admin/zones/auto` | Admin : historique du job « nouvelles zones » ; POST sans corps : passage du serveur (clé API) ; avec `{zones: [{name, description, keywords, item_ids}]}` : applique ce qu'a proposé `refresh-zones`. |
 | GET | `/api/admin/zones/auto/input` | Admin : matière d'un passage (zones, connaissances récentes numérotées) pour `refresh-zones`. |
 | GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`) : job quotidien « nouvelles zones », toutes entreprises confondues. |
+| POST | `/api/sync/report` | Compte rendu d'une synchro du poste (compteurs, erreur masquée) : page Supervision. |
+| GET | `/api/admin/monitoring` | Admin : état des postes, incidents du serveur, instance. `GET /api/health` : sonde publique (200 / 503). |
+| GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin : connecteurs Notion, Linear, Todoist, calendrier ICS (réglages sans le jeton, synchro à la demande). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
 
 ## Créer son entreprise à partir de zéro
@@ -135,6 +158,18 @@ L'interview en 7 questions reste disponible en dessous. Le lien est aussi propos
 
 Le dashboard doit être joignable par les postes (URL publique ou réseau local) : définissez `BRAIN_PUBLIC_URL`.
 
+## Héberger le cerveau sur une machine de l'entreprise (Docker, HTTPS local)
+
+Rien ne sort de l'entreprise : Postgres, le dashboard et HTTPS tournent sur un ordinateur allumé en permanence, les postes
+le joignent sur le réseau local, et le prompt d'installation épingle le certificat du cerveau.
+
+```bash
+sh deploy/local/brain-local.sh up      # .env, image Docker, Postgres + cerveau + Caddy, adresse affichée
+```
+
+Puis `https://<adresse>/creer` pour créer l'entreprise. Tout le détail (certificats, sauvegarde, mise à jour, options) :
+[docs/LOCAL.md](docs/LOCAL.md).
+
 ## Déployer le cerveau partagé (Vercel + Neon, offres gratuites)
 
 Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgres gratuit, en veille après 5 min d'inactivité, réveil en moins d'une seconde). N'importe quel Postgres convient (Supabase compris) : le schéma est dans `supabase/migrations/`.
@@ -167,6 +202,10 @@ de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisi
   zones proposées (`POST /api/admin/zones/auto`, connaissances désignées par identifiant) et les applique avec ses garde-fous.
   `~/.company-brain/brain refresh-zones [--dry-run]` fait la même chose à la main sur le poste d'un admin.
 - **Clé API Claude** : Vercel Cron appelle `/api/cron/new-zones` et le serveur fait l'analyse avec la clé de l'entreprise.
+- **Cerveau hébergé sur une machine de l'entreprise (Docker)** : pas de Vercel Cron. En mode clé API, faites appeler
+  `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://<adresse>/api/cron/new-zones` par le cron de la machine, à 8 h
+  et 9 h UTC comme `vercel.json`. En mode abonnement, GitHub ne joint pas un cerveau du réseau local : lancez `refresh-zones`
+  depuis un poste (ou un runner GitHub auto-hébergé dans l'entreprise).
 
 - Les connaissances concernées y sont rangées (avec leurs tâches), et la zone reçoit des mots-clés : les synchros
   suivantes y classent les nouvelles sessions.
@@ -210,4 +249,5 @@ de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisi
 npm test                 # tests unitaires (core + client)
 npm run typecheck
 npm run smoke            # bout en bout sur le stockage courant (fichier, ou Postgres si DATABASE_URL)
+npm run eval             # qualité de la recherche sur la démo Fournil (après npm run seed)
 ```

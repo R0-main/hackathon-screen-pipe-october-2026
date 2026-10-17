@@ -1,0 +1,32 @@
+# Cerveau auto-hébergé : HTTPS sur le réseau local devant le dashboard (service « brain », port 3000).
+# BRAIN_HOSTS : les noms et adresses du cerveau (« localhost, 192.168.1.20, poste-compta.local »), tous dans le certificat.
+# BRAIN_TLS   : « internal » (autorité privée de Caddy, certificat racine servi sur /ca.crt) ou « /certs/cert.pem /certs/key.pem ».
+
+{
+	# Les redirections HTTP → HTTPS automatiques passeraient avant notre bloc :80 (et donc avant /ca.crt) : on les fait nous-mêmes.
+	auto_https disable_redirects
+	# Inutile d'installer l'autorité dans le conteneur : ce sont les postes qui lui font confiance, via le prompt.
+	skip_install_trust
+}
+
+{$BRAIN_HOSTS:localhost} {
+	tls {$BRAIN_TLS:internal}
+	encode gzip
+	# Le flux « Agents en direct » (/api/stream) est un flux SSE : aucune mise en tampon.
+	reverse_proxy brain:3000 {
+		flush_interval -1
+	}
+}
+
+# Port 80 : le certificat racine, à récupérer avant de faire confiance au HTTPS ; tout le reste est renvoyé vers HTTPS.
+:80 {
+	handle /ca.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		header Content-Type application/x-pem-file
+		file_server
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}

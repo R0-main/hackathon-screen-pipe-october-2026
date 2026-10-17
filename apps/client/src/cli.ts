@@ -1,8 +1,10 @@
 // brain.mjs — client du cerveau d'entreprise sur le poste de l'employé.
 
 import { resolve } from "node:path"
+import { trustConfiguredCa } from "./ca"
 import { SOURCE_NAMES, UserError, applyScheduleEnv, brainHome, loadPartialConfig, selfCommand, selfScript, type SourceName } from "./config"
 import type { DistillerKind } from "./distill"
+import type { SyncSummary } from "./sync"
 
 const VERSION = "0.1.0"
 const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json"])
@@ -33,7 +35,7 @@ function help(): string {
 Usage : ${me} <commande> [options]
 
 Commandes :
-  setup [--url <url> --token <jeton>] [--audio oui|non] [--wait <secondes>] [--no-open] [--skip-screenpipe]
+  setup [--url <url> --token <jeton>] [--ca <pem>] [--audio oui|non] [--wait <secondes>] [--no-open] [--skip-screenpipe]
                      Tout en une commande (c'est ce que lance le prompt d'installation) : config, Screenpipe (installé et lancé
                      en service s'il ne tourne pas, micro coupé par défaut), autorisations macOS (réglages ouverts, reprise dès
                      qu'elles sont accordées, --wait 300 s par défaut), MCP, hooks, synchro toutes les 15 min (activité à venir
@@ -50,8 +52,10 @@ Commandes :
                      Chaque point KO donne la commande qui répare. --json : le même rapport pour Claude Code (champ « safe »
                      sur les commandes qui ne font que rebrancher le poste). Code de sortie 1 s'il reste un point KO.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
-       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
+       [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non] [--ca <pem>]
                      Enregistre la config (~/.company-brain/config.json, mode 600) et teste la connexion.
+                     --ca : certificat (PEM) de l'autorité d'un cerveau auto-hébergé en HTTPS local ; le client lui fait
+                     confiance pour tous ses appels, en plus des certificats publics (« aucun » pour le retirer).
                      Chaque option peut être donnée seule pour compléter une config existante.
                      --claude-token : jeton longue durée créé par \`claude setup-token\` (abonnement Claude, sans clé API),
                      passé à chaque \`claude -p\` du client, synchro planifiée comprise (« aucun » pour le retirer).
@@ -65,6 +69,8 @@ Commandes :
                      Si Claude échoue, la conversation est retentée plus tard (jamais distillée sans LLM en secours),
                      et abandonnée après 3 échecs dus à son contenu ; une panne, une limite d'abonnement ou un
                      jeton expiré ne compte pas (si Claude ne répond plus du tout : abandon après 24 h d'échecs).
+                     À la fin (hors simulation), un compte rendu (compteurs seulement, jamais de contenu) part vers la page
+                     Supervision du dashboard : dernière synchro, durée, erreurs.
   sync --confirm     Envoie exactement ce que la dernière simulation a montré (valable 24 h).
                      Options avancées : --distiller heuristic|claude-cli|claude-api, --reset (ignore les checkpoints).
   skills [sync|list] Installe dans ~/.claude/skills les skills de l'entreprise attribués à ce poste (toute l'entreprise, plus
@@ -96,10 +102,27 @@ Commandes :
 Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
 }
 
+/** Compte rendu de synchro envoyé au cerveau ; un échec de l'envoi n'est jamais bloquant. */
+async function sendReport(input: { summary: SyncSummary | null; startedAt: number; error?: unknown }) {
+  try {
+    const { buildSyncReport } = await import("./report")
+    const { BrainApi } = await import("./api")
+    const cfg = loadPartialConfig()
+    if (!cfg.url || !cfg.token) return
+    await new BrainApi(cfg.url, cfg.token).report(buildSyncReport({ ...input, version: VERSION }))
+  } catch (err) {
+    if (process.env.COMPANY_BRAIN_DEBUG) console.error(`Compte rendu non envoyé : ${(err as Error)?.message ?? err}`)
+  }
+}
+
 async function main(argv: string[]): Promise<number> {
   const { cmd, flags, positional } = parseArgs(argv)
   // --home : dossier du client (utilisé par la tâche planifiée Windows, qui n'hérite pas des variables du terminal).
   if (typeof flags.home === "string" && flags.home.trim()) process.env.COMPANY_BRAIN_HOME = resolve(flags.home.trim())
+  // Cerveau auto-hébergé : confiance à son certificat avant tout appel (hook et MCP compris). Celui de la commande
+  // (setup/init/join --ca) compte dès maintenant : sur un Node ancien, c'est ici que le processus est relancé.
+  const reexec = trustConfiguredCa(typeof flags.ca === "string" && flags.ca.trim() ? resolve(flags.ca.trim()) : loadPartialConfig().ca_file)
+  if (reexec !== null) return reexec
   // Le hook passe en premier : aucune sortie parasite, toujours code 0.
   if (cmd === "hook") {
     const { runHook } = await import("./hook")
@@ -154,17 +177,27 @@ async function main(argv: string[]): Promise<number> {
       if (flags.confirm && flags["dry-run"]) throw new UserError("--confirm et --dry-run s'excluent : simulez d'abord, puis confirmez.")
       // Synchro planifiée : PATH et dossiers relevés à l'installation (cron, launchd et Windows partent d'un environnement minimal).
       if (flags.scheduled) applyScheduleEnv(loadPartialConfig())
-      await runSync({
-        dryRun: Boolean(flags["dry-run"]),
-        since: typeof flags.since === "string" ? flags.since : undefined,
-        source: source as SourceName | "all",
-        limit,
-        verbose: Boolean(flags.verbose),
-        distiller: distiller as DistillerKind | undefined,
-        reset: Boolean(flags.reset),
-        full: Boolean(flags.full),
-        confirm: Boolean(flags.confirm),
-      })
+      const startedAt = Date.now()
+      let summary: SyncSummary | null = null
+      try {
+        summary = await runSync({
+          dryRun: Boolean(flags["dry-run"]),
+          since: typeof flags.since === "string" ? flags.since : undefined,
+          source: source as SourceName | "all",
+          limit,
+          verbose: Boolean(flags.verbose),
+          distiller: distiller as DistillerKind | undefined,
+          reset: Boolean(flags.reset),
+          full: Boolean(flags.full),
+          confirm: Boolean(flags.confirm),
+        })
+      } catch (err) {
+        // Une synchro en échec est signalée au cerveau (page Supervision), puis l'erreur suit son cours.
+        if (!flags["dry-run"]) await sendReport({ summary: null, startedAt, error: err })
+        throw err
+      }
+      // Simulation et synchro sautée (verrou) : rien à rapporter.
+      if (!flags["dry-run"] && !summary.skipped) await sendReport({ summary, startedAt })
       // Les skills attribués au poste suivent la même cadence que la synchro (simulation exceptée).
       if (!flags["dry-run"]) {
         const { refreshSkills } = await import("./skills")

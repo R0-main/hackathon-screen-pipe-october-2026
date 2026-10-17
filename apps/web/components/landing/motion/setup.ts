@@ -9,7 +9,7 @@ gsap.registerPlugin(ScrollTrigger, SplitText)
   Motion de la page d'accueil, hors scène du cerveau (pilotée dans Landing et ScrollBrain).
   Le balisage porte des attributs que ce module anime :
   - data-hero="nav|title|sub|cta|note"  premier écran ;
-  - data-reveal="title|text|panel"       titres, paragraphes et panneaux des sections ;
+  - data-reveal="title|text|panel|cards" titres, paragraphes, panneaux et cartes (hébergement, tarifs) des sections ;
   - data-rows, data-type                 lignes de « Où en est Fournil » et prompt de Jean-Marc ;
   - data-privacy (+ data-pf-*)           le parcours des captures, du poste au cerveau (PrivacyFlow) ;
   - data-rule, data-facts                trait encre et trois engagements ;
@@ -198,6 +198,11 @@ function sections(root: HTMLElement, holds: Holds) {
   }
   for (const el of all(root, '[data-reveal="text"]')) {
     gsap.from(el, { autoAlpha: 0, y: 24, ease: "none", scrollTrigger: at(el, { start: "top 90%", end: "top 55%", scrub: true }) })
+  }
+  // Cartes côte à côte (hébergement, tarifs) : elles montent une à une et sont en place avant l'arrêt, pour qu'on
+  // puisse les comparer dès qu'on arrive sur la section (par le scroll ou par le lien « Tarifs »).
+  for (const el of all(root, '[data-reveal="cards"]')) {
+    gsap.fromTo(el.children, { autoAlpha: 0, y: 32 }, { autoAlpha: 1, y: 0, ease: "none", stagger: 0.12, scrollTrigger: at(el, { start: "top 95%", end: "top 45%", scrub: true }) })
   }
 
   /**

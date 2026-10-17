@@ -16,11 +16,13 @@ import {
   type Profile,
   type ScoredItem,
   type Skill,
+  type SyncReport,
+  type SyncReportRow,
   type Task,
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import type { BrainStore, EntityStat, JoinRequest, JoinStatus, NewEvent, NewItem, NewJoinRequest, NewProfile, NewSkill, NewTask, NewTenantOrg, ProfilePatch, ZoneStat, AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 import { JOIN_MISSING_MESSAGE, SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
@@ -62,6 +64,7 @@ function toItem(r: Row): KnowledgeItem {
     source: r.source ?? {},
     confidence: Number(r.confidence),
     created_at: iso(r.created_at),
+    superseded_by: r.superseded_by ?? null,
   }
 }
 function toEvent(r: Row): AgentEvent {
@@ -101,9 +104,22 @@ function toTask(r: Row): Task {
     assignee_id: r.assignee_id ?? undefined,
     status: r.status,
     source_item_id: r.source_item_id ?? undefined,
+    external_source: r.external_source ?? undefined,
+    external_id: r.external_id ?? undefined,
+    external_url: r.external_url ?? undefined,
     created_at: iso(r.created_at),
     updated_at: iso(r.updated_at),
   }
+}
+
+const QUALITY_MISSING_MESSAGE =
+  "Base de données à mettre à jour : colonnes superseded_by / embedding absentes de knowledge_items. Appliquez les migrations (npm run db:migrate)."
+const TASKS_EXTERNAL_MISSING_MESSAGE =
+  "Base de données à mettre à jour : colonnes external_* absentes de tasks (connecteurs). Appliquez les migrations (npm run db:migrate)."
+
+/** Colonne absente (code Postgres 42703) : migration non appliquée. */
+function missingColumn(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "42703"
 }
 function toAutomation(r: Row): AutomationSuggestion {
   return {
@@ -142,6 +158,30 @@ const SKILLS_MISSING_MESSAGE =
   "Base de données à mettre à jour : la table skills est absente. Appliquez les migrations (npm run db:migrate)."
 
 const UUID_RE = /^[0-9a-f-]{36}$/i
+
+const SYNC_REPORTS_MISSING_MESSAGE =
+  "Table sync_reports absente : appliquez la migration supabase/migrations/20261017000004_sync_reports.sql (npm run db:migrate)."
+
+function toSyncReport(r: Row): SyncReportRow {
+  return {
+    id: r.id,
+    org_id: r.org_id,
+    user_id: r.user_id,
+    at: iso(r.at),
+    ok: Boolean(r.ok),
+    duration_ms: Number(r.duration_ms),
+    items_sent: Number(r.items_sent),
+    duplicates: Number(r.duplicates),
+    conversations: r.conversations ?? {},
+    distiller: r.distiller,
+    failed: Number(r.failed),
+    deferred: Number(r.deferred),
+    error: r.error ?? undefined,
+    client_version: r.client_version ?? undefined,
+    platform: r.platform ?? undefined,
+    screenpipe: r.screenpipe ?? undefined,
+  }
+}
 /** L'organisation est relue régulièrement : un reseed (ou un onboarding servi par une autre instance) est vu sans redémarrage. */
 const ORG_TTL_MS = 5_000
 /** Verrou consultatif (transaction) qui sérialise la création de l'organisation et le reset. */
@@ -158,6 +198,29 @@ const TENANT_PREFIX = "tenant:"
 /** Code du message d'équipe d'une entreprise : `join:<org_id>` → `cj_…` dans brain_settings. */
 const JOIN_PREFIX = "join:"
 
+/** Canal LISTEN/NOTIFY du flux temps réel : la charge utile est l'identifiant de l'entreprise. */
+const EVENTS_CHANNEL = "brain_events"
+
+/**
+ * Les notifications sont activées par défaut, sauf sur Vercel (une connexion LISTEN dédiée par fonction) :
+ * BRAIN_EVENT_NOTIFY=1 les force, =0 les coupe. DATABASE_LISTEN_URL : connexion directe (un pooler en mode
+ * transaction, Supabase port 6543 par exemple, ne transmet pas LISTEN).
+ */
+function notifyEnabled(): boolean {
+  const v = process.env.BRAIN_EVENT_NOTIFY
+  if (v === "0" || v === "false" || v === "non") return false
+  if (v === "1" || v === "true" || v === "oui") return true
+  return !process.env.VERCEL
+}
+
+/** Abonnés au flux, par entreprise, et état de la connexion LISTEN : un seul jeu par processus (partagé par globalThis). */
+type ListenState = {
+  listeners: Map<string, Set<() => void>>
+  status: "idle" | "starting" | "ready" | "failed"
+  handle: { unlisten: () => Promise<void> } | null
+  sql: Sql | null
+}
+
 export class PostgresStore implements BrainStore {
   readonly kind = "postgres" as const
   private sql: Sql
@@ -168,14 +231,22 @@ export class PostgresStore implements BrainStore {
   private readonly fixedOrgId: string | null
   private tenants = new Map<string, PostgresStore>()
   private settingsReady = false
+  private readonly url: string | null
+  private listen: ListenState
+  /** Les colonnes de la migration « qualité » (superseded_by, embedding) existent-elles ? Vérifié une fois. */
+  private qualityColumns: boolean | null = null
 
-  constructor(url: string | { sql: Sql; orgId: string }) {
+  constructor(url: string | { sql: Sql; orgId: string; listen: ListenState; url: string | null }) {
     if (typeof url !== "string") {
       this.sql = url.sql
       this.fixedOrgId = url.orgId
+      this.listen = url.listen
+      this.url = url.url
       return
     }
     this.fixedOrgId = null
+    this.url = url
+    this.listen = { listeners: new Map(), status: "idle", handle: null, sql: null }
     const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url) || url.includes("host=/")
     const ssl = process.env.DATABASE_SSL === "disable" || local ? false : "require"
     // prepare: false → compatible avec le pooler Supabase en mode transaction (port 6543).
@@ -204,10 +275,111 @@ export class PostgresStore implements BrainStore {
     if (!UUID_RE.test(orgId)) throw new Error("Entreprise introuvable.")
     let t = this.tenants.get(orgId)
     if (!t) {
-      t = new PostgresStore({ sql: this.sql, orgId })
+      t = new PostgresStore({ sql: this.sql, orgId, listen: this.listen, url: this.url })
       this.tenants.set(orgId, t)
     }
     return t
+  }
+
+  onEvents(orgId: string, listener: () => void) {
+    const { listeners } = this.listen
+    let set = listeners.get(orgId)
+    if (!set) listeners.set(orgId, (set = new Set()))
+    set.add(listener)
+    if (notifyEnabled()) this.startListening()
+    return () => {
+      set.delete(listener)
+      if (set.size === 0) listeners.delete(orgId)
+    }
+  }
+
+  eventNotifyMode() {
+    if (!notifyEnabled()) return "poll" as const
+    return this.listen.status === "failed" ? ("poll" as const) : ("notify" as const)
+  }
+
+  async saveSyncReport(userId: string, report: SyncReport) {
+    const org = await this.orgId()
+    try {
+      const [r] = await this.sql`insert into sync_reports
+          (org_id, user_id, at, ok, duration_ms, items_sent, duplicates, conversations, distiller, failed, deferred, error, client_version, platform, screenpipe)
+        values (${org}, ${userId}, ${report.at}, ${report.ok}, ${report.duration_ms}, ${report.items_sent}, ${report.duplicates},
+          ${this.sql.json(report.conversations as any)}, ${report.distiller}, ${report.failed}, ${report.deferred}, ${report.error ?? null},
+          ${report.client_version ?? null}, ${report.platform ?? null}, ${report.screenpipe ?? null})
+        returning *`
+      // Historique borné par poste.
+      await this.sql`delete from sync_reports where user_id = ${userId} and org_id = ${org} and id not in
+        (select id from sync_reports where user_id = ${userId} and org_id = ${org} order by at desc limit ${SYNC_REPORTS_KEEP})`
+      return toSyncReport(r)
+    } catch (err) {
+      if (missingTable(err)) throw new StoreSetupError(SYNC_REPORTS_MISSING_MESSAGE)
+      throw err
+    }
+  }
+
+  async latestSyncReports() {
+    try {
+      const rows = await this.sql`select distinct on (user_id) * from sync_reports where org_id = ${await this.orgId()} order by user_id, at desc`
+      return rows.map(toSyncReport).sort((a, b) => b.at.localeCompare(a.at))
+    } catch (err) {
+      // Migration pas encore appliquée : la supervision affiche « jamais synchronisé » plutôt qu'une erreur.
+      if (missingTable(err)) return []
+      throw err
+    }
+  }
+
+  async listSyncReports(f: { userId?: string; limit?: number }) {
+    const sql = this.sql
+    try {
+      const rows = await sql`select * from sync_reports where org_id = ${await this.orgId()}
+        ${f.userId ? sql`and user_id = ${f.userId}` : sql``} order by at desc limit ${f.limit ?? 100}`
+      return rows.map(toSyncReport)
+    } catch (err) {
+      if (missingTable(err)) return []
+      throw err
+    }
+  }
+
+  /**
+   * Ouvre (une seule fois par processus) la connexion LISTEN. En cas d'échec (pooler en mode transaction, droits),
+   * le flux reste sur sa relecture périodique : rien n'est perdu, les néons sont seulement moins instantanés.
+   */
+  private startListening() {
+    const st = this.listen
+    if (st.status !== "idle") return
+    st.status = "starting"
+    const listenUrl = process.env.DATABASE_LISTEN_URL
+    if (listenUrl && !st.sql) {
+      const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(listenUrl) || listenUrl.includes("host=/")
+      st.sql = postgres(listenUrl, { prepare: false, max: 1, idle_timeout: 0, ssl: process.env.DATABASE_SSL === "disable" || local ? false : "require", onnotice: () => {} })
+    }
+    const sql = st.sql ?? this.sql
+    sql
+      .listen(
+        EVENTS_CHANNEL,
+        (payload) => {
+          const set = st.listeners.get(String(payload).trim())
+          if (!set) return
+          for (const fn of [...set]) {
+            try {
+              fn()
+            } catch (err) {
+              console.error("[store] abonné du flux :", err)
+            }
+          }
+        },
+        () => {
+          // Reconnexion automatique de postgres.js : rien à faire, les abonnés sont conservés.
+        },
+      )
+      .then((handle) => {
+        st.handle = handle
+        st.status = "ready"
+      })
+      .catch((err) => {
+        st.status = "failed"
+        console.error(`[store] LISTEN ${EVENTS_CHANNEL} impossible, le flux relit périodiquement :`, err instanceof Error ? err.message : err)
+      })
   }
 
   async createTenantOrg(o: NewTenantOrg) {
@@ -475,14 +647,36 @@ export class PostgresStore implements BrainStore {
     })
   }
 
+  /** Vrai si la migration 20261017000006 (superseded_by, embedding) est appliquée ; sinon les requêtes s'en passent. */
+  private async hasQuality(): Promise<boolean> {
+    if (this.qualityColumns !== null) return this.qualityColumns
+    const [r] = await this.sql`select exists (select 1 from information_schema.columns where table_name = 'knowledge_items' and column_name = 'superseded_by') as ok`
+    this.qualityColumns = Boolean(r.ok)
+    return this.qualityColumns
+  }
+
+  /** Fragment « non remplacée » (table nue ou alias `k`), vide tant que la colonne n'existe pas. */
+  private live(hasQuality: boolean, alias: "" | "k" = "") {
+    if (!hasQuality) return this.sql``
+    return alias === "k" ? this.sql`and k.superseded_by is null` : this.sql`and superseded_by is null`
+  }
+
   async insertItems(items: NewItem[]) {
     const org = await this.orgId()
+    const quality = await this.hasQuality()
     return this.sql.begin(async (tx: any) => {
       const out: KnowledgeItem[] = []
       for (const i of items) {
         const searchTitle = normalize(i.title)
         const searchBody = normalize(`${i.body} ${i.entities.map((e) => e.name).join(" ")}`)
-        const [r] = await tx`insert into knowledge_items
+        const [r] = quality
+          ? await tx`insert into knowledge_items
+            (org_id, author_id, zone, kind, title, body, entities, source, confidence, search_title, search_body, created_at, embedding, embedding_model)
+          values (${org}, ${i.author_id}, ${i.zone}, ${i.kind}, ${i.title}, ${i.body}, ${tx.json(i.entities)}, ${tx.json(i.source)},
+            ${i.confidence}, ${searchTitle}, ${searchBody}, ${i.created_at ?? new Date().toISOString()},
+            ${i.embedding ? tx.array(i.embedding) : null}, ${i.embedding ? (i.embedding_model ?? null) : null})
+          returning *`
+          : await tx`insert into knowledge_items
             (org_id, author_id, zone, kind, title, body, entities, source, confidence, search_title, search_body, created_at)
           values (${org}, ${i.author_id}, ${i.zone}, ${i.kind}, ${i.title}, ${i.body}, ${tx.json(i.entities)}, ${tx.json(i.source)},
             ${i.confidence}, ${searchTitle}, ${searchBody}, ${i.created_at ?? new Date().toISOString()})
@@ -516,13 +710,13 @@ export class PostgresStore implements BrainStore {
           (select count(*) from unnest(${sql.array(terms)}::text[]) t where k.search @@ to_tsquery('simple', t))::float / ${terms.length}
         ) as score
       from knowledge_items k, to_tsquery('simple', ${terms.join(" | ")}) q
-      where k.org_id = ${await this.orgId()} and ${scope} and k.search @@ q
+      where k.org_id = ${await this.orgId()} and ${scope} and k.search @@ q ${this.live(await this.hasQuality(), "k")}
       order by score desc, k.created_at desc
       limit ${limit}`
     return rows.map((r) => ({ ...toItem(r), score: Math.round(Number(r.score) * 1000) / 100 }))
   }
 
-  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string }) {
+  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }) {
     if (f.zones && f.zones.length === 0) return []
     const sql = this.sql
     const rows = await sql`
@@ -531,8 +725,62 @@ export class PostgresStore implements BrainStore {
         ${f.zones ? sql`and zone in ${sql(f.zones)}` : sql``}
         ${f.authorId ? sql`and author_id = ${f.authorId}` : sql``}
         ${f.sinceIso ? sql`and created_at >= ${f.sinceIso}` : sql``}
+        ${f.excludeSuperseded ? this.live(await this.hasQuality()) : sql``}
       order by created_at desc
       limit ${f.limit ?? 1000}`
+    return rows.map(toItem)
+  }
+
+  async markSuperseded(oldId: string, newId: string) {
+    if (!UUID_RE.test(oldId) || !UUID_RE.test(newId)) return
+    if (!(await this.hasQuality())) throw new StoreSetupError(QUALITY_MISSING_MESSAGE)
+    const org = await this.orgId()
+    await this.sql`update knowledge_items set superseded_by = ${newId} where id = ${oldId} and org_id = ${org}
+      and exists (select 1 from knowledge_items n where n.id = ${newId} and n.org_id = ${org})`
+  }
+
+  async listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }) {
+    const sql = this.sql
+    const author = f.authorId && UUID_RE.test(f.authorId) ? f.authorId : null
+    if (f.zones.length === 0 && !author) return []
+    const scope = f.zones.length && author ? sql`(k.zone in ${sql(f.zones)} or k.author_id = ${author})` : f.zones.length ? sql`k.zone in ${sql(f.zones)}` : sql`k.author_id = ${author}`
+    const rows = await sql`
+      select distinct k.* from knowledge_items k
+      join edges ed on ed.item_id = k.id
+      join entities e on e.id = ed.entity_id
+      where k.org_id = ${await this.orgId()} and e.type = ${f.type} and e.norm_name = ${f.normName} and ${scope} ${this.live(await this.hasQuality(), "k")}
+      order by k.created_at desc
+      limit ${f.limit ?? 100}`
+    return rows.map(toItem)
+  }
+
+  async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }) {
+    if (!(await this.hasQuality())) return []
+    const sql = this.sql
+    const author = f.authorId && UUID_RE.test(f.authorId) ? f.authorId : null
+    if (f.zones.length === 0 && !author) return []
+    const scope = f.zones.length && author ? sql`(zone in ${sql(f.zones)} or author_id = ${author})` : f.zones.length ? sql`zone in ${sql(f.zones)}` : sql`author_id = ${author}`
+    const rows = await sql`select id, embedding from knowledge_items where org_id = ${await this.orgId()} and ${scope}
+      and embedding is not null and superseded_by is null order by created_at desc limit ${f.limit ?? 2000}`
+    return rows.map((r) => ({ id: r.id as string, embedding: (r.embedding as number[]).map(Number) }))
+  }
+
+  async setEmbeddings(rows: { id: string; embedding: number[]; model: string }[]) {
+    if (!rows.length) return
+    if (!(await this.hasQuality())) throw new StoreSetupError(QUALITY_MISSING_MESSAGE)
+    const org = await this.orgId()
+    await this.sql.begin(async (tx: any) => {
+      for (const r of rows) {
+        if (!UUID_RE.test(r.id)) continue
+        await tx`update knowledge_items set embedding = ${tx.array(r.embedding)}, embedding_model = ${r.model} where id = ${r.id} and org_id = ${org}`
+      }
+    })
+  }
+
+  async listItemsWithoutEmbedding(model: string, limit: number) {
+    if (!(await this.hasQuality())) throw new StoreSetupError(QUALITY_MISSING_MESSAGE)
+    const rows = await this.sql`select * from knowledge_items where org_id = ${await this.orgId()} and superseded_by is null
+      and (embedding is null or embedding_model is distinct from ${model}) order by created_at desc limit ${limit}`
     return rows.map(toItem)
   }
   async getItem(id: string) {
@@ -597,6 +845,8 @@ export class PostgresStore implements BrainStore {
             ${e.session_id ?? null}, ${e.at}) returning *`
         out.push(toEvent(r))
       }
+      // Réveille les flux temps réel de toutes les instances (livré au commit ; sans migration ni déclencheur).
+      if (out.length) await tx`select pg_notify(${EVENTS_CHANNEL}, ${org})`
       return out
     }) as Promise<AgentEvent[]>
   }
@@ -638,6 +888,38 @@ export class PostgresStore implements BrainStore {
     }
     return out
   }
+  async upsertExternalTasks(source: string, tasks: NewTask[]) {
+    const org = await this.orgId()
+    const sql = this.sql
+    try {
+      return (await sql.begin(async (tx: any) => {
+        const out: Task[] = []
+        const ids: string[] = []
+        for (const t of tasks) {
+          if (!t.external_id) continue
+          ids.push(t.external_id)
+          const [r] = await tx`insert into tasks (org_id, title, zone, status, external_source, external_id, external_url, created_at)
+            values (${org}, ${t.title}, ${t.zone}, ${t.status}, ${source}, ${t.external_id}, ${t.external_url ?? null}, ${t.created_at ?? new Date().toISOString()})
+            on conflict (org_id, external_source, external_id) where external_id is not null do update set
+              title = excluded.title, zone = excluded.zone, status = excluded.status, external_url = excluded.external_url,
+              updated_at = case when tasks.title is distinct from excluded.title or tasks.status is distinct from excluded.status
+                or tasks.zone is distinct from excluded.zone or tasks.external_url is distinct from excluded.external_url then now() else tasks.updated_at end
+            returning *`
+          out.push(toTask(r))
+        }
+        // Fermées ou supprimées chez l'outil : faites ici.
+        const closed = await tx`update tasks set status = 'done', updated_at = now()
+          where org_id = ${org} and external_source = ${source} and status = 'open' and external_id is not null
+          ${ids.length ? tx`and external_id not in ${tx(ids)}` : tx``} returning *`
+        for (const r of closed) out.push(toTask(r))
+        return out
+      })) as Task[]
+    } catch (err) {
+      if (missingColumn(err)) throw new StoreSetupError(TASKS_EXTERNAL_MISSING_MESSAGE)
+      throw err
+    }
+  }
+
   async updateTask(id: string, patch: { status?: Task["status"]; assignee_id?: string }) {
     if (!/^[0-9a-f-]{36}$/i.test(id)) return null
     const [c] = await this.sql`select * from tasks where id = ${id} and org_id = ${await this.orgId()}`
@@ -799,6 +1081,11 @@ export class PostgresStore implements BrainStore {
 
   async end() {
     if (this.fixedOrgId) return
+    const st = this.listen
+    if (st.handle) await st.handle.unlisten().catch(() => {})
+    if (st.sql) await st.sql.end({ timeout: 5 }).catch(() => {})
+    st.status = "idle"
+    st.handle = null
     await this.sql.end({ timeout: 5 })
   }
 }

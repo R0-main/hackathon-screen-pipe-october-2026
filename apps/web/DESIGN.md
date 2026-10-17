@@ -93,6 +93,11 @@ Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accu
     d'attente du cerveau tourne seule.
   - Boutons magnétiques (souris seulement) : ils glissent vers le pointeur, reviennent avec un léger rebond et
     s'enfoncent au clic.
+- Après « Le brut reste sur le poste », deux sections d'offre (`components/landing/Offer.tsx`) : « Chez vous, ou chez
+  nous » (auto-hébergé, code ouvert, ou notre cloud) puis les tarifs (`#tarifs`, lien « Tarifs » dans l'en-tête),
+  avec un choix mensuel ou annuel. Front seulement : prix indicatifs, aucun paiement branché ; les boutons cloud mènent
+  à `/creer` (ou à la démo si la création est fermée). Leurs cartes (`data-reveal="cards"`) sont en place avant
+  l'arrêt de la section, pour qu'on puisse comparer dès l'arrivée. Un seul bouton principal : l'offre Équipe.
 - `prefers-reduced-motion` : pas d'épinglage, d'arrêt ni de défilement doux, cerveau immobile et assemblé, chapitres
   lus à la suite, toutes les sections dans leur état final.
 - Le phosphore reste réservé aux zones qu'un agent interroge (ici, les trois agents de la démo).

@@ -1,6 +1,7 @@
 // Commandes init, hello et status.
 
 import { BrainApi } from "./api"
+import { applyCa, describeCa, readCaFile, type CaInfo } from "./ca"
 import { cacheFrom, firstName, zoneName } from "./cache"
 import {
   DEFAULT_SCREENPIPE_URL,
@@ -56,12 +57,27 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
     else if (["non", "off", "false", "0", "no"].includes(v)) next.screenpipe_meetings = false
     else throw new UserError(`--screenpipe-meetings : « oui » ou « non » (reçu « ${meetings} »).`)
   }
+  const ca = str("ca")
+  if (flags.ca === true) throw new UserError("--ca : donnez le fichier PEM du certificat du cerveau (ou « aucun » pour le retirer).")
+  let caInfo: CaInfo | null = null
+  if (ca !== undefined) {
+    if (["aucun", "none", "non", ""].includes(ca.toLowerCase())) delete next.ca_file
+    else {
+      caInfo = readCaFile(ca)
+      // Dès maintenant pour ce processus : le test de connexion qui suit passe par HTTPS.
+      applyCa(caInfo.certs)
+      next.ca_file = caInfo.file
+    }
+  }
   if (!next.url || !next.token) {
     throw new UserError("Première configuration : --url et --token sont obligatoires (ex. init --url https://cerveau.exemple --token cb_…).")
   }
   if (next.url && !/^https?:\/\//.test(next.url)) throw new UserError(`URL invalide : « ${next.url} » (attendu http:// ou https://).`)
   saveConfig(next)
   log(`Configuration enregistrée dans ${paths.config()} (mode 600, jeton ${maskSecret(next.token)}).`)
+  if (ca !== undefined) {
+    log(caInfo ? `Certificat du cerveau enregistré : ${caInfo.file} (${caInfo.cn}, empreinte SHA-256 ${caInfo.fingerprint}).` : "Certificat du cerveau retiré de la config.")
+  }
   if (claudeToken !== undefined) {
     log(
       next.claude_oauth_token
@@ -121,6 +137,7 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   log(`  Script        : ${selfScript()}`)
   log(`  Config        : ${paths.config()}`)
   log(`  Cerveau       : ${cfg.url} (jeton ${maskSecret(cfg.token)})`)
+  if (cfg.ca_file) log(`  Certificat    : ${cfg.ca_file} (${describeCa(cfg.ca_file)})`)
   try {
     const who = await new BrainApi(cfg.url, cfg.token, 5000).whoami()
     log(`  Connexion     : OK — ${who.profile.name}, ${who.org.name}, zones : ${who.access.readable.map((z) => zoneName(cache, z)).join(", ") || "aucune"}`)

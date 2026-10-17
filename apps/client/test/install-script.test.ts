@@ -626,7 +626,9 @@ async function promptLine(ps: string, files: Record<string, { status?: number; b
   const srv = await brainServer(files)
   const profile = tempDir("brain-prompt-ps-")
   try {
-    let line = installCommands(srv.url, TOKEN).windows
+    const windows = installCommands(srv.url, TOKEN).windows
+    if (!windows) throw new Error("sans certificat privé, le prompt a toujours une commande Windows")
+    let line = windows
     if (!WIN) line = line.replace(/\\/g, "/").replace(/\bpowershell -NoProfile/, `${ps} -NoProfile`)
     const env: NodeJS.ProcessEnv = { ...process.env, USERPROFILE: profile }
     delete env.COMPANY_BRAIN_HOME
