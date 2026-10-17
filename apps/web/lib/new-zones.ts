@@ -58,7 +58,7 @@ export async function runNewZones(opts: { propose?: Propose } = {}): Promise<New
 
 async function evolve(propose?: Propose): Promise<NewZonesOutcome> {
   const s = getStore()
-  const claude = propose ? null : getClaude()
+  const claude = propose ? null : await getClaude()
   if (!propose && !claude) return { status: "skipped", reason: "no_claude" }
   const zones = await s.listZones()
   if (zones.length >= MAX_ZONES) return { status: "skipped", reason: "max_zones" }

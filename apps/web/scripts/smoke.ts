@@ -33,7 +33,10 @@ import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as cronNewZonesRoute from "../app/api/cron/new-zones/route"
+import * as adminClaudeRoute from "../app/api/admin/claude/route"
 import { runNewZones } from "../lib/new-zones"
+import { getOrgClaudeKey, setOrgClaudeKey } from "../lib/claude-key"
+import { getClaude } from "../lib/ai"
 import * as statusRoute from "../app/api/status/route"
 import * as statusInputRoute from "../app/api/status/input/route"
 import * as stateRoute from "../app/api/state/route"
@@ -894,6 +897,23 @@ async function main() {
           if (prevSecret === undefined) delete process.env.CRON_SECRET
           else process.env.CRON_SECRET = prevSecret
         }
+
+        console.log("\n— Clé API Claude de l'entreprise")
+        const fakeKey = `sk-ant-api03-${"x".repeat(30)}${run}AbCd`
+        const claudeRoute = (method: "GET" | "PUT" | "DELETE", session: string, body?: unknown) => call(adminClaudeRoute[method], "/api/admin/claude", { method, session, body })
+        assert((await claudeRoute("GET", bobSession)).status === 403, "réservé aux admins")
+        assert((await claudeRoute("PUT", cookie, { key: "sk-proj-pas-une-cle-claude-1234567890" })).status === 400, "une clé qui n'est pas une clé Claude est refusée")
+        const unchecked = await claudeRoute("PUT", cookie, { key: fakeKey })
+        assert([400, 502].includes(unchecked.status) && !(await acmeStore.getOrgSetting("claude-api-key")), "une clé refusée par Anthropic (ou invérifiable) n'est pas enregistrée")
+        await setOrgClaudeKey(acmeStore, fakeKey, boss.id)
+        const raw = (await acmeStore.getOrgSetting("claude-api-key")) ?? ""
+        assert(raw && !raw.includes(fakeKey.slice(14)), "la clé est chiffrée dans les réglages de l'entreprise")
+        assert((await getOrgClaudeKey(acmeStore)) === fakeKey && (await getClaude(acmeStore)) !== null, "le serveur la relit pour les appels de l'entreprise")
+        const info = await claudeRoute("GET", cookie)
+        assert(info.status === 200 && info.data.source === "org" && info.data.last4 === "AbCd" && !JSON.stringify(info.data).includes(fakeKey), "l'admin n'en voit que les 4 derniers caractères")
+        assert(!(await getOrgClaudeKey(store)), "Fournil n'a pas la clé d'Acme")
+        const removed = await claudeRoute("DELETE", cookie)
+        assert(removed.status === 200 && removed.data.source !== "org" && !(await getOrgClaudeKey(acmeStore)), "l'admin peut la retirer")
       }
 
       const demoList = await call(demoSessionRoute.GET, "/api/session/demo")

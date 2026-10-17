@@ -77,6 +77,7 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | POST | `/api/join`, `/api/join/status` | Public : demande pour rejoindre avec le code du message d'équipe (empreinte du jeton du poste), puis son état (pour qui détient le jeton). |
 | GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin : message d'équipe et demandes en attente, changer le code ; accepter (compte créé tel que réglé) ou refuser. |
 | GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
+| GET/PUT/DELETE | `/api/admin/claude` | Admin : clé API Claude de l'entreprise (`{key}`, vérifiée puis chiffrée) ; GET n'en renvoie que la source et les 4 derniers caractères. |
 | GET/POST | `/api/admin/zones/auto` | Admin : historique du job « nouvelles zones » ; POST lance un passage tout de suite pour son entreprise. |
 | GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`) : job quotidien « nouvelles zones », toutes entreprises confondues. |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
@@ -145,16 +146,17 @@ Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgr
    - Désactivez « Vercel Authentication » : les postes appellent l'API avec leur jeton personnel.
 3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Fournil au premier passage sur `/login`. Le secret de session est généré tout seul et conservé dans la base.
 
-4. **Job quotidien « nouvelles zones »** : définissez aussi `ANTHROPIC_API_KEY` et `CRON_SECRET` (une longue chaîne aléatoire,
-   `openssl rand -hex 32`). `apps/web/vercel.json` déclare le cron, rien d'autre à faire ; sans ces deux variables, le job ne fait rien.
+4. **Job quotidien « nouvelles zones »** : définissez `CRON_SECRET` (une longue chaîne aléatoire, `openssl rand -hex 32`) et
+   `BRAIN_SECRET_KEY` (idem, chiffre les clés Claude des entreprises). `apps/web/vercel.json` déclare le cron. La clé Claude,
+   elle, se règle dans l'appli : chaque admin colle celle de son entreprise dans **Équipe et accès → Zones**.
 
 Variables : voir [apps/web/.env.example](apps/web/.env.example).
 
 ### Zones créées automatiquement
 
 Chaque jour à 10 h (heure de `BRAIN_TIMEZONE`, Paris par défaut), Vercel Cron appelle `/api/cron/new-zones`. Pour chaque
-entreprise du cerveau, le serveur envoie à Claude (`ANTHROPIC_API_KEY`) les zones et les connaissances des 30 derniers
-jours. Claude repère un domaine de travail récurrent qui n'a pas de zone à lui (du juridique rangé faute de mieux dans
+entreprise du cerveau, le serveur envoie à Claude, avec **la clé API de l'entreprise**, les zones et les connaissances des 30
+derniers jours. Claude repère un domaine de travail récurrent qui n'a pas de zone à lui (du juridique rangé faute de mieux dans
 « Direction »…) et la zone est **créée tout de suite, sans validation**. Rien ne tourne sur les postes.
 
 - Les connaissances concernées y sont rangées (avec leurs tâches), et la zone reçoit des mots-clés : les synchros
@@ -163,6 +165,12 @@ jours. Claude repère un domaine de travail récurrent qui n'a pas de zone à lu
   Personne ne perd de vue une connaissance qu'il lisait, personne n'en découvre une qu'il ne pouvait pas lire.
 - Garde-fous, puisque personne ne relit : au moins 4 connaissances (sur au moins 12 récentes), 2 zones par jour au plus,
   12 zones au total, jamais de doublon d'une zone existante, une seule fois par jour et par entreprise.
+- **Clé Claude de l'entreprise** : un admin la colle dans Équipe et accès → Zones (clé de la Console Anthropic, `sk-ant-…`).
+  Elle est essayée auprès d'Anthropic avant d'être enregistrée, chiffrée en AES-256-GCM dans les réglages de l'entreprise
+  (avec `BRAIN_SECRET_KEY`, sinon le secret de session du cerveau) et n'est plus jamais affichée, seulement ses 4 derniers
+  caractères. Elle sert aussi au résumé d'état et à l'onboarding. Sans elle, le serveur prend `ANTHROPIC_API_KEY` s'il en a
+  une ; sinon l'entreprise est sautée. Le jeton d'abonnement (`claude setup-token`) ne convient pas : les conditions
+  d'Anthropic réservent les produits tiers aux clés API.
 - Le fil d'activité annonce la zone (le néon s'allume). Les admins lisent l'historique des passages et peuvent en lancer
   un tout de suite pour leur entreprise (`GET` / `POST /api/admin/zones/auto`). Pour tester le cron : `curl -H "Authorization: Bearer $CRON_SECRET" "$URL/api/cron/new-zones?force=1"`.
 

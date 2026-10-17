@@ -141,7 +141,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           {activeAgents} agent{activeAgents > 1 ? "s" : ""} actif{activeAgents > 1 ? "s" : ""}
         </span>
         {!state.claude && (
-          <span className="chip !h-5" title="Sans ANTHROPIC_API_KEY, le résumé d'état et l'onboarding utilisent des heuristiques locales.">
+          <span className="chip !h-5" title="Sans clé API Claude (un admin la règle dans Équipe et accès, Zones), le résumé d'état et l'onboarding utilisent des heuristiques locales, et aucune zone n'est créée automatiquement.">
             Sans Claude
           </span>
         )}
