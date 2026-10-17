@@ -446,13 +446,11 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
   const zones = useContext(Zones)
   const [busy, setBusy] = useState<"save" | "import" | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
   const path = `/api/connectors/mcp/${encodeURIComponent(c.id)}`
 
   async function save(patch: { agents?: McpAgentsMode; zone?: string | null; import_enabled?: boolean }) {
     setBusy("save")
     setErr(null)
-    setMsg(null)
     try {
       onChange(await api<McpConnectorPublic>(path, { method: "PUT", json: patch }))
     } catch (e) {
@@ -464,12 +462,10 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
   async function importNow() {
     setBusy("import")
     setErr(null)
-    setMsg(null)
     try {
       const run = await api<McpImportRun>(`${path}/import`, { method: "POST" })
+      // Réussi ou non, le compte rendu s'affiche dans « Dernier import » ; rien à répéter ici.
       onChange({ ...c, last_import: run })
-      if (run.ok) setMsg(fmt(k.importDone, { n: run.imported }))
-      else setErr(fmt(k.importFailed, { error: run.error ?? "?" }))
     } catch (e) {
       setErr(fmt(k.importFailed, { error: errorMessage(e) }))
     }
@@ -521,7 +517,6 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
           k.importHelp
         )}
       </p>
-      {msg && <p className="text-trace">{msg}</p>}
       {err && <ErrorText>{err}</ErrorText>}
     </div>
   )

@@ -146,8 +146,10 @@ test("page de retour après la connexion : liste fermée de pages internes", () 
 test("outils en lecture seule : l'annotation fait foi, sinon le verbe du nom", () => {
   assert.equal(isReadOnlyTool({ name: "create_issue", annotations: { readOnlyHint: true } }), true)
   assert.equal(isReadOnlyTool({ name: "search", annotations: { readOnlyHint: false } }), false)
-  for (const name of ["search", "list_issues", "get_page", "notion-search", "notion-fetch", "fetchDocument", "linear_list_projects", "query"]) assert.equal(isReadOnlyTool({ name }), true, name)
-  for (const name of ["create_issue", "update_page", "notion-create-pages", "delete_list", "delete-list", "send_message", "run_sql", "execute_query", "add_comment"]) assert.equal(isReadOnlyTool({ name }), false, name)
+  for (const name of ["search", "list_issues", "get_page", "notion-search", "notion-fetch", "fetchDocument", "linear_list_projects", "query", "microsoft_docs_search", "docs.fetch"])
+    assert.equal(isReadOnlyTool({ name }), true, name)
+  for (const name of ["create_issue", "update_page", "notion-create-pages", "delete_list", "delete-list", "send_message", "run_sql", "execute_query", "add_comment", "get_or_create_page", "summarize", "issues"])
+    assert.equal(isReadOnlyTool({ name }), false, name)
 })
 
 test("outils ouverts aux agents selon la règle de l'admin", () => {

@@ -394,7 +394,7 @@ export async function importMcp(viewer: Viewer, id: string): Promise<McpImportRu
     if (!hasAccess(c)) throw new McpUserError("Pas encore connecté : cliquez sur « Se connecter ».")
     const store = getStore()
     const claude = await getClaude(store)
-    if (!claude) throw new McpUserError("Import impossible sans clé Claude : ajoutez-en une dans Zones (ou ANTHROPIC_API_KEY sur le serveur).")
+    if (!claude) throw new McpUserError("aucune clé Claude : ajoutez-en une dans Zones (ou ANTHROPIC_API_KEY sur le serveur).")
     let defs = (await loadToolCache())[id]?.tools
     if (!defs) {
       await checkMcp(id)

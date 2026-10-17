@@ -393,18 +393,23 @@ export function findResponse(body: string, contentType: string, id: number | str
 /** Un outil d'un serveur MCP connecté, tel que mis en cache (schéma d'entrée JSON Schema). */
 export type McpToolDef = { name: string; title?: string; description?: string; input_schema: Record<string, unknown>; read_only: boolean }
 
-const WRITE_VERB = /^(create|update|delete|remove|add|set|send|post|write|edit|move|archive|merge|close|assign|upload|invite|publish|cancel|refund|run|execute|trigger|deploy|duplicate|copy|rename|reply|mark|complete|batch|bulk|upsert|patch|put|insert|apply|approve|reject|start|stop)$/i
-const READ_VERB = /^(search|list|get|fetch|read|query|find|retrieve|lookup|describe|show|view|count|whoami)(?:[_\-.:]|[A-Z]|$)/i
+const WRITE_VERB = /^(create|update|delete|remove|add|set|send|post|write|edit|move|archive|merge|close|assign|upload|invite|publish|cancel|refund|run|execute|trigger|deploy|duplicate|copy|rename|reply|mark|complete|batch|bulk|upsert|patch|put|insert|apply|approve|reject|start|stop)$/
+const READ_VERB = /^(search|list|get|fetch|read|query|find|retrieve|lookup|describe|show|view|count|whoami)$/
 
 /**
- * Outil sans effet de bord ? L'annotation `readOnlyHint` du serveur fait foi ; sans annotation, le nom doit commencer
- * par un verbe de lecture (search, list, get…), éventuellement après un préfixe de marque (« notion-search »).
+ * Outil sans effet de bord ? L'annotation `readOnlyHint` du serveur fait foi. Sans annotation : aucun mot du nom n'est
+ * un verbe d'écriture, et un verbe de lecture vient en tête, après un préfixe de marque, ou en dernier
+ * (« search_issues », « linear_list_projects », « microsoft_docs_search »). Dans le doute, l'outil compte comme écriture.
  */
 export function isReadOnlyTool(t: { name: string; annotations?: { readOnlyHint?: unknown } | null }): boolean {
   if (typeof t.annotations?.readOnlyHint === "boolean") return t.annotations.readOnlyHint
-  if (READ_VERB.test(t.name)) return true
-  const prefix = t.name.match(/^([a-z0-9]+)[-_.]/i)?.[1] ?? ""
-  return Boolean(prefix) && !WRITE_VERB.test(prefix) && READ_VERB.test(t.name.slice(prefix.length + 1))
+  const words = t.name
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[_\-.:\s]+/)
+    .filter(Boolean)
+  if (!words.length || words.some((w) => WRITE_VERB.test(w))) return false
+  return READ_VERB.test(words[0]) || READ_VERB.test(words[1] ?? "") || READ_VERB.test(words[words.length - 1])
 }
 
 /** Outils d'un connecteur visibles par les agents selon la règle choisie par l'admin. */
