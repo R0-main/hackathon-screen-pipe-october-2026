@@ -559,7 +559,6 @@ function ContextStep(props: { orgName: string; run: AgentEvent[]; state: RunStat
         </p>
       )}
       <AgentRun run={run} className="mt-4" />
-      <ContextTools />
       <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
         {received && (
           <button type="button" className="btn btn-primary btn-lg" onClick={() => onNext(received)}>
@@ -575,6 +574,7 @@ function ContextStep(props: { orgName: string; run: AgentEvent[]; state: RunStat
           {received ? "Ignore it and choose myself" : started && state !== "error" ? "Choose the zones without waiting for Claude" : "Skip: I'll choose the zones myself"}
         </button>
       </div>
+      <ContextTools />
     </>
   )
 }
@@ -900,7 +900,7 @@ function ContextTools() {
   }, [])
 
   return (
-    <section className="mt-12" aria-labelledby="context-tools">
+    <section className="mt-12 border-t border-line pt-10" aria-labelledby="context-tools">
       <h2 id="context-tools" className="text-[19px] font-medium">
         While Claude reads, connect your tools
       </h2>

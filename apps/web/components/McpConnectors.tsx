@@ -33,6 +33,8 @@ type Props = {
 
 const ReturnTo = createContext<McpReturn>("connectors")
 const Zones = createContext<{ id: string; name: string }[]>([])
+/** Compact cards (step of /create): the agents, zone and import settings stay on the Connectors page. */
+const Bare = createContext(false)
 
 const CUSTOM_COLOR = "#52525B"
 /** Catalog servers shown before "Show the … others": 3 full rows, in 3 columns or in 2 (step 8 of /create). */
@@ -84,68 +86,70 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connectors", b
   return (
     <ReturnTo.Provider value={returnTo}>
       <Zones.Provider value={zones}>
-        <div className="space-y-4">
-          {!bare && (
-            <div>
-              <h2 className="text-[18px] font-medium leading-tight">{k.title}</h2>
-              <p className="mt-1 max-w-3xl text-[13px] text-trace">{k.lead}</p>
-            </div>
-          )}
-          {notice && (
-            <div role="status" className={`panel flex items-start justify-between gap-3 px-4 py-3 text-[13px] ${notice.ok ? "" : "text-danger"}`}>
-              <span>{notice.text}</span>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNotice(null)} aria-label="OK">
-                ×
-              </button>
-            </div>
-          )}
-
-          {items.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
-              <div className="grid items-start gap-3 md:grid-cols-2">
-                {items.map((c) => (
-                  <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
-                ))}
+        <Bare.Provider value={bare}>
+          <div className="space-y-4">
+            {!bare && (
+              <div>
+                <h2 className="text-[18px] font-medium leading-tight">{k.title}</h2>
+                <p className="mt-1 max-w-3xl text-[13px] text-trace">{k.lead}</p>
               </div>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <h3 className="text-[13px] font-medium text-trace">{k.catalog}</h3>
-            <div className="flex flex-wrap items-center gap-2">
-              <input className="input input-sm !w-64 max-w-full" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={k.search} aria-label={k.search} autoComplete="off" />
-              <div className="flex flex-wrap gap-1" role="group">
-                <button type="button" className={`chip ${category === null ? "chip-on" : ""}`} aria-pressed={category === null} onClick={() => setCategory(null)}>
-                  {k.allCategories}
+            )}
+            {notice && (
+              <div role="status" className={`panel flex items-start justify-between gap-3 px-4 py-3 text-[13px] ${notice.ok ? "" : "text-danger"}`}>
+                <span>{notice.text}</span>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNotice(null)} aria-label="OK">
+                  ×
                 </button>
-                {MCP_CATEGORIES.map((cat) => (
-                  <button key={cat} type="button" className={`chip ${category === cat ? "chip-on" : ""}`} aria-pressed={category === cat} onClick={() => setCategory(category === cat ? null : cat)}>
-                    {k.categories[cat]}
-                  </button>
-                ))}
               </div>
-            </div>
-            {catalog.length === 0 ? (
-              <p className="text-[13px] text-trace">{k.noResult}</p>
-            ) : (
-              <>
-                <div className={`grid items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
-                  {(collapsed ? catalog.slice(0, preview) : catalog).map((e) => (
-                    <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
+            )}
+
+            {items.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
+                <div className="grid items-start gap-3 md:grid-cols-2">
+                  {items.map((c) => (
+                    <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
                   ))}
                 </div>
-                {collapsed && (
-                  <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
-                    {fmt(k.showAll, { n: catalog.length - preview })}
-                  </button>
-                )}
-              </>
+              </div>
             )}
-          </div>
 
-          <CustomServer onAdded={upsert} />
-        </div>
+            <div className="space-y-3">
+              <h3 className="text-[13px] font-medium text-trace">{k.catalog}</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <input className="input input-sm !w-64 max-w-full" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={k.search} aria-label={k.search} autoComplete="off" />
+                <div className="flex flex-wrap gap-1" role="group">
+                  <button type="button" className={`chip ${category === null ? "chip-on" : ""}`} aria-pressed={category === null} onClick={() => setCategory(null)}>
+                    {k.allCategories}
+                  </button>
+                  {MCP_CATEGORIES.map((cat) => (
+                    <button key={cat} type="button" className={`chip ${category === cat ? "chip-on" : ""}`} aria-pressed={category === cat} onClick={() => setCategory(category === cat ? null : cat)}>
+                      {k.categories[cat]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {catalog.length === 0 ? (
+                <p className="text-[13px] text-trace">{k.noResult}</p>
+              ) : (
+                <>
+                  <div className={`grid items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
+                    {(collapsed ? catalog.slice(0, preview) : catalog).map((e) => (
+                      <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
+                    ))}
+                  </div>
+                  {collapsed && (
+                    <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
+                      {fmt(k.showAll, { n: catalog.length - preview })}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+
+            <CustomServer onAdded={upsert} />
+          </div>
+        </Bare.Provider>
       </Zones.Provider>
     </ReturnTo.Provider>
   )
@@ -206,6 +210,7 @@ function CatalogTile({ entry, redirectUri, onAdded }: { entry: McpCatalogEntry; 
 
 function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connector: McpConnectorPublic; redirectUri: string; onChange: (c: McpConnectorPublic) => void; onRemoved: (id: string) => void }) {
   const returnTo = useContext(ReturnTo)
+  const bare = useContext(Bare)
   const { t } = useT()
   const k = t.connectors.mcp
   const entry = c.catalog_id ? catalogEntry(c.catalog_id) : undefined
@@ -263,7 +268,7 @@ function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connect
       {check && !check.ok && <ErrorText>{check.error}</ErrorText>}
       {err && <ErrorText>{err}</ErrorText>}
       {open && c.auth === "manual" && <ManualSetup id={c.id} entry={entry} redirectUri={redirectUri} hasClient={c.has_client} onSaved={onChange} />}
-      {c.status !== "needs_auth" && <Usage connector={c} onChange={onChange} />}
+      {c.status !== "needs_auth" && !bare && <Usage connector={c} onChange={onChange} />}
       <div className="mt-auto flex flex-wrap items-center gap-2">
         {oauth && (
           <button type="button" className={`btn btn-sm ${c.status === "needs_auth" ? "btn-primary" : ""}`} onClick={() => run("auth")} disabled={busy !== null}>
