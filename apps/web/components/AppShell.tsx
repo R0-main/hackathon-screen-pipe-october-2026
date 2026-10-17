@@ -20,6 +20,7 @@ import {
   CloseIcon,
   DocIcon,
   LinkIcon,
+  LogoMark,
   LogoutIcon,
   MenuIcon,
   NavBrainIcon,
@@ -330,7 +331,7 @@ function CompanySwitcher({ accounts, signup, onClose }: { accounts: RememberedAc
           title={t.shell.switchCompany}
           onClick={() => setOpen((o) => !o)}
         >
-          <BrainIcon size={26} className="shrink-0" />
+          <LogoMark size={26} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-tight">{fmt(t.shell.brainOf, { name: state.org.name })}</span>
           <ChevronsIcon size={14} className="shrink-0 text-trace" />
         </button>

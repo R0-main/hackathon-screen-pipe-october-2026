@@ -32,6 +32,12 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 - Les nombres en `tabular-nums`. Titres en `text-balance`, paragraphes en `text-pretty` (par défaut dans le CSS).
 - Pas d'emoji, pas de point d'exclamation, pas de « A · B · C », pas de flèche collée à un lien.
 
+## Logo
+
+- `<LogoMark>` (`components/ui.tsx`) et le favicon `app/icon.svg`, seulement : en haut à gauche (accueil, `/creer`,
+  barre latérale) et dans l'onglet. Partout ailleurs, l'icône du cerveau reste `<BrainIcon>`.
+- Sa bille centrale est en phosphore : seule exception à la règle du phosphore, elle fait partie de la marque.
+
 ## Formes
 
 - Rayons : 8 px panneaux, 6 px contrôles et blocs internes, 4 px étiquettes, 0 pour le canvas 3D.
