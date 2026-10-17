@@ -65,7 +65,10 @@ export function setupLandingMotion(variant: MotionVariant, root: HTMLElement, ct
   const holds = holdSections(root)
   const cleanups = [settle(root, ctx, holds)]
   if (variant === "epure") epure(root, holds)
-  if (variant === "recit") recit(root, holds)
+  if (variant === "recit") {
+    recit(root, holds)
+    cleanups.push(magnetic(root))
+  }
   if (variant === "cinetique") cleanups.push(cinetique(root, holds))
   return () => cleanups.forEach((fn) => fn())
 }
@@ -190,6 +193,67 @@ function splitInto(tl: gsap.core.Timeline, el: HTMLElement, type: "lines" | "wor
       return tween
     },
   })
+}
+
+/* ---------- Boutons magnétiques (Récit, Cinétique) ---------- */
+
+/**
+ * Chaque bouton de la page glisse vers le pointeur quand on le survole, revient en place avec un léger rebond
+ * quand on le quitte, et s'enfonce un peu au clic. Souris seulement (pas au doigt).
+ *
+ * Le suivi (quickTo) est recréé à chaque entrée : l'animation de retour le remplace, et un quickTo remplacé
+ * ne bouge plus. La transition CSS sur transform des boutons est retirée ici (data-magnetic, globals.css),
+ * sinon elle se bat avec GSAP.
+ */
+function magnetic(root: HTMLElement): () => void {
+  if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return () => {}
+  const offs: (() => void)[] = []
+  for (const el of all(root, ".btn, [data-magnetic]")) {
+    if (el.closest(".motion-switcher")) continue
+    el.setAttribute("data-magnetic", "")
+    let follow: { x: gsap.QuickToFunc; y: gsap.QuickToFunc } | null = null
+    const enter = () => {
+      gsap.killTweensOf(el, "x,y")
+      follow = { x: gsap.quickTo(el, "x", { duration: 0.45, ease: "power3.out" }), y: gsap.quickTo(el, "y", { duration: 0.45, ease: "power3.out" }) }
+    }
+    const move = (e: PointerEvent) => {
+      if (!follow) enter()
+      const r = el.getBoundingClientRect()
+      // Le rectangle inclut le décalage en cours : on vise le centre d'origine du bouton.
+      const cx = r.left + r.width / 2 - Number(gsap.getProperty(el, "x"))
+      const cy = r.top + r.height / 2 - Number(gsap.getProperty(el, "y"))
+      follow!.x((e.clientX - cx) * 0.3)
+      follow!.y((e.clientY - cy) * 0.4)
+    }
+    // Pas d'overwrite : on coupe nous-mêmes ce qui tourne, sinon le suivi et le retour se disputent x et y.
+    const leave = () => {
+      follow?.x.tween.kill()
+      follow?.y.tween.kill()
+      follow = null
+      gsap.killTweensOf(el, "x,y,scale")
+      gsap.to(el, { x: 0, y: 0, scale: 1, duration: 0.8, ease: "elastic.out(1, 0.45)" })
+    }
+    const press = (scale: number, duration: number) => {
+      gsap.killTweensOf(el, "scale")
+      gsap.to(el, { scale, duration, ease: "power2.out" })
+    }
+    const down = () => press(0.97, 0.1)
+    const up = () => press(1, 0.25)
+    const events: [string, EventListener][] = [
+      ["pointerenter", enter],
+      ["pointermove", move as EventListener],
+      ["pointerleave", leave],
+      ["pointerdown", down],
+      ["pointerup", up],
+      ["pointercancel", up],
+    ]
+    for (const [type, fn] of events) el.addEventListener(type, fn)
+    offs.push(() => {
+      for (const [type, fn] of events) el.removeEventListener(type, fn)
+      gsap.set(el, { clearProps: "transform" })
+    })
+  }
+  return () => offs.forEach((fn) => fn())
 }
 
 /* ---------- Premier écran ---------- */
@@ -377,25 +441,7 @@ function cinetique(root: HTMLElement, holds: Holds): () => void {
     cleanups.push(() => window.removeEventListener("pointermove", move))
   }
 
-  // Boutons magnétiques : ils glissent vers le pointeur, puis reviennent en place.
-  if (fine) {
-    for (const el of all(root, "[data-magnetic]")) {
-      const toX = gsap.quickTo(el, "x", { duration: 0.45, ease: "power3.out" })
-      const toY = gsap.quickTo(el, "y", { duration: 0.45, ease: "power3.out" })
-      const move = (e: PointerEvent) => {
-        const r = el.getBoundingClientRect()
-        toX((e.clientX - (r.left + r.width / 2)) * 0.3)
-        toY((e.clientY - (r.top + r.height / 2)) * 0.4)
-      }
-      const leave = () => gsap.to(el, { x: 0, y: 0, duration: 0.8, ease: "elastic.out(1, 0.45)", overwrite: true })
-      el.addEventListener("pointermove", move)
-      el.addEventListener("pointerleave", leave)
-      cleanups.push(() => {
-        el.removeEventListener("pointermove", move)
-        el.removeEventListener("pointerleave", leave)
-      })
-    }
-  }
+  cleanups.push(magnetic(root))
 
   // Titres : chaque ligne arrive d'un côté opposé. Le dernier titre grandit en plus jusqu'à sa taille.
   const titles = all(root, '[data-reveal="title"]')

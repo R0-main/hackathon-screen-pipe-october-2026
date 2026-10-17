@@ -527,6 +527,12 @@ html.lenis body {
   background: var(--text);
 }
 
+/* Boutons magnétiques (Récit, Cinétique) : GSAP pilote leur transform, la transition CSS ne doit pas s'en mêler. */
+.landing[data-motion="recit"] [data-magnetic],
+.landing[data-motion="cinetique"] [data-magnetic] {
+  transition-property: background-color, border-color;
+}
+
 /* Sélecteur de version, le temps de comparer. */
 .motion-switcher {
   position: fixed;
