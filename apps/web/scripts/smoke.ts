@@ -89,7 +89,7 @@ import * as mcpImportRoute from "../app/api/connectors/mcp/[id]/import/route"
 import * as connectedToolsRoute from "../app/api/connected-tools/route"
 import * as connectedCallRoute from "../app/api/connected-tools/call/route"
 import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceLegacyDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
-import { DEMO_ITEMS, DEMO_ORG, LEGACY_DEMO_NAMES } from "./demo-data"
+import { DEMO_ITEMS, DEMO_ORG, DEMO_SCREENPIPE_ITEMS, LEGACY_DEMO_NAMES } from "./demo-data"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
@@ -410,7 +410,7 @@ async function main() {
         "and keeps its zones",
       )
       assert(
-        (await old.listItems({})).length === DEMO_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-butine"),
+        (await old.listItems({})).length === DEMO_ITEMS.length + DEMO_SCREENPIPE_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-butine"),
         "knowledge and skills of the new demo, without those of the former one",
       )
     } finally {
