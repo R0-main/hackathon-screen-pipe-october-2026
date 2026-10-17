@@ -12,11 +12,16 @@ import { BrainIcon, CheckIcon, CloseIcon, Dot, ErrorText, PlusIcon, ZONE_PALETTE
 import { deNom } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
-type Step = "intro" | "company" | "about" | "you" | "zones" | "install" | "context" | "team"
+type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team"
 /** Une personne ajoutée depuis cette page : invitée (son prompt personnel), ou acceptée via le message d'équipe (prompt vide). */
 type Invite = { id: string; name: string; title?: string; zones: string[]; prompt: string }
-type Created = { orgName: string; meId: string; prompt: string; zones: ZoneOption[] }
+/** `token` : le jeton de l'admin (déjà dans `prompt`), renvoyé à l'étape des zones pour refaire ce prompt. */
+type Created = { orgName: string; meId: string; prompt: string; zones: ZoneOption[]; token?: string }
 type TeamUser = { id: string; last_at: string | null }
+/** Zone proposée par Claude Code ou Codex (étape « context »). */
+type ProposedZone = { id: string; name: string; description: string; keywords: string[] }
+/** Proposition de Claude Code ou Codex : zones, premières connaissances, description de l'entreprise. */
+type Proposal = { zones: ProposedZone[]; items: unknown[]; description: string }
 
 type Saved = {
   step: Step
@@ -28,10 +33,11 @@ type Saved = {
   custom: string[]
   created: Created | null
   invites: Invite[]
+  proposal: Proposal | null
 }
 
 /** Étapes numérotées (barre de progression) : l'intro n'en fait pas partie. */
-const STEPS: Step[] = ["company", "about", "you", "zones", "install", "context", "team"]
+const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team"]
 const DEFAULT_PICK = ["dev", "produit", "direction"]
 /**
  * La progression survit à un rechargement, dans cet onglet seulement (sessionStorage, effacé à sa fermeture). Elle
@@ -49,9 +55,12 @@ function load(): Partial<Saved> | null {
   }
 }
 
-/** Zones du brouillon avec leurs couleurs, attribuées comme le fera le serveur (POST /api/orgs) : l'aperçu ne change pas à la création. */
-function draftZoneList(all: ZoneOption[], picked: string[], custom: string[]): ZoneOption[] {
-  const chosen = all.filter((z) => picked.includes(z.id))
+/** Zones du brouillon avec leurs couleurs (proposées par Claude et gardées, cochées, ajoutées) : l'aperçu du petit cerveau. */
+function draftZoneList(all: ZoneOption[], picked: string[], custom: string[], proposed: ProposedZone[] = []): ZoneOption[] {
+  const fromClaude = proposed
+    .filter((z) => picked.includes(z.id))
+    .map((z, i) => ({ id: z.id, name: z.name, description: z.description, color: ZONE_PALETTE[i % ZONE_PALETTE.length], position: 0 }))
+  const chosen = [...fromClaude, ...all.filter((z) => picked.includes(z.id) && !fromClaude.some((c) => c.id === z.id))]
   const free = ZONE_PALETTE.filter((c) => !chosen.some((z) => z.color === c))
   const extra = custom.map((name, i) => ({ id: `custom-${slugify(name)}`, name, description: "", color: free[i] ?? zoneColor(null, chosen.length + i), position: 0 }))
   return [...chosen, ...extra].map((z, position) => ({ ...z, position }))
@@ -64,8 +73,10 @@ function save(s: Saved) {
 }
 
 /**
- * Créer son entreprise à partir de zéro, une question par écran : nom, activité, qui on est, zones du cerveau.
- * Ensuite, le prompt à coller dans Claude Code ou Codex pour brancher son poste, puis un prompt par collègue pour l'inviter.
+ * Créer son entreprise à partir de zéro, une question par écran : nom, activité, qui on est. Le cerveau est alors créé
+ * (sans zone) ; Claude Code ou Codex peut proposer ses zones à partir des conversations du poste (étape passable), et
+ * l'étape des zones part de sa proposition. Ensuite, le prompt à coller dans Claude Code ou Codex pour brancher son poste,
+ * puis un prompt par collègue pour l'inviter.
  * Les postes branchés apparaissent en direct (lecture de /api/admin/team).
  */
 export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: boolean }) {
@@ -79,6 +90,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const [custom, setCustom] = useState<string[]>([])
   const [created, setCreated] = useState<Created | null>(null)
   const [invites, setInvites] = useState<Invite[]>([])
+  const [proposal, setProposal] = useState<Proposal | null>(null)
   const [team, setTeam] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -95,13 +107,14 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
       setCustom(s.custom ?? [])
       setCreated(s.created ?? null)
       setInvites(s.invites ?? [])
+      setProposal(s.proposal ?? null)
     }
     setReady(true)
   }, [])
 
   useEffect(() => {
-    if (ready) save({ step, company, description, name, title, picked, custom, created, invites })
-  }, [ready, step, company, description, name, title, picked, custom, created, invites])
+    if (ready) save({ step, company, description, name, title, picked, custom, created, invites, proposal })
+  }, [ready, step, company, description, name, title, picked, custom, created, invites, proposal])
 
   // Une fois l'entreprise créée : qui s'est branché ? Relu régulièrement, la page se met à jour toute seule.
   useEffect(() => {
@@ -122,22 +135,63 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   }, [created])
 
   // Zones du brouillon, ou celles réellement créées : c'est ce que montre le petit cerveau à droite.
-  const draftZones = useMemo<ZoneOption[]>(() => created?.zones ?? draftZoneList(zones, picked, custom), [zones, picked, custom, created])
+  // Pendant que Claude prépare sa proposition, pas encore de zone : le petit cerveau n'en montre aucune.
+  const draftZones = useMemo<ZoneOption[]>(
+    () => (created?.zones.length ? created.zones : step === "context" ? [] : draftZoneList(zones, picked, custom, proposal?.zones)),
+    [zones, picked, custom, created, proposal, step],
+  )
 
   const go = (s: Step) => {
     setErr(null)
     setStep(s)
   }
 
+  /** Après « Et vous ? » : le cerveau est créé sans zone, pour que Claude puisse les proposer (code d'envoi lié à l'admin). */
   async function createOrg() {
+    if (created) return go("context")
     setBusy(true)
     setErr(null)
     try {
-      const r = await api<{ org: { name: string }; profile: { id: string }; prompt: string; zones: ZoneOption[] }>("/api/orgs", {
+      const r = await api<{ org: { name: string }; profile: { id: string }; prompt: string; zones: ZoneOption[]; token: string }>("/api/orgs", {
         method: "POST",
-        json: { company, description, name, title, zones: picked, custom },
+        json: { company, description, name, title, later: true },
       })
-      setCreated({ orgName: r.org.name, meId: r.profile.id, prompt: r.prompt, zones: r.zones })
+      setCreated({ orgName: r.org.name, meId: r.profile.id, prompt: r.prompt, zones: r.zones, token: r.token })
+      setStep("context")
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Proposition reçue (ou étape passée) : l'étape des zones part de ses zones, toutes cochées. */
+  function toZones(p: Proposal | null) {
+    setProposal(p)
+    if (p?.zones.length) setPicked(p.zones.map((z) => z.id))
+    go("zones")
+  }
+
+  /** Étape des zones : crée celles retenues, ajoute les connaissances proposées, et reçoit le prompt d'installation. */
+  async function applyZones() {
+    if (!created) return
+    setBusy(true)
+    setErr(null)
+    try {
+      const proposed = (proposal?.zones ?? []).filter((z) => picked.includes(z.id))
+      const r = await api<{ zones: ZoneOption[]; prompt: string | null }>("/api/onboarding/zones", {
+        method: "POST",
+        json: {
+          proposed,
+          picked: picked.filter((id) => zones.some((z) => z.id === id) && !proposed.some((p) => p.id === id)),
+          custom,
+          items: proposal?.items ?? [],
+          description: proposal?.description ?? "",
+          token: created.token,
+        },
+      })
+      setCreated({ ...created, zones: r.zones, prompt: r.prompt ?? created.prompt })
+      setProposal(null)
       setStep("install")
     } catch (e) {
       setErr(errorMessage(e))
@@ -159,13 +213,15 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     setCustom([])
     setCreated(null)
     setInvites([])
+    setProposal(null)
     setTeam({})
     go("company")
   }
 
   const index = STEPS.indexOf(step)
   const org = created?.orgName ?? (company.trim() || "votre entreprise")
-  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "you", context: "install", team: "context" }
+  // Une fois le cerveau créé (après « Et vous ? »), plus de retour vers les questions qui l'ont nommé.
+  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install" }
   const people = created
     ? [{ id: created.meId, name, connected: Boolean(team[created.meId]) }, ...invites.map((i) => ({ id: i.id, name: i.name, connected: Boolean(team[i.id]) }))]
     : name.trim()
@@ -214,8 +270,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <>
                   <h1 className="create-title">Créons le cerveau de votre entreprise.</h1>
                   <p className="create-lead">
-                    Quatre questions pour monter votre dashboard. Ensuite, un message à coller dans Claude Code ou Codex branche votre poste, et un message par collègue
-                    les fait rejoindre le cerveau. Deux minutes en tout.
+                    Trois questions pour monter votre dashboard, puis Claude Code ou Codex peut proposer ses zones à partir de vos conversations. Ensuite, un message
+                    branche votre poste, et un message par collègue les fait rejoindre le cerveau. Quelques minutes en tout.
                   </p>
                   <div className="mt-9 flex flex-wrap items-center gap-3">
                     <button type="button" className="btn btn-primary btn-lg" onClick={() => go("company")} autoFocus>
@@ -279,8 +335,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <Question
                   title="Et vous ?"
                   lead="Vous serez admin du cerveau : c'est vous qui choisissez qui voit quoi."
-                  onSubmit={() => go("zones")}
-                  canContinue={name.trim().length > 0}
+                  onSubmit={createOrg}
+                  canContinue={name.trim().length > 0 && !busy}
                 >
                   <div className="space-y-5">
                     <input
@@ -302,14 +358,19 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                       autoComplete="organization-title"
                       onChange={(e) => setTitle(e.target.value)}
                     />
+                    {busy && <p className="text-[13px] text-trace">Création du cerveau…</p>}
+                    {err && <ErrorText>{err}</ErrorText>}
                   </div>
                 </Question>
               )}
 
-              {step === "zones" && (
+              {step === "context" && created && <ContextStep orgName={created.orgName} onNext={toZones} />}
+
+              {step === "zones" && created && (
                 <ZonesStep
                   org={org}
                   zones={zones}
+                  proposal={proposal}
                   preview={draftZones}
                   picked={picked}
                   setPicked={setPicked}
@@ -317,7 +378,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                   setCustom={setCustom}
                   busy={busy}
                   err={err}
-                  onCreate={createOrg}
+                  onCreate={applyZones}
                 />
               )}
 
@@ -336,7 +397,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                   </div>
                   <Presence connected={Boolean(team[created.meId])} self />
                   <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
-                    <button type="button" className="btn btn-lg" onClick={() => go("context")}>
+                    <button type="button" className="btn btn-lg" onClick={() => go("team")}>
                       Continuer
                     </button>
                     <Link href="/dashboard" className="landing-link text-[15px]">
@@ -346,13 +407,11 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 </>
               )}
 
-              {step === "context" && created && <ContextStep orgName={created.orgName} onNext={() => go("team")} />}
-
               {step === "team" && created && (
                 <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} />
               )}
 
-              {(step === "install" || step === "context" || step === "team") && !created && (
+              {(step === "context" || step === "zones" || step === "install" || step === "team") && !created && (
                 <>
                   <h1 className="create-title">Cette page a perdu votre cerveau.</h1>
                   <p className="create-lead">Il existe toujours : retrouvez-le depuis le dashboard, ou recommencez.</p>
@@ -388,12 +447,13 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 }
 
 /**
- * Donner au cerveau le contexte de ses comptes : Claude Code ou Codex relit l'historique du poste et propose zones et
- * premières connaissances (POST /api/onboarding/import). La proposition se relit et se valide dans la page Onboarding.
+ * Avant les zones (facultatif) : Claude Code ou Codex relit les conversations du poste qui concernent l'entreprise (son
+ * nom et sa description, et rien d'autre), puis propose zones et premières connaissances (POST /api/onboarding/import).
+ * La page la reçoit en direct ; l'étape des zones part de cette proposition. On peut passer et choisir soi-même.
  */
-function ContextStep({ orgName, onNext }: { orgName: string; onNext: () => void }) {
+function ContextStep({ orgName, onNext }: { orgName: string; onNext: (p: Proposal | null) => void }) {
   const prompt = useRef<Promise<string> | null>(null)
-  const [received, setReceived] = useState<{ zones: number; items: number } | null>(null)
+  const [received, setReceived] = useState<Proposal | null>(null)
 
   const getPrompt = () => {
     prompt.current ??= api<{ prompt: string }>("/api/onboarding/agent", { method: "POST" }).then((r) => r.prompt)
@@ -406,8 +466,8 @@ function ContextStep({ orgName, onNext }: { orgName: string; onNext: () => void 
     let stop = false
     const tick = async () => {
       try {
-        const r = await api<{ draft: { zones: unknown[]; items: unknown[] } | null }>("/api/onboarding/import")
-        if (!stop && r.draft) setReceived({ zones: r.draft.zones.length, items: r.draft.items.length })
+        const r = await api<{ draft: Proposal | null }>("/api/onboarding/import")
+        if (!stop && r.draft) setReceived({ zones: r.draft.zones, items: r.draft.items, description: r.draft.description ?? "" })
       } catch {}
     }
     void tick()
@@ -420,10 +480,10 @@ function ContextStep({ orgName, onNext }: { orgName: string; onNext: () => void 
 
   return (
     <>
-      <h1 className="create-title">Donnez-lui le contexte de vos comptes.</h1>
+      <h1 className="create-title">Laissez Claude proposer les zones.</h1>
       <p className="create-lead">
-        Claude Code ou Codex relit vos anciennes conversations sur ce poste et les README de vos projets, et en tire les zones et les premières connaissances{" "}
-        {deNom(orgName)}. Il vous demande votre accord avant de lire quoi que ce soit, et rien n&apos;entre dans le cerveau avant que vous ayez relu la proposition.
+        Ouvrez ce message dans Claude Code ou Codex. Il relit vos conversations sur ce poste qui concernent {orgName}, et seulement elles, puis propose les zones
+        du cerveau et ses premières connaissances. Il vous demande votre accord avant de lire quoi que ce soit, et vous relisez tout à l&apos;étape suivante.
       </p>
       <div className="panel mt-8 px-5 py-5">
         <PromptActions getPrompt={getPrompt} sends />
@@ -432,29 +492,25 @@ function ContextStep({ orgName, onNext }: { orgName: string; onNext: () => void 
         </p>
       </div>
       {received ? (
-        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-[14px]" aria-live="polite">
-          <span className="flex items-center gap-2">
-            <span className="live-dot is-live" aria-hidden />
-            Proposition reçue : {received.zones} zone{received.zones > 1 ? "s" : ""}, {received.items} connaissance{received.items > 1 ? "s" : ""}.
-          </span>
-          <Link href="/onboarding" target="_blank" className="btn">
-            Relire et valider
-          </Link>
-        </div>
+        <p className="mt-6 flex items-center gap-2 text-[14px]" aria-live="polite">
+          <span className="live-dot is-live" aria-hidden />
+          Proposition reçue : {received.zones.length} zone{received.zones.length > 1 ? "s" : ""}, {received.items.length} connaissance
+          {received.items.length > 1 ? "s" : ""}.
+        </p>
       ) : (
         <p className="mt-6 flex items-center gap-2 text-[14px]" aria-live="polite">
           <span className="live-dot" aria-hidden /> En attente de la proposition. Cette page se met à jour toute seule.
         </p>
       )}
       <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <button type="button" className="btn btn-lg" onClick={onNext}>
-          Inviter mon équipe
-        </button>
-        {!received && (
-          <button type="button" className="landing-link text-[15px]" onClick={onNext}>
-            Plus tard
+        {received && (
+          <button type="button" className="btn btn-primary btn-lg" onClick={() => onNext(received)}>
+            Voir les zones proposées
           </button>
         )}
+        <button type="button" className={received ? "landing-link text-[15px]" : "btn btn-lg"} onClick={() => onNext(null)}>
+          {received ? "Ignorer et choisir moi-même" : "Passer : je choisis les zones moi-même"}
+        </button>
       </div>
     </>
   )
@@ -491,6 +547,7 @@ function Question(props: { title: string; lead?: string; children: React.ReactNo
 function ZonesStep(props: {
   org: string
   zones: ZoneOption[]
+  proposal: Proposal | null
   preview: ZoneOption[]
   picked: string[]
   setPicked: (f: (p: string[]) => string[]) => void
@@ -503,6 +560,23 @@ function ZonesStep(props: {
   const [draft, setDraft] = useState("")
   const count = props.picked.length + props.custom.length
   const toggle = (id: string) => props.setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
+  const proposed = props.proposal?.zones ?? []
+  const others = props.zones.filter((z) => !proposed.some((p) => p.id === z.id))
+  const items = props.proposal?.items.length ?? 0
+  const option = (z: { id: string; name: string; description: string }, color: string) => {
+    const on = props.picked.includes(z.id)
+    return (
+      <button key={z.id} type="button" className="zone-option" aria-pressed={on} onClick={() => toggle(z.id)}>
+        <span className="flex items-center justify-between gap-2">
+          <ZoneTag name={z.name} color={color} className="text-[15px] font-medium" />
+          <span className={`zone-check ${on ? "is-on" : ""}`} aria-hidden>
+            {on && <CheckIcon size={12} />}
+          </span>
+        </span>
+        <span className="mt-1 block text-[13px] leading-snug text-trace">{z.description}</span>
+      </button>
+    )
+  }
   const addCustom = () => {
     const v = draft.trim()
     if (!v) return
@@ -515,22 +589,20 @@ function ZonesStep(props: {
   return (
     <div>
       <h1 className="create-title">Que doit connaître le cerveau {deNom(props.org)} ?</h1>
-      <p className="create-lead">Une zone par métier. Vous réglerez ensuite qui lit quelle zone : la compta n'a pas besoin du code.</p>
-      <div className="mt-9 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        {props.zones.map((z) => {
-          const on = props.picked.includes(z.id)
-          return (
-            <button key={z.id} type="button" className="zone-option" aria-pressed={on} onClick={() => toggle(z.id)}>
-              <span className="flex items-center justify-between gap-2">
-                <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} className="text-[15px] font-medium" />
-                <span className={`zone-check ${on ? "is-on" : ""}`} aria-hidden>
-                  {on && <CheckIcon size={12} />}
-                </span>
-              </span>
-              <span className="mt-1 block text-[13px] leading-snug text-trace">{z.description}</span>
-            </button>
-          )
-        })}
+      <p className="create-lead">
+        {proposed.length
+          ? "Claude les a proposées à partir de vos conversations : gardez, retirez, ajoutez. Vous réglerez ensuite qui lit quelle zone."
+          : "Une zone par métier. Vous réglerez ensuite qui lit quelle zone : la compta n'a pas besoin du code."}
+      </p>
+      {proposed.length > 0 && (
+        <>
+          <h2 className="mt-9 text-[13px] font-medium text-trace">Proposées par Claude</h2>
+          <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">{proposed.map((z, i) => option(z, ZONE_PALETTE[i % ZONE_PALETTE.length]))}</div>
+          <h2 className="mt-8 text-[13px] font-medium text-trace">Autres zones</h2>
+        </>
+      )}
+      <div className={`${proposed.length ? "mt-3" : "mt-9"} grid grid-cols-1 gap-2.5 sm:grid-cols-2`}>
+        {others.map((z) => option(z, zoneColor(z.color, z.position)))}
       </div>
 
       <div className="mt-5">
@@ -575,10 +647,12 @@ function ZonesStep(props: {
 
       <div className="mt-10 flex flex-wrap items-center gap-4">
         <button type="button" className="btn btn-primary btn-lg" onClick={props.onCreate} disabled={props.busy || count === 0}>
-          {props.busy ? "Création du cerveau…" : "Créer le cerveau"}
+          {props.busy ? "Création des zones…" : "Valider les zones"}
         </button>
         <span className="text-[13px] tabular-nums text-trace">
-          {count === 0 ? "Choisissez au moins une zone." : `${count} zone${count > 1 ? "s" : ""}`}
+          {count === 0
+            ? "Choisissez au moins une zone."
+            : `${count} zone${count > 1 ? "s" : ""}${items ? `, ${items} connaissance${items > 1 ? "s" : ""} proposée${items > 1 ? "s" : ""} ajoutée${items > 1 ? "s" : ""} au cerveau` : ""}`}
         </span>
       </div>
       {props.err && <ErrorText className="mt-3">{props.err}</ErrorText>}

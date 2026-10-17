@@ -147,7 +147,7 @@ test("prompts : une action bloquée se règle en une phrase, sans contourner ni 
   }
 })
 
-test("prompt d'onboarding : cadré par ce que l'entreprise fait, pour laisser de côté les conversations sans rapport", () => {
+test("prompt d'onboarding : cadré par le nom et la description saisis, rien d'autre n'est appris", () => {
   const p = buildOnboardingAgentPrompt({
     baseUrl: "https://cerveau.example.com",
     code: "co_x",
@@ -155,10 +155,14 @@ test("prompt d'onboarding : cadré par ce que l'entreprise fait, pour laisser de
     description: "Studio de design produit pour les start-up de la santé.",
     zones: [],
   })
-  assert.match(p, /L'entreprise, c'est Atelier Lumen : « Studio de design produit pour les start-up de la santé\. »/)
-  assert.match(p, /une conversation sans rapport \(projet perso, autre entreprise ou autre client, question générale\) se laisse de côté/)
+  assert.match(
+    p,
+    /Tu cherches UNIQUEMENT les projets et les conversations de l'entreprise « Atelier Lumen », qui se décrit ainsi : « Studio de design produit pour les start-up de la santé\. »/,
+  )
+  assert.match(p, /n'apprends rien d'autre : un projet perso, une autre entreprise, un autre client, une question générale ou un autre sujet ne se lit pas en détail/)
+  assert.match(p, /Dans le doute, laisse de côté\./)
   const sansDescription = buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Orbite", zones: [] })
-  assert.match(sansDescription, /L'entreprise, c'est Orbite\. Ne garde que ce qui la concerne/)
+  assert.match(sansDescription, /Tu cherches UNIQUEMENT les projets et les conversations de l'entreprise « Orbite »\. Repère d'abord/)
 })
 const FP = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49"
 

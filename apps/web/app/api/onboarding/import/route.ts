@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     const body = await parseBody(req, AgentDraftSchema)
     if ("response" in body) return body.response
     const draft = await saveAgentDraft(store, body.data)
-    return json({ ok: true, zones: draft.zones.length, items: draft.items.length, review: "Proposition reçue : à relire et valider dans la page Onboarding du dashboard." }, 201)
+    return json({ ok: true, zones: draft.zones.length, items: draft.items.length, review: "Proposition reçue : à relire et valider à l'écran (création de l'entreprise, ou page Onboarding du dashboard)." }, 201)
   } catch (err) {
     return internalError(err)
   }

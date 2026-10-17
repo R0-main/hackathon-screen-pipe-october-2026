@@ -70,6 +70,7 @@ import * as joinRoute from "../app/api/join/route"
 import * as onboardingAgentRoute from "../app/api/onboarding/agent/route"
 import * as onboardingImportRoute from "../app/api/onboarding/import/route"
 import * as onboardingApplyRoute from "../app/api/onboarding/apply/route"
+import * as onboardingZonesRoute from "../app/api/onboarding/zones/route"
 import * as joinStatusRoute from "../app/api/join/status/route"
 import * as adminJoinRoute from "../app/api/admin/join/route"
 import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
@@ -991,6 +992,57 @@ async function main() {
       const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
       assert(applied.status === 200 && (await acmeStore.listZones()).some((z) => z.id === "design"), "validée : zones et connaissances appliquées")
       assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft === null, "et la proposition est écartée")
+
+      console.log("\n— /creer : cerveau créé sans zone, Claude les propose, l'étape des zones part de sa proposition")
+      {
+        const ruche = await root.createTenantOrg({ name: `Ruche ${run}`, description: "Balances connectées pour ruches", zones: [] })
+        const rucheStore = storeForOrg(ruche.id)
+        const founderToken = newToken()
+        const founder = await rucheStore.createProfile({ name: `Inès ${run}`, role: "admin", manager_id: null, token_hash: hashToken(founderToken) })
+        const rucheCookie = await createSessionValue(founder.id)
+        const rAgent = await call(onboardingAgentRoute.POST, "/api/onboarding/agent", { method: "POST", session: rucheCookie })
+        assert(
+          rAgent.status === 200 && rAgent.data.prompt.includes(`Tu cherches UNIQUEMENT les projets et les conversations de l'entreprise « Ruche ${run} », qui se décrit ainsi : « Balances connectées pour ruches »`),
+          "le prompt cadre la lecture par le nom et la description saisis",
+        )
+        const rCode = rAgent.data.prompt.match(/Bearer (co_[A-Za-z0-9_-]+)/)?.[1] as string
+        const rProposal = {
+          source: "claude-code",
+          company_name: `Ruche ${run}`,
+          description: "",
+          zones: [
+            { id: "capteurs", name: "Capteurs", description: "Balances et firmware", keywords: ["firmware"] },
+            { id: "apiculteurs", name: "Apiculteurs", description: "Clients et support", keywords: ["support"] },
+          ],
+          items: [{ zone: "capteurs", kind: "decision", title: `Firmware en Rust (${run})`, body: "Choisi pour la fiabilité sur batterie.", entities: [], source: { app: "onboarding", tool: "onboarding" }, confidence: 0.8 }],
+        }
+        assert((await upload(rCode, rProposal)).status === 201, "la proposition arrive pendant la création")
+        const rDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: rucheCookie })).data.draft
+        const memberCookie = await createSessionValue(bob.id)
+        assert(
+          (await call(onboardingZonesRoute.POST, "/api/onboarding/zones", { method: "POST", session: memberCookie, body: { custom: ["Hack"] } })).status === 403,
+          "réservé à l'admin",
+        )
+        const zonesRes = await call(onboardingZonesRoute.POST, "/api/onboarding/zones", {
+          method: "POST",
+          session: rucheCookie,
+          // « apiculteurs » retirée, « produit » cochée dans la liste, « Juridique » ajoutée à la main.
+          body: { proposed: [rDraft.zones[0]], picked: ["produit"], custom: ["Juridique"], items: rDraft.items, description: "Des balances connectées pour ruches.", token: founderToken },
+        })
+        const ids = (await rucheStore.listZones()).map((z) => z.id).sort().join()
+        assert(zonesRes.status === 200 && ids === "capteurs,juridique,produit", `zones créées : celle gardée, la cochée, l'ajoutée (${ids})`)
+        assert((await rucheStore.listZoneAccess(founder.id)).length === 3, "l'admin lit et écrit toutes ses zones")
+        assert((await rucheStore.listItems({ zones: ["capteurs"] })).some((i) => i.title.startsWith("Firmware en Rust")), "les connaissances proposées sont ajoutées")
+        assert(zonesRes.data.prompt.includes("zones : capteurs, produit, juridique") && zonesRes.data.prompt.includes(founderToken), "le prompt d'installation est refait avec ces zones, même jeton")
+        assert((await viewerFromCookies(rucheCookie, undefined))?.real.id === founder.id, "la session du dashboard reste valide")
+        assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: rucheCookie })).data.draft === null, "la proposition est écartée")
+        const vide = await root.createTenantOrg({ name: `Vide ${run}`, description: "", zones: [] })
+        const videAdmin = await storeForOrg(vide.id).createProfile({ name: `Yann ${run}`, role: "admin", manager_id: null, token_hash: hashToken(newToken()) })
+        const empty = await call(onboardingZonesRoute.POST, "/api/onboarding/zones", { method: "POST", session: await createSessionValue(videAdmin.id), body: {} })
+        assert(empty.status === 400, "sans aucune zone : refusé")
+        const other = await call(onboardingZonesRoute.POST, "/api/onboarding/zones", { method: "POST", session: rucheCookie, body: { custom: ["Ops"], token: newToken() } })
+        assert(other.status === 200 && other.data.prompt === null, "jeton qui n'est pas le sien : zones ajoutées, mais pas de prompt")
+      }
 
       console.log("\n— Nouvelles zones créées automatiquement (job quotidien)")
       {

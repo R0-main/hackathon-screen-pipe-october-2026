@@ -5,6 +5,7 @@ import {
   classifyZones,
   extractEntities,
   firstSentence,
+  normalize,
   slugify,
   tokenize,
   truncate,
@@ -146,4 +147,19 @@ export function zonesFromDraft(draft: Pick<OnboardingDraft, "zones">, existing: 
     })
   }
   return out
+}
+
+/** Les zones d'une nouvelle entreprise : celles proposées (DEFAULT_ZONES) dans l'ordre d'origine, puis les siennes, couleurs sans doublon. */
+export function zonesForNewOrg(picked: string[], custom: string[]): Zone[] {
+  const out: Zone[] = DEFAULT_ZONES.filter((z) => picked.includes(z.id)).map((z) => ({ ...z }))
+  for (const name of custom) {
+    const id = slugify(name)
+    if (out.some((z) => z.id === id)) continue
+    const keywords = [...new Set([normalize(name), ...tokenize(name)])].filter((k) => k.length >= 3)
+    out.push({ id, name, description: "", color: "", keywords, position: 0 })
+  }
+  const palette = Array.from({ length: 10 }, (_, i) => zoneColor(i))
+  const used = new Set(out.map((z) => z.color).filter(Boolean))
+  const free = palette.filter((c) => !used.has(c))
+  return out.map((z, position) => ({ ...z, position, color: z.color || free.shift() || zoneColor(position) }))
 }
