@@ -428,19 +428,6 @@ html.lenis body {
 .landing-section {
   padding-block: clamp(96px, 13vw, 184px);
 }
-.landing-prompt {
-  max-height: 420px;
-  overflow: auto;
-  padding: 20px 22px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: var(--panel);
-  font-size: 12.5px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
 
 /* Scène épinglée : le cerveau en plein cadre, les chapitres passent par-dessus. */
 .landing-stage.is-scroll {

@@ -6,7 +6,7 @@ import { getPageViewer } from "@/lib/session"
 export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
-  title: "Cerveau d'entreprise",
+  title: "NOS Brainer",
   description: "Tout ce que votre équipe apprend avec l'IA, dans un seul cerveau. Screenpipe capte les sessions de chaque poste, le cerveau en garde l'essentiel.",
 }
 
