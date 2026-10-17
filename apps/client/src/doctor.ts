@@ -672,7 +672,15 @@ function checkSync(ctx: Ctx) {
   const setup = { command: `${ctx.me} setup`, safe: true }
   const target = scheduleTarget(ctx.platform)
   const how = ctx.platform === "darwin" ? "launchd" : ctx.platform === "win32" ? "tâche Windows CompanyBrainSync" : "crontab"
-  if (target === null)
+  if (target === null && ctx.platform === "linux" && !findOnPath("crontab"))
+    add(ctx, {
+      id: "planification",
+      group: "Synchro",
+      status: "fail",
+      detail: "synchro automatique impossible à planifier : pas de crontab sur ce poste",
+      fix: "Installe cron (paquet « cron » ou « cronie ») et démarre-le, puis relance setup.",
+    })
+  else if (target === null)
     add(ctx, {
       id: "planification",
       group: "Synchro",

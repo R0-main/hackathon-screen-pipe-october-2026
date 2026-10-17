@@ -57,7 +57,8 @@ export function screenpipeLoadError(bin: string): string | null {
   if (r.ok) return null
   const text = `${r.stderr}\n${r.stdout}`
   const line = text.split(/\r?\n/).find((l) => LOAD_ERROR_RE.test(l))
-  return line ? line.trim().slice(0, 300) : null
+  // Le chemin du binaire (très long, sous ~/.company-brain/screenpipe/node_modules/…) n'apprend rien : seule l'erreur compte.
+  return line ? line.split(bin).join("screenpipe").trim().slice(0, 300) : null
 }
 
 const LOAD_ERROR_RE = /error while loading shared libraries|cannot open shared object|GLIBC_\d|GLIBCXX_\d|dyld\b|Library not loaded|Symbol not found|Exec format error|bad CPU type|ENOEXEC|EACCES/i

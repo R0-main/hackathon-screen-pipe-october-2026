@@ -11,6 +11,7 @@ import { tmpdir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
+import { installCommands } from "../../web/lib/install-prompt"
 import { tempDir } from "./helpers"
 
 const publicDir = fileURLToPath(new URL("../../web/public/", import.meta.url))
@@ -590,6 +591,39 @@ test("install.ps1 (pwsh hors Windows) : options, --url= recollé, code de setup 
     rmSync(root, { recursive: true, force: true })
     await srv.close()
   }
+})
+
+/**
+ * La ligne Windows du prompt, telle quelle, passée à `powershell -Command` comme par l'outil PowerShell de Claude Code :
+ * le code de setup doit remonter (3, 6), et un téléchargement raté donner 5. Hors Windows (pwsh), « \\ » n'est pas un
+ * séparateur de chemin : remplacé par « / » pour l'essai, et `powershell` par `pwsh`.
+ */
+async function promptLine(ps: string, files: Record<string, { status?: number; body: string }>): Promise<Run> {
+  const srv = await brainServer(files)
+  const profile = tempDir("brain-prompt-ps-")
+  try {
+    let line = installCommands(srv.url, TOKEN).windows
+    if (!WIN) line = line.replace(/\\/g, "/").replace(/\bpowershell -NoProfile/, `${ps} -NoProfile`)
+    const env: NodeJS.ProcessEnv = { ...process.env, USERPROFILE: profile }
+    delete env.COMPANY_BRAIN_HOME
+    const noProxy = [process.env.no_proxy ?? process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",")
+    return await run(ps, ["-NoProfile", "-Command", line], { env: { ...env, no_proxy: noProxy, NO_PROXY: noProxy, PATH: [dirname(process.execPath), process.env.PATH].join(delimiter) }, timeoutMs: 120_000 })
+  } finally {
+    rmSync(profile, { recursive: true, force: true })
+    await srv.close()
+  }
+}
+
+const promptShell = WIN ? (powershells.includes("powershell.exe") ? "powershell.exe" : "") : pwshHere ? "pwsh" : ""
+test("ligne Windows du prompt : code de setup rendu tel quel, téléchargement raté → 5, jeton jamais affiché", { skip: promptShell ? false : "ni powershell.exe (Windows) ni pwsh" }, async () => {
+  const ps1 = { body: readFileSync(installPs1, "utf8") }
+  for (const code of [0, 3, 6]) {
+    const r = await promptLine(promptShell, { "/install.ps1": ps1, "/brain.mjs": { body: fakeClient(code) } })
+    assert.equal(r.code, code, `${r.stdout}\n${r.stderr}`)
+    assert.ok(!(r.stdout.split("\n").filter((l) => !l.startsWith('{"argv"')).join("\n") + r.stderr).includes(TOKEN), "jeton affiché")
+  }
+  const missing = await promptLine(promptShell, { "/brain.mjs": { body: fakeClient(0) } })
+  assert.equal(missing.code, 5, `${missing.stdout}\n${missing.stderr}`)
 })
 
 // --- Windows -------------------------------------------------------------------------------------------------------

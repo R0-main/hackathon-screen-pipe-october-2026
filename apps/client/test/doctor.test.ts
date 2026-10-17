@@ -3,7 +3,7 @@
 
 import { strict as assert } from "node:assert"
 import { spawn } from "node:child_process"
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
@@ -211,6 +211,13 @@ test("doctor : Screenpipe éteint, jeton Screenpipe refusé, hooks en double", {
     assert.match(s.detail, /ne répond pas/)
     assert.match(s.command!, /setup$/)
     assert.equal(byId(r, "capture"), undefined, "rien d'autre à vérifier sans Screenpipe")
+
+    // Pas de crontab : relancer setup n'y changerait rien, il faut installer cron.
+    unlinkSync(join(post.bin, "crontab"))
+    r = await doctorIn(post)
+    assert.equal(byId(r, "planification")?.status, "fail")
+    assert.match(byId(r, "planification")!.fix!, /Installe cron/)
+    assert.equal(byId(r, "planification")!.command, undefined)
   } finally {
     await brain.close()
   }
