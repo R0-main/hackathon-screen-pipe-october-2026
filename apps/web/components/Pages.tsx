@@ -1,9 +1,12 @@
 "use client"
 
+import { useMemo } from "react"
+import type { KnowledgeItem } from "@brain/core"
 import { useBrainLive } from "./BrainLive"
 import { PageScroll } from "./AppShell"
 import { StatusPanel } from "./StatusPanel"
-import { KnowledgeList } from "./KnowledgeList"
+import { KnowledgeList, type KnowledgeFilters } from "./KnowledgeList"
+import { peopleLooks } from "./PersonDot"
 import { TasksPanel } from "./TasksPanel"
 import { AutomationsPanel } from "./AutomationsPanel"
 
@@ -13,16 +16,34 @@ export function StatusView() {
   const { state, now, refresh } = useBrainLive()
   return (
     <PageScroll>
-      <StatusPanel status={state.status} zones={state.zones} canRefresh={state.real.role === "admin"} onRefreshed={refresh} now={now} />
+      <StatusPanel
+        status={state.status}
+        zones={state.zones}
+        people={state.people}
+        tasks={state.tasks}
+        taskCounts={state.task_counts}
+        canRefresh={state.real.role === "admin"}
+        onRefreshed={refresh}
+        now={now}
+      />
     </PageScroll>
   )
 }
 
-export function KnowledgeView() {
+/**
+ * `items` : les connaissances lues par la page (bien plus que les 30 de l'état vivant) ; celles qui arrivent ensuite
+ * par l'état vivant s'y ajoutent en tête.
+ */
+export function KnowledgeView({ items, limit, initial }: { items: KnowledgeItem[]; limit: number; initial?: KnowledgeFilters }) {
   const { state, now } = useBrainLive()
+  const merged = useMemo(() => {
+    const byId = new Map(items.map((i) => [i.id, i]))
+    for (const i of state.items) byId.set(i.id, i)
+    return [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at))
+  }, [items, state.items])
   return (
-    <PageScroll>
-      <KnowledgeList items={state.items} names={state.names} zones={state.zones} now={now} />
+    <PageScroll width="max-w-[960px]">
+      <KnowledgeList items={merged} names={state.names} zones={state.zones} looks={peopleLooks(state)} now={now} initial={initial} limit={limit} />
     </PageScroll>
   )
 }
