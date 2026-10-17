@@ -10,10 +10,14 @@ import { WelcomeBanner } from "./WelcomeBanner"
 
 /** Page d'accueil : le cerveau occupe tout l'espace à droite de la barre latérale. Rien ne défile, on zoome. */
 export function BrainView({ welcome }: { welcome?: boolean }) {
-  const { state, activity, ripples, now } = useBrainLive()
+  const { state, feed, activity, ripples, now } = useBrainLive()
   const [selected, setSelected] = useState<string | null>(null)
   const selectedZone = state.zones.find((z) => z.id === selected) ?? null
   const isAdmin = state.real.role === "admin"
+  // Un dot par personne : il respire si son agent a travaillé ces 15 dernières minutes, sautille s'il touche le cerveau à l'instant.
+  const working = new Set(feed.filter((e) => e.type !== "stopped" && Date.parse(e.at) > now - 15 * 60_000).map((e) => e.user_id))
+  const live = new Set(feed.filter((e) => (e.type === "query" || e.type === "write") && Date.parse(e.at) > now - 8000).map((e) => e.user_id))
+  const people = state.people.map((p) => ({ ...p, working: working.has(p.id), live: live.has(p.id), me: p.id === state.me.id }))
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-surface">
@@ -37,6 +41,7 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
           now={now}
           selected={selected}
           onSelect={(z) => setSelected((s) => (s === z ? null : z))}
+          people={people}
         />
       )}
 

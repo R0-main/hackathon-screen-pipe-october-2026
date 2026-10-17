@@ -1,13 +1,28 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
 import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
+import { AgentDot, LOOKS, dotLook, type DotLook } from "./AgentDot"
+import { firstName } from "./format"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
+
+/** Une personne et son dot, posé hors du cerveau au bord de la zone où elle travaille. */
+export type BrainPerson = {
+  id: string
+  name: string
+  zone: string | null
+  /** Son agent a travaillé ces dernières minutes : le dot respire. */
+  working?: boolean
+  /** Son agent touche le cerveau à l'instant : le dot sautille, cerclé de phosphore. */
+  live?: boolean
+  me?: boolean
+}
 
 export type Brain3DProps = {
   zones: ZoneView[]
@@ -17,6 +32,7 @@ export type Brain3DProps = {
   now: number
   selected?: string | null
   onSelect?: (zone: string) => void
+  people?: BrainPerson[]
 }
 
 // Encre sur blanc. La seule couleur vive est le phosphore, réservé à une zone qu'un agent touche en direct.
@@ -39,6 +55,9 @@ const NEURON_R = 0.008
 const SYNAPSE_R = 0.0045
 
 const CENTER_R = 0.042
+/** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
+const DOT_GAP = 30
+const DOT_SPACING = 46
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
@@ -74,10 +93,11 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
  */
 export function Brain3D(props: Brain3DProps) {
-  const { zones, synapses, activity, ripples, now, selected, onSelect } = props
+  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [] } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const labelsRef = useRef(new Map<string, HTMLButtonElement>())
+  const dotsRef = useRef(new Map<string, HTMLAnchorElement>())
   const activityRef = useRef(activity)
   const ripplesRef = useRef(ripples)
   const selectedRef = useRef(selected)
@@ -94,7 +114,16 @@ export function Brain3D(props: Brain3DProps) {
   // La scène est reconstruite seulement quand la structure change (zones, verrous, volumes, liens).
   const sceneKey = `${zones.map((z) => `${z.id}:${z.locked ? 1 : 0}:${z.count}:${zoneColor(z.color, z.position)}`).join("|")}#${synapses
     .map((s) => `${s.a}-${s.b}:${s.weight}`)
-    .join("|")}`
+    .join("|")}#${people.map((p) => `${p.id}:${p.zone ?? ""}`).join("|")}`
+  const placed = people.filter((p) => p.zone && zones.some((z) => z.id === p.zone))
+  // Deux voisins de zone ne portent pas la même tenue (tant qu'il en reste une libre).
+  const looks = new Map<string, DotLook>()
+  for (const p of [...placed].sort((a, b) => a.id.localeCompare(b.id))) {
+    const taken = new Set(placed.filter((q) => q.zone === p.zone && looks.has(q.id)).map((q) => looks.get(q.id)))
+    const start = LOOKS.indexOf(dotLook(p.id))
+    const free = LOOKS.map((_, k) => LOOKS[(start + k) % LOOKS.length]).find((l) => !taken.has(l))
+    looks.set(p.id, free ?? dotLook(p.id))
+  }
 
   useEffect(() => {
     if (fallback) return
@@ -107,7 +136,7 @@ export function Brain3D(props: Brain3DProps) {
       .then((T) => {
         if (disposed) return
         try {
-          dispose = build(T, container, canvas, zones, synapses, { labelsRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef })
+          dispose = build(T, container, canvas, zones, synapses, placed, { labelsRef, dotsRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef })
         } catch {
           setFallback(true)
         }
@@ -133,6 +162,34 @@ export function Brain3D(props: Brain3DProps) {
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-surface">
       <canvas ref={canvasRef} className="block h-full w-full cursor-grab touch-none active:cursor-grabbing" aria-hidden />
+
+      {/* Dots : un par personne, à l'extérieur du cerveau, au bord de sa zone. Positionnés chaque image comme les libellés. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {placed.map((p) => {
+          const zone = zones.find((z) => z.id === p.zone)!
+          return (
+            <Link
+              key={p.id}
+              href={`/people/${p.id}`}
+              ref={(el) => {
+                if (el) dotsRef.current.set(p.id, el)
+                else dotsRef.current.delete(p.id)
+              }}
+              className="brain-dot pointer-events-auto absolute left-0 top-0"
+              data-working={p.working ? "1" : undefined}
+              data-live={p.live ? "1" : undefined}
+              data-me={p.me ? "1" : undefined}
+              aria-label={`${p.name}${p.me ? " (vous)" : ""}, ${zone.name}`}
+              title={`${p.name} · ${zone.name}`}
+            >
+              <span className="brain-dot-body">
+                <AgentDot id={p.id} look={looks.get(p.id)} color={zone.locked ? "#b8b8b8" : zoneColor(zone.color, zone.position)} />
+              </span>
+              <span className="brain-dot-name">{p.me ? "Vous" : firstName(p.name)}</span>
+            </Link>
+          )
+        })}
+      </div>
 
       {/* Libellés : de vrais boutons, positionnés chaque image sur la projection de leur zone. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -194,6 +251,7 @@ export function Brain3D(props: Brain3DProps) {
 
 type Refs = {
   labelsRef: React.RefObject<Map<string, HTMLButtonElement>>
+  dotsRef: React.RefObject<Map<string, HTMLAnchorElement>>
   activityRef: React.RefObject<Record<string, ZoneActivity>>
   ripplesRef: React.RefObject<Ripple[]>
   selectedRef: React.RefObject<string | null | undefined>
@@ -203,7 +261,7 @@ type Refs = {
 }
 
 /** Construit la scène et lance la boucle de rendu. Renvoie la fonction de nettoyage. */
-function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], refs: Refs): () => void {
+function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: BrainPerson[], refs: Refs): () => void {
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   renderer.setClearColor(0x000000, 0)
@@ -366,6 +424,16 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     materials.push(mat)
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false })
   }
+
+  // Dots des personnes : posés à l'écran, juste hors de la silhouette du cerveau, dans la direction de leur zone.
+  // La silhouette se lit sur un échantillon de la surface, projeté à chaque image.
+  const outline = surface.filter((_, i) => i % 3 === 0).map((sp) => new T.Vector3(...sp.p))
+  const outlineXY = new Float32Array(outline.length * 2)
+  const dotGroups = zones
+    .map((z) => ({ zone: gfx.get(z.id)!, members: people.filter((p) => p.zone === z.id).sort((a, b) => a.id.localeCompare(b.id)) }))
+    .filter((g) => g.members.length > 0)
+  /** Position affichée de chaque dot, lissée d'une image à l'autre (une zone qui passe face caméra ne le fait pas sauter). */
+  const dotPos = new Map<string, { x: number; y: number }>()
 
   // Taille : le canvas suit son conteneur.
   const size = { w: 1, h: 1 }
@@ -562,6 +630,79 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       el.classList.toggle("is-flip", flip)
       el.style.opacity = behind ? "0.45" : "1"
       el.style.zIndex = behind ? "1" : el.dataset.live ? "3" : "2"
+      el.style.visibility = "visible"
+    }
+
+    placeDots(dt)
+  }
+
+  /**
+   * Chaque zone pousse ses membres hors du cerveau : on part du centre projeté du cerveau vers celui de la zone, et
+   * on s'arrête juste après le bord de la silhouette dans cette direction. Les membres d'une même zone se rangent
+   * côte à côte le long du bord ; deux groupes qui se chevauchent s'écartent.
+   */
+  const placeDots = (dt: number) => {
+    if (dotGroups.length === 0) return
+    const scale = clamp(ZOOM.start / camera.position.z, 0.7, 1.7)
+    outline.forEach((p, i) => {
+      tmp.copy(p).applyMatrix4(group.matrixWorld).project(camera)
+      outlineXY[i * 2] = (tmp.x * 0.5 + 0.5) * size.w
+      outlineXY[i * 2 + 1] = (-tmp.y * 0.5 + 0.5) * size.h
+    })
+    tmp.setFromMatrixPosition(group.matrixWorld).project(camera)
+    const cx = (tmp.x * 0.5 + 0.5) * size.w
+    const cy = (-tmp.y * 0.5 + 0.5) * size.h
+    const targets: { id: string; x: number; y: number }[] = []
+    for (const { zone, members } of dotGroups) {
+      tmp.setFromMatrixPosition(zone.center.matrixWorld).project(camera)
+      let dx = (tmp.x * 0.5 + 0.5) * size.w - cx
+      let dy = (-tmp.y * 0.5 + 0.5) * size.h - cy
+      const len = Math.hypot(dx, dy)
+      if (len < 1) [dx, dy] = [0, -1]
+      else [dx, dy] = [dx / len, dy / len]
+      // Bord de la silhouette dans cette direction : le point projeté le plus avancé, parmi ceux proches du rayon.
+      let reach = 0
+      for (let i = 0; i < outline.length; i++) {
+        const px = outlineXY[i * 2] - cx
+        const py = outlineXY[i * 2 + 1] - cy
+        const along = px * dx + py * dy
+        if (along > reach && Math.abs(px * dy - py * dx) < 40 * scale) reach = along
+      }
+      const r = reach + DOT_GAP * scale
+      members.forEach((p, j) => {
+        const side = (j - (members.length - 1) / 2) * DOT_SPACING * scale
+        targets.push({ id: p.id, x: cx + dx * r - dy * side, y: cy + dy * r + dx * side })
+      })
+    }
+    // Quelques passes d'écartement : deux dots ne se recouvrent jamais.
+    const min = DOT_SPACING * scale * 0.9
+    for (let pass = 0; pass < 4; pass++)
+      for (let a = 0; a < targets.length; a++)
+        for (let b = a + 1; b < targets.length; b++) {
+          const A = targets[a]
+          const B = targets[b]
+          const ex = B.x - A.x
+          const ey = B.y - A.y
+          const d = Math.hypot(ex, ey) || 0.01
+          if (d >= min) continue
+          const push = (min - d) / 2
+          A.x -= (ex / d) * push
+          A.y -= (ey / d) * push
+          B.x += (ex / d) * push
+          B.y += (ey / d) * push
+        }
+    const ease = Math.min(1, dt * 6)
+    const margin = 24
+    for (const t of targets) {
+      const el = refs.dotsRef.current.get(t.id)
+      if (!el) continue
+      const x = clamp(t.x, margin, size.w - margin)
+      const y = clamp(t.y, margin + 30 * scale, size.h - margin)
+      const cur = dotPos.get(t.id)
+      const pos = cur ? { x: cur.x + (x - cur.x) * ease, y: cur.y + (y - cur.y) * ease } : { x, y }
+      dotPos.set(t.id, pos)
+      // Ancré par son centre, un peu plus bas que le milieu : le dot « repose » sur le bord.
+      el.style.transform = `translate(${pos.x.toFixed(1)}px, ${pos.y.toFixed(1)}px) scale(${scale.toFixed(3)}) translate(-50%, -60%)`
       el.style.visibility = "visible"
     }
   }
