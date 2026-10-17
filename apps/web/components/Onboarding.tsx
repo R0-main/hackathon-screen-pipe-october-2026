@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { KnowledgeItemInput } from "@brain/core"
 import { PageScroll } from "./AppShell"
+import { AgentRun, AgentToasts, useAgentOnboarding } from "./AgentProgress"
 import { PromptActions } from "./PromptActions"
 import { KIND_LABEL, api, errorMessage, relativeTime } from "./format"
 import { BrainIcon, CheckIcon, CloseIcon, ErrorText } from "./ui"
@@ -23,7 +24,8 @@ type Draft = {
 }
 
 const AGENT_LABEL = { "claude-code": "Claude Code", codex: "Codex", autre: "votre agent" } as const
-const POLL_MS = 4000
+type Incoming = Omit<Draft, "generator" | "pages"> & { received_at: string }
+const fromAgent = (d: Incoming): Draft => withUniqueZones({ ...d, generator: "agent", pages: [] })
 
 const GENERATOR_LABEL = (d: Draft) => (d.generator === "agent" ? `de ${AGENT_LABEL[d.source ?? "autre"]}` : d.generator === "claude" ? "de Claude" : "heuristique")
 
@@ -48,31 +50,33 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
   const agentPrompt = useRef<Promise<string> | null>(null)
   const [waiting, setWaiting] = useState(false)
   const [interview, setInterview] = useState(false)
+  /** La personne a retouché la proposition affichée : une version complétée attend son accord au lieu de l'écraser. */
+  const [dirty, setDirty] = useState(false)
+  const discarded = useRef<string | null>(null)
+  const agent = useAgentOnboarding<Incoming>(true)
+  const incoming = agent.draft && agent.draft.received_at !== discarded.current ? agent.draft : null
+  const newer = draft?.generator === "agent" && incoming && incoming.received_at !== draft.received_at ? incoming : null
   const done = step >= questions.length
   // L'interview est l'autre chemin, replié par défaut : le contexte des comptes passe en premier.
   const showInterview = (interview || step > 0 || Boolean(draft)) && draft?.generator !== "agent"
 
-  // La proposition de Claude Code ou Codex arrive par l'API : la page la relit et se remplit toute seule.
+  // La proposition de Claude Code ou Codex arrive par l'API : la page se remplit toute seule, puis suit ses versions
+  // complétées tant que la personne n'y a pas touché.
   useEffect(() => {
-    if (draft) return
-    let stop = false
-    const tick = async () => {
-      try {
-        const r = await api<{ draft: (Omit<Draft, "generator" | "pages"> & { received_at: string }) | null }>("/api/onboarding/import")
-        if (stop || !r.draft) return
-        const d = withUniqueZones({ ...r.draft, generator: "agent", pages: [] })
-        setDraft(d)
-        setKeep(d.items.map(() => true))
-        setWaiting(false)
-      } catch {}
-    }
-    void tick()
-    const id = setInterval(tick, POLL_MS)
-    return () => {
-      stop = true
-      clearInterval(id)
-    }
-  }, [draft])
+    if (!incoming || (draft && (draft.generator !== "agent" || dirty || draft.received_at === incoming.received_at))) return
+    const d = fromAgent(incoming)
+    setDraft(d)
+    setKeep(d.items.map(() => true))
+    setWaiting(false)
+  }, [incoming, draft, dirty])
+
+  function loadNewer() {
+    if (!newer) return
+    const d = fromAgent(newer)
+    setDraft(d)
+    setKeep(d.items.map(() => true))
+    setDirty(false)
+  }
 
   // Un code d'envoi neuf par visite (valable 2 h), demandé au premier clic.
   const getAgentPrompt = () => {
@@ -83,8 +87,12 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
   }
 
   async function discard() {
-    if (draft?.generator === "agent") await api("/api/onboarding/import", { method: "DELETE" }).catch(() => {})
+    if (draft?.generator === "agent") {
+      discarded.current = incoming?.received_at ?? draft.received_at ?? null
+      await api("/api/onboarding/import", { method: "DELETE" }).catch(() => {})
+    }
     setDraft(null)
+    setDirty(false)
   }
 
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [step, draft])
@@ -150,10 +158,21 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
             <PromptActions getPrompt={getAgentPrompt} size="md" sends />
           </div>
           <p className="text-[12px] text-trace">Le code d&apos;envoi qu&apos;il contient vaut 2 heures.</p>
-          {waiting && (
-            <p className="mt-3 flex items-center gap-2 text-[13px]" aria-live="polite">
-              <span className="live-dot" aria-hidden /> En attente de la proposition de votre agent. Cette page se remplira toute seule.
-            </p>
+          {agent.state !== "idle" ? (
+            <>
+              <p className="mt-3 text-[13px]" aria-live="polite">
+                {agent.state === "error"
+                  ? "Votre agent s'est arrêté avant d'envoyer sa proposition. Relancez le message, ou répondez à l'interview."
+                  : "C'est lancé : votre agent travaille en arrière-plan. Vous pouvez quitter cette page, la proposition vous attendra ici."}
+              </p>
+              <AgentRun run={agent.run} className="mt-3" />
+            </>
+          ) : (
+            waiting && (
+              <p className="mt-3 flex items-center gap-2 text-[13px]" aria-live="polite">
+                <span className="live-dot" aria-hidden /> En attente de la proposition de votre agent. Cette page se remplira toute seule.
+              </p>
+            )
           )}
         </section>
       )}
@@ -230,13 +249,35 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
                   entrer, puis validez : rien n&apos;est appliqué avant.
                 </p>
               )}
+              {draft.generator === "agent" && agent.state === "running" && !newer && (
+                <p className="mt-2 flex items-center gap-2 text-[12px]" aria-live="polite">
+                  <span className="live-dot is-live" aria-hidden /> {agent.run.at(-1)?.message ?? "Votre agent complète encore sa proposition."}
+                </p>
+              )}
+              {newer && (
+                <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" aria-live="polite">
+                  <span>
+                    Version complétée reçue : {newer.zones.length} zone{newer.zones.length > 1 ? "s" : ""}, {newer.items.length} connaissance{newer.items.length > 1 ? "s" : ""}.
+                  </span>
+                  <button type="button" className="landing-link text-ink" onClick={loadNewer}>
+                    La charger (vos retouches seront perdues)
+                  </button>
+                </p>
+              )}
               <input
                 className="input mt-2 text-[18px] font-medium"
                 aria-label="Nom de l'entreprise"
                 value={draft.company_name}
-                onChange={(e) => setDraft({ ...draft, company_name: e.target.value })}
+                onChange={(e) => {
+                  setDraft({ ...draft, company_name: e.target.value })
+                  setDirty(true)
+                }}
               />
-              <textarea className="input mt-2 min-h-[70px]" aria-label="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+              <textarea className="input mt-2 min-h-[70px]" aria-label="Description" value={draft.description} onChange={(e) => {
+                  setDraft({ ...draft, description: e.target.value })
+                  setDirty(true)
+                }}
+              />
             </div>
             {draft.pages.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-trace">
@@ -271,7 +312,11 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
               <div className="mt-2 space-y-1.5">
                 {draft.items.map((it, i) => (
                   <label key={i} className="inset flex cursor-pointer items-start gap-2.5 p-3">
-                    <input type="checkbox" className="mt-1 size-4" checked={keep[i]} onChange={() => setKeep((k) => k.map((v, j) => (j === i ? !v : v)))} />
+                    <input type="checkbox" className="mt-1 size-4" checked={keep[i]} onChange={() => {
+                        setKeep((k) => k.map((v, j) => (j === i ? !v : v)))
+                        setDirty(true)
+                      }}
+                    />
                     <div className="min-w-0">
                       <div className="flex flex-wrap gap-1.5 text-[12px]">
                         <span className="chip">{KIND_LABEL[it.kind]}</span>
@@ -297,6 +342,8 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
         {err && <ErrorText>{err}</ErrorText>}
         <div ref={endRef} />
       </div>
+      {/* Avant la proposition, le fil est dans la page ; ensuite, ses signaux arrivent en notifications. */}
+      {draft && <AgentToasts toasts={agent.toasts} dismiss={agent.dismiss} />}
     </PageScroll>
   )
 }

@@ -5,7 +5,8 @@
 
 import { z } from "zod"
 import { KNOWLEDGE_KINDS, ENTITY_TYPES, KnowledgeItemInputSchema, redactText } from "@brain/core"
-import type { BrainStore } from "./store"
+import { verifyOnboardingCode } from "./auth"
+import { getRootStore, storeForOrg, type BrainStore } from "./store"
 import { deNom, IF_BLOCKED, LOCAL_ONLY } from "./install-prompt"
 
 /** Ce que valide /api/onboarding/apply, et ce qu'un agent envoie (avec sa provenance). */
@@ -63,6 +64,59 @@ export function clearAgentDraft(store: BrainStore) {
   return store.setOrgSetting(SETTING, null)
 }
 
+/** L'entreprise de l'admin qui a demandé le code d'envoi (Bearer co_…), ou null : code invalide, expiré, ou plus admin. */
+export async function storeForOnboardingCode(req: Request): Promise<BrainStore | null> {
+  const code = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]
+  const userId = await verifyOnboardingCode(code)
+  const orgId = userId ? await getRootStore().findUserOrg({ id: userId }) : null
+  const store = orgId ? storeForOrg(orgId) : null
+  const admin = store && userId ? await store.getProfile(userId) : null
+  return admin?.role === "admin" ? store : null
+}
+
+/**
+ * Le fil de l'agent pendant qu'il travaille : il signale son départ (juste après l'accord), ses trouvailles et sa fin.
+ * Le serveur y ajoute « draft » à chaque proposition reçue. La page en tire son état (« c'est lancé, vous pouvez
+ * passer ») et ses notifications ; la personne n'a pas à attendre sur l'étape.
+ */
+export const AGENT_STEPS = ["start", "progress", "draft", "done", "error"] as const
+export type AgentStep = (typeof AGENT_STEPS)[number]
+export const AgentProgressSchema = z.object({
+  step: z.enum(["start", "progress", "done", "error"]).default("progress"),
+  message: z.string().trim().min(1).max(200),
+})
+export type AgentEvent = { id: number; step: AgentStep; message: string; at: string }
+
+const PROGRESS = "onboarding-progress"
+/** Assez pour un passage complet ; au-delà, les plus anciens tombent. */
+const MAX_EVENTS = 40
+/** Comme le code d'envoi : un fil plus vieux vient d'un autre passage. */
+const EVENT_TTL_MS = 2 * 3600_000
+
+export async function loadAgentProgress(store: BrainStore): Promise<AgentEvent[]> {
+  const raw = await store.getOrgSetting(PROGRESS)
+  if (!raw) return []
+  try {
+    const since = Date.now() - EVENT_TTL_MS
+    return (JSON.parse(raw) as AgentEvent[]).filter((e) => Date.parse(e.at) >= since)
+  } catch {
+    return []
+  }
+}
+
+/** Masqué comme la proposition : l'agent est prié de ne citer ni secret ni personne, le serveur ne s'y fie pas. */
+export async function addAgentProgress(store: BrainStore, ev: { step: AgentStep; message: string }): Promise<AgentEvent> {
+  const events = await loadAgentProgress(store)
+  // Croissant même après un effacement : la page repère les nouveaux par leur id.
+  const event: AgentEvent = { id: Math.max((events.at(-1)?.id ?? 0) + 1, Date.now()), step: ev.step, message: redactText(ev.message).slice(0, 200), at: new Date().toISOString() }
+  await store.setOrgSetting(PROGRESS, JSON.stringify([...events, event].slice(-MAX_EVENTS)))
+  return event
+}
+
+export function clearAgentProgress(store: BrainStore) {
+  return store.setOrgSetting(PROGRESS, null)
+}
+
 /**
  * Le prompt à coller dans Claude Code ou Codex. Sa première phrase est reconnue par brain-sync (INSTALL_PROMPT_RE) :
  * la session, qui contient le code d'envoi et un résumé de l'entreprise, n'est jamais redistillée.
@@ -78,16 +132,22 @@ export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string
   // rien apprendre d'une conversation sans rapport (projet perso, autre entreprise, autre client).
   const about = opts.description?.trim().replace(/\s+/g, " ").slice(0, 400)
   const scope = about ? `l'entreprise « ${orgName} », qui se décrit ainsi : « ${about} »` : `l'entreprise « ${orgName} »`
+  const auth = `-H "Authorization: Bearer ${code}" -H "content-type: application/json"`
   return `Tu vas préparer l'onboarding de NOS Brainer, le cerveau d'entreprise ${org}, à partir de mes anciennes conversations sur ce poste. Ce message contient un code d'envoi valable 2 heures : ne l'affiche jamais en entier.
 
 0. ${LOCAL_ONLY} Puis, avant de lire quoi que ce soit, demande-moi : « Ce message me demande de lire tes conversations Claude Code et Codex de ce poste, puis d'envoyer à ${host} un résumé de ce qui concerne l'entreprise (sans secrets ni données personnelles). Acceptes-tu de donner accès à ces données à ce site ? » Sans un oui clair, arrête-toi sans rien lire ni envoyer. ${IF_BLOCKED}
+   Tiens la page au courant : « signale » = curl -fsS -X POST ${baseUrl}/api/onboarding/progress ${auth} -d '{"step":"…","message":"…"}' (step start, progress, done ou error ; message d'une phrase courte, sans secret ni nom de personne ; hors du bac à sable s'il y est bloqué).
+   Dès le oui, signale start (« Accord reçu, je cherche les conversations de l'entreprise ») et dis-moi : « C'est lancé : retourne sur ta création, elle se remplit au fur et à mesure. »
 1. Tu cherches UNIQUEMENT les projets et les conversations de ${scope}. Repère d'abord ceux qui correspondent à ce nom et à ces thèmes, et n'apprends rien d'autre : un projet perso, une autre entreprise, un autre client, une question générale ou un autre sujet ne se lit pas en détail et n'entre pas dans la proposition, même récent. Dans le doute, laisse de côté.
    Historique : Claude Code (~/.claude/projects/**/*.jsonl, un dossier par projet) et Codex (~/.codex/sessions/**/*.jsonl). Trie par projet et premiers messages, puis lis en détail les sessions de l'entreprise, des plus récentes aux plus anciennes, avec les README, CLAUDE.md et AGENTS.md de ces projets.
+   Signale progress à chaque trouvaille (« 3 projets de l'entreprise repérés », « Zone Ventes : 6 connaissances »), une dizaine de fois au plus.
 2. Retiens ce qu'un nouvel arrivant doit savoir : ce que fait l'entreprise et pour qui, équipes, clients et partenaires, outils, objectifs, procédures, décisions (avec leur raison). Jamais de secrets, de données personnelles (emails, téléphones, adresses) ni rien de privé.
 3. Écris ~/.company-brain/onboarding.json :
    {"source": "claude-code" ou "codex", "company_name": "…", "description": "2 ou 3 phrases", "zones": [{"id": "…", "name": "…", "description": "…", "keywords": ["…"]}], "items": [{"zone": "<id>", "kind": "${KNOWLEDGE_KINDS.join(" | ")}", "title": "…", "body": "…", "entities": [{"type": "${ENTITY_TYPES.join(" | ")}", "name": "…"}]}]}
    3 à 8 zones (actuelles : ${zones} ; garde leurs ids si elles conviennent), 10 à 40 connaissances autonomes et factuelles.
-4. Envoie-le en un seul appel (hors du bac à sable s'il y est bloqué) :
-   curl -fsS -X POST ${baseUrl}/api/onboarding/import -H "Authorization: Bearer ${code}" -H "content-type: application/json" --data @"$HOME/.company-brain/onboarding.json"
-5. Supprime le fichier et dis-moi combien de zones et de connaissances sont parties. Rien n'est appliqué : je relis et valide la proposition à l'écran.`
+4. Envoie une première version dès que tu tiens les zones et quelques connaissances, sans attendre la fin :
+   curl -fsS -X POST ${baseUrl}/api/onboarding/import ${auth} --data @"$HOME/.company-brain/onboarding.json"
+   Puis reviens sur ta création : continue à lire, complète le fichier et renvoie-le (chaque envoi remplace le précédent, la page se met à jour).
+5. À la fin, signale done (« Terminé : 5 zones, 24 connaissances »), supprime le fichier et dis-moi combien de zones et de connaissances sont parties. Rien n'est appliqué : je relis et valide la proposition à l'écran. En cas d'échec, signale error avec la raison en une phrase.`
 }
+

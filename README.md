@@ -171,7 +171,10 @@ dans le cloud, demande d'abord l'accord de la personne (« Acceptes-tu de donner
 ne cherche que les projets et conversations de l'entreprise (son nom et sa description, tels que saisis dans
 `/creer`) et n'apprend rien d'autre (projet perso, autre entreprise, autre client : laissés de côté), lit l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README de ces projets, en
 tire les zones et 10 à 40 premières connaissances (jamais de secrets ni de données perso), puis les envoie avec un code d'envoi
-valable 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin seulement). La page se remplit toute seule avec la
+valable 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin seulement). Il signale son départ dès l'accord, puis
+ses trouvailles et sa fin (`POST /api/onboarding/progress`, même code) : la page dit « c'est lancé, vous pouvez passer à
+la suite » et chaque signal arrive en notification. Il envoie une première version tôt puis la complète (chaque envoi
+remplace le précédent) ; une proposition qui arrive pendant l'étape des zones s'y ajoute. La page se remplit toute seule avec la
 proposition, masquée à nouveau côté serveur ; rien n'est appliqué avant que l'admin l'ait relue et validée (à l'étape
 des zones de `/creer`, ou sur la page Onboarding). L'interview en 7 questions reste disponible en dessous, et la page
 `/demo` propose « Créer mon dashboard ».

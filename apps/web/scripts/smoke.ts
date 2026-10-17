@@ -70,6 +70,7 @@ import * as itemRoute from "../app/api/items/[id]/route"
 import * as joinRoute from "../app/api/join/route"
 import * as onboardingAgentRoute from "../app/api/onboarding/agent/route"
 import * as onboardingImportRoute from "../app/api/onboarding/import/route"
+import * as onboardingProgressRoute from "../app/api/onboarding/progress/route"
 import * as onboardingApplyRoute from "../app/api/onboarding/apply/route"
 import * as onboardingZonesRoute from "../app/api/onboarding/zones/route"
 import * as joinStatusRoute from "../app/api/join/status/route"
@@ -1023,8 +1024,20 @@ async function main() {
       assert((await upload(`co_${"A".repeat(40)}`, proposal)).status === 401, "un code inventé est refusé")
       assert((await upload(await createOnboardingCode(bob.id), proposal)).status === 401, "le code d'un membre (non admin) est refusé")
       assert((await upload(sendCode, { ...proposal, items: [{ zone: "x" }] })).status === 400, "une proposition mal formée est refusée")
+      const signal = (code: string, body: unknown) =>
+        onboardingProgressRoute.POST(new Request("http://smoke.test/api/onboarding/progress", { method: "POST", headers: { authorization: `Bearer ${code}`, "content-type": "application/json" }, body: JSON.stringify(body) }))
+      assert((await signal(`co_${"A".repeat(40)}`, { step: "start", message: "Go" })).status === 401, "signal : un code inventé est refusé")
+      assert((await signal(sendCode, { step: "start", message: "Accord reçu, je cherche les conversations" })).status === 201, "l'agent signale son départ")
+      assert((await signal(sendCode, { step: "progress", message: "Clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz trouvée" })).status === 201, "puis ses trouvailles")
       const sent = await upload(sendCode, proposal)
       assert(sent.status === 201, "l'agent dépose sa proposition")
+      const progress = (await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: cookie })).data.events as { step: string; message: string }[]
+      assert(progress.map((e) => e.step).join() === "start,progress,draft" && /Première proposition reçue : 2 zones, 1 connaissance/.test(progress[2].message), "le fil : départ, trouvaille, proposition reçue")
+      assert(!JSON.stringify(progress).includes("sk-ant"), "secrets masqués dans le fil")
+      assert((await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: butineAdmin })).data.events.length === 0, "Butine ne voit pas le fil")
+      assert((await upload(sendCode, proposal)).status === 201, "l'agent renvoie sa proposition complétée")
+      const completed = (await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: cookie })).data.events.at(-1)
+      assert(completed.step === "draft" && completed.message.startsWith("Proposition complétée"), "la page sait que c'est une version complétée")
       const pendingDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft
       assert(pendingDraft?.source === "codex" && pendingDraft.items.length === 1, "la page Onboarding la retrouve (elle se remplit toute seule)")
       assert(!JSON.stringify(pendingDraft).includes("sk-ant") && !JSON.stringify(pendingDraft).includes("alice@"), "secrets et emails masqués dès la réception")
