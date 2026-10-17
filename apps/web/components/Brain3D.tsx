@@ -60,8 +60,8 @@ const SYNAPSE_R = 0.0045
  */
 const BEADS_PER_WAY = 4
 const BEAD_SPEED = 0.1
-const BEAD_R = 0.9
-const BEAD_LIGHT = 0.75
+const BEAD_R = 0.6
+const BEAD_LIGHT = 0.88
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
