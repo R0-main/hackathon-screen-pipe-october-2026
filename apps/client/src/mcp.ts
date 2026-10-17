@@ -9,6 +9,7 @@ import { BrainApi } from "./api"
 import { zoneHints, zoneName } from "./cache"
 import { loadCache, loadConfig, selfScript, type Cache } from "./config"
 import { formatQuery, formatStatus, formatWhoami, formatZoneSummary, formatZones } from "./format"
+import { maskOwnSecrets, ownSecrets } from "./secrets"
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean }
 
@@ -168,8 +169,11 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
           asked && chosen === asked
             ? "zone demandée"
             : `zone choisie automatiquement d'après le contenu${asked ? ` (« ${zone} » n'existe pas)` : ""} ; précisez \`zone\` pour en choisir une autre`
-        const cleanTitle = truncate(redactText(title).trim(), 140)
-        const cleanBody = truncate(redactText(body).trim(), 4000)
+        // Secrets du poste (jeton du cerveau, jetons Screenpipe / Claude Code, clé API) masqués tels quels.
+        const secrets = ownSecrets(loadConfig())
+        const clean = (t: string) => maskOwnSecrets(redactText(t, { literals: secrets }), secrets).text.trim()
+        const cleanTitle = truncate(clean(title), 140)
+        const cleanBody = truncate(clean(body), 4000)
         const item: KnowledgeItemInput = {
           zone: chosen,
           kind,
@@ -183,7 +187,7 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
         const where = r.zones[0] ?? chosen
         const label = `${name(where)} (\`${where}\`)`
         if (!r.inserted && r.skipped) {
-          return `Déjà dans le cerveau : une connaissance au même titre existe déjà dans la zone ${label} (« ${cleanTitle} »). Rien de nouveau n'a été enregistré.`
+          return `Déjà dans le cerveau : une connaissance avec le même titre et le même contenu existe déjà dans la zone ${label} (« ${cleanTitle} »). Rien de nouveau n'a été enregistré.`
         }
         const readable = cache?.zones?.find((z) => z.id === where)?.readable ?? cache?.whoami?.readable.includes(where)
         const readableIds = cache?.zones?.length ? cache.zones.filter((z) => z.readable).map((z) => z.id) : (cache?.whoami?.readable ?? [])

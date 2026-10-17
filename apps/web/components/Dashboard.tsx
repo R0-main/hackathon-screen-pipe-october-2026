@@ -14,7 +14,8 @@ import { ZoneDrawer } from "./ZoneDrawer"
 import { AskBrain } from "./AskBrain"
 import { AGENT_LABEL, api, firstName, uniqueZones } from "./format"
 
-export type FeedEvent = AgentEvent & { restricted?: boolean; fresh?: boolean }
+/** `restricted_reason` : « zone » (une zone de l'événement n'est pas lisible) ou « private » (événement sans zone). */
+export type FeedEvent = AgentEvent & { restricted?: boolean; restricted_reason?: "zone" | "private"; fresh?: boolean }
 
 const ACTIVE_MS: Record<AgentEvent["type"], number> = { query: 6500, write: 9000, started: 3500, stopped: 2000 }
 const FEED_MAX = 80
@@ -49,28 +50,12 @@ export function Dashboard({ initial, now: serverNow }: { initial: DashboardState
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const namesRef = useRef(initial.names)
   namesRef.current = state.names
-  // Identifiants déjà affichés : un événement n'allume le cerveau qu'une fois (reconnexion, rendu serveur…).
+  // Identifiants déjà reçus. Le rendu serveur est de l'historique : il n'allume rien. Ensuite, le premier des deux
+  // chemins (flux SSE ou relecture de /api/state) qui voit un événement l'ajoute au fil ET allume sa zone, l'autre
+  // l'ignore : chaque événement apparaît une fois et allume sa zone une fois, quel que soit l'ordre d'arrivée.
   const seen = useRef<Set<number>>(new Set(initial.events.map((e) => e.id)))
   const lastId = useRef(maxId(initial.events))
   const rippleSeq = useRef(0)
-
-  const refresh = useCallback(async () => {
-    try {
-      const next = await api<DashboardState>("/api/state")
-      setState(next)
-      // Rattrape ce que le flux aurait manqué (coupure plus longue que l'historique du serveur).
-      const missed = next.events.filter((e) => !seen.current.has(e.id)).map(uniqueZones)
-      for (const e of missed) seen.current.add(e.id)
-      if (missed.length) setFeed((prev) => mergeFeed(prev, missed))
-    } catch {
-      /* session expirée : la prochaine navigation renverra vers /login */
-    }
-  }, [])
-
-  const scheduleRefresh = useCallback(() => {
-    if (refreshTimer.current) clearTimeout(refreshTimer.current)
-    refreshTimer.current = setTimeout(refresh, 1200)
-  }, [refresh])
 
   const ignite = useCallback((e: FeedEvent) => {
     const t = Date.now()
@@ -93,6 +78,39 @@ export function Dashboard({ initial, now: serverNow }: { initial: DashboardState
     setTimeout(() => setRipples((prev) => prev.filter((r) => !keys.some((k) => k.key === r.key))), 2600)
   }, [])
 
+  /** Événements jamais vus : ajoutés au fil (animés) et allumés, du plus ancien au plus récent. Renvoie les nouveaux. */
+  const receive = useCallback(
+    (incoming: FeedEvent[]): FeedEvent[] => {
+      const added = incoming
+        .filter((e) => !seen.current.has(e.id))
+        .map(uniqueZones)
+        .sort((a, b) => a.id - b.id)
+      if (added.length === 0) return added
+      for (const e of added) seen.current.add(e.id)
+      setFeed((prev) => mergeFeed(prev, added.map((e) => ({ ...e, fresh: true }))))
+      for (const e of added) ignite(e)
+      return added
+    },
+    [ignite],
+  )
+
+  const refresh = useCallback(async () => {
+    try {
+      const next = await api<DashboardState>("/api/state")
+      namesRef.current = next.names
+      setState(next)
+      // Ce que le flux n'a pas encore livré (connexion lente, reconnexion) ou a manqué : ajouté et allumé ici, une fois.
+      receive(next.events)
+    } catch {
+      /* session expirée : la prochaine navigation renverra vers /login */
+    }
+  }, [receive])
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    refreshTimer.current = setTimeout(refresh, 1200)
+  }, [refresh])
+
   // Flux temps réel (SSE) : chaque événement d'agent allume sa zone.
   // `after` = dernier événement déjà affiché : rien n'est perdu entre le rendu serveur et la connexion
   // (les reconnexions automatiques reprennent ensuite via Last-Event-ID).
@@ -101,16 +119,13 @@ export function Dashboard({ initial, now: serverNow }: { initial: DashboardState
     es.onopen = () => setLive(true)
     es.onerror = () => setLive(false)
     es.addEventListener("agent", (msg) => {
-      const e = uniqueZones(JSON.parse((msg as MessageEvent).data) as FeedEvent)
+      const e = JSON.parse((msg as MessageEvent).data) as FeedEvent
       lastId.current = Math.max(lastId.current, e.id)
-      if (seen.current.has(e.id)) return
-      seen.current.add(e.id)
-      setFeed((prev) => mergeFeed(prev, [{ ...e, fresh: true }]))
-      ignite(e)
-      if (e.type === "write") scheduleRefresh()
+      // Une écriture que le flux est le premier à voir : les compteurs et les connaissances changent, on relit l'état.
+      if (receive([e]).some((x) => x.type === "write")) scheduleRefresh()
     })
     return () => es.close()
-  }, [ignite, scheduleRefresh])
+  }, [receive, scheduleRefresh])
 
   useEffect(() => {
     setNow(Date.now())

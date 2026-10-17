@@ -6,7 +6,20 @@ import type { ZoneView } from "@/lib/brain"
 import { KIND_COLOR, KIND_LABEL, firstName } from "./format"
 import { RelTime } from "./RelTime"
 
-export function KnowledgeCard({ item, author, zone, now }: { item: KnowledgeItem; author?: string; zone?: ZoneView | { name: string; color: string }; now?: number }) {
+/** `unreadableNote` : la zone de l'item n'est pas lisible par le spectateur (son propre item) ; texte de l'infobulle du badge. */
+export function KnowledgeCard({
+  item,
+  author,
+  zone,
+  now,
+  unreadableNote,
+}: {
+  item: KnowledgeItem
+  author?: string
+  zone?: ZoneView | { name: string; color: string }
+  now?: number
+  unreadableNote?: string
+}) {
   const [open, setOpen] = useState(false)
   return (
     <article className="rounded-2xl border border-[var(--border)] bg-[rgba(2,6,23,0.35)] p-3.5 transition hover:border-[var(--border-strong)]">
@@ -18,6 +31,11 @@ export function KnowledgeCard({ item, author, zone, now }: { item: KnowledgeItem
           {zone && (
             <span className="chip !py-0" style={{ color: zone.color, borderColor: `${zone.color}55` }}>
               {zone.name}
+            </span>
+          )}
+          {unreadableNote && (
+            <span className="chip !py-0 !border-amber-300/40 !text-amber-200" title={unreadableNote}>
+              🔒 zone non lisible
             </span>
           )}
           <span className="ml-auto text-[var(--faint)]">

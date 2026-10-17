@@ -1,4 +1,4 @@
-// Les secrets du client lui-même (jeton du cerveau, jeton Screenpipe, clé API) et la session d'installation
+// Les secrets du client lui-même (jeton du cerveau, jeton Screenpipe, clé API, jeton Claude Code) et la session d'installation
 // (le prompt magique contient le jeton en clair) ne doivent jamais remonter au cerveau.
 
 import type { Config } from "./config"
@@ -12,9 +12,11 @@ const BRAIN_TOKEN_RE = /\bcb_[A-Za-z0-9_-]{20,}/g
 const JETON = "[jeton masqué]"
 
 /** Les secrets configurés sur ce poste (assez longs pour être reconnus sans faux positif). */
-export function ownSecrets(cfg: Partial<Pick<Config, "token" | "screenpipe_token" | "anthropic_api_key">> | null | undefined): string[] {
+export function ownSecrets(cfg: Partial<Pick<Config, "token" | "screenpipe_token" | "anthropic_api_key" | "claude_oauth_token">> | null | undefined): string[] {
   if (!cfg) return []
-  return [cfg.token, cfg.screenpipe_token, cfg.anthropic_api_key].filter((s): s is string => typeof s === "string" && s.trim().length >= 8).map((s) => s.trim())
+  return [cfg.token, cfg.screenpipe_token, cfg.anthropic_api_key, cfg.claude_oauth_token]
+    .filter((s): s is string => typeof s === "string" && s.trim().length >= 8)
+    .map((s) => s.trim())
 }
 
 /** Masque les jetons du cerveau (toute forme cb_…) et, littéralement, les secrets configurés. */

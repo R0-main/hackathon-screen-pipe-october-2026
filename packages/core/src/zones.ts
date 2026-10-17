@@ -10,6 +10,7 @@ export const DEFAULT_ZONES: Zone[] = [
     color: "#22d3ee",
     keywords: [
       "code", "bug", "deploy", "deploiement", "api", "repo", "git", "github", "gitlab", "pull", "merge", "test", "tests", "build",
+      "ci", "cicd",
       "backend", "frontend", "base", "donnees", "database", "sql", "postgres", "supabase", "migration", "serveur", "server",
       "deployer", "production", "docker", "typescript", "react", "next", "node", "python", "endpoint", "refacto", "refactor", "prod", "staging",
       "infra", "kubernetes", "aws", "vercel", "auth", "webhook", "stack", "lib", "librairie", "fonction", "function", "erreur",

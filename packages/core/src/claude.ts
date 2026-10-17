@@ -12,9 +12,11 @@ import {
   ONBOARDING_SYSTEM,
   STATUS_SYSTEM,
   buildExtractionPrompt,
+  buildStatusPrompt,
   buildTriagePrompt,
   renderZones,
 } from "./prompts"
+import { buildStatusInput, type StatusInput } from "./status"
 import { classifyZones, slugify } from "./zones"
 import { truncate } from "./text"
 
@@ -158,43 +160,27 @@ const StatusSchema = z.object({
   ),
 })
 
-export async function summarizeStatus(
-  client: Anthropic,
-  input: { zones: Zone[]; items: KnowledgeItem[]; tasks: Task[]; profiles: Pick<Profile, "id" | "name">[]; companyName: string },
-): Promise<CompanyStatus | null> {
-  const names = new Map(input.profiles.map((p) => [p.id, p.name]))
-  const sections = input.zones.map((z) => {
-    const items = input.items
-      .filter((i) => i.zone === z.id)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
-      .slice(0, 40)
-      .map((i) => `- [${i.kind}] ${i.title} — ${truncate(i.body, 220)} (par ${names.get(i.author_id) ?? "?"}, ${i.created_at.slice(0, 10)})`)
-    const tasks = input.tasks
-      .filter((t) => t.zone === z.id)
-      .slice(0, 20)
-      .map((t) => `- [${t.status === "done" ? "fait" : "à faire"}] ${t.title}${t.assignee_id ? ` (${names.get(t.assignee_id) ?? "?"})` : ""}`)
-    return `## Zone ${z.id} (${z.name})\nConnaissances récentes :\n${items.join("\n") || "(aucune)"}\nTâches :\n${tasks.join("\n") || "(aucune)"}`
-  })
+/** Résumé d'état à partir de la matière déjà préparée (serveur, ou poste d'un admin avec une clé API). */
+export async function summarizeStatusInput(client: Anthropic, input: StatusInput): Promise<CompanyStatus | null> {
   try {
-    const parsed = await parseWithSonnet(
-      client,
-      StatusSchema,
-      STATUS_SYSTEM,
-      `Entreprise : ${input.companyName}\nDate : ${new Date().toISOString().slice(0, 10)}\n\n${sections.join("\n\n")}`,
-      "medium",
-    )
+    const parsed = await parseWithSonnet(client, StatusSchema, STATUS_SYSTEM, buildStatusPrompt(input), "medium")
     if (!parsed) return null
     const known = new Set(input.zones.map((z) => z.id))
-    return {
-      headline: parsed.headline,
-      zones: parsed.zones.filter((z) => known.has(z.zone)),
-      generated_at: new Date().toISOString(),
-      generator: "claude",
-    }
+    const zones = new Map<string, (typeof parsed.zones)[number]>()
+    for (const z of parsed.zones) if (known.has(z.zone) && !zones.has(z.zone)) zones.set(z.zone, z)
+    return { headline: parsed.headline, zones: [...zones.values()], generated_at: new Date().toISOString(), generator: "claude" }
   } catch (err) {
     logError("résumé d'état", err)
     return null
   }
+}
+
+/** Résumé d'état côté serveur : même matière (30 jours, 400 connaissances) et même prompt que sur un poste. */
+export async function summarizeStatus(
+  client: Anthropic,
+  input: { zones: Zone[]; items: KnowledgeItem[]; tasks: Task[]; profiles: Pick<Profile, "id" | "name">[]; companyName: string },
+): Promise<CompanyStatus | null> {
+  return summarizeStatusInput(client, buildStatusInput(input))
 }
 
 const OnboardingSchema = z.object({

@@ -18,6 +18,8 @@ export type Config = {
   screenpipe_url: string
   screenpipe_token?: string
   anthropic_api_key?: string
+  /** Jeton Claude Code longue durée (`claude setup-token`) : passé à chaque `claude -p` (CLAUDE_CODE_OAUTH_TOKEN). */
+  claude_oauth_token?: string
   use_claude_cli: boolean
   sources: SourceName[]
   app_whitelist?: string[]
@@ -47,6 +49,11 @@ export type State = {
   }
   /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
   baseline_at?: string
+  /**
+   * Conversations que Claude n'a pas su distiller. n : essais décomptés (échecs dus à la conversation elle-même),
+   * abandon à MAX_DISTILL_ATTEMPTS ; n = 0 : échec pendant une panne, non décompté (elle passe après les autres).
+   */
+  distill_failures?: Record<string, { n: number; at: string; error?: string }>
   last_sync?: {
     at: string
     distiller: string

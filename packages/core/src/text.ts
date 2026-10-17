@@ -22,7 +22,12 @@ export function normalize(s: string): string {
 /** Tokens significatifs (sans accents, sans mots vides), pour la recherche et la classification. */
 export function tokenize(s: string): string[] {
   return normalize(s)
-    // particules « ce mois-ci », « ci-joint », « ci-dessous » : pas le sigle CI
+    // le sigle CI : « gitlab-ci.yml », « github-ci », et « CI/CD » (intégration + déploiement continus : deux signaux, plus « cicd »)
+    .replace(/\bci\s*[/-]\s*cd\b/g, " ci ci cicd ")
+    .replace(/\b(gitlab|github|circle|circleci|travis|drone|bitbucket|woodpecker|azure|jenkins)-ci\b/g, "$1 ci ")
+    .replace(/-ci(?=\.(?:ya?ml|json|toml)\b)/g, " ci ")
+    // particules « ce mois-ci », « ci-joint », « ci-dessous », « comme ci comme ça » : pas le sigle CI
+    .replace(/\bcomme ci,? comme ca\b/g, " ")
     .replace(/([a-z0-9])-ci\b/g, "$1 ")
     .replace(/\bci-(?=[a-z])/g, " ")
     .split(/[^a-z0-9]+/)

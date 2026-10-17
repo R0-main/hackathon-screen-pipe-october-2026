@@ -9,6 +9,8 @@ import { tempDir } from "./helpers"
 import { mockBrain } from "./mock-brain"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
+// Jeton Screenpipe local du poste, assemblé à l'exécution (aucune forme de secret reconnaissable en clair).
+const SP_TOKEN = ["sp", "-local-", "Kd83hQpz2Lm"].join("")
 let brain: Awaited<ReturnType<typeof mockBrain>>
 let client: Client
 
@@ -18,7 +20,7 @@ const text = (r: unknown) => (r as TextResult).content.map((c) => c.text).join("
 before(async () => {
   brain = await mockBrain()
   const home = tempDir()
-  writeFileSync(join(home, "config.json"), JSON.stringify({ url: brain.url, token: "cb_test_token_123456", use_claude_cli: false }))
+  writeFileSync(join(home, "config.json"), JSON.stringify({ url: brain.url, token: "cb_test_token_123456", use_claude_cli: false, screenpipe_token: SP_TOKEN }))
   client = new Client({ name: "test", version: "0" })
   await client.connect(
     new StdioClientTransport({
@@ -105,5 +107,19 @@ test("MCP remember : la réponse nomme la zone retenue, signale une zone hors le
 
   // Déjà connue : le cerveau l'ignore et la réponse le dit.
   const dup = text(await client.callTool({ name: "remember", arguments: { title: "Runbook de rollback", body: "On utilise Promote sur Vercel.", kind: "procedure", zone: "dev" } }))
-  assert.match(dup, /Déjà dans le cerveau .* zone Dev \(`dev`\)/)
+  assert.match(dup, /Déjà dans le cerveau : une connaissance avec le même titre et le même contenu existe déjà dans la zone Dev \(`dev`\)/)
+  // Même titre, contenu différent : le cerveau l'enregistre (dédoublonnage sur titre ET contenu), la réponse aussi.
+  const sameTitle = text(await client.callTool({ name: "remember", arguments: { title: "Runbook de rollback", body: "Désormais on revient en arrière avec git revert.", kind: "procedure", zone: "dev" } }))
+  assert.match(sameTitle, /Connaissance enregistrée dans la zone Dev/)
+})
+
+test("MCP remember : un secret configuré du poste (jeton Screenpipe) est masqué tel quel", async () => {
+  await client.callTool({
+    name: "remember",
+    arguments: { title: "Accès Screenpipe du poste de démo", body: `Pour l'API locale, le jeton est ${SP_TOKEN} (à ne pas partager).`, kind: "fact", zone: "dev" },
+  })
+  const req = brain.requests.filter((x) => x.url === "/api/ingest").at(-1)!
+  const body = JSON.stringify(req.body)
+  assert.ok(!body.includes(SP_TOKEN), body)
+  assert.match(body, /masqué/)
 })

@@ -170,3 +170,16 @@ test("hook réel : prompt perso → l'événement envoyé ne contient pas le tex
   const ev = lastEvent()!
   assert.deepEqual(ev.body, { agent: "claude-code", type: "query", zones: [], session_id: "sess-perso" })
 })
+
+test("eventForHook : un secret configuré du poste (jeton Screenpipe, jeton Claude Code) n'est jamais envoyé, même non reconnaissable", () => {
+  // Assemblés à l'exécution : aucun motif de secret en clair dans le dépôt.
+  const spTok = ["sp", "-local-", "Kd83hQpz2Lm"].join("")
+  const cache: Cache = { updated_at: "", zones: TEST_ZONES.map((z) => ({ ...z })) }
+  const prompt = `Le déploiement de l'API en production échoue avec ${spTok} dans le code`
+  // Prompt contenant un secret configuré : rien du texte ne part.
+  const e = eventForHook({ hook_event_name: "UserPromptSubmit", prompt }, cache, { secrets: [spTok] })
+  assert.deepEqual(e, { agent: "claude-code", type: "query", zones: [], session_id: undefined })
+  // Sans le secret dans la liste, le texte passe par redact() : la valeur n'est pas reconnue comme un secret générique…
+  const plain = eventForHook({ hook_event_name: "UserPromptSubmit", prompt }, cache, {})
+  assert.ok(plain?.summary?.includes(spTok))
+})

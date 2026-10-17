@@ -116,3 +116,37 @@ export function toIso(v: unknown): string | undefined {
   const t = typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(v)
   return Number.isFinite(t) ? new Date(t).toISOString() : undefined
 }
+
+/**
+ * Offset de fin des lignes complètes d'un fichier (comme le ferait readNewLines) : tout le fichier, sauf une dernière
+ * ligne en cours d'écriture. Ne lit que la fin du fichier.
+ */
+export function completeLinesEnd(file: string): { offset: number; size: number; mtime: number } | null {
+  let st
+  try {
+    st = statSync(file)
+  } catch {
+    return null
+  }
+  const size = st.size
+  const mtime = Math.round(st.mtimeMs)
+  if (size === 0) return { offset: 0, size, mtime }
+  const window = Math.min(size, 1024 * 1024)
+  const buf = Buffer.alloc(window)
+  const fd = openSync(file, "r")
+  try {
+    readSync(fd, buf, 0, window, size - window)
+  } finally {
+    closeSync(fd)
+  }
+  const nl = buf.lastIndexOf(0x0a)
+  const tail = buf.subarray(nl + 1).toString("utf8").trim()
+  if (!tail) return { offset: size, size, mtime }
+  try {
+    const v = JSON.parse(tail)
+    if (v && typeof v === "object") return { offset: size, size, mtime }
+  } catch {
+    // dernière ligne incomplète
+  }
+  return { offset: nl === -1 ? Math.max(0, size - window) : size - window + nl + 1, size, mtime }
+}

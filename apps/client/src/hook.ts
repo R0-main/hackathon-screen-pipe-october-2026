@@ -87,7 +87,7 @@ export function eventForHook(input: HookInput, cache: Cache | null, opts: HookOp
       if (looksPersonal(prompt)) return { agent: "claude-code", type: "query", zones: [], session_id }
       const zones = cache?.zones?.length ? classifyZones(prompt, cache.zones, 2) : []
       const event: AgentEventInput = { agent: "claude-code", type: "query", zones, fingerprint: promptFingerprint(prompt), session_id }
-      if (opts.shareSummaries !== false && zones.length > 0) event.summary = truncate(redactText(prompt).replace(/\s+/g, " "), 160)
+      if (opts.shareSummaries !== false && zones.length > 0) event.summary = truncate(redactText(prompt, { literals: secrets }).replace(/\s+/g, " "), 160)
       return event
     }
     default:

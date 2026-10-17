@@ -15,7 +15,8 @@ import {
 
 test("redact masque secrets et données perso, sans toucher au reste", () => {
   const input = [
-    "clé sk-ant-api03-AbCdEfGhIjKlMnOpQrStUv et ghp_abcdefghijklmnopqrstuvwxyz0123",
+    // faux jetons assemblés à l'exécution (protection anti-secrets de GitHub)
+    ["clé sk-", "ant-api03-AbCdEfGhIjKlMnOpQrStUv et ghp", "_abcdefghijklmnopqrstuvwxyz0123"].join(""),
     "écris à jean.dupont@exemple.fr ou au 06 12 34 56 78",
     "DATABASE_PASSWORD=hunter2hunter2",
     "postgres://admin:s3cret@db.example.com:5432/app",

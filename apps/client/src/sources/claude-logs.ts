@@ -120,7 +120,8 @@ export function completeLineCount(lines: Record<string, unknown>[], now = Date.n
 
 /**
  * `since` s'applique aux fichiers jamais lus ; aux autres seulement si `explicitSince`
- * (sinon on reprend simplement à l'offset enregistré).
+ * (sinon on reprend simplement à l'offset enregistré). `floor` (posé par install-schedule) : aucun message antérieur,
+ * même dans un fichier déjà suivi (un tour retenu à cheval sur la mise en place n'a jamais été relu).
  */
 export function readClaudeLogs(opts: {
   dir: string
@@ -132,6 +133,7 @@ export function readClaudeLogs(opts: {
   secrets?: string[]
   now?: number
   idleMs?: number
+  floor?: Date
 }): SourceResult {
   const root = join(opts.dir, "projects")
   const result: SourceResult = { source: "claude", available: true, conversations: [], commits: [], warnings: [], stats: { files: 0, bytes: 0, internal: 0, pending: 0 } }
@@ -167,7 +169,7 @@ export function readClaudeLogs(opts: {
       result.commits.push({ covers: [], apply: (s) => setFile(s, file, cp) })
       continue
     }
-    const since = !prev || opts.explicitSince ? opts.since : undefined
+    const since = !prev || opts.explicitSince ? opts.since : opts.floor
     const base = { fallbackId: basename(file, ".jsonl"), since, brainHome: opts.brainHome, secrets: opts.secrets }
     const full = parseClaudeLines(chunk.lines, base)
     if (full.internal) {

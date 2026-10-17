@@ -5,6 +5,7 @@ import { basename, join } from "node:path"
 import { DISTILL_MARKER, type Conversation, type ConversationMessage } from "@brain/core"
 import type { FileCheckpoint, State } from "../config"
 import { isBrainSetupText } from "../secrets"
+import { TURN_IDLE_MS } from "./claude-logs"
 import { asString, listJsonlFiles, readNewLines, toIso } from "./jsonl"
 import { buildConversation, type SourceResult } from "./types"
 
@@ -86,9 +87,86 @@ export function codexSessionId(file: string): string {
   return `codex:${m ? m[0] : name}`
 }
 
-export function readCodexLogs(opts: { dir: string; state: State; since: Date; explicitSince?: boolean; reset?: boolean; secrets?: string[] }): SourceResult {
+/** Événements Codex qui marquent la fin d'un tour (selon les versions de la CLI). */
+const TURN_END_EVENTS = new Set(["task_complete", "turn_complete", "turn_aborted", "task_aborted"])
+/** Éléments qui montrent que l'agent travaille encore (outil appelé, résultat, raisonnement). */
+const WORK_ITEMS = /^(?:function_call|function_call_output|custom_tool_call|custom_tool_call_output|local_shell_call|local_shell_call_output|web_search_call|tool_call|tool_call_output|reasoning)$/
+
+function payloadOf(j: Record<string, unknown>): Record<string, unknown> {
+  return (j.payload && typeof j.payload === "object" ? j.payload : {}) as Record<string, unknown>
+}
+
+function isTurnEnd(j: Record<string, unknown>): boolean {
+  return j.type === "event_msg" && TURN_END_EVENTS.has(String(payloadOf(j).type))
+}
+
+function isWork(j: Record<string, unknown>): boolean {
+  const item = j.type === "response_item" ? payloadOf(j) : j
+  return typeof item.type === "string" && WORK_ITEMS.test(item.type)
+}
+
+/**
+ * Nombre de lignes à traiter maintenant (même règle que pour Claude Code) : tout, sauf le dernier tour s'il n'est pas
+ * fini (pas encore de réponse de l'agent, ou l'agent appelle encore un outil) et encore actif depuis moins de `idleMs`.
+ * Un événement de fin de tour (task_complete…) clôt le tour quoi qu'il arrive.
+ */
+export function completeCodexLineCount(lines: Record<string, unknown>[], now = Date.now(), idleMs = TURN_IDLE_MS): number {
+  // Début du dernier tour : la première ligne de la dernière suite de messages utilisateur (response_item + son doublon
+  // event_msg). Une fin de tour, un appel d'outil ou un raisonnement coupe la suite : après un tour interrompu sans
+  // réponse (q1, turn_aborted, q2), le tour en cours commence à q2, et la fin de tour de q1 ne le clôt pas.
+  let turnStart = -1
+  let inUserRun = false
+  for (let i = 0; i < lines.length; i++) {
+    const j = lines[i]
+    if (isTurnEnd(j) || isWork(j)) {
+      inUserRun = false
+      continue
+    }
+    const p = parseCodexLine(j)
+    const m = p.msg ?? p.event
+    if (!m) continue
+    if (m.role === "user" && !inUserRun) turnStart = i
+    inUserRun = m.role === "user"
+  }
+  if (turnStart === -1) return lines.length
+  let answered = false
+  let lastActivity = -Infinity
+  for (let i = turnStart; i < lines.length; i++) {
+    const j = lines[i]
+    const t = Date.parse(String(j.timestamp ?? ""))
+    if (Number.isFinite(t) && t > lastActivity) lastActivity = t
+    if (isTurnEnd(j)) return lines.length
+    if (isWork(j)) {
+      answered = false
+      continue
+    }
+    const p = parseCodexLine(j)
+    if ((p.msg ?? p.event)?.role === "assistant") answered = true
+  }
+  if (answered) return lines.length
+  // Tour abandonné (ou format sans horodatage) : on le traite tel quel.
+  if (lastActivity === -Infinity || now - lastActivity >= idleMs) return lines.length
+  return turnStart
+}
+
+/**
+ * `since` s'applique aux fichiers jamais lus ; aux autres seulement si `explicitSince`. `floor` (install-schedule) :
+ * aucun message antérieur, même dans un fichier déjà suivi. Un tour en cours est laissé pour le prochain passage.
+ */
+export function readCodexLogs(opts: {
+  dir: string
+  state: State
+  since: Date
+  explicitSince?: boolean
+  reset?: boolean
+  secrets?: string[]
+  floor?: Date
+  now?: number
+  idleMs?: number
+}): SourceResult {
   const root = join(opts.dir, "sessions")
-  const result: SourceResult = { source: "codex", available: true, conversations: [], commits: [], warnings: [], stats: { files: 0, bytes: 0 } }
+  const result: SourceResult = { source: "codex", available: true, conversations: [], commits: [], warnings: [], stats: { files: 0, bytes: 0, pending: 0 } }
+  const now = opts.now ?? Date.now()
   const files = listJsonlFiles(root)
   if (files.length === 0) {
     result.available = false
@@ -118,14 +196,21 @@ export function readCodexLogs(opts: { dir: string; state: State; since: Date; ex
       result.commits.push({ covers: [], apply: (s) => setFile(s, file, cp) })
       continue
     }
-    const since = !prev || opts.explicitSince ? opts.since : undefined
-    const { conversation, internal } = parseCodexLines(chunk.lines, { fallbackId: codexSessionId(file), since, secrets: opts.secrets })
-    if (internal) {
+    const since = !prev || opts.explicitSince ? opts.since : opts.floor
+    const base = { fallbackId: codexSessionId(file), since, secrets: opts.secrets }
+    const full = parseCodexLines(chunk.lines, base)
+    if (full.internal) {
       result.commits.push({ covers: [], apply: (s) => setFile(s, file, { ...cp, internal: true }) })
       continue
     }
+    // Tour en cours (réponse pas encore écrite) : on s'arrête avant, sans avancer l'offset au-delà.
+    const n = completeCodexLineCount(chunk.lines, now, opts.idleMs)
+    if (n < chunk.lines.length) result.stats.pending = Number(result.stats.pending) + 1
+    if (n === 0) continue
+    const { conversation } = n === chunk.lines.length ? full : parseCodexLines(chunk.lines.slice(0, n), base)
+    const upTo: FileCheckpoint = n === chunk.lines.length ? cp : { ...cp, offset: chunk.ends[n - 1] }
     if (conversation) result.conversations.push(conversation)
-    result.commits.push({ covers: conversation ? [conversation.id] : [], apply: (s) => setFile(s, file, cp) })
+    result.commits.push({ covers: conversation ? [conversation.id] : [], apply: (s) => setFile(s, file, upTo) })
   }
   return result
 }

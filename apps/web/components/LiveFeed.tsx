@@ -5,6 +5,18 @@ import type { FeedEvent } from "./Dashboard"
 import { AGENT_LABEL, EVENT_VERB, initials } from "./format"
 import { RelTime } from "./RelTime"
 
+/**
+ * Pourquoi le contenu d'un événement est masqué : « zone » (une de ses zones n'est pas lisible) ou « private »
+ * (événement sans zone : prompt personnel, recherche hors de vos zones…). Un démarrage ou un arrêt de session privé
+ * n'affiche rien de plus (seul l'identifiant de session est caché). Repli pour les anciens événements sans motif.
+ */
+function hiddenReason(e: FeedEvent): "zone" | "private" | null {
+  if (!e.restricted) return null
+  const reason = e.restricted_reason ?? (e.zones.length ? "zone" : "private")
+  if (reason === "private" && (e.type === "started" || e.type === "stopped")) return null
+  return reason
+}
+
 export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; names: Record<string, string>; zones: ZoneView[]; now: number }) {
   const color = (z: string) => zones.find((x) => x.id === z)?.color ?? "#94a3b8"
   const zoneName = (z: string) => zones.find((x) => x.id === z)?.name ?? z
@@ -20,6 +32,7 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
           const name = names[e.user_id] ?? "Quelqu'un"
           const zoneIds = [...new Set(e.zones)]
           const main = zoneIds[0]
+          const hidden = hiddenReason(e)
           return (
             <li key={e.id} className={`rounded-xl px-3 py-2 ${e.fresh ? "feed-enter" : ""} hover:bg-[var(--panel-strong)]`}>
               <div className="flex items-start gap-2.5">
@@ -35,7 +48,13 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
                     <span className="text-[var(--muted)]">{EVENT_VERB[e.type]}</span>
                     {e.type === "query" && e.summary && !e.restricted && <span className="text-[var(--text)]"> « {e.summary} »</span>}
                     {e.type === "write" && e.summary && !e.restricted && <span className="text-[var(--muted)]"> — {e.summary}</span>}
-                    {e.restricted && <span className="italic text-[var(--faint)]"> dans une zone restreinte</span>}
+                    {hidden === "zone" && <span className="italic text-[var(--faint)]"> dans une zone restreinte</span>}
+                    {hidden === "private" && (
+                      <span className="italic text-[var(--faint)]" title="Visible seulement de la personne qui l'a envoyé et des admins">
+                        {" "}
+                        · contenu privé
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--faint)]">
                     <span className="chip !py-0">{AGENT_LABEL[e.agent]}</span>

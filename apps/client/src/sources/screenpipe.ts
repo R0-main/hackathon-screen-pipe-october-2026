@@ -28,6 +28,8 @@ export type ScreenpipeItem = {
   window: string
   at: string
   frameId?: string
+  /** URL de l'onglet quand Screenpipe la donne (navigateurs) : décide si un onglet est un assistant IA. */
+  browserUrl?: string
   messages?: ConversationMessage[]
 }
 
@@ -114,6 +116,7 @@ export function normalizeScreenpipeItem(raw: unknown): ScreenpipeItem | null {
   const text = str(c.text ?? c.transcription ?? (typeof c.content === "string" ? c.content : "")).trim()
   if (!text && !messages) return null
   const frame = c.frame_id ?? c.frameId ?? c.id ?? c.chunk_id
+  const browserUrl = str(c.browser_url ?? c.browserUrl ?? r.browser_url).trim()
   return {
     type: str(r.type) || "unknown",
     text,
@@ -121,6 +124,7 @@ export function normalizeScreenpipeItem(raw: unknown): ScreenpipeItem | null {
     window: str(c.window_name ?? c.windowName ?? c.window ?? c.title),
     at,
     frameId: frame !== undefined && frame !== null ? str(frame) : undefined,
+    ...(browserUrl ? { browserUrl } : {}),
     messages,
   }
 }
@@ -159,7 +163,7 @@ export function groupScreenpipeDetailed(items: ScreenpipeItem[], opts: GroupOpti
   const gap = (opts.gapMinutes ?? 10) * 60_000
   const maxChars = opts.maxChars ?? 40000
   const allowed = items
-    .filter((i) => isAllowedApp(i.app, i.window, opts.whitelist && opts.whitelist.length ? opts.whitelist : undefined))
+    .filter((i) => isAllowedApp(i.app, i.window, opts.whitelist && opts.whitelist.length ? opts.whitelist : undefined, i.browserUrl))
     .sort((a, b) => a.at.localeCompare(b.at))
   type Group = { app: string; window: string; items: ScreenpipeItem[]; last: number }
   const open = new Map<string, Group>()
@@ -423,11 +427,16 @@ function hhmm(iso: string): string {
   return new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
 }
 
-export async function readScreenpipe(opts: Omit<ScreenpipeOptions, "since"> & { state: State; since: Date; explicitSince?: boolean }): Promise<SourceResult> {
+/**
+ * `baseline` (posé par install-schedule) : rien d'antérieur n'est lu sans --since explicite, même si le checkpoint
+ * Screenpipe est plus ancien (captures jamais relues dans une simulation).
+ */
+export async function readScreenpipe(opts: Omit<ScreenpipeOptions, "since"> & { state: State; since: Date; explicitSince?: boolean; baseline?: Date }): Promise<SourceResult> {
   const result: SourceResult = { source: "screenpipe", available: true, conversations: [], commits: [], warnings: [], stats: {} }
   const sp = opts.state.screenpipe
   const last = sp?.last_timestamp
-  const since = last && !opts.explicitSince ? new Date(Math.max(Date.parse(last), 0)) : opts.since
+  let since = last && !opts.explicitSince ? new Date(Math.max(Date.parse(last), 0)) : opts.since
+  if (opts.baseline && !opts.explicitSince && opts.baseline.getTime() > since.getTime()) since = opts.baseline
   const until = opts.until ?? new Date()
   let fetched: ScreenpipeFetch
   try {
@@ -445,6 +454,7 @@ export async function readScreenpipe(opts: Omit<ScreenpipeOptions, "since"> & { 
   }
   result.stats.items = fetched.items.length
   result.stats.content_type = fetched.contentType ?? `aucune donnée (${fetched.tried.join(", ")})`
+  if (fetched.status || fetched.truncated) result.stats.truncated_until = fetched.coveredUntil
   if (fetched.status) result.warnings.push(`${httpProblem(fetched.status)} Lecture arrêtée là ; la suite sera relue à la prochaine synchro.`)
   else if (fetched.truncated)
     result.warnings.push(`Screenpipe : beaucoup de captures sur la période, lues jusqu'au ${hhmm(fetched.coveredUntil)} ; la suite sera lue aux prochaines synchros.`)
@@ -515,7 +525,11 @@ function appsOf(w: Record<string, unknown>): string[] {
   return out
 }
 
-export type WorkflowOptions = { whitelist?: string[] }
+export type WorkflowOptions = {
+  whitelist?: string[]
+  /** Secrets du poste (jetons, clés) à masquer tels quels. */
+  literals?: string[]
+}
 
 /**
  * Correspondance « au mieux » des workflows détectés par Screenpipe vers POST /api/automations, avec les mêmes
@@ -541,18 +555,19 @@ export function mapWorkflowsDetailed(
       dropped++
       continue
     }
-    const title = truncate(redact(rawTitle).text, 200)
-    const description = truncate(redact(rawDescription).text, 1000)
+    const red = (t: string) => redact(t, { literals: opts.literals }).text
+    const title = truncate(red(rawTitle), 200)
+    const description = truncate(red(rawDescription), 1000)
     const occurrences = int(w.occurrences ?? w.count ?? w.frequency ?? w.times ?? w.runs)
     const days = int(w.days ?? w.unique_days ?? w.day_count ?? w.distinct_days)
     const schedule = str(w.schedule ?? w.cron ?? w.typical_time ?? w.time).trim()
     const minutes = int(w.minutes_saved_per_week ?? w.estimated_minutes_saved ?? w.time_saved_minutes ?? w.minutes_saved, 5000) || Math.min(5000, occurrences * 5)
     const zone = zones.length ? classifyZones(`${title} ${description}`, zones, 1)[0] : undefined
     out.push({
-      id: truncate(redact(str(w.id ?? w.key ?? w.name ?? rawTitle)).text, 200),
+      id: truncate(red(str(w.id ?? w.key ?? w.name ?? rawTitle)), 200),
       title,
       description,
-      ...(schedule ? { schedule: truncate(redact(schedule).text, 120) } : {}),
+      ...(schedule ? { schedule: truncate(red(schedule), 120) } : {}),
       occurrences,
       days,
       ...(zone ? { zone } : {}),

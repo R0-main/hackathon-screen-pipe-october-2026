@@ -45,3 +45,18 @@ export const QueryPayloadSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
   agent: z.enum(AGENTS).optional(),
 })
+
+/** Un résumé de zone produit hors du serveur (poste d'un admin, `claude -p`). */
+export const ZoneStatusSchema = z.object({
+  zone: z.string().min(1).max(64),
+  summary: z.string().max(4000).default(""),
+  objectives: z.array(z.string().max(1000)).max(20).default([]),
+  progress: z.string().max(2000).default(""),
+  next_steps: z.array(z.string().max(1000)).max(20).default([]),
+  who_did_what: z.array(z.object({ person: z.string().max(200), did: z.string().max(1000) })).max(30).default([]),
+})
+
+/** POST /api/status avec un résumé déjà généré : { status: { headline, zones } }. */
+export const StatusPayloadSchema = z.object({
+  status: z.object({ headline: z.string().min(1).max(2000), zones: z.array(ZoneStatusSchema).max(64) }),
+})

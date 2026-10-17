@@ -19,6 +19,7 @@ import {
   type ZoneAccess,
 } from "@brain/core"
 import type { BrainStore, EntityStat, NewEvent, NewItem, NewProfile, NewTask, ProfilePatch, ZoneStat } from "./types"
+import { SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
 type Row = Record<string, any>
 type Sql = postgres.Sql
@@ -104,6 +105,8 @@ function toAutomation(r: Row): AutomationSuggestion {
 const UUID_RE = /^[0-9a-f-]{36}$/i
 /** L'organisation est relue régulièrement : un reseed (ou un onboarding servi par une autre instance) est vu sans redémarrage. */
 const ORG_TTL_MS = 5_000
+/** Verrou consultatif (transaction) qui sérialise la création de l'organisation et le reset. */
+const ORG_LOCK_KEY = 7_204_331_117
 
 /** Termes de recherche : préfixe seulement à partir de 4 caractères (comme le stockage fichier : « pr » ne doit pas trouver « produit »). */
 function tsTerms(query: string): string[] {
@@ -125,12 +128,23 @@ export class PostgresStore implements BrainStore {
     this.sql = postgres(url, { prepare: false, max: Number(process.env.DATABASE_POOL_MAX ?? 5), idle_timeout: 20, ssl, onnotice: () => {} })
   }
 
+  /**
+   * L'organisation de cette base : la plus ancienne qui a des comptes (une org vide créée par erreur est ignorée).
+   * Une org n'est créée QUE si la table est vide, au premier chargement de cette instance, jamais lors d'un
+   * rafraîchissement du cache : une table vide pendant un rafraîchissement est transitoire (reset) ou anormale.
+   */
   private async org(): Promise<Org> {
-    if (this.orgCache && Date.now() - this.orgCache.at < ORG_TTL_MS) return this.orgCache.org
+    const cached = this.orgCache
+    if (cached && Date.now() - cached.at < ORG_TTL_MS) return cached.org
     if (!this.orgPending) {
       this.orgPending = (async () => {
-        const rows = await this.sql`select * from orgs order by created_at limit 1`
-        const org = rows[0] ? toOrg(rows[0]) : await this.createOrg({ name: "Mon entreprise", description: "" })
+        let org = await this.selectOrg()
+        if (!org && !cached) org = (await this.createOrgIfNone({ name: "Mon entreprise", description: "" })) ?? (await this.selectOrg())
+        if (!org) {
+          // Rafraîchissement sur une table vide : on garde l'org connue, sans prolonger le cache (relue au prochain appel).
+          if (cached) return cached.org
+          throw new Error("Aucune organisation dans la base.")
+        }
         this.orgCache = { org, at: Date.now() }
         return org
       })().finally(() => {
@@ -140,15 +154,38 @@ export class PostgresStore implements BrainStore {
     return this.orgPending
   }
 
-  private async createOrg(o: { name: string; description: string }): Promise<Org> {
+  private async selectOrg(): Promise<Org | null> {
+    const [r] = await this.sql`select o.* from orgs o
+      order by exists (select 1 from profiles p where p.org_id = o.id) desc, o.created_at, o.id
+      limit 1`
+    return r ? toOrg(r) : null
+  }
+
+  /** Base neuve : crée l'org (et ses zones par défaut) seulement si la table est vide, en une instruction atomique. */
+  private async createOrgIfNone(o: { name: string; description: string }): Promise<Org | null> {
     return this.sql.begin(async (tx: any) => {
-      const [org] = await tx`insert into orgs (name, description) values (${o.name}, ${o.description}) returning *`
-      for (const z of DEFAULT_ZONES) {
-        await tx`insert into zones (org_id, id, name, description, color, keywords, position)
-                 values (${org.id}, ${z.id}, ${z.name}, ${z.description}, ${z.color}, ${tx.array(z.keywords)}, ${z.position})`
-      }
+      // Deux instances qui démarrent ensemble : la seconde attend, puis ne trouve plus la table vide.
+      await tx`select pg_advisory_xact_lock(${ORG_LOCK_KEY})`
+      const [org] = await tx`insert into orgs (name, description)
+        select ${o.name}, ${o.description} where not exists (select 1 from orgs) returning *`
+      if (!org) return null
+      await this.insertDefaultZones(tx, org.id)
       return toOrg(org)
-    }) as Promise<Org>
+    }) as Promise<Org | null>
+  }
+
+  /** Nouvelle organisation et ses zones par défaut, dans la transaction `tx`. */
+  private async insertOrg(tx: any, o: { name: string; description: string }): Promise<Org> {
+    const [org] = await tx`insert into orgs (name, description) values (${o.name}, ${o.description}) returning *`
+    await this.insertDefaultZones(tx, org.id)
+    return toOrg(org)
+  }
+
+  private async insertDefaultZones(tx: any, orgId: string) {
+    for (const z of DEFAULT_ZONES) {
+      await tx`insert into zones (org_id, id, name, description, color, keywords, position)
+               values (${orgId}, ${z.id}, ${z.name}, ${z.description}, ${z.color}, ${tx.array(z.keywords)}, ${z.position})`
+    }
   }
 
   private async orgId() {
@@ -430,8 +467,17 @@ export class PostgresStore implements BrainStore {
       this.secret = r.value as string
       return this.secret
     } catch (err) {
-      if ((err as { code?: string }).code === "42P01")
-        throw new Error("Table brain_settings absente : appliquez les migrations (npm run db:migrate) ou définissez BRAIN_SESSION_SECRET.")
+      if (missingTable(err)) throw new StoreSetupError(SETTINGS_MISSING_MESSAGE)
+      throw err
+    }
+  }
+
+  /** Requête sur brain_settings : table absente (migration non appliquée) → erreur de configuration claire (503). */
+  private async settings<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run()
+    } catch (err) {
+      if (missingTable(err)) throw new StoreSetupError(SETTINGS_MISSING_MESSAGE)
       throw err
     }
   }
@@ -442,27 +488,31 @@ export class PostgresStore implements BrainStore {
   }
 
   async claimOnce(key: string) {
-    const rows = await this.sql`insert into brain_settings (key, value) values (${`claim:${key}`}, ${new Date().toISOString()})
-      on conflict (key) do nothing returning key`
+    const rows = await this.settings(() => this.sql`insert into brain_settings (key, value) values (${`claim:${key}`}, ${new Date().toISOString()})
+      on conflict (key) do nothing returning key`)
     return rows.length === 1
   }
 
   async releaseClaim(key: string) {
-    await this.sql`delete from brain_settings where key = ${`claim:${key}`}`
+    await this.settings(() => this.sql`delete from brain_settings where key = ${`claim:${key}`}`)
   }
 
   async finishClaim(key: string) {
-    await this.sql`update brain_settings set value = 'done' where key = ${`claim:${key}`}`
+    await this.settings(() => this.sql`update brain_settings set value = 'done' where key = ${`claim:${key}`}`)
   }
 
   async isClaimDone(key: string) {
-    const [r] = await this.sql`select value from brain_settings where key = ${`claim:${key}`}`
+    const [r] = await this.settings(() => this.sql`select value from brain_settings where key = ${`claim:${key}`}`)
     return r?.value === "done"
   }
 
+  /** Purge et nouvelle organisation dans UNE transaction : aucune autre instance ne voit jamais la table vide. */
   async reset(org: { name: string; description: string }) {
-    await this.sql`truncate orgs cascade`
-    const created = await this.createOrg(org)
+    const created = (await this.sql.begin(async (tx: any) => {
+      await tx`select pg_advisory_xact_lock(${ORG_LOCK_KEY})`
+      await tx`truncate orgs cascade`
+      return this.insertOrg(tx, org)
+    })) as Org
     this.orgCache = { org: created, at: Date.now() }
   }
 

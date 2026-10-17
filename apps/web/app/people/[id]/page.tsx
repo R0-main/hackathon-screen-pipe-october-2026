@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { getPersonContext } from "@/lib/brain"
+import { canRead } from "@/lib/access"
 import { getStore } from "@/lib/store"
 import { requirePageViewer } from "@/lib/session"
 import { BrainIcon } from "@/components/TopBar"
@@ -19,6 +20,10 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const zone = (zid: string) => zones.find((z) => z.id === zid)
   const isSelf = viewer.real.id === id
   const maxWeight = Math.max(1, ...ctx.zones.map((z) => z.weight))
+  // Zones que la personne ne lit pas mais où se trouvent ses propres connaissances (unreadable_zones) ou son activité
+  // (sur son propre contexte) : signalées, jamais masquées (droit de regard).
+  const own = viewer.profile.id === id
+  const unreadable = new Set([...(ctx.unreadable_zones ?? []), ...(own ? ctx.zones.map((z) => z.zone).filter((z) => !canRead(viewer.access, z)) : [])])
 
   return (
     <div className="min-h-screen">
@@ -44,15 +49,22 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           </p>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <section className="panel p-5">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <section className="panel min-w-0 p-5">
             <div className="panel-title">Zones du poste</div>
             <ul className="mt-3 space-y-2">
               {ctx.zones.map((z) => (
                 <li key={z.zone}>
-                  <div className="flex justify-between text-sm">
-                    <span style={{ color: zone(z.zone)?.color }}>{zone(z.zone)?.name ?? z.zone}</span>
-                    <span className="mono text-[var(--faint)]">{z.weight}</span>
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span style={{ color: zone(z.zone)?.color }}>{zone(z.zone)?.name ?? z.zone}</span>
+                      {unreadable.has(z.zone) && (
+                        <span className="chip !py-0 !border-amber-300/40 text-[10.5px] !text-amber-200" title="Zone non lisible : seules les connaissances issues de ce poste y sont visibles ici">
+                          🔒 zone non lisible
+                        </span>
+                      )}
+                    </span>
+                    <span className="mono shrink-0 text-[var(--faint)]">{z.weight}</span>
                   </div>
                   <div className="mt-1 h-1.5 rounded-full bg-white/5">
                     <div className="h-full rounded-full" style={{ width: `${(z.weight / maxWeight) * 100}%`, background: zone(z.zone)?.color }} />
@@ -62,7 +74,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               {ctx.zones.length === 0 && <li className="text-sm text-[var(--muted)]">Pas encore d&apos;activité.</li>}
             </ul>
           </section>
-          <section className="panel p-5">
+          <section className="panel min-w-0 p-5">
             <div className="panel-title">Sujets et outils récurrents</div>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {ctx.entities.map((e) => (
@@ -73,7 +85,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               {ctx.entities.length === 0 && <span className="text-sm text-[var(--muted)]">—</span>}
             </div>
           </section>
-          <section className="panel p-5">
+          <section className="panel min-w-0 p-5">
             <div className="panel-title">Prompts les plus fréquents</div>
             <ul className="mt-3 space-y-2 text-sm">
               {ctx.frequent_prompts.map((p, i) => (
@@ -92,6 +104,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           zones={zones.map((z) => ({ id: z.id, name: z.name, color: z.color }))}
           canDelete={isSelf || viewer.real.role === "admin"}
           now={Date.now()}
+          unreadableZones={[...unreadable]}
+          personName={isSelf ? undefined : ctx.person.name}
         />
       </main>
     </div>

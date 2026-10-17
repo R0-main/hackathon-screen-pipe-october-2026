@@ -6,6 +6,9 @@ import type { ZoneView } from "@/lib/brain"
 import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 
+/** Commande du client installé (voir lib/install-prompt.ts) qui fait rédiger l'état par Claude sur le poste, puis l'envoie. */
+const REFRESH_COMMAND = "node ~/.company-brain/brain.mjs refresh-status"
+
 export function StatusPanel({
   status,
   zones,
@@ -22,6 +25,8 @@ export function StatusPanel({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const zone = (id: string) => zones.find((z) => z.id === id)
+  // Spectateur qui ne lit pas toutes les zones : le titre est recalculé sur ses zones par le serveur (pas par Claude).
+  const headlineScoped = zones.some((z) => z.locked)
 
   async function refresh() {
     setBusy(true)
@@ -44,7 +49,19 @@ export function StatusPanel({
           <p className="mt-2 max-w-3xl text-[15px] leading-relaxed">{status?.headline ?? "Pas encore de résumé : lancez une première génération."}</p>
           {status && (
             <p className="mt-1 text-xs text-[var(--faint)]">
-              Généré <RelTime iso={status.generated_at} now={now} /> · {status.generator === "claude" ? "par Claude" : "heuristique locale (sans Claude)"}
+              Généré <RelTime iso={status.generated_at} now={now} /> ·{" "}
+              {status.generator !== "claude"
+                ? "heuristique locale (sans Claude)"
+                : headlineScoped
+                  ? "résumés des zones rédigés par Claude"
+                  : "rédigé par Claude"}
+            </p>
+          )}
+          {/* Admins : sans clé API sur le serveur, Claude peut rédiger le résumé depuis un poste (abonnement de l'employé). */}
+          {canRefresh && status?.generator !== "claude" && (
+            <p className="mt-2 max-w-3xl text-xs leading-relaxed text-[var(--muted)]">
+              Pour un résumé rédigé par Claude avec votre abonnement (sans clé API), lancez sur votre poste :{" "}
+              <code className="mono select-all rounded-md bg-white/5 px-1.5 py-0.5 text-[var(--text)] [overflow-wrap:anywhere]">{REFRESH_COMMAND}</code>
             </p>
           )}
         </div>
