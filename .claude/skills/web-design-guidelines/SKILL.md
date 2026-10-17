@@ -1,6 +1,6 @@
 ---
 name: web-design-guidelines
-description: Review UI code for Web Interface Guidelines compliance. Use when asked to "review my UI", "check accessibility", "audit design", "review UX", or "check my site against best practices".
+description: Review UI code for Web Interface Guidelines compliance (accessibility, focus, forms, animation, typography, images, performance, navigation, dark mode, i18n). Use when asked to "review my UI", "check accessibility", "audit design", "review UX", or "check my site against best practices".
 metadata:
   author: vercel
   version: "1.0.0"
@@ -9,31 +9,19 @@ metadata:
 
 # Web Interface Guidelines
 
-Review files for compliance with Web Interface Guidelines.
+Review files for compliance with Vercel's Web Interface Guidelines.
 
 ## How It Works
 
-1. Fetch the latest guidelines from the source URL below
-2. Read the specified files (or prompt user for files/pattern)
-3. Check against all rules in the fetched guidelines
-4. Output findings in the terse `file:line` format
+1. Read the rules in [guidelines.md](guidelines.md) (in this folder).
+2. Read the specified files (or ask the user which files or pattern to review).
+3. Check them against every rule.
+4. Output findings in the terse `file:line` format the guidelines specify.
 
 ## Guidelines Source
 
-Fetch fresh guidelines before each review:
+`guidelines.md` is a copy of `command.md` from https://github.com/vercel-labs/web-interface-guidelines (MIT), vendored
+in this repo so a review never runs instructions fetched at review time. To update it, replace the file with the
+upstream version and note the commit in `.claude/skill-licenses/README.md`.
 
-```
-https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md
-```
-
-Use WebFetch to retrieve the latest rules. The fetched content contains all the rules and output format instructions.
-
-## Usage
-
-When a user provides a file or pattern argument:
-1. Fetch guidelines from the source URL above
-2. Read the specified files
-3. Apply all rules from the fetched guidelines
-4. Output findings using the format specified in the guidelines
-
-If no files specified, ask the user which files to review.
+In this project, `apps/web/DESIGN.md` wins where a rule conflicts with the chosen art direction.

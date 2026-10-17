@@ -73,7 +73,8 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 ## Brancher un vrai poste
 
 1. Dans `/admin`, invitez la personne et choisissez ses zones : le dashboard génère son prompt (voir [install/PROMPT.md](install/PROMPT.md)).
-2. Elle le colle dans Claude Code, qui lance **une seule commande** (`brain.mjs setup`) : Screenpipe installé et lancé, autorisations macOS
+2. Elle le colle dans Claude Code, qui lance **une seule commande** (`install.sh`, qui trouve ou installe Node.js puis lance
+   `brain setup` ; pourquoi un CLI : [docs/CLI.md](docs/CLI.md)) : Screenpipe installé et lancé, autorisations macOS
    (écran, et accessibilité en option ; pas de micro) avec reprise automatique, MCP, hooks, synchro toutes les 15 min, néon allumé.
 3. Le cerveau s'ouvre dans son navigateur, déjà connecté. Ensuite rien à faire : en travaillant avec Claude Code, elle le nourrit.
    `sync --dry-run --full` permet de revoir à tout moment ce qui partirait, `uninstall` retire tout.
