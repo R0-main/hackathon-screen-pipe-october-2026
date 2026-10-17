@@ -38,14 +38,30 @@ export function hookCommand(execPath = process.execPath, script = selfScript()):
 /** Version de Claude Code à partir de laquelle un hook peut être lancé sans shell (`command` + `args`). */
 export const EXEC_HOOKS_SINCE = "2.1.139"
 
+/** Git Bash (Windows) : sans lui, Claude Code passe les hooks en ligne de commande à PowerShell. */
+export function gitBashInstalled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const candidates = [
+    env.CLAUDE_CODE_GIT_BASH_PATH,
+    env.ProgramFiles && join(env.ProgramFiles, "Git", "bin", "bash.exe"),
+    env.LOCALAPPDATA && join(env.LOCALAPPDATA, "Programs", "Git", "bin", "bash.exe"),
+  ]
+  const git = findOnPath("git", env.PATH ?? "")
+  if (git) candidates.push(join(dirname(dirname(git)), "bin", "bash.exe"))
+  return candidates.some((c) => Boolean(c) && existsSync(c!))
+}
+
 /**
  * Notre hook. Windows : forme « exec » (node.exe lancé directement avec ses arguments), car sans Git Bash Claude Code
- * passe la ligne à PowerShell, qui n'accepte pas `"node.exe" "brain.mjs" hook`. Ailleurs, ou avec un Claude Code trop
- * ancien pour la forme « exec », la ligne de commande habituelle.
+ * passe la ligne à PowerShell, qui n'accepte pas `"node.exe" "brain.mjs" hook`. Version de Claude Code inconnue : la
+ * forme « exec » seulement s'il n'y a pas de Git Bash (sinon la ligne de commande, qui y marche depuis toujours).
+ * Ailleurs, ou avec un Claude Code trop ancien pour la forme « exec », la ligne de commande habituelle.
  */
-export function hookEntry(opts: { platform?: NodeJS.Platform; claudeVersion?: string | null; execPath?: string; script?: string } = {}): HookCommand {
+export function hookEntry(
+  opts: { platform?: NodeJS.Platform; claudeVersion?: string | null; gitBash?: boolean; execPath?: string; script?: string } = {},
+): HookCommand {
   const { platform = process.platform, claudeVersion = null, execPath = process.execPath, script = selfScript() } = opts
-  const exec = platform === "win32" && !(claudeVersion && versionLt(claudeVersion, EXEC_HOOKS_SINCE))
+  const exec =
+    platform === "win32" && (claudeVersion ? !versionLt(claudeVersion, EXEC_HOOKS_SINCE) : !(opts.gitBash ?? gitBashInstalled()))
   return exec
     ? { type: "command", command: execPath, args: hookArgs(script), timeout: HOOK_TIMEOUT_S }
     : { type: "command", command: hookCommand(execPath, script), timeout: HOOK_TIMEOUT_S }
@@ -84,6 +100,11 @@ function sameHook(h: HookCommand, want: HookCommand): boolean {
   return h.type === want.type && h.command === want.command && JSON.stringify(h.args ?? null) === JSON.stringify(want.args ?? null) && h.timeout === want.timeout
 }
 
+/** Groupe sans filtre (`matcher`) : le hook s'y déclenche à chaque fois. */
+function unfiltered(g: HookGroup): boolean {
+  return g.matcher === undefined || g.matcher === "" || g.matcher === "*"
+}
+
 /**
  * Ajoute nos hooks sans toucher au reste : idempotent, met à jour notre hook si le chemin (ou sa forme) a changé et
  * retire nos doublons (une copie restée sur un ancien chemin échouerait à chaque prompt).
@@ -97,13 +118,16 @@ export function mergeHooks(settings: Settings, entry: HookCommand | string): { s
   const changes: string[] = []
   for (const event of HOOK_EVENTS) {
     let groups = (Array.isArray(hooks[event]) ? hooks[event] : []) as HookGroup[]
+    // Le hook à garder s'il y en a plusieurs : déjà à jour et sans filtre, sinon sans filtre, sinon le premier.
+    const ours = groups.flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks.filter((h) => isOurHook(h)).map((h) => ({ g, h })) : []))
+    const keep = (ours.find((o) => unfiltered(o.g) && sameHook(o.h, want)) ?? ours.find((o) => unfiltered(o.g)) ?? ours[0])?.h
     let found = false
     let duplicates = 0
     for (const g of groups) {
       if (!Array.isArray(g?.hooks)) continue
       g.hooks = g.hooks.filter((h) => {
         if (!isOurHook(h)) return true
-        if (found) {
+        if (h !== keep) {
           duplicates++
           return false
         }
@@ -472,6 +496,8 @@ export function parseTaskXmlTarget(xmlText: string): ScheduleTarget | undefined 
   const command = /<Command>([\s\S]*?)<\/Command>/.exec(xmlText)?.[1]
   const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xmlText)?.[1]
   if (!command || !args) return undefined
+  // schtasks écrit dans la page de code de la console : un chemin accentué (C:\Users\Jérôme) arrive abîmé, illisible.
+  if (/[\uFFFD?]/.test(command + args)) return undefined
   const script = /^\s*"([^"]+)"/.exec(unxml(args))?.[1]
   const home = /--home "([^"]+)"/.exec(unxml(args))?.[1]
   return script ? { execPath: unxml(command).replace(/^"|"$/g, ""), script, ...(home ? { home } : {}) } : undefined

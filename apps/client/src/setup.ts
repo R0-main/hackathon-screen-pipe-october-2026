@@ -269,9 +269,12 @@ async function ensureScreenpipe(cfg: Config, audio: boolean | undefined, log: Lo
   bin = bin ?? installScreenpipeCli(log)
   const loadError = screenpipeLoadError(bin)
   if (loadError) {
-    throw new UserError(
-      `Screenpipe ne démarre pas sur ce poste (« ${loadError} »)${process.platform === "linux" ? " : il lui faut glibc ≥ 2.39 (Ubuntu 24.04 ou plus récent) et les bibliothèques pipewire / pulseaudio du système" : ""}.`,
-    )
+    const why = /GLIBC|shared object|shared librar/i.test(loadError)
+      ? " : il lui faut glibc ≥ 2.39 (Ubuntu 24.04 ou plus récent) et les bibliothèques pipewire / pulseaudio du système"
+      : /dyld|Library not loaded|Symbol not found/i.test(loadError)
+        ? " : il lui faut macOS 11 ou plus récent"
+        : ""
+    throw new UserError(`Screenpipe ne démarre pas sur ce poste (« ${loadError} »)${why}.`)
   }
   const how = startScreenpipe(bin, { audio }, log)
   if (!(await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, process.platform === "win32" ? 180_000 : 60_000))) {

@@ -12,14 +12,19 @@ export const BRAIN_CLI = "~/.company-brain/brain"
 /** Sous Windows (PowerShell comme Git Bash) : le raccourci écrit par install.ps1. */
 export const BRAIN_CLI_WINDOWS = "~/.company-brain/brain.cmd"
 
-/** La commande unique de chaque système (le jeton n'apparaît que là). */
+/**
+ * La commande unique de chaque système (le jeton n'apparaît que là). Un téléchargement raté rend 5 (jamais le code brut
+ * de curl, qui se confondrait avec ceux de setup : « curl: (6) » serait lu comme « branché sans Screenpipe ») ; sous
+ * Windows, `exit $LASTEXITCODE` rend le code de setup même quand la ligne est passée à `powershell -Command`.
+ */
 export function installCommands(baseUrl: string, token: string): { posix: string; windows: string } {
   const dir = '"$env:USERPROFILE\\.company-brain'
   return {
-    posix: `curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${baseUrl} --token ${token}`,
+    posix: `(curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${baseUrl} --token ${token}`,
     windows:
-      `New-Item -ItemType Directory -Force ${dir}" | Out-Null; Invoke-WebRequest -UseBasicParsing ${baseUrl}/install.ps1 -OutFile ${dir}\\install.ps1"; ` +
-      `powershell -NoProfile -ExecutionPolicy Bypass -File ${dir}\\install.ps1" --url ${baseUrl} --token ${token}`,
+      `New-Item -ItemType Directory -Force ${dir}" | Out-Null; ` +
+      `try { Invoke-WebRequest -UseBasicParsing ${baseUrl}/install.ps1 -OutFile ${dir}\\install.ps1" -ErrorAction Stop } catch { exit 5 }; ` +
+      `powershell -NoProfile -ExecutionPolicy Bypass -File ${dir}\\install.ps1" --url ${baseUrl} --token ${token}; exit $LASTEXITCODE`,
   }
 }
 
@@ -34,6 +39,6 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
    macOS, Linux, Git Bash : ${cmd.posix}
    Windows, PowerShell : ${cmd.windows}
-3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance \`${brain} setup\`. Code 5 : réseau ou adresse, relance la même commande. Autre code (6 : branché sans Screenpipe) : lance \`${brain} doctor --json\`, explique simplement chaque point KO et lance les corrections marquées « safe ». Sous Windows, le client est \`${BRAIN_CLI_WINDOWS}\`.
+3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance \`${brain} setup\` (même délai). Code 5 : réseau ou adresse, relance la même commande. Autre code (6 : branché sans Screenpipe) : lance \`${brain} doctor --json\`, explique simplement chaque point KO et lance les corrections marquées « safe » (même délai). Sous Windows, le client est \`${BRAIN_CLI_WINDOWS}\`.
 4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (\`${brain} uninstall\`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord \`${brain} sync --dry-run --full --since 24h\` en entier ; rien ne part avant mon accord explicite, puis \`${brain} sync --confirm\` envoie exactement ce que j'ai relu.`
 }

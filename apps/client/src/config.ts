@@ -125,9 +125,15 @@ export function selfCommand(platform: NodeJS.Platform = process.platform): strin
   return `${quoteArg(process.execPath, platform)} ${quoteArg(selfScript(), platform)}`
 }
 
-/** Un chemin prêt à coller dans un terminal : guillemets doubles sous Windows (aucun `"` possible), simples ailleurs. */
+/**
+ * Un chemin prêt à coller dans un terminal. Windows : barres obliques (Git Bash efface les `\` hors guillemets ; Node.js,
+ * cmd et PowerShell les acceptent), guillemets doubles s'il le faut (aucun `"` possible). Ailleurs : guillemets simples.
+ */
 export function quoteArg(s: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === "win32") return /[\s&()^%!;,]/.test(s) ? `"${s}"` : s
+  if (platform === "win32") {
+    const p = s.replace(/\\/g, "/")
+    return /[\s&()^%!;,'$`]/.test(p) ? `"${p}"` : p
+  }
   return /^[\w@%+=:,./~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
 }
 
@@ -151,6 +157,14 @@ export function writeJson(file: string, data: unknown, mode?: number) {
 
 export function ensureHome() {
   mkdirSync(brainHome(), { recursive: true, mode: 0o700 })
+  // Le dossier existe souvent déjà (créé par curl ou install.sh avec les droits par défaut) : il garde config et jeton.
+  if (process.platform !== "win32") {
+    try {
+      chmodSync(brainHome(), 0o700)
+    } catch {
+      // pas à nous : on n'insiste pas
+    }
+  }
 }
 
 export function loadConfig(): Config | null {

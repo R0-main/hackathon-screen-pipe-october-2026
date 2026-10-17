@@ -3,7 +3,7 @@
 
 import { strict as assert } from "node:assert"
 import { spawn } from "node:child_process"
-import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
@@ -116,10 +116,9 @@ test("doctor : poste bien branché → aucun KO, code 0, chaque groupe vérifié
     }
     assert.match(byId(r, "connexion")!.detail, /Hugo Bernard chez Fournil/)
     assert.match(byId(r, "capture")!.detail, /capture de l'écran active.*micro : coupé/)
-    // Aucun jeton en entier, ni en texte ni en JSON.
+    // Aucun jeton, même en partie, ni en texte ni en JSON (la sortie finit dans la session de Claude Code).
     for (const out of [formatDoctor(r), JSON.stringify(r)]) {
-      assert.ok(!out.includes(TOKEN), "jeton du cerveau affiché")
-      assert.ok(!out.includes(SP_TOKEN), "jeton Screenpipe affiché")
+      for (const secret of [TOKEN, SP_TOKEN]) assert.ok(!out.includes(secret.slice(0, 6)) && !out.includes(secret.slice(-4)), `fragment de ${secret.slice(0, 3)}… affiché`)
     }
     assert.match(formatDoctor(r), /^Bilan : \d+ OK, \d+ à surveiller, 0 KO/m)
   } finally {
@@ -162,7 +161,7 @@ test("doctor : jeton révoqué, branchements sur un ancien client, Screenpipe sa
     assert.equal(r.exit_code, 1)
     const conn = byId(r, "connexion")!
     assert.equal(conn.status, "fail")
-    assert.match(conn.detail, /refuse le jeton cb_rev…0000 \(401\)/)
+    assert.match(conn.detail, /refuse le jeton de ce poste \(401\)/)
     assert.match(conn.fix!, /nouveau prompt d'installation/)
     assert.ok(!JSON.stringify(r).includes("cb_revoque_000000000000"))
 
@@ -253,6 +252,59 @@ test("doctor : synchro planifiée en échec et Claude déconnecté, lus dans syn
   }
 })
 
+test("doctor lancé avec un autre Node.js que celui du poste : pas de faux KO (référence : le raccourci)", { skip: !POSIX }, async () => {
+  const brain = await mockBrain()
+  const sp = await fakeScreenpipe(HEALTHY)
+  const post = makePost(brain.url, sp.url)
+  // « Autre » Node.js : le même binaire sous un autre chemin (lien dur, sinon copie).
+  const otherNode = join(post.root, "node-du-poste")
+  try {
+    linkSync(process.execPath, otherNode)
+  } catch {
+    copyFileSync(process.execPath, otherNode)
+    chmodSync(otherNode, 0o755)
+  }
+  try {
+    withEnv(post.env, () => {
+      writeFileSync(join(post.home, "brain"), `#!/bin/sh\nexec '${otherNode}' '${post.script}' "$@"\n`, { mode: 0o755 })
+      const { settings } = mergeHooks({}, hookEntry({ platform: "linux", execPath: otherNode, script: post.script }))
+      writeFileSync(join(post.claudeDir, "settings.json"), JSON.stringify(settings))
+      writeFileSync(join(post.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: otherNode, args: mcpArgs(post.script) } } }))
+      writeFileSync(join(post.bin, "crontab"), `#!/bin/sh\necho ${JSON.stringify(cronLine(otherNode, post.script, post.home, {}))}\n`, { mode: 0o755 })
+    })
+    const r = await doctorIn(post)
+    for (const id of ["raccourci", "mcp", "hooks", "planification"]) assert.equal(byId(r, id)?.status, "ok", `${id} : ${byId(r, id)?.detail}`)
+
+    // Un hook resté sur le Node.js du processus (et non celui du raccourci) : signalé comme tel.
+    withEnv(post.env, () => {
+      const { settings } = mergeHooks({}, hookEntry({ platform: "linux", execPath: process.execPath, script: post.script }))
+      writeFileSync(join(post.claudeDir, "settings.json"), JSON.stringify(settings))
+    })
+    const r2 = await doctorIn(post)
+    assert.equal(byId(r2, "hooks")?.status, "fail")
+    assert.match(byId(r2, "hooks")!.detail, /lance un autre Node\.js/)
+  } finally {
+    await Promise.all([brain.close(), sp.close()])
+  }
+})
+
+test("doctor : un MCP « company-brain » qui n'est pas notre client n'est jamais lancé", { skip: !POSIX }, async () => {
+  const brain = await mockBrain()
+  const sp = await fakeScreenpipe(HEALTHY)
+  const post = makePost(brain.url, sp.url)
+  const marker = join(post.root, "lance")
+  try {
+    writeFileSync(join(post.bin, "npx"), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 })
+    writeFileSync(join(post.claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "company-brain": { command: join(post.bin, "npx"), args: ["-y", "un-autre-serveur"] } } }))
+    const r = await doctorIn(post)
+    assert.equal(byId(r, "mcp")?.status, "fail")
+    assert.match(byId(r, "mcp")!.detail, /pas le client du cerveau/)
+    assert.ok(!existsSync(marker), "la commande enregistrée a été lancée")
+  } finally {
+    await Promise.all([brain.close(), sp.close()])
+  }
+})
+
 test("doctor sans config : KO config en premier, le reste vérifié quand même", { skip: !POSIX }, async () => {
   const brain = await mockBrain()
   const sp = await fakeScreenpipe(HEALTHY)
@@ -321,7 +373,10 @@ test("lastLoggedRun / recentHookErrors : dernière synchro du journal, erreurs d
 })
 
 test("reinstallCommand : la commande d'installation du système, sans jeton (la config le garde)", () => {
-  assert.equal(reinstallCommand("https://c.example", "darwin"), "curl -fsSL --create-dirs https://c.example/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url https://c.example")
-  assert.match(reinstallCommand("https://c.example", "win32"), /install\.ps1" --url https:\/\/c\.example$/)
+  assert.equal(
+    reinstallCommand("https://c.example", "darwin"),
+    "(curl -fsSL --create-dirs https://c.example/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://c.example",
+  )
+  assert.match(reinstallCommand("https://c.example", "win32"), /install\.ps1" --url https:\/\/c\.example; exit \$LASTEXITCODE$/)
   assert.ok(!/--token/.test(reinstallCommand("https://c.example", "win32")))
 })

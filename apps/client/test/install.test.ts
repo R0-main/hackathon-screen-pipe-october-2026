@@ -278,7 +278,8 @@ test("hookEntry : forme « exec » sous Windows (PowerShell ne lit pas la ligne)
   assert.equal(win.command, "C:\\Program Files\\nodejs\\node.exe")
   assert.deepEqual((win.args as string[]).slice(0, 2), ["C:\\Users\\Jean Dupont\\.company-brain\\brain.mjs", "hook"])
   assert.ok(isOurHook(win))
-  assert.equal(hookEntry({ platform: "win32", claudeVersion: null }).args !== undefined, true, "version inconnue : forme exec")
+  assert.notEqual(hookEntry({ platform: "win32", claudeVersion: null, gitBash: false }).args, undefined, "version inconnue, sans Git Bash : forme exec")
+  assert.equal(hookEntry({ platform: "win32", claudeVersion: null, gitBash: true }).args, undefined, "version inconnue, avec Git Bash : ligne de commande")
   const old = hookEntry({ platform: "win32", claudeVersion: "2.1.100", execPath: "C:\\n\\node.exe", script: "C:\\b\\brain.mjs" })
   assert.equal(old.args, undefined)
   assert.match(String(old.command), /"C:\\n\\node\.exe" "C:\\b\\brain\.mjs" hook/)
@@ -304,6 +305,20 @@ test("mergeHooks : passe une ligne de commande à la forme « exec » et retire 
   assert.equal(back.Stop[1].hooks[0].args, undefined)
   assert.equal(back.Stop[1].hooks[0].command, CMD)
   assert.equal(removeHooks(settings).removed, 3)
+
+  // Plusieurs copies : on garde celle qui se déclenche toujours (sans filtre), pas une ancienne limitée à « startup ».
+  const filtered = {
+    hooks: {
+      SessionStart: [
+        { matcher: "startup", hooks: [{ type: "command", command: '"/old/node" "/old/brain.mjs" hook' }] },
+        { hooks: [{ type: "command", command: CMD, timeout: 5 }] },
+      ],
+    },
+  }
+  const kept = mergeHooks(filtered, CMD).settings.hooks as Record<string, { matcher?: string; hooks: { command: string }[] }[]>
+  assert.equal(kept.SessionStart.length, 1)
+  assert.equal(kept.SessionStart[0].matcher, undefined)
+  assert.equal(kept.SessionStart[0].hooks[0].command, CMD)
 })
 
 test("cibles de la synchro planifiée : relues dans le plist, la ligne crontab et le XML de la tâche Windows", () => {
@@ -359,5 +374,8 @@ test("selfCommand : le raccourci s'il existe (cité si le dossier est personnali
     else process.env.COMPANY_BRAIN_HOME = saved
   }
   assert.equal(quoteArg("/a b/c'd", "linux"), `'/a b/c'\\''d'`)
+  // Windows : barres obliques (Git Bash efface les « \\ » hors guillemets), guillemets doubles s'il y a un espace.
+  assert.equal(quoteArg("C:\\Program Files\\nodejs\\node.exe", "win32"), '"C:/Program Files/nodejs/node.exe"')
+  assert.equal(quoteArg("C:\\Users\\jean\\.company-brain\\brain.mjs", "win32"), "C:/Users/jean/.company-brain/brain.mjs")
   assert.equal(quoteArg("/usr/bin/node", "linux"), "/usr/bin/node")
 })

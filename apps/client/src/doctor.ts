@@ -1,14 +1,15 @@
 // `brain doctor` : diagnostic du poste, en lecture seule. Chaque point dit ce qui va, ce qui cloche et la commande qui
 // répare. Pour l'employé, et surtout pour Claude Code quand l'installation ou la synchro coince (`--json`).
 // Rien n'est modifié : ni config, ni cache, ni état, ni réglages de Claude Code (pas de `claude mcp get`, qui écrit des
-// fichiers et contacte le réseau). Aucun jeton n'est affiché en entier ; en JSON, seulement leur présence.
+// fichiers et contacte le réseau). Aucun jeton n'est affiché, même en partie : seulement sa présence (la sortie finit dans
+// la session de Claude Code, que brain-sync relit).
 
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs"
-import { homedir, userInfo } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { basename, join } from "node:path"
 import { redactText, truncate } from "@brain/core"
+import { installCommands } from "../../web/lib/install-prompt"
 import { ApiError, BrainApi } from "./api"
 import { zoneName } from "./cache"
 import {
@@ -16,7 +17,6 @@ import {
   customHome,
   loadCache,
   loadState,
-  maskSecret,
   paths,
   readJson,
   selfCommand,
@@ -30,6 +30,7 @@ import {
   HOOK_EVENTS,
   claudeCodeVersion,
   claudeJsonPath,
+  gitBashInstalled,
   hookText,
   mcpUpToDate,
   ourHooks,
@@ -80,6 +81,9 @@ type Probe = { ok: true; node: string; script: string; version: string } | { ok:
 /** Lance un client enregistré (raccourci, hook, MCP, synchro planifiée) avec `_probe` : démarre-t-il, et lequel ? */
 function probe(cmd: string, args: string[]): Probe {
   if (!existsSync(cmd)) return { ok: false, error: `introuvable : ${cmd}` }
+  // Seulement notre client (jamais `npx … _probe` ou un autre serveur MCP qui porterait notre nom).
+  if (args.length && !/brain\.mjs$/i.test(args[0]) && !samePath(args[0], selfScript())) return { ok: false, error: `ce n'est pas le client du cerveau (${args[0]})` }
+  if (args.length && !existsSync(args[0])) return { ok: false, error: `introuvable : ${args[0]}` }
   const t = spawnTarget(cmd, [...args, "_probe"])
   const r = spawnSync(t.cmd, t.args, { encoding: "utf8", timeout: 15_000, shell: t.shell, windowsHide: true, env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" } })
   if (r.error) return { ok: false, error: r.error.message }
@@ -101,9 +105,18 @@ function probeOnce(cmd: string, args: string[]): Probe {
   return probes.get(key)!
 }
 
-/** Ce client-ci : le Node.js et le script que tous les branchements devraient lancer. */
-function isCurrent(execPath: string, script: string): boolean {
-  return samePath(execPath, process.execPath) && samePath(script, selfScript())
+/**
+ * Le client de référence : celui que lance le raccourci du poste s'il marche (doctor peut tourner sur un autre Node.js,
+ * ex. `node ~/.company-brain/brain.mjs doctor`), sinon ce processus. C'est aussi lui que `setup` enregistre quand on le
+ * relance par le raccourci, comme le proposent les corrections.
+ */
+let reference: { execPath: string; script: string } = { execPath: process.execPath, script: selfScript() }
+
+/** Que dire d'un branchement qui ne lance pas le client de référence (null : c'est bien lui). */
+function mismatch(execPath: string, script: string): string | null {
+  if (!samePath(script, reference.script)) return `lance un autre client (${script})`
+  if (!samePath(execPath, reference.execPath)) return `lance un autre Node.js (${execPath}, au lieu de ${reference.execPath})`
+  return null
 }
 
 function ago(ms: number): string {
@@ -199,24 +212,11 @@ export function captureDiagnosis(
   return { status: "ok", reason: "ok", detail: `capture de l'écran active${age}` }
 }
 
-/** Git Bash (Windows) : sans lui, Claude Code passe les hooks en ligne de commande à PowerShell. */
-function gitBashFound(): boolean {
-  const candidates = [
-    process.env.CLAUDE_CODE_GIT_BASH_PATH,
-    process.env.ProgramFiles && join(process.env.ProgramFiles, "Git", "bin", "bash.exe"),
-    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs", "Git", "bin", "bash.exe"),
-  ]
-  const git = findOnPath("git")
-  if (git) candidates.push(join(dirname(dirname(git)), "bin", "bash.exe"))
-  return candidates.some((c) => Boolean(c) && existsSync(c!))
-}
-
 /** Commande d'installation à relancer (la config garde le jeton : l'adresse du cerveau suffit). */
 export function reinstallCommand(url: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === "win32") {
-    return `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.company-brain" | Out-Null; Invoke-WebRequest -UseBasicParsing ${url}/install.ps1 -OutFile "$env:USERPROFILE\\.company-brain\\install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.company-brain\\install.ps1" --url ${url}`
-  }
-  return `curl -fsSL --create-dirs ${url}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${url}`
+  const c = installCommands(url, "")
+  // Les commandes du prompt d'installation, sans le jeton.
+  return (platform === "win32" ? c.windows : c.posix).replace(/ --token $/, "").replace(/ --token ; exit/, "; exit")
 }
 
 type Ctx = {
@@ -304,9 +304,13 @@ function checkClientFiles(ctx: Ctx) {
   } else {
     const p = probeOnce(shortcut, [])
     if (!p.ok) add(ctx, { id: "raccourci", group: "Poste", status: "fail", detail: `le raccourci ${shortcut} ne démarre pas (${p.error})`, fix: "Relance la commande d'installation.", ...reinstall })
-    else if (!samePath(p.script, selfScript()) && selfScript().endsWith(".mjs"))
-      add(ctx, { id: "raccourci", group: "Poste", status: "warn", detail: `le raccourci lance un autre client (${p.script})`, fix: "Relance la commande d'installation.", ...reinstall })
-    else add(ctx, { id: "raccourci", group: "Poste", status: "ok", detail: `${shortcut} → Node.js ${p.node}` })
+    else {
+      if (selfScript().endsWith(".mjs") && !samePath(p.script, selfScript()))
+        add(ctx, { id: "raccourci", group: "Poste", status: "warn", detail: `le raccourci lance un autre client (${p.script})`, fix: "Relance la commande d'installation.", ...reinstall })
+      else add(ctx, { id: "raccourci", group: "Poste", status: "ok", detail: `${shortcut} → Node.js ${p.node}` })
+      // Les corrections passent par le raccourci : c'est lui que hooks, MCP et synchro doivent lancer.
+      reference = { execPath: p.node, script: p.script }
+    }
   }
 
   const home = brainHome()
@@ -326,19 +330,10 @@ function checkClientFiles(ctx: Ctx) {
     } catch {
       // absent : la config le dira
     }
-    if (process.getuid?.() === 0 && process.env.SUDO_USER) {
+    if (process.getuid?.() === 0) {
       status = "warn"
-      details.push(`client lancé en root avec sudo (pour ${process.env.SUDO_USER}) : config, hooks et synchro iraient au compte root`)
+      details.push(`client lancé en root${process.env.SUDO_USER ? ` avec sudo (pour ${process.env.SUDO_USER})` : ""} : config, hooks et synchro iraient au compte root`)
       fix ??= "Relance la commande sans sudo, depuis ta session."
-    }
-    try {
-      if (userInfo().homedir !== homedir()) {
-        status = "warn"
-        details.push(`HOME (${homedir()}) n'est pas le dossier de ton compte (${userInfo().homedir}) : installation lancée avec sudo ?`)
-        fix ??= "Relance l'installation depuis ta session, sans sudo."
-      }
-    } catch {
-      // compte sans entrée système : rien à comparer
     }
   }
   if (ctx.platform === "linux") {
@@ -366,8 +361,9 @@ function checkConfig(ctx: Ctx): boolean {
   let raw: Partial<Config>
   try {
     raw = JSON.parse(readFileSync(file, "utf8"))
-  } catch (err) {
-    add(ctx, { id: "config", group: "Cerveau", status: "fail", detail: `${file} illisible (${(err as Error).message})`, fix: "Recolle ton prompt d'installation dans Claude Code : il réécrit la config." })
+  } catch {
+    // Pas le message de JSON.parse : il recopie un bout du fichier, jeton compris.
+    add(ctx, { id: "config", group: "Cerveau", status: "fail", detail: `${file} illisible (JSON invalide)`, fix: "Recolle ton prompt d'installation dans Claude Code : il réécrit la config." })
     return false
   }
   if (!raw.url || !raw.token) {
@@ -393,7 +389,7 @@ function checkConfig(ctx: Ctx): boolean {
     }
     mode = ", droits 600"
   }
-  add(ctx, { id: "config", group: "Cerveau", status: "ok", detail: `${file} (cerveau ${ctx.cfg.url}, jeton ${maskSecret(ctx.cfg.token)}${mode})` })
+  add(ctx, { id: "config", group: "Cerveau", status: "ok", detail: `${file} (cerveau ${ctx.cfg.url}, jeton enregistré${mode})` })
   return true
 }
 
@@ -414,7 +410,7 @@ async function checkBrain(ctx: Ctx) {
         id: "connexion",
         group: "Cerveau",
         status: "fail",
-        detail: `le cerveau refuse le jeton ${maskSecret(cfg.token)} (${status}) : révoqué, ou compte désactivé`,
+        detail: `le cerveau refuse le jeton de ce poste (${status}) : révoqué, ou compte désactivé`,
         fix: "Demande à un admin un nouveau prompt d'installation (page Équipe et accès → Nouveau prompt) et colle-le dans Claude Code.",
       })
     else
@@ -491,10 +487,11 @@ async function checkScreenpipe(ctx: Ctx) {
           group: "Screenpipe",
           status: "fail",
           detail: `Screenpipe ne démarre pas sur ce poste (« ${truncate(loadError, 200)} »)`,
-          fix:
-            ctx.platform === "linux"
-              ? "Il lui faut glibc ≥ 2.39 (Ubuntu 24.04 ou plus récent) et les bibliothèques pipewire / pulseaudio du système : installe-les, puis relance setup."
-              : "Ce système est trop ancien pour Screenpipe (macOS 11 minimum).",
+          fix: /GLIBC|shared object|shared librar/i.test(loadError)
+            ? "Il lui faut glibc ≥ 2.39 (Ubuntu 24.04 ou plus récent) et les bibliothèques pipewire / pulseaudio du système : installe-les, puis relance setup."
+            : /dyld|Library not loaded|Symbol not found/i.test(loadError)
+              ? "Ce macOS est trop ancien pour Screenpipe (macOS 11 minimum)."
+              : `Vérifie que ${bin} est exécutable (dossier personnel monté en noexec ?), puis relance setup.`,
         })
       }
     }
@@ -550,13 +547,13 @@ async function checkScreenpipe(ctx: Ctx) {
       id: "screenpipe-jeton",
       group: "Screenpipe",
       status: "fail",
-      detail: `Screenpipe demande un jeton d'API local${token ? ` (celui de la config, ${maskSecret(token)}, est refusé)` : " (aucun dans la config)"} : brain-sync ne lit rien`,
+      detail: `Screenpipe demande un jeton d'API local${token ? " (celui de la config est refusé)" : " (aucun dans la config)"} : brain-sync ne lit rien`,
       fix: "setup lit le jeton de Screenpipe et l'enregistre.",
       ...setup,
     })
   else if (p.auth !== "ok") add(ctx, { id: "screenpipe-jeton", group: "Screenpipe", status: "warn", detail: `lecture des données impossible (${p.detail})` })
   else {
-    add(ctx, { id: "screenpipe-jeton", group: "Screenpipe", status: "ok", detail: token ? `jeton d'API local accepté (${maskSecret(token)})` : "lecture des données sans jeton (authentification désactivée)" })
+    add(ctx, { id: "screenpipe-jeton", group: "Screenpipe", status: "ok", detail: token ? "jeton d'API local accepté" : "lecture des données sans jeton (authentification désactivée)" })
     if (p.parsed === false)
       add(ctx, {
         id: "screenpipe-parsed",
@@ -595,8 +592,10 @@ function checkClaudeCode(ctx: Ctx) {
   else if (entry === null) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: "MCP company-brain absent de Claude Code : tes agents ne peuvent pas interroger le cerveau", fix: "setup le branche.", ...setup })
   else {
     const p = probeOnce(entry.command, entry.args.slice(0, 1))
+    const other = p.ok ? mismatch(entry.command, entry.args[0] ?? "") : null
     if (!p.ok) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `le MCP company-brain ne démarre pas (${p.error})`, fix: "setup le rebranche sur le client actuel.", ...setup })
-    else if (!mcpUpToDate(entry)) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `le MCP company-brain lance un autre client (${p.script})`, fix: "setup le rebranche sur le client actuel.", ...setup })
+    else if (other || !mcpUpToDate(entry, reference.execPath, reference.script))
+      add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `le MCP company-brain ${other ?? "n'a pas les bons arguments"}`, fix: "setup le rebranche sur le client actuel.", ...setup })
     else add(ctx, { id: "mcp", group: "Claude Code", status: "ok", detail: "MCP company-brain branché (portée utilisateur), il démarre" })
   }
 
@@ -629,19 +628,20 @@ function checkClaudeCode(ctx: Ctx) {
       continue
     }
     const p = probeOnce(t.exec, [t.script])
+    const other = p.ok ? mismatch(t.exec, t.script) : null
     if (!p.ok) {
       status = "fail"
       problems.push(`ne démarre pas (${p.error})`)
-    } else if (!isCurrent(t.exec, t.script)) {
+    } else if (other) {
       status = "fail"
-      problems.push(`pointe vers un autre client (${t.script})`)
+      problems.push(other)
     }
   }
   if (dup.length) {
     if (status === "ok") status = "warn"
     problems.push(`en double : ${dup.join(", ")}`)
   }
-  if (ctx.platform === "win32" && all.some((h) => !Array.isArray(h.args)) && !gitBashFound()) {
+  if (ctx.platform === "win32" && all.some((h) => !Array.isArray(h.args)) && !gitBashInstalled()) {
     status = "fail"
     problems.push("sans Git Bash, Claude Code passe ces hooks à PowerShell, qui ne sait pas les lancer")
   }
@@ -684,9 +684,10 @@ function checkSync(ctx: Ctx) {
   else if (target === undefined) add(ctx, { id: "planification", group: "Synchro", status: "warn", detail: `synchro planifiée (${how}), mais sa commande est illisible` })
   else {
     const p = probeOnce(target.execPath, [target.script])
+    const other = p.ok ? mismatch(target.execPath, target.script) : null
     if (!p.ok) add(ctx, { id: "planification", group: "Synchro", status: "fail", detail: `la synchro planifiée (${how}) ne démarre pas (${p.error})`, fix: "setup la rebranche sur le client actuel, sans rien sauter de ce qui attend.", ...setup })
-    else if (!isCurrent(target.execPath, target.script))
-      add(ctx, { id: "planification", group: "Synchro", status: "fail", detail: `la synchro planifiée (${how}) lance un autre client (${target.script})`, fix: "setup la rebranche sur le client actuel, sans rien sauter de ce qui attend.", ...setup })
+    else if (other)
+      add(ctx, { id: "planification", group: "Synchro", status: "fail", detail: `la synchro planifiée (${how}) ${other}`, fix: "setup la rebranche sur le client actuel, sans rien sauter de ce qui attend.", ...setup })
     else if (target.home && !samePath(target.home, brainHome()))
       add(ctx, { id: "planification", group: "Synchro", status: "fail", detail: `la synchro planifiée utilise un autre dossier (${target.home})`, fix: "setup la rebranche sur ce dossier.", ...setup })
     else add(ctx, { id: "planification", group: "Synchro", status: "ok", detail: `toutes les 15 min (${how})` })
@@ -800,13 +801,14 @@ function checkDistiller(ctx: Ctx) {
       command: `${ctx.me} init --claude-token <jeton>`,
       safe: false,
     })
-  else if (cfg.claude_oauth_token) add(ctx, { id: "claude-connexion", group: "Distillation", status: "ok", detail: `jeton Claude Code longue durée enregistré (${maskSecret(cfg.claude_oauth_token)}) pour la synchro planifiée` })
+  else if (cfg.claude_oauth_token) add(ctx, { id: "claude-connexion", group: "Distillation", status: "ok", detail: "jeton Claude Code longue durée enregistré pour la synchro planifiée" })
 }
 
 // ——— Ensemble ———
 
 export async function runDoctor(opts: { version: string; platform?: NodeJS.Platform; now?: number } = { version: "?" }): Promise<DoctorReport> {
   probes.clear()
+  reference = { execPath: process.execPath, script: selfScript() }
   const ctx: Ctx = { checks: [], me: selfCommand(opts.platform), platform: opts.platform ?? process.platform, now: opts.now ?? Date.now(), cfg: null, secrets: [] }
   checkNode(ctx)
   const configured = checkConfig(ctx)

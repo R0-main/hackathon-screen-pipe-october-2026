@@ -16,10 +16,12 @@ const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXX
 const prompt = buildInstallPrompt(EXAMPLE)
 
 test("prompt d'installation : une seule commande par système (install.sh ou install.ps1, puis setup), une seule autorisation dans Claude Code", () => {
-  const posix = `curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
+  // Téléchargement raté : 5, jamais le code brut de curl (« curl: (6) » se lirait « branché sans Screenpipe »).
+  const posix = `(curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
   const windows =
-    `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.company-brain" | Out-Null; Invoke-WebRequest -UseBasicParsing ${EXAMPLE.baseUrl}/install.ps1 -OutFile "$env:USERPROFILE\\.company-brain\\install.ps1"; ` +
-    `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.company-brain\\install.ps1" --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
+    `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.company-brain" | Out-Null; ` +
+    `try { Invoke-WebRequest -UseBasicParsing ${EXAMPLE.baseUrl}/install.ps1 -OutFile "$env:USERPROFILE\\.company-brain\\install.ps1" -ErrorAction Stop } catch { exit 5 }; ` +
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.company-brain\\install.ps1" --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}; exit $LASTEXITCODE`
   assert.ok(prompt.includes(`macOS, Linux, Git Bash : ${posix}\n`), "la commande macOS / Linux")
   assert.ok(prompt.includes(`Windows, PowerShell : ${windows}\n`), "la commande Windows")
   assert.deepEqual(installCommands(EXAMPLE.baseUrl, EXAMPLE.token), { posix, windows })
@@ -27,7 +29,7 @@ test("prompt d'installation : une seule commande par système (install.sh ou ins
   assert.equal(prompt.split(EXAMPLE.token).length, 3)
   assert.match(prompt, /Code 3 \(« EN ATTENTE »\)/)
   assert.match(prompt, /Code 5 : réseau ou adresse, relance la même commande/)
-  assert.match(prompt, /brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe »/)
+  assert.match(prompt, /brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe » \(même délai\)/)
   assert.match(prompt, /délai de 10 minutes/)
   // Ni prérequis à vérifier à la main ni étapes séparées : les scripts et setup s'en chargent.
   assert.ok(!/node -v|winget|install-schedule|install-hooks|claude mcp add/.test(prompt))

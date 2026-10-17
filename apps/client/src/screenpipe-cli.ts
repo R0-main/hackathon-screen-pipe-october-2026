@@ -53,7 +53,7 @@ export function screenpipeBinPath(prefix = screenpipePrefix(), platform: string 
  * Mac trop ancien, dyld refuse. On ne lit que ces erreurs de chargement : une option inconnue ne dit rien du binaire.
  */
 export function screenpipeLoadError(bin: string): string | null {
-  const r = runCommand(bin, ["--version"], 15_000)
+  const r = runCommand(bin, ["--version"], 15_000, NO_TELEMETRY_ENV)
   if (r.ok) return null
   const text = `${r.stderr}\n${r.stdout}`
   const line = text.split(/\r?\n/).find((l) => LOAD_ERROR_RE.test(l))
