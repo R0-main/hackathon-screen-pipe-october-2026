@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     const zones = VISITOR_ZONES.filter((z) => known.has(z))
     const token = newToken()
     const profile = await store.createProfile({
-      name: `Visiteur ${String(Math.floor(1000 + Math.random() * 9000))}`,
+      name: `Visitor ${String(Math.floor(1000 + Math.random() * 9000))}`,
       title: DEMO_VISITOR_TITLE,
       role: "member",
       // In the org chart, the visitor joins the lead dev's team (same zones).

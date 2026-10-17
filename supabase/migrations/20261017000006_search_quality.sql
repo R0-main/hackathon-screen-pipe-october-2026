@@ -1,8 +1,8 @@
--- Qualité du cerveau :
--- - superseded_by : une connaissance plus récente sur le même sujet a remplacé celle-ci (elle reste lisible par son
---   auteur et dans l'historique, mais n'est plus proposée par la recherche ni les listes) ;
--- - embedding : vecteur sémantique optionnel (Voyage AI ou point de terminaison compatible OpenAI, voir
---   apps/web/lib/embeddings.ts), stocké en tableau de réels pour ne pas dépendre de l'extension pgvector.
+-- Brain quality:
+-- - superseded_by: a more recent knowledge item on the same subject replaced this one (it stays readable by its
+--   author and in the history, but is no longer offered by search or the lists);
+-- - embedding: optional semantic vector (Voyage AI or an OpenAI-compatible endpoint, see
+--   apps/web/lib/embeddings.ts), stored as an array of reals so as not to depend on the pgvector extension.
 
 alter table knowledge_items add column if not exists superseded_by uuid references knowledge_items(id) on delete set null;
 alter table knowledge_items add column if not exists embedding real[];

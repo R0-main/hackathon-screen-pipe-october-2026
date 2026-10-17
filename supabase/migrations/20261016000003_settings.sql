@@ -1,6 +1,6 @@
--- Réglages internes du cerveau : secret de signature des sessions du dashboard (généré une seule fois par l'API).
--- Lu et écrit uniquement par l'API (rôle propriétaire). RLS activée SANS aucune politique : aucun accès direct
--- (clé anon, utilisateurs Supabase Auth), même en lecture.
+-- Internal settings of the brain: signing secret of the dashboard sessions (generated only once by the API).
+-- Read and written only by the API (owner role). RLS enabled WITHOUT any policy: no direct access
+-- (anon key, Supabase Auth users), not even to read.
 
 create table if not exists brain_settings (
   key text primary key,
