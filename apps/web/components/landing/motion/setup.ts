@@ -3,6 +3,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { SplitText } from "gsap/SplitText"
 import { DrawSVGPlugin } from "gsap/DrawSVGPlugin"
 import { ScrambleTextPlugin } from "gsap/ScrambleTextPlugin"
+import type Lenis from "lenis"
 import type { MotionVariant } from "./variants"
 
 gsap.registerPlugin(ScrollTrigger, SplitText, DrawSVGPlugin, ScrambleTextPlugin)
@@ -17,23 +18,106 @@ gsap.registerPlugin(ScrollTrigger, SplitText, DrawSVGPlugin, ScrambleTextPlugin)
   - data-rule, data-facts                trait encre et trois engagements ;
   - data-after, data-thread, data-bead   fil de billes (version Récit) ;
   - data-parallax, data-magnetic         cerveau et boutons (version Cinétique).
+
+  Rythme commun aux trois versions : chaque section marque un arrêt (elle reste épinglée pendant une partie du
+  scroll), et quand on lâche le scroll près d'un chapitre de la scène ou d'un arrêt, la page s'y cale doucement.
+
   Tout est créé dans le contexte useGSAP de Landing : animations, SplitText et ScrollTrigger sont annulés au
-  démontage. Seuls les écouteurs du pointeur sont rendus par la fonction de nettoyage.
+  démontage. Les écouteurs (pointeur, Lenis) sont rendus par la fonction de nettoyage.
   Appelé uniquement quand le mouvement est autorisé (pas sous prefers-reduced-motion).
 */
 
+type Ctx = {
+  lenis: Lenis
+  /** Déclencheur de la scène épinglée du cerveau. */
+  scene: ScrollTrigger
+  /** Milieu de chaque chapitre de la scène, en fraction de sa progression. */
+  stops: number[]
+}
+
+type Holds = Map<Element, ScrollTrigger>
+
 const all = <T extends Element = HTMLElement>(root: ParentNode, sel: string) => Array.from(root.querySelectorAll<T>(sel))
-const once = (trigger: Element, start = "top 85%") => ({ trigger, start, once: true })
 const num = (el: Element, attr: string) => Number(el.getAttribute(attr) ?? 0)
+const section = (el: Element) => el.closest(".landing-section") ?? undefined
+
+/** Déclencheur d'un élément de section. `pinnedContainer` : les positions tiennent compte de l'arrêt de sa section. */
+const at = (trigger: Element, vars: ScrollTrigger.Vars = {}): ScrollTrigger.Vars => ({ trigger, pinnedContainer: section(trigger), ...vars })
+const once = (trigger: Element, start = "top 85%") => at(trigger, { start, once: true })
 
 /** Centre du filtre local dans le schéma vie privée (viewBox 640 × 220). */
 const FILTER = { x: 330, y: 110 }
+/** Durée de l'arrêt de chaque section, en fraction de la hauteur d'écran. */
+const HOLD = 0.6
 
-export function setupLandingMotion(variant: MotionVariant, root: HTMLElement): () => void {
+export function setupLandingMotion(variant: MotionVariant, root: HTMLElement, ctx: Ctx): () => void {
+  if (variant === "actuelle") return () => {}
+  // Les arrêts d'abord : les déclencheurs créés ensuite à l'intérieur des sections en tiennent compte.
+  const holds = holdSections(root)
+  const cleanups = [settle(ctx, holds)]
   if (variant === "epure") epure(root)
-  if (variant === "recit") recit(root)
-  if (variant === "cinetique") return cinetique(root)
-  return () => {}
+  if (variant === "recit") recit(root, holds)
+  if (variant === "cinetique") cleanups.push(cinetique(root))
+  return () => cleanups.forEach((fn) => fn())
+}
+
+/* ---------- Rythme : arrêts et calage ---------- */
+
+/**
+ * Chaque section (sauf la dernière) s'arrête un moment : elle reste à l'écran pendant `HOLD` hauteur d'écran
+ * de scroll, puis repart. Une section plus haute que l'écran s'arrête quand on voit son bas, les autres au centre.
+ */
+function holdSections(root: HTMLElement): Holds {
+  const holds: Holds = new Map()
+  for (const el of all(root, ".landing-section:not([data-close])")) {
+    holds.set(
+      el,
+      ScrollTrigger.create({
+        trigger: el,
+        start: () => (el.offsetHeight > window.innerHeight ? "bottom bottom" : "center center"),
+        end: () => `+=${Math.round(window.innerHeight * HOLD)}`,
+        pin: true,
+        anticipatePin: 1,
+        invalidateOnRefresh: true,
+      }),
+    )
+  }
+  return holds
+}
+
+/**
+ * Quand on lâche le scroll près d'un chapitre de la scène ou d'un arrêt de section, la page glisse jusqu'à lui.
+ * Loin de tout arrêt, rien ne bouge : le calage aide à s'arrêter, il ne force pas.
+ */
+function settle({ lenis, scene, stops }: Ctx, holds: Holds): () => void {
+  const targets = () => {
+    const range = scene.end - scene.start
+    const vh = window.innerHeight
+    return [
+      ...stops.map((s) => ({ at: scene.start + s * range, reach: range * 0.07 })),
+      ...[...holds.values()].map((h) => ({ at: (h.start + h.end) / 2, reach: (h.end - h.start) / 2 + vh * 0.2 })),
+    ]
+  }
+  let timer = 0
+  const check = () => {
+    if (lenis.isScrolling) return schedule()
+    const y = lenis.scroll
+    let best: number | null = null
+    for (const t of targets()) {
+      const d = Math.abs(t.at - y)
+      if (d > 2 && d < t.reach && (best === null || d < Math.abs(best - y))) best = t.at
+    }
+    if (best !== null) lenis.scrollTo(best, { duration: 0.9, easing: (t) => 1 - (1 - t) ** 3 })
+  }
+  const schedule = () => {
+    window.clearTimeout(timer)
+    timer = window.setTimeout(check, 180)
+  }
+  lenis.on("scroll", schedule)
+  return () => {
+    window.clearTimeout(timer)
+    lenis.off("scroll", schedule)
+  }
 }
 
 /* ---------- Premier écran ---------- */
@@ -109,8 +193,11 @@ function epure(root: HTMLElement) {
 
 /* ---------- Version 2 : Récit ---------- */
 
-/** Tout suit le scroll : on lit la page comme on lit le cerveau, et chaque geste se rejoue en remontant. */
-function recit(root: HTMLElement) {
+/**
+ * Tout suit le scroll : on lit la page comme on lit le cerveau, et chaque geste se rejoue en remontant.
+ * Le panneau et le schéma vie privée se jouent pendant l'arrêt de leur section : la page tient, l'histoire avance.
+ */
+function recit(root: HTMLElement, holds: Holds) {
   heroIn(root, "words")
 
   // Le fil : un trait encre qui descend le long des sections, une bille qui se remplit à chaque étape.
@@ -121,7 +208,7 @@ function recit(root: HTMLElement) {
   }
   for (const bead of all(root, "[data-bead]")) {
     const fill = bead.querySelector("[data-bead-fill]")
-    if (fill) gsap.fromTo(fill, { scale: 0 }, { scale: 1, duration: 0.45, ease: "power3.out", scrollTrigger: { trigger: bead, start: "top 65%", toggleActions: "play none none reverse" } })
+    if (fill) gsap.fromTo(fill, { scale: 0 }, { scale: 1, duration: 0.45, ease: "power3.out", scrollTrigger: at(bead, { start: "top 65%", toggleActions: "play none none reverse" }) })
   }
 
   // Titres : les mots passent de pâle à encre au rythme du scroll.
@@ -129,17 +216,22 @@ function recit(root: HTMLElement) {
     SplitText.create(el, {
       type: "words",
       autoSplit: true,
-      onSplit: (self) =>
-        gsap.fromTo(self.words, { opacity: 0.12 }, { opacity: 1, ease: "none", stagger: 0.12, scrollTrigger: { trigger: el, start: "top 88%", end: "top 42%", scrub: true } }),
+      onSplit: (self) => gsap.fromTo(self.words, { opacity: 0.12 }, { opacity: 1, ease: "none", stagger: 0.12, scrollTrigger: at(el, { start: "top 88%", end: "top 42%", scrub: true }) }),
     })
   }
   for (const el of all(root, '[data-reveal="text"]')) {
-    gsap.from(el, { autoAlpha: 0, y: 24, ease: "none", scrollTrigger: { trigger: el, start: "top 95%", end: "top 70%", scrub: true } })
+    gsap.from(el, { autoAlpha: 0, y: 24, ease: "none", scrollTrigger: at(el, { start: "top 95%", end: "top 70%", scrub: true }) })
+  }
+
+  /** De l'entrée de l'élément dans l'écran jusqu'à la fin de l'arrêt de sa section. */
+  const throughHold = (el: Element, start: string): ScrollTrigger.Vars => {
+    const hold = holds.get(section(el) ?? el)
+    return hold ? { trigger: el, start, end: () => hold.end, scrub: true, invalidateOnRefresh: true } : at(el, { start, end: "bottom 40%", scrub: true })
   }
 
   // Le panneau se remplit ligne par ligne, puis le prompt de Jean-Marc s'écrit caractère par caractère.
   for (const panel of all(root, '[data-reveal="panel"]')) {
-    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: { trigger: panel, start: "top 85%", end: "bottom 60%", scrub: true } })
+    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(panel, "top 85%") })
     tl.from(panel, { autoAlpha: 0, y: 40, duration: 0.2 })
     const rows = all(panel, "[data-rows] > li")
     if (rows.length) tl.from(rows, { autoAlpha: 0, x: -16, duration: 0.12, stagger: 0.08 })
@@ -148,6 +240,7 @@ function recit(root: HTMLElement) {
       const chars = SplitText.create(typed, { type: "chars" }).chars
       tl.from(chars, { opacity: 0, duration: 0.01, stagger: 0.4 / chars.length })
     }
+    tl.to({}, { duration: 0.15 })
   }
 
   // Le brut reste sur le poste ; seules cinq connaissances en partent, passent le filtre et rejoignent le cerveau.
@@ -155,7 +248,7 @@ function recit(root: HTMLElement) {
   if (svg) {
     const raw = all(svg, "[data-raw]")
     const kept = all(svg, "[data-kept]")
-    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: { trigger: svg, start: "top 80%", end: "bottom 30%", scrub: true } })
+    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(svg, "top 85%") })
     tl.from(all(svg, "[data-label]"), { opacity: 0, duration: 0.1, stagger: 0.1 }, 0)
     tl.from(raw, { opacity: 0, duration: 0.15, stagger: { amount: 0.15, from: "center" } }, 0)
     tl.from(all(svg, "[data-filter]"), { opacity: 0, duration: 0.1 }, 0.15)
@@ -180,11 +273,12 @@ function recit(root: HTMLElement) {
     tl.to(raw, { opacity: 0.55, duration: 0.3 }, 0.35)
     tl.from(all(svg, "[data-hub]"), { opacity: 0, scale: 0.6, transformOrigin: "50% 50%", duration: 0.1 }, 0.62)
     tl.from(all(svg, "[data-link]"), { drawSVG: "0%", duration: 0.2, stagger: 0.03 }, 0.72)
+    tl.to({}, { duration: 0.12 })
   }
 
   rules(root, true)
   const facts = root.querySelector("[data-facts]")
-  if (facts) gsap.from(facts.children, { autoAlpha: 0, y: 20, ease: "none", stagger: 0.2, scrollTrigger: { trigger: facts, start: "top 95%", end: "top 65%", scrub: true } })
+  if (facts) gsap.from(facts.children, { autoAlpha: 0, y: 20, ease: "none", stagger: 0.2, scrollTrigger: at(facts, { start: "top 95%", end: "top 65%", scrub: true }) })
 }
 
 /* ---------- Version 3 : Cinétique ---------- */
@@ -240,19 +334,19 @@ function cinetique(root: HTMLElement): () => void {
           autoAlpha: 0,
           ease: "power2.out",
           stagger: 0.08,
-          scrollTrigger: { trigger: el, start: "top 96%", end: "top 55%", scrub: 0.8, invalidateOnRefresh: true },
+          scrollTrigger: at(el, { start: "top 96%", end: "top 55%", scrub: 0.8, invalidateOnRefresh: true }),
         }),
     })
   }
   // Inclinaison des titres selon la vitesse du scroll, qui retombe à zéro à l'arrêt.
   if (titles.length) {
     const setters = titles.map((t) => gsap.quickTo(t, "skewY", { duration: 0.6, ease: "power3.out" }))
-    const settle = gsap.delayedCall(0.15, () => setters.forEach((s) => s(0))).pause()
+    const calm = gsap.delayedCall(0.15, () => setters.forEach((s) => s(0))).pause()
     ScrollTrigger.create({
       onUpdate: (self) => {
         const v = gsap.utils.clamp(-4, 4, self.getVelocity() / -450)
         setters.forEach((s) => s(v))
-        settle.restart(true)
+        calm.restart(true)
       },
     })
   }
@@ -265,7 +359,7 @@ function cinetique(root: HTMLElement): () => void {
     gsap.fromTo(
       panel,
       { clipPath: "inset(16% 12% 16% 12% round 8px)", scale: 0.94 },
-      { clipPath: "inset(0% 0% 0% 0% round 8px)", scale: 1, ease: "none", scrollTrigger: { trigger: panel, start: "top 98%", end: "top 45%", scrub: 0.6 } },
+      { clipPath: "inset(0% 0% 0% 0% round 8px)", scale: 1, ease: "none", scrollTrigger: at(panel, { start: "top 98%", end: "top 45%", scrub: 0.6 }) },
     )
     const rows = all(panel, "[data-rows] > li")
     if (rows.length) gsap.from(rows, { autoAlpha: 0, x: 48, duration: 0.9, ease: "expo.out", stagger: 0.08, scrollTrigger: once(panel, "top 70%") })
@@ -278,11 +372,11 @@ function cinetique(root: HTMLElement): () => void {
     }
   }
 
-  // Le brut tourbillonne et s'engouffre dans le filtre ; les connaissances ressortent d'un coup.
+  // Le brut tourbillonne sur le poste ; les connaissances ressortent du filtre d'un coup.
   const svg = root.querySelector("[data-privacy]")
   if (svg) {
     const group = svg.querySelector("[data-raw-group]")
-    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: { trigger: svg, start: "top 85%", end: "center 35%", scrub: 0.6 } })
+    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: at(svg, { start: "top 85%", end: "center 35%", scrub: 0.6 }) })
     if (group) tl.to(group, { rotation: -120, svgOrigin: "120 110", duration: 0.6 }, 0)
     tl.to(all(svg, "[data-raw]"), { opacity: 0.15, duration: 0.6, stagger: { amount: 0.3, from: "random" } }, 0)
     tl.from(all(svg, "[data-filter]"), { opacity: 0, scaleY: 0.2, transformOrigin: "50% 50%", duration: 0.2 }, 0.1)
@@ -307,7 +401,7 @@ function cinetique(root: HTMLElement): () => void {
 /** Trait encre au-dessus des engagements : il se trace de gauche à droite. */
 function rules(root: HTMLElement, scrub: boolean) {
   for (const el of all(root, "[data-rule]")) {
-    if (scrub) gsap.fromTo(el, { scaleX: 0 }, { scaleX: 1, ease: "none", transformOrigin: "0% 50%", scrollTrigger: { trigger: el, start: "top 95%", end: "top 55%", scrub: true } })
+    if (scrub) gsap.fromTo(el, { scaleX: 0 }, { scaleX: 1, ease: "none", transformOrigin: "0% 50%", scrollTrigger: at(el, { start: "top 95%", end: "top 55%", scrub: true }) })
     else gsap.fromTo(el, { scaleX: 0 }, { scaleX: 1, duration: 1.3, ease: "expo.out", transformOrigin: "0% 50%", scrollTrigger: once(el, "top 90%") })
   }
 }

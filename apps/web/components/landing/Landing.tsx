@@ -16,8 +16,12 @@ import type { MotionVariant } from "./motion/variants"
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
-/** Longueur de la scène épinglée, en hauteurs d'écran. */
+/**
+ * Longueur de la scène épinglée, en hauteurs d'écran. Les versions comparées la rallongent : chaque chapitre
+ * reste plus longtemps à l'écran et les transitions sont plus douces.
+ */
 const PIN_SCREENS = 4
+const PIN_SCREENS_PACED = 7
 
 /** Entrée et sortie de chaque chapitre, en fraction de la scène. */
 const CHAPTERS = [
@@ -70,7 +74,7 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
         scrollTrigger: {
           trigger: stageRef.current,
           start: "top top",
-          end: `+=${PIN_SCREENS * 100}%`,
+          end: `+=${(variant === "actuelle" ? PIN_SCREENS : PIN_SCREENS_PACED) * 100}%`,
           pin: true,
           scrub: true,
           onUpdate: (self) => {
@@ -93,7 +97,9 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
       tl.fromTo(barRef.current, { scaleX: 0 }, { scaleX: 1, duration: 1 }, 0)
 
       // Le reste de la page, selon la version comparée. Créé après la scène épinglée, pour l'ordre des déclencheurs.
-      const offMotion = rootRef.current ? setupLandingMotion(variant, rootRef.current) : () => {}
+      const scene = tl.scrollTrigger
+      const stops = CHAPTERS.map((c) => (c.in + 0.045 + c.out) / 2)
+      const offMotion = rootRef.current && scene ? setupLandingMotion(variant, rootRef.current, { lenis, scene, stops }) : () => {}
 
       return () => {
         offMotion()
