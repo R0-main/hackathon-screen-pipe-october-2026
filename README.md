@@ -261,6 +261,16 @@ the zones step of `/create`, or on the Onboarding page). The 7-question intervie
 
 The dashboard must be reachable by the computers (public URL or local network): set `BRAIN_PUBLIC_URL`.
 
+### The brain inside Claude (MCP Apps)
+
+The company's MCP server (`<brain>/api/mcp/<company id>/<token>`) also has three view tools: `show_brain` (the 3D brain,
+zones lighting up live as the team's agents work), `show_automations` (an admin sets the suggestions up or dismisses
+them in place) and `show_team` (the org chart). In Claude on the web and desktop, add that address as a custom
+connector (Settings → Connectors) and ask "show me the brain": the dashboard's view opens in the conversation, with
+the token's rights. Claude Code only shows their text answer; it lists them as commands (`/mcp__<server>__show_brain`…).
+The view (`apps/web/mcp-apps/`) reuses the dashboard's components and is built into one HTML file by
+`npm run build:mcp-apps -w @brain/web` (run by `dev` and `build`).
+
 ## Host the brain on a company machine (Docker, local HTTPS)
 
 Nothing leaves the company: Postgres, the dashboard and HTTPS run on a computer that is always on, the computers

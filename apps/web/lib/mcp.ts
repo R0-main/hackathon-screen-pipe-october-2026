@@ -14,7 +14,9 @@ import * as whoamiRoute from "@/app/api/whoami/route"
 import * as zoneRoute from "@/app/api/zones/[id]/route"
 import * as zonesRoute from "@/app/api/zones/route"
 import { profileFromToken } from "./auth"
+import { publicBaseUrl } from "./http"
 import { possessive } from "./install-prompt"
+import { registerBrainApps } from "./mcp-apps"
 import { recordIncident } from "./monitoring"
 import { storeForOrg } from "./store"
 
@@ -77,6 +79,8 @@ export async function handleMcp(req: Request, orgId: string, token: string | nul
       open: () => ({ api: routesApi(token), key: orgId }),
       sourceApp: "mcp",
     })
+    // The views (brain, automations, team), for clients that render MCP Apps.
+    registerBrainApps(server, { token, baseUrl: publicBaseUrl(req), org: org.name })
     // A new transport per request (stateless mode): nothing is shared between two clients.
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     await server.connect(transport)

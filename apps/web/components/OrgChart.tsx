@@ -87,12 +87,15 @@ export function OrgChart({
   presence,
   selected,
   onSelect,
+  showZones = true,
 }: {
   users: OrgUser[]
   zones: Zone[]
   presence: Record<string, Presence>
   selected: string | null
   onSelect: (id: string | null) => void
+  /** Each card's zones (who reads what): false for a member's view, which does not get them. */
+  showZones?: boolean
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const { roots, width, height } = useMemo(() => buildForest(users), [users])
@@ -259,7 +262,7 @@ export function OrgChart({
                       </span>
                     </span>
                   </span>
-                  <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-trace">
+                  <span className={`min-w-0 items-center gap-1.5 text-[11.5px] text-trace ${showZones ? "flex" : "hidden"}`}>
                     {u.role === "admin" ? (
                       <span>Admin, all zones</span>
                     ) : visible.length === 0 ? (
