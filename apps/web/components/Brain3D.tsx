@@ -26,8 +26,11 @@ const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
 const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
-/** Réseau à l'encre : les traits un peu adoucis vers le blanc, les neurones en noir plein. */
+/** Traits du réseau à l'encre, un peu adoucis vers le blanc. */
 const SOFTEN = 0.35
+/** Petits neurones dans la couleur de leur zone, légèrement adoucie ; gris hors zone (cervelet, tronc, zone verrouillée). */
+const DOT_SOFTEN = 0.2
+const BARE = 0xc4c4bc
 /** Chaque couche interne est un peu plus pâle et ses neurones un peu plus petits : la profondeur se lit. */
 const DEPTH_SOFTEN = 0.15
 /** Part de blanc sur la face cachée : il n'en reste qu'un souffle, qui garde la silhouette. */
@@ -64,7 +67,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 
 /**
  * Le cerveau en trois dimensions : un réseau de neurones sur la surface d'un cerveau (lobes, cervelet,
- * tronc) dessine la silhouette à l'encre ; seules les zones portent la couleur. Les billes (les connaissances)
+ * tronc) dessine la silhouette : traits à l'encre, neurones dans la couleur de leur zone. Les billes (les connaissances)
  * sont groupées par zone sur le cortex, reliées à leur centre et entre zones par des traits fins. On le fait tourner à la
  * souris, on zoome à la molette, en pinçant ou avec les boutons. Il remplit son conteneur : la page ne défile
  * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
@@ -301,6 +304,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
   const inkC = new T.Color(INK)
   const whiteC = new T.Color(WHITE)
+  const bareC = new T.Color(BARE)
+  const zoneList = [...gfx.values()]
   const tone = new T.Color()
   // Couleurs de base par neurone (liaison et point), puis estompées chaque image selon la face visible.
   const linkBase = new Float32Array(net.points.length * 3)
@@ -309,7 +314,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   net.points.forEach((_, i) => {
     const deeper = net.depth[i] * DEPTH_SOFTEN
     tone.copy(inkC).lerp(whiteC, SOFTEN + deeper).toArray(linkBase, i * 3)
-    dotBase[i].copy(inkC).lerp(whiteC, deeper)
+    const g = net.zone[i] >= 0 ? zoneList[net.zone[i]] : undefined
+    if (!g || g.locked) dotBase[i].copy(bareC)
+    else dotBase[i].setHex(g.color).lerp(whiteC, DOT_SOFTEN + deeper)
   })
   const camLocal = new T.Vector3()
   const shadeNetwork = () => {

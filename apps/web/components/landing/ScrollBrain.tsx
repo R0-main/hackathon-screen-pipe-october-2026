@@ -35,8 +35,10 @@ const EXTENT = { w: 1.65, h: 1.45 }
 const FOV = 26
 const DUST = 160
 const BONE = 0xf6f6f3
-/** Réseau à l'encre : les traits un peu adoucis vers le blanc, les neurones en noir plein. */
+/** Traits du réseau à l'encre, un peu adoucis vers le blanc. */
 const SOFTEN = 0.35
+/** Petits neurones dans la couleur de leur zone, légèrement adoucie. */
+const DOT_SOFTEN = 0.2
 /** Chaque couche interne est un peu plus pâle et ses neurones un peu plus petits : la profondeur se lit. */
 const DEPTH_SOFTEN = 0.15
 /** Part de bone sur la face cachée du réseau : il n'en reste qu'un souffle, qui garde la silhouette. */
@@ -197,7 +199,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     return new T.Vector3(p[0] + n[0] * k, p[1] + n[1] * k, p[2] + n[2] * k)
   }
 
-  // Le réseau qui dessine le cerveau : gris brut au départ, il passe à l'encre quand les zones sont nommées.
+  // Le réseau qui dessine le cerveau : gris brut au départ ; quand les zones sont nommées, les traits passent à l'encre et les neurones à la couleur de leur zone.
   const net = brainNetwork(owner)
   const curves = curveNetwork(net)
   const netCol = new Float32Array(curves.positions.length)
@@ -356,14 +358,16 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const fade = new Float32Array(net.points.length)
   const camLocal = new T.Vector3()
   let painted = -1
-  /** Couleur du réseau : gris brut → encre, à mesure que les zones sont nommées. Seules les zones portent la couleur. */
+  /** Couleur du réseau : gris brut → traits à l'encre et neurones dans la couleur de leur zone, à mesure que les zones sont nommées. */
   const paintNetwork = (named: number) => {
     if (Math.abs(named - painted) < 0.004) return
     painted = named
     net.points.forEach((_, i) => {
       const deeper = net.depth[i] * DEPTH_SOFTEN
       netC.copy(rawC).lerp(col.copy(inkC).lerp(whiteC, SOFTEN + deeper), named).toArray(linkBase, i * 3)
-      dotBase[i].copy(rawC).lerp(col.copy(inkC).lerp(whiteC, deeper), named)
+      const zone = net.zone[i]
+      if (zone < 0) dotBase[i].copy(rawC)
+      else dotBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, DOT_SOFTEN + deeper), named)
     })
   }
   /** La face cachée pâlit vers le fond : seule la face visible du réseau se lit. */
