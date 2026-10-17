@@ -104,9 +104,13 @@ organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_setti
 
 ### Remplir le cerveau depuis ses anciennes conversations
 
-Page **Onboarding** (admins) : « Le faire remplir par Claude Code ou Codex ». Le prompt copié fait lire à l'agent
-l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README des projets, en tirer les zones et
-10 à 40 premières connaissances (jamais de secrets ni de données perso), puis les envoyer avec un code d'envoi
+Page **Onboarding** (admins), étape « contexte » de `/creer`, et rappel sur un dashboard vide : « Donnez au cerveau
+le contexte de vos comptes ». Le prompt s'ouvre dans Claude Code en local (lien `claude-cli://`, terminal sur ce
+poste ; VS Code et l'app de bureau en mode « Local » en option) ou se copie pour Codex. L'agent s'arrête s'il tourne
+dans le cloud, demande d'abord l'accord de la personne (« Acceptes-tu de donner accès à ces données à ce site ? »),
+ne garde que les conversations qui concernent l'entreprise (son nom et ce qu'elle fait, tels que saisis dans
+`/creer`), lit l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README de ces projets, en
+tire les zones et 10 à 40 premières connaissances (jamais de secrets ni de données perso), puis les envoie avec un code d'envoi
 valable 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin seulement). La page se remplit toute seule avec la
 proposition, masquée à nouveau côté serveur ; rien n'est appliqué avant que l'admin l'ait relue et validée.
 L'interview en 7 questions reste disponible en dessous. Le lien est aussi proposé à la fin de `/creer`, et la page
