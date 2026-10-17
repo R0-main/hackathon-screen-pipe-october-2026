@@ -134,11 +134,11 @@ function Face({ look }: { look: DotLook }) {
   )
 }
 
-type PersonLook = { color: string; look: DotLook }
+export type PersonLook = { color: string; look: DotLook }
 const looksCache = new WeakMap<DashboardState, Map<string, PersonLook>>()
 
 /** Couleur (sa zone) et tenue de chacun, calculées comme le cerveau les calcule : un même état, une seule fois. */
-function peopleLooks(state: DashboardState): Map<string, PersonLook> {
+export function peopleLooks(state: DashboardState): Map<string, PersonLook> {
   const hit = looksCache.get(state)
   if (hit) return hit
   const zones = new Map(state.zones.map((z) => [z.id, z]))
