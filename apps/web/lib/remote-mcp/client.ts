@@ -1,5 +1,5 @@
-// Client MCP minimal en Streamable HTTP : ouvre une session (initialize), liste les outils, referme la session.
-// Réponses en JSON ou en SSE ; l'identifiant de session (Mcp-Session-Id) est renvoyé à chaque appel.
+// Minimal MCP client over Streamable HTTP: opens a session (initialize), lists the tools, closes the session.
+// Responses in JSON or SSE; the session id (Mcp-Session-Id) is sent back on each call.
 
 import { findResponse, type JsonRpcMessage } from "@brain/core"
 import { guardedRequest, type NetDeps } from "./net"
@@ -9,10 +9,10 @@ import { DEFAULT_DEPS } from "../scrape"
 const PROTOCOL_VERSION = "2025-06-18"
 const MAX_TOOL_PAGES = 5
 
-/** 401/403 du serveur MCP : jeton absent, expiré ou révoqué. */
+/** 401/403 from the MCP server: token missing, expired or revoked. */
 export class McpAuthError extends Error {
   constructor(status: number) {
-    super(`accès refusé par le serveur MCP (HTTP ${status})`)
+    super(`access refused by the MCP server (HTTP ${status})`)
   }
 }
 
@@ -37,18 +37,18 @@ export async function listTools(serverUrl: string, bearer: string | undefined, d
           ...(sessionId ? { "mcp-session-id": sessionId } : {}),
         },
         body: JSON.stringify(notification ? { jsonrpc: "2.0", method, ...(params ? { params } : {}) } : { jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }),
-        // Un flux SSE peut rester ouvert après la réponse : on s'arrête dès qu'elle est là.
+        // An SSE stream can stay open after the response: stop as soon as it is there.
         until: notification ? undefined : (body) => findResponse(body, "text/event-stream", id) !== null,
       },
       deps,
     )
     if (res.status === 401 || res.status === 403) throw new McpAuthError(res.status)
     if (notification) return null
-    if (res.status < 200 || res.status >= 300) throw new Error(`le serveur MCP répond HTTP ${res.status}${res.status === 404 ? " (adresse du serveur incorrecte ?)" : ""}`)
+    if (res.status < 200 || res.status >= 300) throw new Error(`the MCP server answers HTTP ${res.status}${res.status === 404 ? " (wrong server address?)" : ""}`)
     sessionId = res.headers["mcp-session-id"] ?? sessionId
     const msg = findResponse(res.body, res.headers["content-type"] ?? "", id)
-    if (!msg) throw new Error(`réponse MCP illisible à « ${method} »`)
-    if (msg.error) throw new Error(`erreur MCP à « ${method} » : ${msg.error.message}`)
+    if (!msg) throw new Error(`unreadable MCP response to "${method}"`)
+    if (msg.error) throw new Error(`MCP error on "${method}": ${msg.error.message}`)
     return msg
   }
 
@@ -68,7 +68,7 @@ export async function listTools(serverUrl: string, bearer: string | undefined, d
   }
 
   if (sessionId) {
-    // Fin de session, sans attendre ni échouer.
+    // End of session, without waiting or failing.
     void guardedRequest(serverUrl, { method: "DELETE", headers: { "mcp-session-id": sessionId, ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) }, timeoutMs: 5_000 }, deps).catch(() => null)
   }
   const info = initResult.serverInfo

@@ -10,24 +10,24 @@ import { CheckIcon, ErrorText } from "./ui"
 type Mode = "subscription" | "api"
 
 const SKIPPED: Record<string, string> = {
-  no_claude: "pas de clé Claude",
-  too_few_items: "pas assez de connaissances récentes",
-  max_zones: "12 zones, le plafond est atteint",
-  claude_error: "Claude n'a pas répondu, nouvel essai demain",
+  no_claude: "no Claude key",
+  too_few_items: "not enough recent knowledge",
+  max_zones: "12 zones, the cap is reached",
+  claude_error: "Claude did not answer, retrying tomorrow",
 }
 
 function outcome(r: NewZonesRun): string {
-  if (r.status === "created") return `Créée${r.zones.length > 1 ? "s" : ""} : ${r.zones.map((z) => `${z.name} (${z.items} connaissance${z.items > 1 ? "s" : ""})`).join(", ")}`
-  if (r.status === "unchanged") return "Rien à créer"
-  return `Rien fait : ${SKIPPED[r.reason] ?? r.reason}`
+  if (r.status === "created") return `Created: ${r.zones.map((z) => `${z.name} (${z.items} item${z.items === 1 ? "" : "s"})`).join(", ")}`
+  if (r.status === "unchanged") return "Nothing to create"
+  return `Nothing done: ${SKIPPED[r.reason] ?? r.reason}`
 }
 
 /**
- * Workflow GitHub Actions de l'entreprise : son Claude Code, avec son jeton d'abonnement (`claude setup-token`), fait
- * l'analyse chaque jour à 10 h (heure de Paris) dans SA CI ; le cerveau ne reçoit que les propositions.
+ * The company's GitHub Actions workflow: its Claude Code, with its subscription token (`claude setup-token`), does
+ * the analysis every day at 10am (Paris time) in ITS CI; the brain only receives the proposals.
  */
 export function ciWorkflow(baseUrl: string): string {
-  return `name: Cerveau — nouvelles zones
+  return `name: Brain — new zones
 on:
   schedule:
     - cron: "0 8 * * *"
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: 10 h à Paris (GitHub ne compte qu'en UTC)
+      - name: 10am in Paris (GitHub only counts in UTC)
         id: hour
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$(TZ=Europe/Paris date +%H)" = "10" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; fi
@@ -47,12 +47,12 @@ jobs:
         with:
           node-version: 22
       - if: steps.hour.outputs.go == '1'
-        name: Claude Code et le client du cerveau
+        name: Claude Code and the brain client
         run: |
           npm install -g @anthropic-ai/claude-code
           curl -fsSL ${baseUrl}/brain.mjs -o "$RUNNER_TEMP/brain.mjs"
       - if: steps.hour.outputs.go == '1'
-        name: Nouvelles zones
+        name: New zones
         env:
           BRAIN_TOKEN: \${{ secrets.BRAIN_TOKEN }}
           CLAUDE_CODE_OAUTH_TOKEN: \${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -63,8 +63,8 @@ jobs:
 }
 
 /**
- * Zones automatiques : qui fait l'analyse quotidienne (le Claude Code de l'entreprise avec son abonnement, en CI, ou
- * le serveur avec la clé API de l'entreprise), et l'historique des passages. `onZonesChanged` relit la liste des zones.
+ * Automatic zones: who does the daily analysis (the company's Claude Code with its subscription, in CI, or
+ * the server with the company's API key), and the run history. `onZonesChanged` re-reads the zone list.
  */
 export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
   const [info, setInfo] = useState<ClaudeKeyInfo | null>(null)
@@ -80,7 +80,7 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
         setInfo(i)
         setRuns(r.runs)
         setBaseUrl(r.base_url)
-        // Une clé déjà enregistrée : on montre ce mode ; sinon l'abonnement Claude Code, sans clé API.
+        // A key already saved: show that mode; otherwise the Claude Code subscription, without an API key.
         setMode((m) => m ?? (i.source === "org" ? "api" : "subscription"))
       })
       .catch((e) => setErr(errorMessage(e)))
@@ -94,7 +94,7 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
       setRuns((prev) => [run, ...prev])
       if (run.status === "created") onZonesChanged()
     } catch (e) {
-      setErr(`Passage impossible : ${errorMessage(e)}`)
+      setErr(`Could not run: ${errorMessage(e)}`)
     } finally {
       setBusy(false)
     }
@@ -103,19 +103,19 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
   return (
     <section className="panel space-y-4 p-4 sm:p-5">
       <div className="space-y-1">
-        <h2 className="panel-title">Zones automatiques</h2>
+        <h2 className="panel-title">Automatic zones</h2>
         <p className="text-[13px] text-trace">
-          Chaque jour à 10 h, Claude relit les connaissances des 30 derniers jours et crée la zone d&apos;un domaine qui revient sans avoir la sienne. Ses
-          connaissances y sont rangées, et ceux qui les lisaient la lisent aussi.
+          Every day at 10am, Claude re-reads the knowledge from the last 30 days and creates a zone for an area that keeps coming up without one of its own. Its
+          knowledge is filed there, and whoever read it can read the new zone too.
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Qui fait l'analyse">
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Who does the analysis">
         <button type="button" className={`chip ${mode === "subscription" ? "chip-on" : ""}`} aria-pressed={mode === "subscription"} onClick={() => setMode("subscription")}>
-          Abonnement Claude (Claude Code)
+          Claude subscription (Claude Code)
         </button>
         <button type="button" className={`chip ${mode === "api" ? "chip-on" : ""}`} aria-pressed={mode === "api"} onClick={() => setMode("api")}>
-          Clé API Claude
+          Claude API key
         </button>
       </div>
 
@@ -126,17 +126,17 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
 
       <div className="space-y-2 border-t border-line pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-[13px] font-medium">Derniers passages</h3>
+          <h3 className="text-[13px] font-medium">Latest runs</h3>
           {mode === "api" && (
-            <button type="button" className="btn btn-sm" onClick={runNow} disabled={busy || !info?.source} title={info?.source ? undefined : "Ajoutez d'abord une clé Claude."}>
-              {busy ? "Claude relit le cerveau…" : "Lancer maintenant"}
+            <button type="button" className="btn btn-sm" onClick={runNow} disabled={busy || !info?.source} title={info?.source ? undefined : "Add a Claude key first."}>
+              {busy ? "Claude is re-reading the brain…" : "Run now"}
             </button>
           )}
         </div>
         {mode === null && !err ? (
-          <p className="text-[13px] text-trace">Chargement…</p>
+          <p className="text-[13px] text-trace">Loading…</p>
         ) : runs.length === 0 ? (
-          <p className="text-[13px] text-trace">Aucun passage pour l&apos;instant.</p>
+          <p className="text-[13px] text-trace">No run yet.</p>
         ) : (
           <ul className="space-y-1.5">
             {runs.slice(0, 6).map((r) => (
@@ -144,7 +144,7 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
                 <RelTime iso={r.at} className="w-28 shrink-0 text-trace" />
                 <span className="min-w-0">
                   {outcome(r)}
-                  <span className="text-trace">{r.via === "claude-code" ? " · Claude Code" : " · serveur"}</span>
+                  <span className="text-trace">{r.via === "claude-code" ? " · Claude Code" : " · server"}</span>
                 </span>
               </li>
             ))}
@@ -155,7 +155,7 @@ export function AutoZones({ onZonesChanged }: { onZonesChanged: () => void }) {
   )
 }
 
-/** Mode abonnement : la marche à suivre pour la CI de l'entreprise, et le workflow à copier. */
+/** Subscription mode: the steps for the company's CI, and the workflow to copy. */
 function SubscriptionSetup({ baseUrl }: { baseUrl: string }) {
   const [copied, setCopied] = useState(false)
   const [copyErr, setCopyErr] = useState<string | null>(null)
@@ -165,7 +165,7 @@ function SubscriptionSetup({ baseUrl }: { baseUrl: string }) {
   async function copy() {
     setCopyErr(null)
     try {
-      if (!navigator.clipboard?.writeText) throw new Error("presse-papiers indisponible")
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable")
       await navigator.clipboard.writeText(yaml)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -177,45 +177,45 @@ function SubscriptionSetup({ baseUrl }: { baseUrl: string }) {
         sel.removeAllRanges()
         sel.addRange(range)
       }
-      setCopyErr("Copie automatique impossible ici : le fichier est sélectionné, copiez-le avec Ctrl+C (⌘C sur Mac).")
+      setCopyErr("Automatic copy is not possible here: the file is selected, copy it with Ctrl+C (⌘C on a Mac).")
     }
   }
 
   return (
     <div className="space-y-3">
       <p className="text-[13px]">
-        L&apos;analyse tourne dans votre propre CI GitHub, avec le Claude Code de l&apos;entreprise et votre abonnement : aucune clé API, aucun PC allumé, et le
-        jeton Claude ne quitte jamais votre CI. Le cerveau ne reçoit que les zones proposées.
+        The analysis runs in your own GitHub CI, with the company&apos;s Claude Code and your subscription: no API key, no computer left on, and the
+        Claude token never leaves your CI. The brain only receives the proposed zones.
       </p>
       <ol className="list-decimal space-y-1.5 pl-5 text-[13px]">
         <li>
-          Sur votre poste, lancez <code className="mono">claude setup-token</code> et copiez le jeton affiché (valable un an).
+          On your computer, run <code className="mono">claude setup-token</code> and copy the token shown (valid for a year).
         </li>
         <li>
-          Dans un repo GitHub de l&apos;entreprise, <span className="text-trace">Settings → Secrets and variables → Actions</span>, créez deux secrets :{" "}
-          <code className="mono">CLAUDE_CODE_OAUTH_TOKEN</code> (ce jeton) et <code className="mono">BRAIN_TOKEN</code> (votre jeton du cerveau, champ{" "}
-          <code className="mono">token</code> de <code className="mono">~/.company-brain/config.json</code>).
+          In one of the company&apos;s GitHub repos, <span className="text-trace">Settings → Secrets and variables → Actions</span>, create two secrets:{" "}
+          <code className="mono">CLAUDE_CODE_OAUTH_TOKEN</code> (that token) and <code className="mono">BRAIN_TOKEN</code> (your brain token, the{" "}
+          <code className="mono">token</code> field of <code className="mono">~/.company-brain/config.json</code>).
         </li>
         <li>
-          Ajoutez ce fichier sous <code className="mono">.github/workflows/cerveau-zones.yml</code>. Pour un premier essai :{" "}
-          <span className="text-trace">Actions → Cerveau — nouvelles zones → Run workflow</span>.
+          Add this file as <code className="mono">.github/workflows/brain-zones.yml</code>. For a first try:{" "}
+          <span className="text-trace">Actions → Brain — new zones → Run workflow</span>.
         </li>
       </ol>
       <pre ref={preRef} className="scroll-thin mono inset max-h-[320px] overflow-auto p-3 text-[12px] leading-relaxed">
-        {yaml || "Chargement…"}
+        {yaml || "Loading…"}
       </pre>
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className="btn btn-sm" onClick={copy} disabled={!yaml}>
           {copied ? (
             <>
-              <CheckIcon size={14} /> Copié
+              <CheckIcon size={14} /> Copied
             </>
           ) : (
-            "Copier le workflow"
+            "Copy the workflow"
           )}
         </button>
         <span className="text-[12px] text-trace">
-          Ou à la main sur votre poste : <code className="mono">~/.company-brain/brain refresh-zones</code>
+          Or by hand on your computer: <code className="mono">~/.company-brain/brain refresh-zones</code>
         </span>
       </div>
       {copyErr && <ErrorText className="text-[12px]">{copyErr}</ErrorText>}
@@ -223,7 +223,7 @@ function SubscriptionSetup({ baseUrl }: { baseUrl: string }) {
   )
 }
 
-/** Mode clé API : le serveur fait l'analyse avec la clé de l'entreprise (vérifiée, chiffrée, jamais réaffichée). */
+/** API key mode: the server does the analysis with the company's key (checked, encrypted, never shown again). */
 function ApiKeySetup({ info, onInfo }: { info: ClaudeKeyInfo; onInfo: (i: ClaudeKeyInfo) => void }) {
   const [key, setKey] = useState("")
   const [editing, setEditing] = useState(false)
@@ -241,7 +241,7 @@ function ApiKeySetup({ info, onInfo }: { info: ClaudeKeyInfo; onInfo: (i: Claude
       onInfo(await api<ClaudeKeyInfo>("/api/admin/claude", { method: "PUT", json: { key: key.trim() } }))
       setKey("")
       setEditing(false)
-      setOk("Clé vérifiée auprès d'Anthropic et enregistrée.")
+      setOk("Key checked with Anthropic and saved.")
     } catch (e) {
       setErr(errorMessage(e))
     } finally {
@@ -250,7 +250,7 @@ function ApiKeySetup({ info, onInfo }: { info: ClaudeKeyInfo; onInfo: (i: Claude
   }
 
   async function remove() {
-    if (!confirm("Retirer la clé Claude de l'entreprise ? Le serveur ne créera plus de zones avec elle.")) return
+    if (!confirm("Remove the company's Claude key? The server will no longer create zones with it.")) return
     setBusy("remove")
     setErr(null)
     setOk(null)
@@ -268,27 +268,27 @@ function ApiKeySetup({ info, onInfo }: { info: ClaudeKeyInfo; onInfo: (i: Claude
       <p className="text-[13px]">
         {info.source === "org" ? (
           <>
-            Clé Claude de l&apos;entreprise : <span className="font-mono">sk-ant-…{info.last4}</span>
+            The company&apos;s Claude key: <span className="font-mono">sk-ant-…{info.last4}</span>
             {info.updated_at && (
               <span className="text-trace">
                 {" "}
-                · enregistrée <RelTime iso={info.updated_at} />
+                · saved <RelTime iso={info.updated_at} />
               </span>
             )}
           </>
         ) : info.source === "server" ? (
-          "Clé Claude : celle du serveur. Ajoutez la vôtre pour que les appels soient facturés à votre entreprise."
+          "Claude key: the server's. Add your own so that calls are billed to your company."
         ) : (
-          "Le serveur fait l'analyse avec la clé API de l'entreprise : aucune n'est enregistrée pour l'instant."
+          "The server does the analysis with the company's API key: none is saved yet."
         )}
       </p>
       {info.source === "org" && !editing && (
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn btn-sm" onClick={() => setEditing(true)} disabled={busy !== null}>
-            Remplacer la clé
+            Replace the key
           </button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={remove} disabled={busy !== null}>
-            {busy === "remove" ? "Retrait…" : "Retirer"}
+            {busy === "remove" ? "Removing…" : "Remove"}
           </button>
         </div>
       )}
@@ -300,7 +300,7 @@ function ApiKeySetup({ info, onInfo }: { info: ClaudeKeyInfo; onInfo: (i: Claude
               type="password"
               autoComplete="off"
               spellCheck={false}
-              aria-label="Clé API Claude"
+              aria-label="Claude API key"
               placeholder="sk-ant-api03-…"
               value={key}
               onChange={(e) => setKey(e.target.value)}
@@ -308,17 +308,17 @@ function ApiKeySetup({ info, onInfo }: { info: ClaudeKeyInfo; onInfo: (i: Claude
               required
             />
             <button type="submit" className="btn btn-primary" disabled={busy !== null || !key.trim()}>
-              {busy === "save" ? "Vérification…" : "Enregistrer"}
+              {busy === "save" ? "Checking…" : "Save"}
             </button>
             {editing && (
               <button type="button" className="btn btn-ghost" onClick={() => setEditing(false)} disabled={busy !== null}>
-                Annuler
+                Cancel
               </button>
             )}
           </div>
           <p className="text-[12px] text-trace">
-            Une clé API de la Console Anthropic (console.anthropic.com, rubrique API Keys). Elle est essayée avant d&apos;être enregistrée, conservée chiffrée,
-            et n&apos;est plus jamais affichée.
+            An API key from the Anthropic Console (console.anthropic.com, API Keys section). It is tried before being saved, kept encrypted,
+            and never shown again.
           </p>
         </form>
       )}

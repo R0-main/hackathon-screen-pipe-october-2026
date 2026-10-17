@@ -1,7 +1,7 @@
--- Demandes pour rejoindre une entreprise : le message d'équipe (un code par entreprise, dans brain_settings sous
--- `join:<org_id>`) crée une demande en attente, préremplie par le Claude du demandeur. Un admin l'accepte (le compte
--- est créé avec l'empreinte du jeton généré sur le poste, jamais transmis en clair) ou la refuse.
--- Lue et écrite uniquement par l'API (rôle propriétaire) : RLS activée sans politique.
+-- Requests to join a company: the team message (one code per company, in brain_settings under
+-- `join:<org_id>`) creates a pending request, pre-filled by the requester's Claude. An admin accepts it (the account
+-- is created with the fingerprint of the token generated on the computer, never sent in clear) or declines it.
+-- Read and written only by the API (owner role): RLS enabled without a policy.
 
 create table if not exists join_requests (
   id uuid primary key default gen_random_uuid(),

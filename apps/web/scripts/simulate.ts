@@ -1,7 +1,7 @@
-// Simulateur d'activité pour la démo : des agents « travaillent » et le cerveau s'allume en direct.
-// Usage : npm run simulate                 (boucle, Ctrl-C pour arrêter)
-//         npm run simulate -- --once       (une seule scène)
-//         npm run simulate -- --speed 2    (deux fois plus rapide)
+// Activity simulator for the demo: agents "work" and the brain lights up live.
+// Usage: npm run simulate                 (loop, Ctrl-C to stop)
+//        npm run simulate -- --once       (a single scene)
+//        npm run simulate -- --speed 2    (twice as fast)
 
 import { normalize, promptFingerprint, type KnowledgeItemInput } from "@brain/core"
 import { getStore } from "../lib/store"
@@ -16,63 +16,63 @@ const speed = Number(args[args.indexOf("--speed") + 1]) || 1
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms / speed))
 const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]
 
-/** Questions qu'un agent pose au cerveau via le MCP (search_brain). */
+/** Questions an agent asks the brain through the MCP (search_brain). */
 const AGENT_QUERIES: Record<string, string[]> = {
-  dev: ["procédure de déploiement en production", "webhook Stripe invoice.paid", "isolation RLS Supabase", "restaurer une sauvegarde"],
-  produit: ["priorité du trimestre alerte essaimage", "retours Miellerie Roussel export Excel", "usage de l'app au rucher"],
-  sales: ["pipeline octobre négociations", "nouveau pricing annuel", "préparer une démo"],
-  compta: ["rapprochement Qonto Pennylane", "clôture mensuelle cabinet Durand", "versements Stripe sur Qonto"],
-  support: ["balance qui ne remonte plus", "top des tickets d'octobre"],
-  direction: ["objectifs T4 MRR", "levée seed reportée", "board trimestriel KPIs"],
+  dev: ["production deployment procedure", "Stripe invoice.paid webhook", "Supabase RLS isolation", "restore a backup"],
+  product: ["quarter priority swarm alert", "Miellerie Roussel feedback Excel export", "app usage at the apiary"],
+  sales: ["October pipeline negotiations", "new yearly pricing", "prepare a demo"],
+  finance: ["Qonto Pennylane reconciliation", "month-end close Durand Accounting", "Stripe payouts on Qonto"],
+  support: ["scale no longer sending weighings", "top October tickets"],
+  leadership: ["Q4 goals MRR", "seed round postponed", "quarterly board KPIs"],
 }
 
-/** Connaissances fraîches que brain-sync « distille » pendant la démo. */
+/** Fresh knowledge that brain-sync "distills" during the demo. */
 const FRESH: (KnowledgeItemInput & { author: string })[] = [
   {
-    author: "hugo", zone: "dev", kind: "decision", title: "Les alertes essaimage passent par une file Supabase Queues",
-    body: "Évite de bloquer la réception des pesées ; le SMS part chez l'apiculteur en moins de 30 secondes via Brevo.",
-    entities: [{ type: "tool", name: "Supabase" }, { type: "tool", name: "Brevo" }, { type: "project", name: "Alerte essaimage" }],
+    author: "hugo", zone: "dev", kind: "decision", title: "Swarm alerts go through a Supabase Queues queue",
+    body: "Avoids blocking the intake of weighings; the SMS reaches the beekeeper in under 30 seconds through Brevo.",
+    entities: [{ type: "tool", name: "Supabase" }, { type: "tool", name: "Brevo" }, { type: "project", name: "Swarm alert" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.82,
   },
   {
-    author: "sarah", zone: "sales", kind: "fact", title: "Coop'Apis Provence demande une remise pour ses 60 apiculteurs",
-    body: "Ils signeraient à 3,40 € par ruche en annuel. À valider avec Claire avant vendredi.",
+    author: "sarah", zone: "sales", kind: "fact", title: "Coop'Apis Provence asks for a discount for its 60 beekeepers",
+    body: "They would sign at €3.40 per hive yearly. To validate with Claire before Friday.",
     entities: [{ type: "client", name: "Coop'Apis Provence" }, { type: "person", name: "Claire Martin" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.78,
   },
   {
-    author: "jeanmarc", zone: "compta", kind: "procedure", title: "Préparer l'export mensuel pour le cabinet Durand",
-    body: "1. Clôturer les rapprochements Qonto.\n2. Exporter le FEC depuis Pennylane.\n3. Joindre les justificatifs Swile.\n4. Envoyer avant le 5 du mois.",
-    entities: [{ type: "tool", name: "Pennylane" }, { type: "client", name: "Cabinet Durand" }, { type: "tool", name: "Swile" }],
+    author: "jeanmarc", zone: "finance", kind: "procedure", title: "Prepare the monthly export for Durand Accounting",
+    body: "1. Close the Qonto reconciliations.\n2. Export the general ledger from Pennylane.\n3. Attach the Swile receipts.\n4. Send before the 5th of the month.",
+    entities: [{ type: "tool", name: "Pennylane" }, { type: "client", name: "Durand Accounting" }, { type: "tool", name: "Swile" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.85,
   },
   {
-    author: "leo", zone: "produit", kind: "decision", title: "L'alerte essaimage se coupe pendant une heure de visite",
-    body: "Ouvrir la ruche fait varier le poids de plusieurs kilos ; une heure couvre une visite d'après les interviews d'apiculteurs.",
-    entities: [{ type: "project", name: "Alerte essaimage" }],
+    author: "leo", zone: "product", kind: "decision", title: "The swarm alert mutes itself for an hour during a visit",
+    body: "Opening the hive shifts the weight by several kilos; an hour covers a visit according to the beekeeper interviews.",
+    entities: [{ type: "project", name: "Swarm alert" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.8,
   },
   {
-    author: "ines", zone: "dev", kind: "fact", title: "La mémoire tampon de la balance déborde au-delà de 2 000 pesées",
-    body: "La file en mémoire flash est plafonnée ; à corriger avant le nouveau firmware. Repro : script e2e balance-hors-reseau.spec.ts.",
-    entities: [{ type: "project", name: "Balance B2" }, { type: "tool", name: "Playwright" }],
+    author: "ines", zone: "dev", kind: "fact", title: "The scale's buffer overflows beyond 2,000 weighings",
+    body: "The flash memory queue is capped; to fix before the new firmware. Repro: e2e script scale-offline.spec.ts.",
+    entities: [{ type: "project", name: "B2 scale" }, { type: "tool", name: "Playwright" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.76,
   },
   {
-    author: "sarah", zone: "support", kind: "procedure", title: "Répondre à une demande de remboursement d'abonnement",
-    body: "1. Vérifier la date de souscription dans Stripe.\n2. Rembourser au prorata si moins de 14 jours.\n3. Noter le motif dans HubSpot pour le suivi du churn.",
+    author: "sarah", zone: "support", kind: "procedure", title: "Answer a subscription refund request",
+    body: "1. Check the subscription date in Stripe.\n2. Refund pro rata if under 14 days.\n3. Note the reason in HubSpot for churn tracking.",
     entities: [{ type: "tool", name: "Stripe" }, { type: "tool", name: "HubSpot" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.8,
   },
   {
-    author: "claire", zone: "direction", kind: "decision", title: "Le recrutement d'un second profil support est avancé à novembre",
-    body: "Le volume de tickets a doublé depuis la rentrée ; budget validé sur la trésorerie actuelle, sans attendre la levée.",
-    entities: [{ type: "project", name: "Recrutement" }],
+    author: "claire", zone: "leadership", kind: "decision", title: "Hiring a second support person is moved up to November",
+    body: "Ticket volume has doubled since September; budget approved on current cash, without waiting for the round.",
+    entities: [{ type: "project", name: "Hiring" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.79,
   },
   {
-    author: "hugo", zone: "dev", kind: "procedure", title: "Rejouer un webhook Stripe en local",
-    body: "stripe listen --forward-to localhost:3000/api/stripe puis stripe events resend <id>. Ne jamais rejouer en production sans vérifier l'idempotence.",
+    author: "hugo", zone: "dev", kind: "procedure", title: "Replay a Stripe webhook locally",
+    body: "stripe listen --forward-to localhost:3000/api/stripe then stripe events resend <id>. Never replay in production without checking idempotency.",
     entities: [{ type: "tool", name: "Stripe" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.84,
   },
@@ -81,8 +81,8 @@ const FRESH: (KnowledgeItemInput & { author: string })[] = [
 const titleKey = (zone: string, title: string) => `${zone}|${normalize(title).replace(/\s+/g, " ").trim()}`
 
 /**
- * Connaissances fraîches pas encore présentes dans le cerveau : chacune n'est distillée qu'une fois (relancer le
- * simulateur ou le laisser tourner longtemps ne crée pas de doublons ; le serveur dédoublonne aussi).
+ * Fresh knowledge not yet in the brain: each item is distilled only once (restarting the simulator or
+ * leaving it running for a long time creates no duplicates; the server deduplicates too).
  */
 async function freshQueue(): Promise<typeof FRESH> {
   const since = new Date(Date.now() - 30 * 86400_000).toISOString()
@@ -98,7 +98,7 @@ async function viewers(): Promise<Record<string, Viewer>> {
     const p = profiles.find((x) => x.name === u.name)
     if (p) out[u.key] = { profile: p, real: p, access: await getAccess(p) }
   }
-  if (Object.keys(out).length === 0) throw new Error("Aucun compte de démo : lancez d'abord `npm run seed`.")
+  if (Object.keys(out).length === 0) throw new Error("No demo accounts: run `npm run seed` first.")
   return out
 }
 
@@ -109,24 +109,24 @@ async function scene(vs: Record<string, Viewer>, queue: typeof FRESH) {
   if (!v) return
   const session = `sim-${Date.now()}`
   const agent = prompt.user === "hugo" && Math.random() < 0.4 ? "codex" : "claude-code"
-  console.log(`· ${v.profile.name} (${agent}) : « ${prompt.text} »`)
+  console.log(`· ${v.profile.name} (${agent}): "${prompt.text}"`)
   await recordEvents(v, [{ agent, type: "started", session_id: session }])
   await sleep(900)
   await recordEvents(v, [{ agent, type: "query", zones: [zone], summary: prompt.text, fingerprint: promptFingerprint(prompt.text), session_id: session }])
   await sleep(1600)
-  // L'agent va chercher du contexte dans le cerveau via le MCP.
+  // The agent fetches context from the brain through the MCP.
   const q = pick(AGENT_QUERIES[zone] ?? [prompt.text])
   const res = await queryBrain(v, { query: q, agent: "mcp" })
-  console.log(`  ↳ MCP search_brain « ${q} » → ${res.items.length} résultat(s) dans ${res.zones_hit.join(", ") || "aucune zone"}`)
+  console.log(`  ↳ MCP search_brain "${q}" → ${res.items.length} result(s) in ${res.zones_hit.join(", ") || "no zone"}`)
   await sleep(2200)
-  // De temps en temps, brain-sync remonte une nouvelle connaissance (jamais deux fois la même).
+  // From time to time, brain-sync sends up a new knowledge item (never the same one twice).
   if (queue.length > 0 && Math.random() < 0.45) {
     const f = queue.shift()!
     const author = vs[f.author] ?? v
     const { author: _a, ...item } = f
     const res = await ingestItems(author, [{ ...item, source: { ...item.source, at: new Date().toISOString() } }])
-    console.log(res.inserted ? `  ↳ brain-sync : « ${f.title} » (${f.zone})` : `  ↳ brain-sync : « ${f.title} » déjà connue, ignorée`)
-    if (queue.length === 0) console.log("  (toutes les connaissances fraîches ont été distillées : la suite ne fait plus que des recherches)")
+    console.log(res.inserted ? `  ↳ brain-sync: "${f.title}" (${f.zone})` : `  ↳ brain-sync: "${f.title}" already known, skipped`)
+    if (queue.length === 0) console.log("  (all the fresh knowledge has been distilled: from now on, searches only)")
   }
   await recordEvents(v, [{ agent, type: "stopped", session_id: session }])
 }
@@ -134,8 +134,8 @@ async function scene(vs: Record<string, Viewer>, queue: typeof FRESH) {
 async function main() {
   const vs = await viewers()
   const queue = await freshQueue()
-  console.log(`Simulation sur le cerveau (${getStore().kind}). Ouvrez le dashboard pour voir les zones s'allumer.`)
-  console.log(`${queue.length}/${FRESH.length} connaissance(s) fraîche(s) à distiller pendant la démo.`)
+  console.log(`Simulating on the brain (${getStore().kind}). Open the dashboard to watch the zones light up.`)
+  console.log(`${queue.length}/${FRESH.length} fresh knowledge item(s) to distill during the demo.`)
   do {
     await scene(vs, queue)
     if (!once) await sleep(1500 + Math.random() * 2500)

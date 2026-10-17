@@ -1,8 +1,8 @@
-// Skills de l'entreprise sur le poste : installation dans ~/.claude/skills et publication depuis un dossier.
+// Company skills on the computer: install into ~/.claude/skills and publishing from a folder.
 //
-// Le cerveau ne donne à chacun que les skills de toute l'entreprise et ceux des cortex (zones) qu'il lit. Chaque skill
-// installé porte un marqueur (.company-brain.json) : le client ne modifie ni ne supprime jamais un dossier sans marqueur
-// (un skill personnel du même nom est laissé tel quel), et retire ceux qui ne lui sont plus attribués.
+// The brain only gives each person the company-wide skills and those of the cortices (zones) they read. Each installed
+// skill carries a marker (.company-brain.json): the client never modifies or deletes a folder without a marker
+// (a personal skill with the same name is left as is), and removes those no longer assigned to it.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
@@ -35,7 +35,7 @@ function readMarker(dir: string): SkillMarker | null {
   return m && typeof m.id === "string" && typeof m.url === "string" ? m : null
 }
 
-/** Dossiers de skills posés par ce client (avec marqueur), par nom. */
+/** Skill folders laid down by this client (with a marker), by name. */
 export function installedSkills(dir = skillsDir()): Map<string, SkillMarker> {
   const out = new Map<string, SkillMarker>()
   if (!existsSync(dir)) return out
@@ -47,7 +47,7 @@ export function installedSkills(dir = skillsDir()): Map<string, SkillMarker> {
   return out
 }
 
-/** Écrit les fichiers d'un skill dans `target` (remplacé d'un coup : jamais de skill à moitié écrit). */
+/** Writes a skill's files into `target` (replaced in one go: never a half-written skill). */
 function writeSkill(dir: string, target: string, skill: ApiSkill, url: string) {
   const tmp = join(dir, `.${skill.name}.tmp-${process.pid}`)
   const old = join(dir, `.${skill.name}.old-${process.pid}`)
@@ -56,8 +56,8 @@ function writeSkill(dir: string, target: string, skill: ApiSkill, url: string) {
   try {
     for (const f of skill.files) {
       const file = resolve(tmp, f.path)
-      // Défense en profondeur : le cerveau a déjà validé les chemins.
-      if (!file.startsWith(tmp + sep)) throw new Error(`chemin refusé : ${f.path}`)
+      // Defense in depth: the brain has already validated the paths.
+      if (!file.startsWith(tmp + sep)) throw new Error(`path refused: ${f.path}`)
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, f.content, { mode: isExecutableSkillFile(f) ? 0o755 : 0o644 })
     }
@@ -72,15 +72,15 @@ function writeSkill(dir: string, target: string, skill: ApiSkill, url: string) {
 }
 
 function invalidReason(skill: ApiSkill): string | null {
-  if (!SKILL_NAME_RE.test(skill.name)) return "nom invalide"
-  if (!skill.files.some((f) => f.path === SKILL_MAIN_FILE)) return `${SKILL_MAIN_FILE} manquant`
+  if (!SKILL_NAME_RE.test(skill.name)) return "invalid name"
+  if (!skill.files.some((f) => f.path === SKILL_MAIN_FILE)) return `${SKILL_MAIN_FILE} missing`
   const bad = skill.files.find((f) => !isSafeSkillPath(f.path))
-  return bad ? `chemin refusé (${bad.path})` : null
+  return bad ? `path refused (${bad.path})` : null
 }
 
 /**
- * Aligne ~/.claude/skills sur les skills reçus : installe les nouveaux, met à jour ceux dont la version a changé, retire
- * ceux de ce cerveau qui ne sont plus attribués à la personne (skill supprimé, ou cortex qu'elle ne lit plus).
+ * Aligns ~/.claude/skills with the skills received: installs the new ones, updates those whose version changed, removes
+ * those from this brain no longer assigned to the person (skill deleted, or a cortex they no longer read).
  */
 export function installSkills(skills: ApiSkill[], url: string, dir = skillsDir()): InstallReport {
   const report: InstallReport = { installed: [], updated: [], unchanged: [], removed: [], skipped: [] }
@@ -97,11 +97,11 @@ export function installSkills(skills: ApiSkill[], url: string, dir = skillsDir()
     const target = join(dir, skill.name)
     const marker = mine.get(skill.name)
     if (existsSync(target) && !marker) {
-      report.skipped.push({ name: skill.name, reason: `un skill personnel du même nom existe déjà (${target})` })
+      report.skipped.push({ name: skill.name, reason: `a personal skill with the same name already exists (${target})` })
       continue
     }
     if (marker && marker.url !== url) {
-      report.skipped.push({ name: skill.name, reason: `déjà installé depuis un autre cerveau (${marker.url})` })
+      report.skipped.push({ name: skill.name, reason: `already installed from another brain (${marker.url})` })
       continue
     }
     if (marker && marker.id === skill.id && marker.version === skill.version) {
@@ -123,17 +123,17 @@ export function installSkills(skills: ApiSkill[], url: string, dir = skillsDir()
   return report
 }
 
-/** Retire tous les skills posés par ce client (uninstall). */
+/** Removes every skill laid down by this client (uninstall). */
 export function removeInstalledSkills(log: Log = console.log, dir = skillsDir()): number {
   const mine = installedSkills(dir)
   for (const name of mine.keys()) rmSync(join(dir, name), { recursive: true, force: true })
-  log(mine.size ? `Skills de l'entreprise retirés de ${dir} (${mine.size}).` : "Skills de l'entreprise : rien à retirer.")
+  log(mine.size ? `Company skills removed from ${dir} (${mine.size}).` : "Company skills: nothing to remove.")
   return mine.size
 }
 
 const IGNORED_DIRS = new Set(["node_modules", "__pycache__", "venv", "dist", "build"])
 
-/** Fichiers texte d'un dossier de skill (chemins relatifs en « / »), sans fichiers cachés ni dossiers de dépendances. */
+/** Text files of a skill folder (relative paths with "/"), without hidden files or dependency folders. */
 export function readSkillDir(root: string): { files: SkillFile[]; ignored: string[] } {
   const files: SkillFile[] = []
   const ignored: string[] = []
@@ -149,11 +149,11 @@ export function readSkillDir(root: string): { files: SkillFile[]; ignored: strin
       if (st.isDirectory()) walk(full)
       else if (st.isFile()) {
         if (st.size > SKILL_LIMITS.fileChars * 4) {
-          ignored.push(`${rel} (trop gros)`)
+          ignored.push(`${rel} (too large)`)
           continue
         }
         const content = readFileSync(full, "utf8")
-        if (content.includes("\u0000") || content.includes("�")) ignored.push(`${rel} (pas un fichier texte)`)
+        if (content.includes("\u0000") || content.includes("�")) ignored.push(`${rel} (not a text file)`)
         else files.push({ path: rel, content })
       }
     }
@@ -162,61 +162,61 @@ export function readSkillDir(root: string): { files: SkillFile[]; ignored: strin
   return { files, ignored }
 }
 
-const COMPANY_WIDE = new Set(["entreprise", "tous", "toute-l-entreprise", "aucun", "none", "all"])
+const COMPANY_WIDE = new Set(["company", "all", "whole-company", "none", "entreprise", "tous", "toute-l-entreprise", "aucun"])
 
-/** `skills push <dossier> [--cortex <zone>] [--name <nom>] [--description <texte>]` */
+/** `skills push <folder> [--cortex <zone>] [--name <name>] [--description <text>]` */
 async function pushSkill(api: BrainApi, folder: string | undefined, flags: Record<string, string | boolean>, log: Log): Promise<number> {
-  if (!folder) throw new UserError(`Dossier du skill manquant : node ${selfScript()} skills push <dossier> [--cortex <zone>]`)
+  if (!folder) throw new UserError(`Skill folder missing: node ${selfScript()} skills push <folder> [--cortex <zone>]`)
   const root = resolve(folder)
-  if (!existsSync(root) || !statSync(root).isDirectory()) throw new UserError(`Dossier introuvable : ${root}`)
+  if (!existsSync(root) || !statSync(root).isDirectory()) throw new UserError(`Folder not found: ${root}`)
   const { files, ignored } = readSkillDir(root)
   const main = files.find((f) => f.path === SKILL_MAIN_FILE)
-  if (!main) throw new UserError(`${SKILL_MAIN_FILE} introuvable à la racine de ${root}.`)
+  if (!main) throw new UserError(`${SKILL_MAIN_FILE} not found at the root of ${root}.`)
   const front = parseSkillFrontmatter(main.content).data
   const name = typeof flags.name === "string" ? flags.name : skillSlug(front.name || basename(root))
-  if (!SKILL_NAME_RE.test(name)) throw new UserError(`Nom de skill invalide : « ${name} » (minuscules, chiffres et tirets). Précisez-le avec --name.`)
+  if (!SKILL_NAME_RE.test(name)) throw new UserError(`Invalid skill name: "${name}" (lowercase letters, digits and hyphens). Set it with --name.`)
   const description = typeof flags.description === "string" ? flags.description : (front.description ?? "")
   const cortex = typeof flags.cortex === "string" ? flags.cortex : typeof flags.zone === "string" ? flags.zone : undefined
   const zone = cortex === undefined ? undefined : COMPANY_WIDE.has(cortex.toLowerCase()) ? null : cortex
-  if (ignored.length) log(`Ignorés : ${ignored.join(", ")}`)
+  if (ignored.length) log(`Ignored: ${ignored.join(", ")}`)
   let skill
   try {
     skill = await api.publishSkill({ name, description, zone, files })
   } catch (err) {
-    // Refus du cerveau (droit, cortex, secret, nom pris…) : son message, sans la mécanique HTTP.
+    // Refused by the brain (permission, cortex, secret, name taken…): its message, without the HTTP mechanics.
     if (err instanceof ApiError && [400, 403, 409].includes(err.status))
-      throw new UserError(`Publication refusée : ${err.message.replace(/^Le cerveau a répondu \d+ : /, "")}`)
+      throw new UserError(`Publishing refused: ${err.message.replace(/^The brain answered \d+: /, "")}`)
     throw err
   }
-  const where = skill.zone ? `le cortex « ${skill.zone} »` : "toute l'entreprise"
-  log(`Skill « ${skill.name} » publié (v${skill.version}, ${files.length} fichier${files.length > 1 ? "s" : ""}) pour ${where}.`)
-  log("Les postes concernés le reçoivent à leur prochaine synchro (toutes les 15 min), ou tout de suite avec `skills`.")
+  const where = skill.zone ? `the "${skill.zone}" cortex` : "the whole company"
+  log(`Skill "${skill.name}" published (v${skill.version}, ${files.length} file${files.length === 1 ? "" : "s"}) for ${where}.`)
+  log("The computers concerned receive it on their next sync (every 15 min), or right away with `skills`.")
   return 0
 }
 
 function reportLines(r: InstallReport, dir: string): string[] {
   const lines: string[] = []
-  if (r.installed.length) lines.push(`Installés : ${r.installed.join(", ")}`)
-  if (r.updated.length) lines.push(`Mis à jour : ${r.updated.join(", ")}`)
-  if (r.removed.length) lines.push(`Retirés (plus attribués à ce poste) : ${r.removed.join(", ")}`)
-  for (const s of r.skipped) lines.push(`Non installé : ${s.name} (${s.reason})`)
-  if (!lines.length) lines.push(`Skills à jour dans ${dir}.`)
+  if (r.installed.length) lines.push(`Installed: ${r.installed.join(", ")}`)
+  if (r.updated.length) lines.push(`Updated: ${r.updated.join(", ")}`)
+  if (r.removed.length) lines.push(`Removed (no longer assigned to this computer): ${r.removed.join(", ")}`)
+  for (const s of r.skipped) lines.push(`Not installed: ${s.name} (${s.reason})`)
+  if (!lines.length) lines.push(`Skills up to date in ${dir}.`)
   return lines
 }
 
-/** Installe les skills attribués à ce poste ; ne lève jamais (appelé après chaque synchro et par setup). */
+/** Installs the skills assigned to this computer; never throws (called after each sync and by setup). */
 export async function refreshSkills(log: Log = console.log, opts: { quiet?: boolean } = {}): Promise<InstallReport | null> {
   try {
     const cfg = requireConfig()
     const { skills } = await new BrainApi(cfg.url, cfg.token).skills()
     const report = installSkills(skills, cfg.url)
     const changed = report.installed.length + report.updated.length + report.removed.length + report.skipped.length > 0
-    if (!opts.quiet || changed) for (const l of reportLines(report, skillsDir())) log(`Skills : ${l}`)
+    if (!opts.quiet || changed) for (const l of reportLines(report, skillsDir())) log(`Skills: ${l}`)
     return report
   } catch (err) {
-    // Cerveau d'avant les skills : rien à installer.
+    // Brain from before skills: nothing to install.
     if (err instanceof ApiError && err.status === 404) return null
-    log(`Skills : mise à jour impossible (${(err as Error).message}).`)
+    log(`Skills: update impossible (${(err as Error).message}).`)
     return null
   }
 }
@@ -227,17 +227,17 @@ export async function cmdSkills(positional: string[], flags: Record<string, stri
   const cfg = requireConfig()
   const api = new BrainApi(cfg.url, cfg.token)
   if (sub === "push") return pushSkill(api, positional[1], flags, log)
-  if (sub !== "sync" && sub !== "list") throw new UserError(`Sous-commande inconnue : « ${sub} » (sync, list ou push).`)
+  if (sub !== "sync" && sub !== "list") throw new UserError(`Unknown subcommand: "${sub}" (sync, list or push).`)
   const { skills, can_publish } = await api.skills()
   if (sub === "sync") for (const l of reportLines(installSkills(skills, cfg.url), skillsDir())) log(l)
   log("")
-  log(skills.length ? `${skills.length} skill${skills.length > 1 ? "s" : ""} pour ce poste :` : "Aucun skill attribué à ce poste pour l'instant.")
-  for (const s of skills) log(`  ${s.name} (v${s.version}, ${s.zone ? `cortex ${s.zone}` : "toute l'entreprise"}) : ${s.description}`)
+  log(skills.length ? `${skills.length} skill${skills.length === 1 ? "" : "s"} for this computer:` : "No skill assigned to this computer for now.")
+  for (const s of skills) log(`  ${s.name} (v${s.version}, ${s.zone ? `cortex ${s.zone}` : "whole company"}): ${s.description}`)
   log("")
   log(
     can_publish
-      ? `Publier : node ${selfScript()} skills push <dossier> [--cortex <zone>]`
-      : "Publier un skill demande une autorisation : demandez-la à un admin.",
+      ? `Publish: node ${selfScript()} skills push <folder> [--cortex <zone>]`
+      : "Publishing a skill requires permission: ask an admin for it.",
   )
   return 0
 }

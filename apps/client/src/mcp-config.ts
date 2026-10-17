@@ -1,6 +1,6 @@
-// Un serveur MCP par entreprise, branché directement dans Claude Code et Codex : l'endpoint du cerveau
-// (<cerveau>/api/mcp/<entreprise>/<jeton>, HTTP), sous le nom « nos-brainer-<entreprise> ». Chaque agent voit ainsi
-// chaque entreprise connectée, avec ses outils, sans processus local. Seul ce qui porte notre préfixe est touché.
+// One MCP server per company, plugged directly into Claude Code and Codex: the brain's endpoint
+// (<brain>/api/mcp/<company>/<token>, HTTP), under the name "nos-brainer-<company>". Each agent thus sees each connected
+// company, with its tools, without a local process. Only what carries our prefix is touched.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -15,12 +15,12 @@ type Log = (s: string) => void
 
 export const MCP_PREFIX = "nos-brainer-"
 
-/** Une entreprise dont on connaît l'identifiant (pour construire l'adresse de son serveur MCP). */
+/** A company whose id is known (to build the address of its MCP server). */
 export type McpCompany = Company & { id: string }
-/** Ce qu'on enregistre pour une entreprise : son nom de serveur et son adresse. */
+/** What is registered for a company: its server name and its address. */
 export type McpServerSpec = { name: string; url: string; label: string }
 
-/** Nom du serveur MCP d'une entreprise : « nos-brainer-fournil » (identifiant en secours, suffixe si deux noms se croisent). */
+/** A company's MCP server name: "nos-brainer-fournil" (id as a fallback, suffix if two names collide). */
 export function companyMcpName(c: McpCompany, taken: Set<string> = new Set()): string {
   const base = `${MCP_PREFIX}${c.name ? slugify(c.name) : c.id.slice(0, 8)}`
   let name = base
@@ -28,12 +28,12 @@ export function companyMcpName(c: McpCompany, taken: Set<string> = new Set()): s
   return name
 }
 
-/** Adresse du serveur MCP d'une entreprise sur son cerveau : le lien avec l'identifiant de l'entreprise et le jeton. */
+/** Address of a company's MCP server on its brain: the link with the company id and the token. */
 export function companyMcpUrl(c: McpCompany): string {
   return `${c.url.replace(/\/+$/, "")}/api/mcp/${encodeURIComponent(c.id)}/${encodeURIComponent(c.token)}`
 }
 
-/** Les serveurs à enregistrer, un par entreprise, dans l'ordre du poste. */
+/** The servers to register, one per company, in the computer's order. */
 export function mcpSpecs(list: McpCompany[]): McpServerSpec[] {
   const taken = new Set<string>()
   return list.map((c) => {
@@ -43,19 +43,19 @@ export function mcpSpecs(list: McpCompany[]): McpServerSpec[] {
   })
 }
 
-/** Un de nos serveurs : préfixe « nos-brainer- » et adresse d'un endpoint MCP de cerveau. */
+/** One of our servers: "nos-brainer-" prefix and the address of a brain MCP endpoint. */
 function ours(name: string, url: unknown): boolean {
   return name.startsWith(MCP_PREFIX) && typeof url === "string" && url.includes("/api/mcp/")
 }
 
-// --- Claude Code (~/.claude.json, via la CLI `claude`) ---------------------------------------------------------------
+// --- Claude Code (~/.claude.json, through the `claude` CLI) ----------------------------------------------------------
 
-/** Où Claude Code range les serveurs MCP de portée utilisateur : ~/.claude.json, ou dans CLAUDE_CONFIG_DIR s'il est défini. */
+/** Where Claude Code stores user-scope MCP servers: ~/.claude.json, or in CLAUDE_CONFIG_DIR if it is set. */
 export function claudeJsonPath(): string {
   return process.env.CLAUDE_CONFIG_DIR ? join(claudeDir(), ".claude.json") : join(homedir(), ".claude.json")
 }
 
-/** Nos serveurs MCP enregistrés dans Claude Code (nom → adresse) ; undefined : fichier illisible. */
+/** Our MCP servers registered in Claude Code (name → address); undefined: unreadable file. */
 export function readClaudeMcp(file = claudeJsonPath()): Record<string, string> | undefined {
   if (!existsSync(file)) return {}
   try {
@@ -66,23 +66,25 @@ export function readClaudeMcp(file = claudeJsonPath()): Record<string, string> |
   }
 }
 
-// --- Codex (~/.codex/config.toml, écrit directement : marche aussi avant la première ouverture de Codex) ---------------
+// --- Codex (~/.codex/config.toml, written directly: also works before Codex is first opened) --------------------------
 
 export function codexConfigPath(): string {
   return join(codexDir(), "config.toml")
 }
 
-/** Codex est-il là (dossier de config, ou CLI dans le PATH) ? Sinon on ne crée rien chez lui. */
+/** Is Codex there (config folder, or CLI in the PATH)? Otherwise nothing is created for it. */
 export function codexPresent(): boolean {
   return existsSync(codexDir()) || Boolean(findOnPath("codex"))
 }
 
-/** Commentaire posé au-dessus de chacune de nos tables (retiré avec elle). */
-const MARK = "# NOS Brainer, entreprise : "
+/** Comment placed above each of our tables (removed with it). */
+const MARK = "# NOS Brainer, company: "
+/** The same comment as written by earlier (French) versions: removed too. */
+const LEGACY_MARK = "# NOS Brainer, entreprise : "
 
 const TABLE_RE = /^\s*\[\s*mcp_servers\.("?)([A-Za-z0-9_-]+)\1(\.[^\]]*)?\s*\]\s*(#.*)?$/
 
-/** Nos serveurs MCP déclarés dans config.toml (nom → adresse). */
+/** Our MCP servers declared in config.toml (name → address). */
 export function readCodexMcp(file = codexConfigPath()): Record<string, string> {
   if (!existsSync(file)) return {}
   const out: Record<string, string> = {}
@@ -98,7 +100,7 @@ export function readCodexMcp(file = codexConfigPath()): Record<string, string> {
           const url = JSON.parse(u[1]) as string
           if (ours(current, url)) out[current] = url
         } catch {
-          // valeur illisible : pas la nôtre
+          // unreadable value: not ours
         }
       }
     }
@@ -106,7 +108,7 @@ export function readCodexMcp(file = codexConfigPath()): Record<string, string> {
   return out
 }
 
-/** config.toml sans les tables (et sous-tables) des serveurs `names`. */
+/** config.toml without the tables (and subtables) of the `names` servers. */
 function withoutTables(text: string, names: Set<string>): string {
   const keep: string[] = []
   let dropping = false
@@ -119,7 +121,7 @@ function withoutTables(text: string, names: Set<string>): string {
   return keep.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()
 }
 
-/** Écrit config.toml (atomique, mode 600 : il contient les jetons des adresses). */
+/** Writes config.toml (atomic, mode 600: it contains the tokens in the addresses). */
 function writePrivate(file: string, text: string) {
   mkdirSync(dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.tmp`
@@ -128,7 +130,7 @@ function writePrivate(file: string, text: string) {
   if (process.platform !== "win32") chmodSync(file, 0o600)
 }
 
-/** Remplace nos serveurs dans config.toml par `specs` (ceux d'entreprises retirées disparaissent). Vrai si le fichier change. */
+/** Replaces our servers in config.toml with `specs` (those of removed companies disappear). True if the file changes. */
 export function writeCodexMcp(specs: McpServerSpec[], file = codexConfigPath()): boolean {
   const before = existsSync(file) ? readFileSync(file, "utf8") : ""
   const current = readCodexMcp(file)
@@ -136,17 +138,17 @@ export function writeCodexMcp(specs: McpServerSpec[], file = codexConfigPath()):
   const names = new Set([...Object.keys(current), ...specs.map((s) => s.name)])
   const blocks = specs.map((s) => `${MARK}${s.label.replace(/[\r\n]/g, " ")}\n[mcp_servers.${s.name}]\nurl = ${JSON.stringify(s.url)}`)
   const rest = withoutTables(before, names)
-    .replace(new RegExp(`^${MARK}[^\\n]*$\\n?`, "gm"), "")
+    .replace(new RegExp(`^(?:${MARK}|${LEGACY_MARK})[^\\n]*$\\n?`, "gm"), "")
     .trimEnd()
   writePrivate(file, `${[rest, ...blocks].filter(Boolean).join("\n\n")}\n`)
   return true
 }
 
-// --- Enregistrement (setup), retrait (uninstall), état (doctor) ------------------------------------------------------
+// --- Registration (setup), removal (uninstall), state (doctor) -------------------------------------------------------
 
 /**
- * Les entreprises du poste avec leur identifiant : celui relevé par `init`, sinon demandé au cerveau (et retenu dans la
- * config). null si un cerveau ne le donne pas (version ancienne) ou ne répond pas.
+ * The computer's companies with their id: the one noted by `init`, otherwise asked from the brain (and kept in the
+ * config). null if a brain does not give it (old version) or does not answer.
  */
 export async function companiesWithIds(cfg: Config): Promise<McpCompany[] | null> {
   const list = companiesOf(cfg)
@@ -167,7 +169,7 @@ export async function companiesWithIds(cfg: Config): Promise<McpCompany[] | null
   return out
 }
 
-/** Le serveur MCP de l'entreprise répond-il (poignée de main MCP) ? Message d'erreur, ou null si oui. */
+/** Does the company's MCP server answer (MCP handshake)? Error message, or null if it does. */
 export async function probeMcp(url: string, timeoutMs = 8000): Promise<string | null> {
   try {
     const res = await fetch(url, {
@@ -178,21 +180,21 @@ export async function probeMcp(url: string, timeoutMs = 8000): Promise<string | 
     })
     const data = (await res.json().catch(() => null)) as { result?: { serverInfo?: unknown }; error?: { message?: string } } | null
     if (res.ok && data?.result?.serverInfo) return null
-    return data?.error?.message ?? `réponse ${res.status}`
+    return data?.error?.message ?? `response ${res.status}`
   } catch (err) {
-    return (err as Error).name === "TimeoutError" ? `pas de réponse après ${timeoutMs} ms` : (err as Error).message
+    return (err as Error).name === "TimeoutError" ? `no response after ${timeoutMs} ms` : (err as Error).message
   }
 }
 
-/** Ce que voit l'agent : l'adresse sans le jeton (les journaux de setup finissent dans la session de Claude Code). */
+/** What the agent sees: the address without the token (setup logs end up in the Claude Code session). */
 export function maskedUrl(url: string): string {
   return url.replace(/\/(cb_[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+$/, "/$1…")
 }
 
 /**
- * Branche le serveur MCP de chaque entreprise dans Claude Code (`claude mcp add --transport http`) et dans Codex
- * (config.toml), retire ceux d'entreprises qui ne sont plus sur le poste. Vrai si toutes les entreprises sont branchées
- * dans Claude Code (la CLI `claude` absente compte comme un échec : commande à lancer à la main).
+ * Plugs each company's MCP server into Claude Code (`claude mcp add --transport http`) and into Codex (config.toml),
+ * removes those of companies no longer on the computer. True if all companies are plugged into Claude Code (a missing
+ * `claude` CLI counts as a failure: command to run by hand).
  */
 export function registerMcpServers(specs: McpServerSpec[], log: Log = console.log): boolean {
   let ok = true
@@ -200,54 +202,54 @@ export function registerMcpServers(specs: McpServerSpec[], log: Log = console.lo
   const current = readClaudeMcp()
   if (!claude) {
     ok = false
-    for (const s of specs) log(`MCP ${s.name} : CLI \`claude\` introuvable dans le PATH. À lancer à la main : claude mcp add --transport http --scope user ${s.name} ${s.url}`)
+    for (const s of specs) log(`MCP ${s.name}: \`claude\` CLI not found in the PATH. To run by hand: claude mcp add --transport http --scope user ${s.name} ${s.url}`)
   } else {
     for (const s of specs) {
       if (current?.[s.name] === s.url) {
-        log(`MCP ${s.name} (${s.label}) : déjà branché dans Claude Code.`)
+        log(`MCP ${s.name} (${s.label}): already plugged into Claude Code.`)
         continue
       }
       if (current?.[s.name] || current === undefined) runCommand(claude, ["mcp", "remove", s.name, "--scope", "user"], 30_000)
       const r = runCommand(claude, ["mcp", "add", "--transport", "http", "--scope", "user", s.name, s.url], 30_000)
       if (!r.ok) ok = false
-      log(r.ok ? `MCP ${s.name} (${s.label}) branché dans Claude Code : ${maskedUrl(s.url)}.` : `MCP ${s.name} : échec dans Claude Code (${r.stderr.trim().slice(0, 200)}).`)
+      log(r.ok ? `MCP ${s.name} (${s.label}) plugged into Claude Code: ${maskedUrl(s.url)}.` : `MCP ${s.name}: failed in Claude Code (${r.stderr.trim().slice(0, 200)}).`)
     }
-    // Entreprises qui ne sont plus sur le poste (retirées, ou jeton remplacé : autre adresse sous un autre nom).
+    // Companies no longer on the computer (removed, or token replaced: another address under another name).
     for (const name of Object.keys(current ?? {}).filter((n) => !specs.some((s) => s.name === n))) {
-      if (runCommand(claude, ["mcp", "remove", name, "--scope", "user"], 30_000).ok) log(`MCP ${name} retiré de Claude Code (entreprise plus sur ce poste).`)
+      if (runCommand(claude, ["mcp", "remove", name, "--scope", "user"], 30_000).ok) log(`MCP ${name} removed from Claude Code (company no longer on this computer).`)
     }
   }
   if (codexPresent()) {
     try {
       const changed = writeCodexMcp(specs)
-      log(`Codex : ${specs.map((s) => s.name).join(", ")} ${changed ? "branché(s)" : "déjà branché(s)"} (${codexConfigPath()}).`)
+      log(`Codex: ${specs.map((s) => s.name).join(", ")} ${changed ? "plugged in" : "already plugged in"} (${codexConfigPath()}).`)
     } catch (err) {
-      log(`Codex : config.toml non modifié (${(err as Error).message}).`)
+      log(`Codex: config.toml not changed (${(err as Error).message}).`)
     }
   }
   return ok
 }
 
 /**
- * `companies --default/--remove` : remet les serveurs MCP au niveau des entreprises du poste, seulement si setup les a
- * déjà branchés (sinon c'est le serveur du poste, qui relit la config à chaque appel).
+ * `companies --default/--remove`: brings the MCP servers in line with the computer's companies, only if setup already
+ * plugged them in (otherwise it is the computer's server, which rereads the config on each call).
  */
 export async function syncCompanyMcp(cfg: Config, log: Log = console.log): Promise<void> {
   if (!Object.keys(readClaudeMcp() ?? {}).length && !Object.keys(readCodexMcp()).length) return
   const list = await companiesWithIds(cfg)
   if (list) registerMcpServers(mcpSpecs(list), log)
-  else log("MCP : identifiant d'une entreprise introuvable, serveurs MCP inchangés (relancez setup).")
+  else log("MCP: a company's id was not found, MCP servers unchanged (rerun setup).")
 }
 
-/** Retire tous nos serveurs MCP d'entreprise de Claude Code et de Codex (uninstall). */
+/** Removes all our company MCP servers from Claude Code and Codex (uninstall). */
 export function unregisterMcpServers(log: Log = console.log) {
   const claude = findOnPath("claude")
   for (const name of Object.keys(readClaudeMcp() ?? {})) {
-    if (claude && runCommand(claude, ["mcp", "remove", name, "--scope", "user"], 15_000).ok) log(`Serveur MCP ${name} retiré de Claude Code.`)
-    else log(`MCP ${name} : à retirer à la main (claude mcp remove ${name} --scope user).`)
+    if (claude && runCommand(claude, ["mcp", "remove", name, "--scope", "user"], 15_000).ok) log(`MCP server ${name} removed from Claude Code.`)
+    else log(`MCP ${name}: to remove by hand (claude mcp remove ${name} --scope user).`)
   }
   if (existsSync(codexConfigPath()) && Object.keys(readCodexMcp()).length) {
     writeCodexMcp([])
-    log(`Serveurs MCP NOS Brainer retirés de Codex (${codexConfigPath()}).`)
+    log(`NOS Brainer MCP servers removed from Codex (${codexConfigPath()}).`)
   }
 }

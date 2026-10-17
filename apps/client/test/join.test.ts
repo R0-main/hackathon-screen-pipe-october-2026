@@ -5,7 +5,7 @@ import { test } from "node:test"
 import { EXIT_JOIN_PENDING, EXIT_JOIN_REJECTED, cmdJoin, joinStatePath } from "../src/join"
 import { tempDir } from "./helpers"
 
-/** Faux cerveau : /api/join enregistre la demande, /api/join/status rend l'état choisi par le test. */
+/** Fake brain: /api/join records the request, /api/join/status returns the state chosen by the test. */
 function fakeBrain() {
   const brain = { status: "pending", requests: [] as { path: string; body: any }[], hash: "" }
   const f = (async (url: string, init: RequestInit) => {
@@ -19,7 +19,7 @@ function fakeBrain() {
     }
     if (path === "/api/join/status") {
       const ok = body.id === "req-1" && createHash("sha256").update(body.token).digest("hex") === brain.hash
-      return ok ? reply(200, { status: brain.status, org: "Atelier Lumen" }) : reply(404, { error: "Demande introuvable." })
+      return ok ? reply(200, { status: brain.status, org: "Atelier Lumen" }) : reply(404, { error: "Request not found." })
     }
     return reply(404, {})
   }) as unknown as typeof fetch
@@ -28,7 +28,7 @@ function fakeBrain() {
 
 const quiet = () => {}
 
-test("join : la demande part sans le jeton (empreinte seule), préremplie, puis attend ; code 7 et état gardé", async () => {
+test("join: the request goes without the token (fingerprint only), pre-filled, then waits; code 7 and state kept", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
   const { brain, fetch } = fakeBrain()
   const code = await cmdJoin({ url: "http://brain.test/", join: "cj_abc", name: "Léa Bernard", title: "Designer", "wait-accept": "0" }, quiet, { fetch })
@@ -37,15 +37,15 @@ test("join : la demande part sans le jeton (empreinte seule), préremplie, puis 
   assert.equal(sent.code, "cj_abc")
   assert.equal(sent.name, "Léa Bernard")
   assert.equal(sent.title, "Designer")
-  assert.equal(sent.email, undefined, "un champ inconnu n'est pas inventé")
+  assert.equal(sent.email, undefined, "an unknown field is not made up")
   assert.match(sent.token_hash, /^[0-9a-f]{64}$/)
-  assert.ok(!JSON.stringify(sent).includes("cb_"), "le jeton ne part pas avec la demande")
+  assert.ok(!JSON.stringify(sent).includes("cb_"), "the token does not go with the request")
   const state = JSON.parse(readFileSync(joinStatePath(), "utf8"))
   assert.match(state.token, /^cb_/)
-  assert.equal(statSync(joinStatePath()).mode & 0o077, 0, "état lisible du seul propriétaire")
+  assert.equal(statSync(joinStatePath()).mode & 0o077, 0, "state readable by the owner only")
 })
 
-test("join : relancé sans paramètres, reprend la même demande ; acceptée, enchaîne sur setup avec le jeton", async () => {
+test("join: run again without parameters, resumes the same request; accepted, moves on to setup with the token", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
   const { brain, fetch } = fakeBrain()
   await cmdJoin({ url: "http://brain.test", join: "cj_abc", "wait-accept": "0" }, quiet, { fetch })
@@ -60,12 +60,12 @@ test("join : relancé sans paramètres, reprend la même demande ; acceptée, en
     },
   })
   assert.equal(code, 0)
-  assert.equal(brain.requests.filter((r) => r.path === "/api/join").length, 1, "une seule demande")
+  assert.equal(brain.requests.filter((r) => r.path === "/api/join").length, 1, "a single request")
   assert.deepEqual(setupFlags, { "no-open": true, url: "http://brain.test", token })
-  assert.ok(!existsSync(joinStatePath()), "état effacé une fois branché")
+  assert.ok(!existsSync(joinStatePath()), "state deleted once connected")
 })
 
-test("join : attend l'acceptation pendant la commande", async () => {
+test("join: waits for approval during the command", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
   const { brain, fetch } = fakeBrain()
   let polls = 0
@@ -81,7 +81,7 @@ test("join : attend l'acceptation pendant la commande", async () => {
   assert.equal(polls, 3)
 })
 
-test("join : refusée, code 8 et rien d'installé", async () => {
+test("join: declined, code 8 and nothing installed", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
   const { brain, fetch } = fakeBrain()
   brain.status = "rejected"
@@ -91,7 +91,7 @@ test("join : refusée, code 8 et rien d'installé", async () => {
   assert.ok(!setupCalled && !existsSync(joinStatePath()))
 })
 
-test("join : sans demande en cours ni code, explique quoi faire", async () => {
+test("join: without a request in progress or a code, says what to do", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
-  await assert.rejects(cmdJoin({}, quiet), /Aucune demande en cours/)
+  await assert.rejects(cmdJoin({}, quiet), /No request in progress/)
 })

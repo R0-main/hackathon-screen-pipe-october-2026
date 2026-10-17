@@ -13,20 +13,20 @@ import { TEST_ZONES, mockServer, tempDir } from "./helpers"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 
-// Autorité de test (auto-signée, sans clé privée dans le dépôt), empreinte relevée avec `openssl x509 -fingerprint -sha256`.
+// Test authority (self-signed, no private key in the repo), fingerprint taken with `openssl x509 -fingerprint -sha256`.
 const TEST_CA = `-----BEGIN CERTIFICATE-----
-MIIBljCCAT2gAwIBAgIUVpDot4mZTuKOOJPRc0zUxtIZ6YgwCgYIKoZIzj0EAwIw
-ITEfMB0GA1UEAwwWTk9TIEJyYWluZXIgQ0EgZGUgdGVzdDAeFw0yNjEwMTcxMjMz
-NTVaFw0zNjEwMTQxMjMzNTVaMCExHzAdBgNVBAMMFk5PUyBCcmFpbmVyIENBIGRl
-IHRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATVS8M+lUd7oJVmi6618Ahl
-FWHtcY8+rbhlnowYoZ3HDgOMSEuvn8qpW63wRiPDzF8snOk5mOXlqcMM2kueP5vc
-o1MwUTAdBgNVHQ4EFgQUaWlnpulx3JhWD5rDO7dTyzjvGbYwHwYDVR0jBBgwFoAU
-aWlnpulx3JhWD5rDO7dTyzjvGbYwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQD
-AgNHADBEAiBPsdtD86YVy65pbEifs3kbpBBuQsOvjS+hTa0MEHGw9AIgDALLMJDr
-ALsopZ2SPQMbes0V+YCiIWBIkSGxskd3uGo=
+MIIBkjCCATegAwIBAgIUcUCIic+efsEUZfvdVLqqKiHmkOUwCgYIKoZIzj0EAwIw
+HjEcMBoGA1UEAwwTTk9TIEJyYWluZXIgdGVzdCBDQTAeFw0yNjEwMTcxNzAwMjZa
+Fw0zNjEwMTQxNzAwMjZaMB4xHDAaBgNVBAMME05PUyBCcmFpbmVyIHRlc3QgQ0Ew
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATFaDrkaCV/s705UT2xkNqC43351UkB
+pBkt3leRzWgnVZ0z9WmVyLxngZ6KBgaKZiQYUhKKoZ+AH+2Msm70K1lto1MwUTAd
+BgNVHQ4EFgQUmoHNEniq+HNFrWm3PbnSQXNnZcgwHwYDVR0jBBgwFoAUmoHNEniq
++HNFrWm3PbnSQXNnZcgwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBG
+AiEAnoXuG1Gs2SZwlP6+GKK4gEk9px42aFbhC+Q/a9dtl9QCIQDxgIMcKxumGgLi
+yaYsTYEgOmlr2GaS1hMRURRKaVBh0g==
 -----END CERTIFICATE-----
 `
-const TEST_FP = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49"
+const TEST_FP = "33483DC29874755818A10E941E52452421D5FF791FCF37578DB0E4EC570DF8F5"
 const TOKEN = "cb_test_token_123456"
 
 function caFile(dir = tempDir()): string {
@@ -37,29 +37,29 @@ function caFile(dir = tempDir()): string {
 
 function brainHandler(req: { url: string }) {
   const path = req.url.split("?")[0]
-  if (path === "/api/whoami") return { body: { org: { name: "Fournil", description: "" }, profile: { id: "u", name: "Jean-Marc Dubois" }, access: { isAdmin: true, readable: ["compta"], writable: ["compta"] }, context: null } }
+  if (path === "/api/whoami") return { body: { org: { name: "Fournil", description: "" }, profile: { id: "u", name: "Jean-Marc Dubois" }, access: { isAdmin: true, readable: ["finance"], writable: ["finance"] }, context: null } }
   if (path === "/api/zones") return { body: { zones: TEST_ZONES } }
   return undefined
 }
 
-test("certificat : lecture, empreinte SHA-256 au format openssl, CN, découpage d'une chaîne", () => {
+test("certificate: reading, SHA-256 fingerprint in openssl format, CN, splitting a chain", () => {
   const file = caFile()
   const info = readCaFile(file)
   assert.equal(info.file, file)
   assert.equal(info.fingerprint, TEST_FP)
-  assert.equal(info.cn, "NOS Brainer CA de test")
+  assert.equal(info.cn, "NOS Brainer test CA")
   assert.equal(info.certs.length, 1)
   assert.equal(fingerprintOfFile(file), TEST_FP)
-  assert.match(describeCa(file), /NOS Brainer CA de test, empreinte SHA-256 57A3ACBF/)
-  assert.equal(splitPem(`${TEST_CA}\n# commentaire\n${TEST_CA}`).length, 2)
-  assert.throws(() => readCaFile(join(tempDir(), "absent.pem")), /introuvable/)
-  const bad = join(tempDir(), "pas-un-cert.pem")
-  writeFileSync(bad, "bonjour")
-  assert.throws(() => readCaFile(bad), /aucun certificat PEM/)
-  assert.match(describeCa(bad), /aucun certificat PEM/)
+  assert.match(describeCa(file), /NOS Brainer test CA, SHA-256 fingerprint 33483DC2/)
+  assert.equal(splitPem(`${TEST_CA}\n# comment\n${TEST_CA}`).length, 2)
+  assert.throws(() => readCaFile(join(tempDir(), "absent.pem")), /not found/)
+  const bad = join(tempDir(), "not-a-cert.pem")
+  writeFileSync(bad, "hello")
+  assert.throws(() => readCaFile(bad), /contains no PEM certificate/)
+  assert.match(describeCa(bad), /contains no PEM certificate/)
 })
 
-test("certificat : ajouté aux certificats par défaut du processus, sans doublon ; Node ancien → relance demandée", () => {
+test("certificate: added to the default certificates of the process, without duplicates; old Node → restart requested", () => {
   let set: string[] | null = null
   const deps = { getCACertificates: () => (set ?? ["PUBLIC"]), setDefaultCACertificates: (c: string[]) => void (set = c) }
   const cert = TEST_CA.trim()
@@ -68,29 +68,29 @@ test("certificat : ajouté aux certificats par défaut du processus, sans doublo
   set = ["PUBLIC", cert]
   const before = set
   assert.equal(applyCa([cert], deps), "applied")
-  assert.equal(set, before, "déjà présent : rien à refaire")
+  assert.equal(set, before, "already there: nothing to redo")
   assert.equal(applyCa([TEST_CA], {}), "reexec")
-  // Au démarrage : rien à faire sans certificat, ni quand la relance a déjà eu lieu (NODE_EXTRA_CA_CERTS posé).
+  // On start: nothing to do without a certificate, nor when the restart already happened (NODE_EXTRA_CA_CERTS set).
   assert.equal(trustConfiguredCa(undefined, deps), null)
   assert.equal(trustConfiguredCa(join(tempDir(), "absent.pem"), deps), null)
   const file = caFile()
   set = null
   assert.equal(trustConfiguredCa(file, deps), null)
-  assert.deepEqual(set, ["PUBLIC", cert], "le certificat du fichier, lu tel quel")
+  assert.deepEqual(set, ["PUBLIC", cert], "the certificate of the file, read as is")
   assert.equal(trustConfiguredCa(file, {}, { NODE_EXTRA_CA_CERTS: file }), null)
 })
 
-test("certificat : commande d'installation pour les navigateurs selon le système", () => {
+test("certificate: install command for the browsers depending on the system", () => {
   const mac = trustCommand("/h/ca.pem", "darwin", "/Users/jm")!
   assert.equal(mac.cmd, "security")
   assert.deepEqual(mac.args, ["add-trusted-cert", "-r", "trustRoot", "-k", "/Users/jm/Library/Keychains/login.keychain-db", "/h/ca.pem"])
   assert.equal(trustCommand("C:\\ca.pem", "win32")!.cmd, "certutil")
   assert.match(formatCommand(trustCommand("/h/ca.pem", "linux", "/home/jm")!), /certutil -d sql:\/home\/jm\/\.pki\/nssdb -A -t C,, -n "NOS Brainer" -i \/h\/ca\.pem/)
   assert.equal(trustCommand("/h/ca.pem", "freebsd"), null)
-  assert.equal(formatCommand({ cmd: "x", args: ["un deux", 'a"b'], scope: "" }), 'x "un deux" "a\\"b"')
+  assert.equal(formatCommand({ cmd: "x", args: ["one two", 'a"b'], scope: "" }), 'x "one two" "a\\"b"')
 })
 
-test("init --ca : enregistré en chemin absolu, affiché par status, retirable avec « aucun »", async () => {
+test("init --ca: saved as an absolute path, shown by status, removable with \"none\"", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
   const brain = await mockServer(brainHandler)
   const file = caFile()
@@ -98,28 +98,28 @@ test("init --ca : enregistré en chemin absolu, affiché par status, retirable a
   try {
     assert.equal(await cmdInit({ url: brain.url, token: TOKEN, ca: file }, (s) => out.push(s)), 0)
     assert.equal(loadConfig()?.ca_file, file)
-    assert.match(out.join("\n"), /Certificat du cerveau enregistré : .*NOS Brainer CA de test, empreinte SHA-256 57A3ACBF/)
-    assert.match(out.join("\n"), /Connexion au cerveau OK/)
+    assert.match(out.join("\n"), /Brain certificate saved: .*NOS Brainer test CA, SHA-256 fingerprint 33483DC2/)
+    assert.match(out.join("\n"), /Connection to the brain OK/)
     const status: string[] = []
     await cmdStatus((s) => status.push(s))
-    assert.match(status.join("\n"), /Certificat {4}: .*ca\.pem \(NOS Brainer CA de test, empreinte SHA-256 57A3ACBF/)
-    await assert.rejects(cmdInit({ ca: true }, () => {}), /donnez le fichier PEM/)
-    await assert.rejects(cmdInit({ ca: join(tempDir(), "absent.pem") }, () => {}), /introuvable/)
-    assert.equal(loadConfig()?.ca_file, file, "une erreur ne touche pas la config")
-    assert.equal(await cmdInit({ ca: "aucun" }, (s) => out.push(s)), 0)
+    assert.match(status.join("\n"), /Certificate {3}: .*ca\.pem \(NOS Brainer test CA, SHA-256 fingerprint 33483DC2/)
+    await assert.rejects(cmdInit({ ca: true }, () => {}), /give the PEM file/)
+    await assert.rejects(cmdInit({ ca: join(tempDir(), "absent.pem") }, () => {}), /not found/)
+    assert.equal(loadConfig()?.ca_file, file, "an error does not touch the config")
+    assert.equal(await cmdInit({ ca: "none" }, (s) => out.push(s)), 0)
     assert.equal(loadConfig()?.ca_file, undefined)
-    assert.match(out.join("\n"), /Certificat du cerveau retiré/)
+    assert.match(out.join("\n"), /Brain certificate removed/)
   } finally {
     await brain.close()
   }
 })
 
-test("cerveau en HTTPS privé : le client lui fait confiance au démarrage grâce à ca_file, et pas sans", async (t) => {
+test("brain on private HTTPS: the client trusts it on start thanks to ca_file, and not without", async (t) => {
   const dir = tempDir()
   const cert = join(dir, "cert.pem")
   const key = join(dir, "key.pem")
   const gen = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "2", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"], { encoding: "utf8" })
-  if (gen.error || gen.status !== 0) return t.skip(`openssl indisponible (${gen.error?.message ?? gen.stderr.trim().split("\n")[0]})`)
+  if (gen.error || gen.status !== 0) return t.skip(`openssl unavailable (${gen.error?.message ?? gen.stderr.trim().split("\n")[0]})`)
   const server = createServer({ cert: readFileSync(cert), key: readFileSync(key) }, (req, res) => {
     const r = brainHandler({ url: req.url ?? "/" })
     if (!r) return void res.writeHead(404).end()
@@ -141,28 +141,28 @@ test("cerveau en HTTPS privé : le client lui fait confiance au démarrage grâc
     mkdirSync(trusted, { recursive: true })
     writeFileSync(join(trusted, "config.json"), JSON.stringify({ url, token: TOKEN, ca_file: cert }))
     const ok = await run(trusted)
-    assert.match(ok, /Connexion {5}: OK — Jean-Marc Dubois, Fournil/, ok)
-    assert.match(ok, /Certificat {4}: .*cert\.pem \(localhost, empreinte SHA-256 [0-9A-F]{64}\)/)
+    assert.match(ok, /Connection {4}: OK — Jean-Marc Dubois, Fournil/, ok)
+    assert.match(ok, /Certificate {3}: .*cert\.pem \(localhost, SHA-256 fingerprint [0-9A-F]{64}\)/)
     const naive = tempDir()
     writeFileSync(join(naive, "config.json"), JSON.stringify({ url, token: TOKEN }))
     const ko = await run(naive)
-    assert.match(ko, /Connexion {5}: KO/, ko)
-    // Première installation : le certificat donné sur la ligne de commande compte dès le test de connexion d'init.
+    assert.match(ko, /Connection {4}: KO/, ko)
+    // First install: the certificate given on the command line already counts for init's connection test.
     const fresh = tempDir()
     const init = await run(fresh, ["init", "--url", url, "--token", TOKEN, "--ca", cert])
-    assert.match(init, /Certificat du cerveau enregistré/, init)
-    assert.match(init, /Connexion au cerveau OK : Jean-Marc Dubois/, init)
+    assert.match(init, /Brain certificate saved/, init)
+    assert.match(init, /Connection to the brain OK: Jean-Marc Dubois/, init)
     assert.equal(JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")).ca_file, cert)
   } finally {
     server.close()
   }
 })
 
-test("empreinte en PowerShell (commande Windows du prompt) : la même que openssl et que le client", (t) => {
+test("fingerprint in PowerShell (Windows command of the prompt): the same as openssl and the client", (t) => {
   const file = caFile()
   const expr = `$c = New-Object Security.Cryptography.X509Certificates.X509Certificate2 '${file}'; [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData)) -replace '-'`
   const r = spawnSync("pwsh", ["-NoProfile", "-Command", expr], { encoding: "utf8", timeout: 60_000 })
-  if (r.error) return t.skip("pwsh indisponible")
+  if (r.error) return t.skip("pwsh unavailable")
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout.trim(), TEST_FP)
 })

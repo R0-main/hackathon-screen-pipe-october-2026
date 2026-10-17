@@ -15,6 +15,6 @@ export const PATCH = withViewer<Ctx>(async (req, viewer, { params }) => {
   if ("response" in body) return body.response
   const store = getStore()
   const task = (await store.listTasks({ zones: viewer.access.readable })).find((t) => t.id === id)
-  if (!task || !canRead(viewer.access, task.zone)) return error(404, "Tâche introuvable.")
+  if (!task || !canRead(viewer.access, task.zone)) return error(404, "Task not found.")
   return json(await store.updateTask(id, body.data))
 })

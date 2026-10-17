@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
 /**
- * Applique le brouillon validé (interview, ou proposition de Claude Code / Codex) : nom de l'entreprise, zones,
- * premières connaissances, état initial. La proposition d'agent en attente est alors écartée.
+ * Applies the validated draft (interview, or proposal from Claude Code / Codex): company name, zones,
+ * first knowledge, initial state. The pending agent proposal is then discarded.
  */
 export const POST = withViewer(
   async (req, viewer) => {

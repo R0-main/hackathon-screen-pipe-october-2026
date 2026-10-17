@@ -8,7 +8,7 @@ import { BrainIcon, ErrorText } from "./ui"
 
 type DemoUser = { id: string; name: string; title?: string; role: string }
 
-/** Entrée de la démo : un clic sur un compte de Butine ouvre le dashboard avec ses droits. À côté, créer le sien. */
+/** Demo entrance: a click on a Butine account opens the dashboard with its permissions. Next to it, create your own. */
 export function DemoPicker({ signup = false }: { signup?: boolean }) {
   const router = useRouter()
   const [users, setUsers] = useState<DemoUser[] | null>(null)
@@ -18,7 +18,7 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
   useEffect(() => {
     api<{ users: DemoUser[] }>("/api/session/demo")
       .then((r) => setUsers(r.users))
-      .catch((e) => setErr(`Comptes de démo indisponibles : ${errorMessage(e)}`))
+      .catch((e) => setErr(`Demo accounts unavailable: ${errorMessage(e)}`))
   }, [])
 
   async function enter(id: string) {
@@ -37,25 +37,25 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
   return (
     <main className="relative grid min-h-dvh place-items-center px-4 py-10">
       {signup && (
-        <Link href="/creer" className="btn btn-primary absolute right-4 top-4 sm:right-6 sm:top-5">
-          Créer mon dashboard
+        <Link href="/create" className="btn btn-primary absolute right-4 top-4 sm:right-6 sm:top-5">
+          Create my dashboard
         </Link>
       )}
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <Link href="/" className="rounded-[6px]" aria-label="Page d'accueil">
+          <Link href="/" className="rounded-[6px]" aria-label="Home page">
             <BrainIcon size={56} />
           </Link>
-          <h1 className="mt-3 text-[24px] font-medium leading-tight">La démo : le cerveau de Butine</h1>
+          <h1 className="mt-3 text-[24px] font-medium leading-tight">The demo: Butine's brain</h1>
           <p className="mt-1 text-[13px] text-trace">
-            Butine fabrique des balances connectées pour ruches : l'apiculteur voit sur son téléphone si ses abeilles vont bien, sans ouvrir la ruche. Une entreprise fictive de six personnes. Choisissez qui vous êtes : chacun ne voit que les zones auxquelles il a accès.
+            Butine makes connected scales for beehives: beekeepers see on their phone whether their bees are doing well, without opening the hive. A fictional six-person company. Choose who you are: each person only sees the zones they have access to.
           </p>
         </div>
         <section className="panel p-5" aria-busy={busy || users === null}>
-          <h2 className="panel-title">Entrer en tant que</h2>
+          <h2 className="panel-title">Enter as</h2>
           {users === null && !err && (
             <p className="mt-3 text-[13px] text-trace" aria-live="polite">
-              Chargement des comptes
+              Loading accounts
             </p>
           )}
           <div className="mt-3 grid gap-2">
@@ -74,18 +74,18 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
         {signup && (
           <section className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1 py-3">
             <span className="min-w-0">
-              <span className="block text-[14px] font-medium">Votre entreprise, plutôt que Butine ?</span>
-              <span className="block text-[13px] text-trace">Quatre questions, puis un prompt à coller dans Claude Code ou Codex.</span>
+              <span className="block text-[14px] font-medium">Your company, rather than Butine?</span>
+              <span className="block text-[13px] text-trace">Four questions, then a prompt to paste into Claude Code or Codex.</span>
             </span>
-            <Link href="/creer" className="btn">
-              Créer mon dashboard
+            <Link href="/create" className="btn">
+              Create my dashboard
             </Link>
           </section>
         )}
         <p className="mt-4 text-center text-[13px] text-trace">
-          Vous avez un jeton personnel ?{" "}
+          Have a personal token?{" "}
           <Link href="/login" className="underline underline-offset-2 hover:text-ink">
-            Se connecter
+            Sign in
           </Link>
         </p>
       </div>

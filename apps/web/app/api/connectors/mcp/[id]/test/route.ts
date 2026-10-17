@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic"
 
 type Ctx = { params: Promise<{ id: string }> }
 
-/** POST /api/connectors/mcp/:id/test — teste la connexion : liste des outils du serveur (jeton rafraîchi au besoin). */
+/** POST /api/connectors/mcp/:id/test — tests the connection: list of the server's tools (token refreshed if needed). */
 export const POST = withViewer<Ctx>(
   async (_req, _viewer, { params }) => {
     const { id } = await params

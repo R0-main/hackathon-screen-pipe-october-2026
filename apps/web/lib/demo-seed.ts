@@ -1,5 +1,5 @@
-// L'entreprise fictive Butine, prête pour la démo : comptes, zones, connaissances et 10 jours d'activité.
-// Utilisé par `npm run seed` et, en mode démo, pour amorcer automatiquement un cerveau vide (déploiement).
+// The fictional company Butine, ready for the demo: accounts, zones, knowledge and 10 days of activity.
+// Used by `npm run seed` and, in demo mode, to seed an empty brain automatically (deployment).
 
 import {
   DEFAULT_TIMEZONE,
@@ -18,7 +18,7 @@ import { DEMO_ITEMS, DEMO_ORG, DEMO_PROMPTS, DEMO_SKILLS, DEMO_USERS, JEANMARC_D
 
 const TZ = process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE
 
-/** Date UTC correspondant à une heure locale (fuseau TZ) N jours avant aujourd'hui. */
+/** UTC date matching a local time (TZ time zone) N days before today. */
 function localTime(daysAgo: number, hour: number, minute: number): Date {
   const day = new Date(Date.now() - daysAgo * 86400_000)
   const guess = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute))
@@ -42,12 +42,14 @@ function rand(seed: number) {
   }
 }
 
-/** Titre des comptes créés depuis la page d'accueil : c'est lui qui les compte et les distingue de l'équipe Butine. */
-export const DEMO_VISITOR_TITLE = "Visiteur de la démo"
-/** Les visiteurs ont les zones Dev et Produit : ils rejoignent l'équipe du lead dev dans l'organigramme. */
+/** Title of the accounts created from the home page: it counts them and tells them apart from the Butine team. */
+export const DEMO_VISITOR_TITLE = "Demo visitor"
+/** The same title as written by earlier (French) versions: those visitors are kept when a former demo is replaced. */
+const LEGACY_DEMO_VISITOR_TITLE = "Visiteur de la démo"
+/** Visitors get the Dev and Product zones: they join the lead dev's team in the org chart. */
 const VISITOR_MANAGER = "hugo"
 
-/** Publie les skills de démo (une publication par version) ; renvoie le néon de chaque publication. */
+/** Publishes the demo skills (one publication per version); returns the neon of each publication. */
 async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, allZoneIds: string[]): Promise<NewEvent[]> {
   const events: NewEvent[] = []
   for (const sk of [...DEMO_SKILLS].sort((a, b) => b.daysAgo - a.daysAgo)) {
@@ -59,14 +61,14 @@ async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, al
       agent: "dashboard",
       type: "write",
       zones: sk.zone ? [sk.zone] : allZoneIds,
-      summary: `Skill publié : ${sk.name}`,
+      summary: `Skill published: ${sk.name}`,
       at: localTime(sk.daysAgo, 11, 30).toISOString(),
     })
   }
   return events
 }
 
-/** Comptes de l'équipe Butine retrouvés par leur email (null s'il en manque un : ce n'est pas le cerveau de démo). */
+/** Butine team accounts found by their email (null if one is missing: this is not the demo brain). */
 function demoTeam(profiles: Profile[]): Record<string, string> | null {
   const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [p.email, p.id]))
   const ids: Record<string, string> = {}
@@ -78,16 +80,16 @@ function demoTeam(profiles: Profile[]): Record<string, string> | null {
   return ids
 }
 
-/** Responsable d'un nouveau visiteur de la démo dans l'organigramme (null hors du cerveau de démo). */
+/** Manager of a new demo visitor in the org chart (null outside the demo brain). */
 export async function demoVisitorManager(store: BrainStore = getStore()): Promise<string | null> {
   return demoTeam(await store.listProfiles())?.[VISITOR_MANAGER] ?? null
 }
 
 /**
- * Cerveau de démo rempli par une version antérieure : complète ce qui lui manque, sans rien effacer.
- * - Organigramme entièrement à plat (rempli avant les rattachements) : l'équipe Butine est rattachée comme dans la démo,
- *   les visiteurs à l'équipe du lead dev. Dès qu'un rattachement existe, on n'y touche plus (choix d'un admin).
- * - Aucun skill : les skills de démo sont publiés et les membres prévus reçoivent le droit de publier.
+ * Demo brain filled by an earlier version: adds what it lacks, without erasing anything.
+ * - Completely flat org chart (filled before reporting lines): the Butine team is attached as in the demo,
+ *   visitors to the lead dev's team. As soon as one reporting line exists, it is left alone (an admin's choice).
+ * - No skill: the demo skills are published and the planned members get the right to publish.
  */
 export async function upgradeDemoBrain(store: BrainStore = getStore()) {
   const out = { managers: 0, skills: 0 }
@@ -117,7 +119,7 @@ export async function upgradeDemoBrain(store: BrainStore = getStore()) {
 
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
 
-/** Vide le cerveau et le remplit avec Butine. Renvoie les jetons des comptes (affichés une seule fois). */
+/** Empties the brain and fills it with Butine. Returns the accounts' tokens (shown only once). */
 export async function seedDemoBrain(store: BrainStore = getStore()) {
   await store.reset(DEMO_ORG)
   const zones = await store.listZones()
@@ -145,7 +147,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
   const r = rand(42)
   const events: NewEvent[] = []
 
-  // Connaissances (et l'événement d'écriture brain-sync correspondant).
+  // Knowledge (and the matching brain-sync write event).
   const sorted = [...DEMO_ITEMS].sort((a, b) => b.daysAgo - a.daysAgo)
   for (const it of sorted) {
     const at = localTime(it.daysAgo, 9 + Math.floor(r() * 9), Math.floor(r() * 60))
@@ -172,14 +174,14 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
       agent: "brain-sync",
       type: "write",
       zones: [it.zone],
-      summary: `1 connaissance ajoutée : ${it.title.slice(0, 80)}`,
+      summary: `1 item added: ${it.title.slice(0, 80)}`,
       at: new Date(at.getTime() + 15 * 60_000).toISOString(),
     })
   }
 
   events.push(...(await seedDemoSkills(store, ids, allZoneIds)))
 
-  // Historique de sessions et de prompts sur 10 jours.
+  // History of sessions and prompts over 10 days.
   for (let d = 10; d >= 0; d--) {
     if (isWeekend(d)) continue
     for (const [zone, prompts] of Object.entries(DEMO_PROMPTS)) {
@@ -203,7 +205,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
     }
   }
 
-  // Jean-Marc lance le même prompt chaque matin de semaine vers 9 h.
+  // Jean-Marc runs the same prompt every weekday morning around 9am.
   for (let d = 7; d >= 0; d--) {
     if (isWeekend(d)) continue
     const at = localTime(d, 9, 1 + Math.floor(r() * 9))
@@ -211,7 +213,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
     const session = `seed-jm-${d}`
     events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "started", zones: [], session_id: session, at: at.toISOString() })
     events.push({
-      user_id: ids.jeanmarc, agent: "claude-code", type: "query", zones: ["compta"], summary: JEANMARC_DAILY_PROMPT,
+      user_id: ids.jeanmarc, agent: "claude-code", type: "query", zones: ["finance"], summary: JEANMARC_DAILY_PROMPT,
       fingerprint: promptFingerprint(JEANMARC_DAILY_PROMPT), session_id: session, at: new Date(at.getTime() + 15_000).toISOString(),
     })
     events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "stopped", zones: [], session_id: session, at: new Date(at.getTime() + 12 * 60_000).toISOString() })
@@ -220,7 +222,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
   events.sort((a, b) => a.at.localeCompare(b.at))
   const inserted: AgentEvent[] = await store.insertEvents(events)
 
-  // État de l'entreprise et automatisations détectées sur cet historique.
+  // State of the company and automations detected on that history.
   const [items, tasks, profiles] = await Promise.all([store.listItems({}), store.listTasks({}), store.listProfiles()])
   await store.setStatus(heuristicStatus({ zones, items, tasks, profiles }))
   const autos = detectAutomations(inserted, profiles, { timeZone: TZ })
@@ -230,14 +232,14 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
 }
 
 /**
- * Cerveau de démo resté sur une ancienne entreprise fictive (LEGACY_DEMO_NAMES) : remplacé par la démo actuelle.
- * Les visiteurs sont recréés avec le même jeton et les mêmes zones : un poste déjà branché sur la démo le reste.
- * Renvoie null si le cerveau n'est pas une ancienne démo (rien n'est touché).
+ * Demo brain still on a former fictional company (LEGACY_DEMO_NAMES): replaced by the current demo.
+ * Visitors are recreated with the same token and the same zones: a computer already connected to the demo stays so.
+ * Returns null if the brain is not a former demo (nothing is touched).
  */
 export async function replaceLegacyDemoBrain(store: BrainStore = getStore()) {
   if (!LEGACY_DEMO_NAMES.includes((await store.getOrg()).name)) return null
   const visitors: { name: string; email?: string; token_hash: string; zones: { zone_id: string; can_write: boolean }[] }[] = []
-  for (const v of (await store.listProfiles()).filter((p) => p.title === DEMO_VISITOR_TITLE)) {
+  for (const v of (await store.listProfiles()).filter((p) => p.title === DEMO_VISITOR_TITLE || p.title === LEGACY_DEMO_VISITOR_TITLE)) {
     const token_hash = await store.getTokenHash(v.id)
     if (!token_hash) continue
     const zones = (await store.listZoneAccess(v.id)).map(({ zone_id, can_write }) => ({ zone_id, can_write }))
@@ -256,9 +258,9 @@ export async function replaceLegacyDemoBrain(store: BrainStore = getStore()) {
 const g = globalThis as unknown as { __demoBootstrap?: Promise<void> }
 
 /**
- * Mode démo uniquement : un cerveau sans aucun compte (base neuve d'un déploiement) est amorcé avec Butine.
- * Un cerveau Butine déjà rempli n'est jamais effacé : il est seulement complété (upgradeDemoBrain). Seul un cerveau
- * resté sur une ancienne entreprise de démo est remplacé, une fois, en gardant ses visiteurs (replaceLegacyDemoBrain).
+ * Demo mode only: a brain without any account (fresh deployment database) is seeded with Butine.
+ * A Butine brain already filled is never erased: it is only completed (upgradeDemoBrain). Only a brain still on a
+ * former demo company is replaced, once, keeping its visitors (replaceLegacyDemoBrain).
  */
 export async function ensureDemoBrain(): Promise<void> {
   if (!isDemoMode()) return
@@ -269,8 +271,8 @@ export async function ensureDemoBrain(): Promise<void> {
         await replaceLegacyOnce(store)
         return upgradeOnce(store)
       }
-      // Plusieurs instances peuvent recevoir les premières visites en même temps : une seule amorce la démo.
-      // Les autres attendent le marqueur « terminé » sans toucher aux données (lire les comptes créerait une org vide).
+      // Several instances may receive the first visits at the same time: only one seeds the demo.
+      // The others wait for the "done" marker without touching the data (reading the accounts would create an empty org).
       if (!(await store.claimOnce("demo-bootstrap"))) {
         for (let i = 0; i < 60 && !(await store.isClaimDone("demo-bootstrap")); i++) await new Promise((r) => setTimeout(r, 500))
         return
@@ -278,7 +280,7 @@ export async function ensureDemoBrain(): Promise<void> {
       try {
         const res = await seedDemoBrain(store)
         await store.finishClaim("demo-bootstrap")
-        console.log(`[démo] cerveau vide amorcé avec ${DEMO_ORG.name} : ${res.counts.items} connaissances, ${res.counts.events} événements.`)
+        console.log(`[demo] empty brain seeded with ${DEMO_ORG.name}: ${res.counts.items} items, ${res.counts.events} events.`)
       } catch (err) {
         await store.releaseClaim("demo-bootstrap").catch(() => {})
         throw err
@@ -291,7 +293,7 @@ export async function ensureDemoBrain(): Promise<void> {
   return g.__demoBootstrap
 }
 
-/** Une seule instance remplace une ancienne démo ; les autres attendent qu'elle ait fini, sans toucher aux données. */
+/** Only one instance replaces a former demo; the others wait for it to finish, without touching the data. */
 async function replaceLegacyOnce(store: BrainStore) {
   if (!LEGACY_DEMO_NAMES.includes((await store.getOrg()).name)) return
   const key = `demo-replace-legacy-${DEMO_ORG.name}`
@@ -302,21 +304,21 @@ async function replaceLegacyOnce(store: BrainStore) {
   try {
     const res = await replaceLegacyDemoBrain(store)
     await store.finishClaim(key)
-    if (res) console.log(`[démo] ancienne démo remplacée par ${DEMO_ORG.name} : ${res.items} connaissances, ${res.visitors} visiteur(s) conservé(s).`)
+    if (res) console.log(`[demo] former demo replaced by ${DEMO_ORG.name}: ${res.items} items, ${res.visitors} visitor(s) kept.`)
   } catch (err) {
     await store.releaseClaim(key).catch(() => {})
     throw err
   }
 }
 
-/** Une seule instance complète le cerveau de démo (les autres passent leur chemin : rien ne presse). */
+/** Only one instance completes the demo brain (the others move on: there is no hurry). */
 async function upgradeOnce(store: BrainStore) {
   const key = "demo-upgrade-skills-org"
   if (!(await store.claimOnce(key))) return
   try {
     const res = await upgradeDemoBrain(store)
     await store.finishClaim(key)
-    if (res.managers || res.skills) console.log(`[démo] cerveau complété : ${res.managers} rattachement(s), ${res.skills} skill(s).`)
+    if (res.managers || res.skills) console.log(`[demo] brain completed: ${res.managers} reporting line(s), ${res.skills} skill(s).`)
   } catch (err) {
     await store.releaseClaim(key).catch(() => {})
     throw err

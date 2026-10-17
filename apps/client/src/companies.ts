@@ -1,7 +1,6 @@
-// Plusieurs entreprises sur un même poste : on peut appartenir à plusieurs cerveaux (une entreprise créée, une autre
-// rejointe…), chacun avec son jeton et son serveur MCP dans Claude Code et Codex (mcp-config.ts). La première est celle
-// par défaut : la synchro, les hooks et les skills restent sur elle (et le serveur MCP du poste, en secours, l'interroge
-// tant qu'on ne lui en demande pas une autre).
+// Several companies on one computer: you can belong to several brains (one company created, another joined…), each
+// with its token and its MCP server in Claude Code and Codex (mcp-config.ts). The first one is the default: sync, hooks
+// and skills stay on it (and the computer's MCP server, as a fallback, queries it unless asked for another one).
 
 import { normalize, truncate } from "@brain/core"
 import { BrainApi } from "./api"
@@ -13,14 +12,14 @@ export { companyLabel }
 
 type Log = (s: string) => void
 
-/** Une ligne par entreprise, numérotées : « 1. Butine (par défaut) : balances connectées pour ruches… ». */
+/** One numbered line per company: "1. Butine (default): connected scales for beehives…". */
 export function describeCompanies(list: Company[]): string {
-  return list.map((c, i) => `${i + 1}. ${companyLabel(c)}${i === 0 ? " (par défaut)" : ""}${c.description ? ` : ${truncate(c.description.trim(), 200)}` : ""}`).join("\n")
+  return list.map((c, i) => `${i + 1}. ${companyLabel(c)}${i === 0 ? " (default)" : ""}${c.description ? `: ${truncate(c.description.trim(), 200)}` : ""}`).join("\n")
 }
 
 /**
- * L'entreprise demandée, par numéro (« 2 »), nom ou début de nom, sans tenir compte des accents ni de la casse ;
- * rien de demandé : la première. Inconnue ou ambiguë : erreur qui liste les entreprises du poste.
+ * The requested company, by number ("2"), name or start of name, ignoring accents and case; nothing requested: the
+ * first one. Unknown or ambiguous: an error that lists the computer's companies.
  */
 export function pickCompany(list: Company[], wanted?: string): Company {
   const w = wanted?.trim()
@@ -31,18 +30,18 @@ export function pickCompany(list: Company[], wanted?: string): Company {
   if (exact) return exact
   const partial = list.filter((c) => c.name && normalize(c.name).includes(n))
   if (partial.length === 1) return partial[0]
-  throw new UserError(`Entreprise ${partial.length > 1 ? "ambiguë" : "inconnue"} : « ${w} ». Entreprises de ce poste :\n${describeCompanies(list)}`)
+  throw new UserError(`${partial.length > 1 ? "Ambiguous" : "Unknown"} company: "${w}". Companies on this computer:\n${describeCompanies(list)}`)
 }
 
 /**
- * `companies` : liste les entreprises du poste ; `--default <nom|n°>` change celle par défaut ; `--remove <nom|n°>`
- * en retire une (le jeton reste valable sur le cerveau, il n'est plus utilisé ici).
+ * `companies`: lists the computer's companies; `--default <name|no.>` changes the default one; `--remove <name|no.>`
+ * removes one (the token stays valid on the brain, it is no longer used here).
  */
 export async function cmdCompanies(flags: Record<string, string | boolean>, log: Log = console.log): Promise<number> {
   const cfg = requireConfig()
   let list = companiesOf(cfg)
   const arg = (k: string) => {
-    if (flags[k] === true) throw new UserError(`--${k} : donnez le nom ou le numéro de l'entreprise (voir \`${selfCommand()} companies\`).`)
+    if (flags[k] === true) throw new UserError(`--${k}: give the company's name or number (see \`${selfCommand()} companies\`).`)
     return typeof flags[k] === "string" ? (flags[k] as string) : undefined
   }
   const def = arg("default")
@@ -51,9 +50,9 @@ export async function cmdCompanies(flags: Record<string, string | boolean>, log:
 
   if (remove !== undefined) {
     const c = pickCompany(list, remove)
-    if (list.length === 1) throw new UserError(`${companyLabel(c)} est la seule entreprise de ce poste. Pour tout retirer : ${selfCommand()} uninstall`)
+    if (list.length === 1) throw new UserError(`${companyLabel(c)} is the only company on this computer. To remove everything: ${selfCommand()} uninstall`)
     list = list.filter((x) => x !== c)
-    log(`${companyLabel(c)} retirée de ce poste.`)
+    log(`${companyLabel(c)} removed from this computer.`)
   }
   if (def !== undefined) {
     const c = pickCompany(list, def)
@@ -63,19 +62,19 @@ export async function cmdCompanies(flags: Record<string, string | boolean>, log:
   if (list[0] !== before || list.length !== companiesOf(cfg).length) {
     saveConfig(withCompanies(cfg, list))
     if (list[0] !== before) {
-      // Le cache (zones, qui je suis) sert aux hooks pour classer les prompts : il suit l'entreprise par défaut.
+      // The cache (zones, who I am) is used by the hooks to classify prompts: it follows the default company.
       const { errors } = await refreshCache(new BrainApi(list[0].url, list[0].token, 8000))
       if (errors.length === 2) saveCache({ updated_at: new Date().toISOString() })
-      log(`Entreprise par défaut : ${companyLabel(list[0])}. La synchro, les hooks et les skills passent sur elle.`)
+      log(`Default company: ${companyLabel(list[0])}. Sync, hooks and skills move to it.`)
     }
-    // Serveurs MCP de Claude Code et Codex : ceux des entreprises restantes (une entreprise retirée perd le sien).
+    // Claude Code and Codex MCP servers: those of the remaining companies (a removed company loses its own).
     await syncCompanyMcp(requireConfig(), log)
   }
 
-  log(list.length > 1 ? "Entreprises de ce poste (les agents passent `company` pour en viser une autre que la première) :" : "Entreprise de ce poste :")
+  log(list.length > 1 ? "Companies on this computer (agents pass `company` to target one other than the first):" : "Company on this computer:")
   log(describeCompanies(list))
   if (list.length > 1 && def === undefined && remove === undefined) {
-    log(`Changer celle par défaut : ${selfCommand()} companies --default <nom ou n°> — en retirer une : ${selfCommand()} companies --remove <nom ou n°>`)
+    log(`Change the default one: ${selfCommand()} companies --default <name or no.> — remove one: ${selfCommand()} companies --remove <name or no.>`)
   }
   return 0
 }

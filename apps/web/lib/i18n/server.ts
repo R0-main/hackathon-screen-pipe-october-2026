@@ -1,13 +1,10 @@
-import { cookies, headers } from "next/headers"
-import { LANG_COOKIE, getDict, resolveLocale, type Locale } from "./index"
+import { LOCALE, getDict, type Locale } from "./index"
 
-/** Langue de la requête en cours (pages et layouts). */
+/** Language of the current request (pages and layouts): always English. */
 export async function getLocale(): Promise<Locale> {
-  const [jar, h] = await Promise.all([cookies(), headers()])
-  return resolveLocale(jar.get(LANG_COOKIE)?.value, h.get("accept-language"))
+  return LOCALE
 }
 
 export async function getT() {
-  const locale = await getLocale()
-  return { locale, t: getDict(locale) }
+  return { locale: LOCALE, t: getDict() }
 }

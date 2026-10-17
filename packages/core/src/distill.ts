@@ -1,6 +1,6 @@
-// Distillation heuristique (sans LLM) : sert de repli quand aucune clé Claude n'est disponible,
-// et de garde-fou en test. La version Claude est dans claude.ts.
-// « Rien de brut » : l'heuristique ne produit que des gabarits et de courts extraits re-masqués.
+// Heuristic distillation (no LLM): the fallback when no Claude key is available,
+// and a safety net in tests. The Claude version lives in claude.ts.
+// "Nothing raw": the heuristic only produces templates and short, re-redacted excerpts.
 
 import type { Entity, KnowledgeItemInput, KnowledgeKind, SourceTool, Zone } from "./types"
 import { zoneScorer } from "./zones"
@@ -9,7 +9,7 @@ import { looksPersonal, redactText } from "./privacy"
 
 export type ConversationMessage = { role: "user" | "assistant"; text: string; at?: string }
 
-/** Une session IA reconstituée sur le poste (logs Claude Code, Codex, ou capture Screenpipe). */
+/** An AI session rebuilt on the workstation (Claude Code or Codex logs, or a Screenpipe capture). */
 export type Conversation = {
   id: string
   tool: SourceTool
@@ -20,7 +20,7 @@ export type Conversation = {
   ended_at: string
   messages: ConversationMessage[]
   screenpipe_ref?: string
-  /** Rappel (court, déjà masqué) de la demande initiale quand ce segment ne la contient pas (cf. chunkConversation). */
+  /** Reminder (short, already redacted) of the initial ask when this segment does not contain it (see chunkConversation). */
   ask?: string
 }
 
@@ -35,37 +35,23 @@ export const KNOWN_TOOLS = [
   "OpenAI", "Anthropic", "Mistral", "Brevo", "Sendgrid", "Twilio", "Alan", "Swile", "Payfit", "Lemlist", "Calendly",
 ]
 
-/**
- * Décisions explicites. Pas de « retenu » ni de « décision » nus (« la retenue à la source », « il faudra une décision »),
- * ni de libellé de calcul (« Taux retenu : 7,5 % », « Montant retenu : 187 € »). « On retient » est traité à part (RETAIN_RE) :
- * c'est aussi le verbe de la retenue sur salaire.
- */
+/** Explicit decisions. Not a bare "decision" ("we'll need a decision"), which PENDING_RE treats as an open question. */
 const DECISION_RE =
-  /\b(?:on (?:part|est parti|partira) sur|on a (?:d[ée]cid[ée]|tranch[ée]|choisi|opt[ée] pour|valid[ée])|nous avons (?:d[ée]cid[ée]|choisi)|j'ai (?:d[ée]cid[ée]|tranch[ée])|il a [ée]t[ée] d[ée]cid[ée]|c'est d[ée]cid[ée]|d[ée]cision\s*:|d[ée]cision prise|on garde(?! (?:[àa] l['’]esprit|en t[êe]te|en m[ée]moire|un [œo]e?il))|on choisit|on opte|(?:solution|option|approche|piste|offre|choix|sc[ée]nario|prestataire|fournisseur|outil|formule|variante)s? retenue?s?\b|on va utiliser|on utilisera|we(?:'ll| will) (?:use|go with)|let'?s (?:use|go with)|we decided|decided to|we chose|go avec|valid[ée]\s*:)/i
-/** Hypothèse avant le verbe de décision (« Si on garde ce rythme… », « Quand on choisit… ») : pas une décision. */
+  /\b(?:we(?:'ve| have)? (?:decided|settled on|chose|picked|opted for|agreed on|went with|are going with)|we(?:'ll| will) (?:use|go with|stick with|keep)|let'?s (?:use|go with|stick with|keep)|i(?:'ve| have)? decided|it was decided|it'?s decided|decided to|decision\s*:|decision made|final(?:ly)? (?:choice|pick)\s*:|(?:chosen|selected|retained|approved) (?:solution|option|approach|vendor|provider|tool|plan|offer|scenario)|(?:solution|option|approach|vendor|provider|tool|plan|offer|scenario) (?:chosen|selected|retained|approved)\b|going with|approved\s*:)/i
+/** A hypothesis before the decision verb ("If we keep this pace…", "When we choose…"): not a decision. */
 const HYPOTHETICAL_RE =
-  /(?:^|[\s,;(«"])(?:si|s'il|s'ils|if|quand|lorsqu['’]?|au cas o[uù]|dans le cas o[uù]|dans l['’]hypoth[èe]se o[uù]|en supposant|imaginons|admettons|peut-[êe]tre|à moins qu|a moins qu|sauf si)(?![a-zà-ÿ])[^.;!?]*$/i
-/**
- * « On retient » / « nous retenons » / « on a retenu » : une décision seulement si l'objet est un choix — un nom propre
- * (« On retient Stripe Billing ») ou un nom de choix (« la solution B », « l'offre de Qonto ») —, pas une retenue
- * (« on retient donc 187 € sur le salaire », « le prélèvement à la source », « la TVA à 20 % »).
- */
-const RETAIN_RE = /\b(?:on retient|nous retenons|je retiens|on a retenu|nous avons retenu|j'ai retenu)\s+/i
-const RETAINED_CHOICE_RE =
-  /^(?:(?:donc|finalement|plut[ôo]t|alors|bien|d[ée]finitivement)\s+)?(?:[A-Z][A-Za-zÀ-ÿ0-9]*[a-zà-ÿ0-9]|(?:la|le|l['’]|les|cette|ce|cet|notre|votre|leur)\s*(?:solution|option|offre|formule|proposition|approche|piste|version|variante|sc[ée]nario|prestataire|fournisseur|outil|choix|id[ée]e|m[ée]thode|strat[ée]gie|plan|devis|candidat|candidate|candidature|maquette|architecture|stack|librairie|biblioth[èe]que|framework|banque|premi[èe]re|deuxi[èe]me|seconde|troisi[èe]me|derni[èe]re)\b)/
+  /(?:^|[\s,;("])(?:if|whether|when|in case|assuming|suppose|supposing|imagine|maybe|perhaps|unless|should we)(?![a-z])[^.;!?]*$/i
 
 function isDecision(s: string): boolean {
   const m = DECISION_RE.exec(s)
-  if (m && !HYPOTHETICAL_RE.test(s.slice(0, m.index))) return true
-  const r = RETAIN_RE.exec(s)
-  return Boolean(r) && RETAINED_CHOICE_RE.test(s.slice((r?.index ?? 0) + (r?.[0].length ?? 0))) && !HYPOTHETICAL_RE.test(s.slice(0, r?.index ?? 0))
+  return Boolean(m) && !HYPOTHETICAL_RE.test(s.slice(0, m?.index ?? 0))
 }
 
-/** Décision encore à prendre : c'est une question ouverte, pas une décision. */
+/** A decision still to be made: an open question, not a decision. */
 const PENDING_RE =
-  /\b(?:il (?:faudra|faut|reste [àa]) (?:prendre )?une d[ée]cision|d[ée]cision (?:[àa] prendre|en attente)|reste [àa] (?:trancher|d[ée]cider)|[àa] trancher|to be decided)/i
+  /\b(?:(?:we(?:'ll| will)?|you(?:'ll| will)?) (?:need|have) to (?:make a )?decid|(?:need|needs) a decision|decision (?:pending|to be made|still open)|still (?:to be )?decided|to be decided|tbd\b|yet to decide)/i
 const TASK_RE =
-  /^\s*(?:[-*]\s*\[ \]\s*|TODO[:\s]|[àa] faire\s*:|reste [àa]\s|next steps?\s*:?|prochaines? [ée]tapes?\s*:?|il faudra\s|penser [àa]\s)/i
+  /^\s*(?:[-*]\s*\[ \]\s*|TODO[:\s]|to ?do\s*:|still to do\s*:?|next steps?\s*:?|action items?\s*:?|we(?:'ll| will) need to\s|remember to\s|don'?t forget to\s)/i
 const STEP_RE = /^\s*(\d+)[.)]\s+\S/
 
 function stripCode(text: string): string {
@@ -79,87 +65,84 @@ function sentences(text: string): string[] {
     .filter((s) => s.length >= 12 && s.length <= 400)
 }
 
-/** Court extrait re-masqué : l'heuristique ne recopie jamais plus de quelques dizaines de mots d'affilée. */
+/** Short re-redacted excerpt: the heuristic never copies more than a few dozen words in a row. */
 function excerpt(s: string, max: number): string {
   return truncate(redactText(s.replace(/\s+/g, " ").trim()), max)
 }
 
 /**
- * Noms d'outils qui sont aussi des mots courants ou des prénoms (« Vue mensuelle », « Notion de marge », « Slack de 2 jours »,
- * « Make sure », « Alan ») : casse exacte, et retenus seulement sur un indice d'outil (cf. ambiguousToolAt).
+ * Tool names that are also common words or first names ("Notion of margin", "Slack of 2 days", "Make sure", "Linear growth",
+ * "Alan"): exact case, and kept only with a tool cue (see ambiguousToolAt).
  */
 const AMBIGUOUS_TOOLS = new Set([
   "Vue", "Node", "Bun", "Deno", "Linear", "Notion", "Slack", "Excel", "Make", "Alan", "Mistral", "Codex", "React", "Drizzle",
   "Tailwind", "Prisma", "Swile", "Sentry", "Claude",
 ])
-/** Outils retenus seulement avec un indice de contexte dans le texte (Alan est aussi un prénom, Make un verbe anglais). */
+/** Tools kept only with a context cue in the text (Alan is also a first name, Make an English verb). */
 const TOOL_CONTEXT: Record<string, RegExp> = {
-  Alan: /\b(?:mutuelle|assurance|sant[ée]|pr[ée]voyance|insurance)\b/i,
-  Make: /\b(?:make\.com|integromat|zapier|n8n|sc[ée]nario|automatisation|automation|workflow)\b/i,
+  Alan: /\b(?:health insurance|insurance|healthcare|mutual|benefits)\b/i,
+  Make: /\b(?:make\.com|integromat|zapier|n8n|scenario|automation|workflow)\b/i,
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-/** Toutes les écritures d'outils connus, pour reconnaître une énumération (« Notion et Slack », « Stripe, Notion »). */
+/** Every spelling of a known tool, to recognize an enumeration ("Notion and Slack", "Stripe, Notion"). */
 const ANY_TOOL_SRC = KNOWN_TOOLS.map(escapeRe).sort((a, b) => b.length - a.length).join("|")
-/** Déterminants : « la Notion de marge », « du Slack dans le planning » sont des noms communs, pas des outils. */
+/** Determiners: "the Notion of margin", "a Slack in the schedule" are common nouns, not tools. */
 const DETERMINERS = new Set(
-  (
-    "le la les l un une des du de d au aux ce cet cette ces mon ma mes ton ta tes son sa ses notre nos votre vos leur leurs quel " +
-    "quelle quels quelles chaque aucun aucune tout toute tous toutes the a an this that these those my your our their its some " +
-    "any no each every et ou ni and or nor"
-  ).split(" "),
+  "the a an this that these those my your our their its his her some any no each every which what and or nor".split(" "),
 )
-/** Préposition + article devant le nom (« sur le Slack de l'équipe », « dans la Notion partagée » reste rare mais valide). */
-const PREP_ARTICLE_RE = /(?:^|[^A-Za-zÀ-ÿ])(?:dans|sur|via|avec|depuis|vers|chez|sous|par|in|on|with|into|from)\s+(?:le|la|l['’]|the)\s*$/i
+/** Preposition + article before the name ("on the Slack of the team", "in the Notion workspace"). */
+const PREP_ARTICLE_RE = /(?:^|[^A-Za-z])(?:in|on|with|into|from|via|through|over|to|at)\s+(?:the|our|your|their)\s*$/i
 /**
- * Verbes qui font d'un nom en tête de phrase un outil : « Sentry est déployé », « Notion est notre wiki ». Pas « a », « va »,
- * « fait » : « Claude a validé la facture » parle d'une personne.
+ * Verbs that turn a sentence-initial name into a tool: "Sentry is deployed", "Notion is our wiki". Not "has", "will",
+ * "does": "Claude has approved the invoice" talks about a person.
  */
 const TOOL_VERBS =
-  "est sont était sera reste tourne plante crashe remonte envoie notifie alerte synchronise gère héberge stocke permet sert fonctionne marche is was runs sends stores lets handles".split(" ")
+  "is are was were runs crashes sends notifies alerts syncs handles hosts stores lets serves works breaks triggers reports posts chases creates updates imports exports pulls pushes".split(" ")
 const TOOL_VERB_AFTER_RE = new RegExp(`^\\s+(?:${TOOL_VERBS.join("|")})\\b`)
-/** Mots en minuscules qui peuvent suivre un outil : verbes, prépositions, conjonctions (« Vue pour le front », « Make relance »). */
+/** Lowercase words that may follow a tool: verbs, prepositions, conjunctions ("Vue for the front end", "Make triggers"). */
 const TOOL_FOLLOWERS = new Set([
   ...TOOL_VERBS,
-  ..."relance déclenche a ont va vont peut doit fait has will can does".split(" "),
-  ..."à au aux avec chez dans depuis en entre par pour sans sous sur vers via contre après avant pendant selon comme côté du des et ou mais donc car ni puis quand si que qu qui lorsque ne n and or but for with in on to from into at by".split(" "),
+  ..."has have will can does did should could would".split(" "),
+  ..."and or but for with in on to from into at by via through over under after before during like as than then when if that which who".split(" "),
 ])
-const DETERMINER_AHEAD_RE = /^(?:l['’]|(?:la|le|les|notre|votre|leur|leurs|mon|ma|mes|ton|ta|tes|son|sa|ses|nos|vos|ce|cet|cette|ces)(?![a-zà-ÿ]))/
+const DETERMINER_AHEAD_RE = /^(?:the|our|your|their|my|his|her|its|this|that|these|those|a|an)(?![a-z])/
 
-/** Outils dont le nom, majuscule comprise, est aussi un mot ordinaire en tête de libellé (« Vue mensuelle », « Make un point »). */
-const LABEL_WORD_TOOLS = new Set(["Vue", "Make", "Linear"])
-/** Outils dont le nom est aussi un prénom : sujet d'un verbe, c'est d'abord une personne (« Léo et Claude sont en congé »). */
+/** Tools whose name, capital included, is also an ordinary word at the start of a label ("Make a call", "Linear growth"). */
+const LABEL_WORD_TOOLS = new Set(["Make", "Linear"])
+/** Tools whose name is also a first name: as the subject of a verb, it is a person first ("Léo and Claude are on leave"). */
 const FIRST_NAME_TOOLS = new Set(["Claude", "Alan"])
+/** Words after which a first-name tool is the tool: "switch to Alan", "via Claude", "using Claude". */
+const TOOL_INTRO_WORDS = new Set("to into via using use uses used in on through switch switched moves moved migrate migrated".split(" "))
 
 /**
- * Un nom commun suit le nom de l'outil, qui est alors un mot ordinaire :
- * - « de » sans article (« Notion de marge », « Vue d'ensemble », « Slack de 2 jours », « Alan de vérifier ») ; avec un article,
- *   c'est un complément (« le Slack de l'équipe » reste un outil) ;
- * - pour Vue, Make et Linear, tout mot en minuscules qui n'est ni un verbe, ni une préposition, ni une conjonction (« Vue
- *   mensuelle », « Vue client », « Make un point », « Make sure »). Les autres outils gardent leur complément (« React
- *   components », « Node built-ins », « page Notion publique »).
+ * A common noun follows the tool name, which is then an ordinary word:
+ * - "of" without an article ("Notion of margin", "Slack of 2 days"); with an article, it is a complement ("the Slack of the
+ *   team" stays a tool);
+ * - for Make and Linear, any lowercase word that is neither a verb, a preposition nor a conjunction ("Make sure", "Make a
+ *   call", "Linear growth"). Other tools keep their complement ("React components", "Node built-ins", "public Notion page").
  */
 function commonNounAfter(tool: string, after: string): boolean {
-  const m = /^[^\S\n]{1,3}([a-zà-ÿ][a-zà-ÿ\-]*)(['’])?/.exec(after)
+  const m = /^[^\S\n]{1,3}([a-z][a-z\-]*)/.exec(after)
   if (!m) return false
-  if (m[1] === "de" || (m[1] === "d" && m[2])) {
+  if (m[1] === "of") {
     const next = after.slice(m[0].length).trimStart()
-    // « le Notion de Fournil », « l'espace Notion de Fournil » : « de » + nom propre est un complément, comme « de l'équipe ».
-    return !DETERMINER_AHEAD_RE.test(next) && !(m[1] === "de" && /^[A-ZÀ-Ý]/.test(next))
+    // "the Notion of Fournil", "the Notion space of Fournil": "of" + proper noun is a complement, like "of the team".
+    return !DETERMINER_AHEAD_RE.test(next) && !/^[A-Z]/.test(next)
   }
   return LABEL_WORD_TOOLS.has(tool) && !TOOL_FOLLOWERS.has(m[1])
 }
-/** En-tête d'une liste d'outils : « Outils recommandés : », « Stack : », « Intégrations ». */
-const TOOL_HEADER_RE = /\b(?:outils?|stack|tools?|logiciels?|apps?|applis?|applications?|services?|int[ée]grations?|plateformes?|saas|technos?|technologies?)\b/i
+/** Header of a tool list: "Recommended tools:", "Stack:", "Integrations". */
+const TOOL_HEADER_RE = /\b(?:tools?|stack|software|apps?|applications?|services?|integrations?|platforms?|saas|tech|technolog(?:y|ies))\b/i
 const BULLET_RE = /^\s*(?:[-*•·+]|\d+[.)]|[a-z][.)])\s+/
-const COORD = String.raw`\s*(?:,|/|\+|&|\bet\b|\bou\b|\band\b|\bor\b)\s*`
+const COORD = String.raw`\s*(?:,|/|\+|&|\band\b|\bor\b)\s*`
 const TOOL_THEN_COORD_RE = new RegExp(`(?:^|[^A-Za-z0-9])(?:${ANY_TOOL_SRC})${COORD}$`)
 const COORD_THEN_TOOL_RE = new RegExp(`^${COORD}(?:${ANY_TOOL_SRC})(?![A-Za-z0-9])`)
 const TOOL_HEAD_RE = new RegExp(`^(?:${ANY_TOOL_SRC})(?![A-Za-z0-9])`, "i")
 
 /**
- * Puce qui commence par un outil connu (« - Stripe pour les paiements », « - **Notion** : la doc ») ; un outil ambigu compte
- * seulement avec sa casse exacte et s'il n'est pas suivi d'un nom commun (« - Vue globale : … », « - Make un point »).
+ * A bullet that starts with a known tool ("- Stripe for payments", "- **Notion**: the docs"); an ambiguous tool only counts
+ * with its exact case and when no common noun follows it ("- Make sure: …", "- Linear growth").
  */
 function toolBullet(line: string): "plain" | "ambiguous" | null {
   const body = line.replace(BULLET_RE, "").replace(/^[*_`\s]+/, "")
@@ -173,8 +156,8 @@ function toolBullet(line: string): "plain" | "ambiguous" | null {
 type ToolBulletKind = ReturnType<typeof toolBullet>
 
 /**
- * Lecture d'un texte, mémorisée par ligne : est-ce une puce, par quel genre d'outil commence-t-elle (cf. toolBullet), et le
- * verdict de chaque liste. Une longue liste de « - Notion » ou de « - Vue mensuelle » n'est pas relue à chaque occurrence.
+ * Reading of a text, memoized per line: is it a bullet, what kind of tool does it start with (see toolBullet), and the
+ * verdict for each list. A long list of "- Notion" or "- Make sure" lines is not re-read on every occurrence.
  */
 type ListMemo = { lines: string[]; bullet: Map<number, boolean>; kind: Map<number, ToolBulletKind>; blocks: Map<number, boolean> }
 
@@ -185,9 +168,9 @@ function isBulletLine(memo: ListMemo, k: number): boolean {
 }
 
 /**
- * Liste d'outils sans en-tête (lignes `start` à `end`) : au moins deux puces, chacune commence par un outil, dont un outil
- * sans ambiguïté (« - Stripe pour les paiements\n- Notion pour la doc »). Des noms seulement ambigus sont des personnes ou
- * des mots (« Équipe :\n- Claude : gérant\n- Alan : comptable », « - Node A\n- Node B »).
+ * Tool list without a header (lines `start` to `end`): at least two bullets, each starting with a tool, one of them
+ * unambiguous ("- Stripe for payments\n- Notion for the docs"). Only ambiguous names are people or words
+ * ("Team:\n- Claude: manager\n- Alan: accountant", "- Node A\n- Node B").
  */
 function toolList(memo: ListMemo, start: number, end: number): boolean {
   if (end - start < 1) return false
@@ -201,19 +184,18 @@ function toolList(memo: ListMemo, start: number, end: number): boolean {
   return plain
 }
 
-/** Dernier mot de `before` (avant une apostrophe et des blancs finals), lu depuis la fin : « dans l'espace » → « espace ». */
+/** Last word of `before` (before trailing whitespace), read from the end: "in the workspace" → "workspace". */
 function lastWord(before: string): string {
   let end = before.length
   while (end > 0 && /\s/.test(before[end - 1])) end--
-  if (end > 0 && /['’]/.test(before[end - 1])) end--
   let start = end
-  while (start > 0 && /[A-Za-zÀ-ÿ]/.test(before[start - 1])) start--
+  while (start > 0 && /[A-Za-zÀ-ÿ']/.test(before[start - 1])) start--
   return before.slice(start, end).toLowerCase()
 }
-/** Une liste plus longue n'est lue que sur 30 lignes autour de la puce : coût borné. */
+/** A longer list is only read over 30 lines around the bullet: bounded cost. */
 const BLOCK_SPAN = 30
 
-/** Lignes de la liste à puces qui contient la ligne `i` (aucune si ce n'est pas une puce), et l'en-tête qui la précède. */
+/** Lines of the bullet list containing line `i` (none if it is not a bullet), and the header right before it. */
 function bulletBlock(memo: ListMemo, i: number): { start: number; end: number; header: string } | null {
   if (!isBulletLine(memo, i)) return null
   let a = i
@@ -226,16 +208,16 @@ function bulletBlock(memo: ListMemo, i: number): { start: number; end: number; h
 }
 
 /**
- * Un nom d'outil ambigu (casse exacte) à la position `at` est-il l'outil ? Jamais s'il est suivi d'un nom commun (« Vue
- * mensuelle », « Notion de marge », cf. commonNounAfter). Sinon, il faut un indice :
- * - un numéro de version ou une extension (« Vue 3 », « Node 22 », « vue.js ») ;
- * - au milieu d'une phrase, derrière un mot qui n'est pas un déterminant (« dans Notion », « le fichier Excel », « l'API Slack ») :
- *   un nom commun prendrait un article (« la Notion de marge ») et un titre commence par ce mot (« ## 📊 Vue mensuelle ») ;
- * - une préposition et un article (« sur le Slack ») ;
- * - un verbe juste après, sans article devant (« Sentry est déployé en prod », « Notion est notre wiki ») ;
- * - une énumération avec un autre outil (« Notion et Slack ») ;
- * - une liste d'outils : en-tête « Outils : » / « Stack : », ou une liste dont chaque puce commence par un outil
- *   (« - Stripe pour les paiements\n- Notion pour la doc ») ; une seule puce « - Qonto : … » ne suffit pas.
+ * Is an ambiguous tool name (exact case) at position `at` the tool? Never when a common noun follows it ("Make sure",
+ * "Notion of margin", see commonNounAfter). Otherwise it needs a cue:
+ * - a version number or an extension ("Vue 3", "Node 22", "vue.js");
+ * - mid-sentence, after a word that is not a determiner ("in Notion", "the Excel file", "the Slack API"):
+ *   a common noun would take an article ("the notion of margin") and a heading starts with that word ("## Make it fast");
+ * - a preposition and an article ("on the Slack");
+ * - a verb right after, with no article before ("Sentry is deployed in prod", "Notion is our wiki");
+ * - an enumeration with another tool ("Notion and Slack");
+ * - a tool list: a "Tools:" / "Stack:" header, or a list where each bullet starts with a tool
+ *   ("- Stripe for payments\n- Notion for the docs"); a single "- Qonto: …" bullet is not enough.
  */
 function ambiguousToolAt(
   tool: string,
@@ -249,20 +231,21 @@ function ambiguousToolAt(
   const before = text.slice(Math.max(lineStart, at - 200), at)
   if (/^\s?\d/.test(after) || /^\.(?:js|com|so|app|io)\b/i.test(after)) return true
   if (commonNounAfter(tool, after)) return false
-  // Mot précédent, sur la même ligne : un mot ordinaire (pas un déterminant) ⇒ milieu de phrase.
+  // Previous word, on the same line: an ordinary word (not a determiner) ⇒ mid-sentence. A first name needs a word that
+  // introduces a tool ("moves to Alan", "via Claude"): after "Ask" or "with", Alan and Claude are people.
   const prevWord = lastWord(before)
-  if (prevWord && !DETERMINERS.has(prevWord)) return true
+  if (prevWord && !DETERMINERS.has(prevWord) && (!FIRST_NAME_TOOLS.has(tool) || TOOL_INTRO_WORDS.has(prevWord))) return true
   if (PREP_ARTICLE_RE.test(before)) return true
-  // Sujet d'un verbe (« Sentry est déployé », « Le Sentry est déployé », « Ce Slack sert aux alertes », « … et Slack envoie »).
-  // Vue, Make et Linear sont aussi des mots ordinaires : derrière un déterminant, « la Vue est claire » est un nom commun.
+  // Subject of a verb ("Sentry is deployed", "The Sentry is deployed", "This Slack is for alerts", "… and Slack sends").
+  // Make and Linear are also ordinary words, and Claude and Alan first names: after a determiner, they are not tools.
   if ((!prevWord || !(LABEL_WORD_TOOLS.has(tool) || FIRST_NAME_TOOLS.has(tool))) && TOOL_VERB_AFTER_RE.test(after)) return true
-  // Énumération : « Notion et Slack », « Stripe, Notion », « Slack / Linear ».
+  // Enumeration: "Notion and Slack", "Stripe, Notion", "Slack / Linear".
   if (TOOL_THEN_COORD_RE.test(before.slice(-40)) || COORD_THEN_TOOL_RE.test(after)) return true
-  // Liste d'outils (puces) : en-tête explicite, ou chaque puce commence par un outil.
+  // Tool list (bullets): explicit header, or each bullet starts with a tool.
   if (TOOL_HEADER_RE.test(before)) return true
   const block = bulletBlock(memo, lineIndex)
   if (!block) return false
-  // Verdict mémorisé par ligne (et partagé entre outils) : une longue liste de « - Vue » n'est pas relue à chaque occurrence.
+  // Verdict memoized per line (and shared across tools): a long list of "- Vue" is not re-read on every occurrence.
   let listOfTools = memo.blocks.get(lineIndex)
   if (listOfTools === undefined) {
     listOfTools = TOOL_HEADER_RE.test(block.header) || toolList(memo, block.start, block.end)
@@ -271,7 +254,7 @@ function ambiguousToolAt(
   return listOfTools
 }
 
-/** Mémo de lecture d'un texte (cf. ListMemo), créé au premier outil ambigu rencontré et partagé par tous les outils. */
+/** Reading memo of a text (see ListMemo), created at the first ambiguous tool met and shared by all tools. */
 type MemoRef = { memo: ListMemo | null }
 
 function toolMentioned(tool: string, text: string, ref: MemoRef = { memo: null }): boolean {
@@ -280,8 +263,8 @@ function toolMentioned(tool: string, text: string, ref: MemoRef = { memo: null }
   if (new RegExp(`(^|[^A-Za-z0-9])${esc}\\.js\\b`, "i").test(text)) return true
   const context = TOOL_CONTEXT[tool]
   if (context && !context.test(text)) return false
-  // Numéro de ligne tenu à jour au fil des occurrences (croissantes) : pas de recomptage depuis le début du texte, et la
-  // position du prochain « \n » est gardée d'une occurrence à l'autre (pas de relecture de la ligne à chaque occurrence).
+  // Line number kept up to date across (increasing) occurrences: no recount from the start of the text, and the position
+  // of the next "\n" is kept from one occurrence to the next (the line is not re-read on every occurrence).
   let lineIndex = 0
   let scanned = 0
   let nextNl = text.indexOf("\n")
@@ -307,34 +290,34 @@ export function extractEntities(text: string, cwd?: string): Entity[] {
     const base = cwd.split(/[\\/]/).filter(Boolean).pop()
     if (base && base.length > 1 && !["src", "home", "Users", "user", "tmp", "Desktop"].includes(base)) add({ type: "project", name: base })
   }
-  for (const m of text.matchAll(/\b(?:client|chez|pour le client|prospect)\s+([A-Z][\w&'-]+(?:\s+[A-Z][\w&'-]+){0,2})/g)) {
+  for (const m of text.matchAll(/\b(?:client|customer|for the client|for the customer|prospect)\s+([A-Z][\w&'-]+(?:\s+[A-Z][\w&'-]+){0,2})/g)) {
     add({ type: "client", name: m[1] })
   }
-  for (const m of text.matchAll(/\b(?:projet|project)\s+([A-Z][\w-]+(?:\s+[A-Z][\w-]+)?)/g)) add({ type: "project", name: m[1] })
+  for (const m of text.matchAll(/\bproject\s+([A-Z][\w-]+(?:\s+[A-Z][\w-]+)?)/g)) add({ type: "project", name: m[1] })
   for (const m of text.matchAll(/@([A-Z][a-zà-ÿ]+(?:\s[A-Z][a-zà-ÿ]+)?)/g)) add({ type: "person", name: m[1] })
   return [...found.values()].slice(0, 8)
 }
 
-/** Passage le plus long recopié tel quel depuis ce que l'employé a écrit (demande, messages), dans tout champ envoyé. */
+/** Longest passage copied verbatim from what the employee wrote (ask, messages), in any field sent. */
 export const MAX_PROMPT_VERBATIM = 80
-/** Extrait le plus long tiré d'une réponse de l'assistant. */
+/** Longest excerpt taken from an assistant answer. */
 const MAX_ANSWER_EXCERPT = 200
 
 /**
- * Session lue à l'écran (Screenpipe) ou dans un assistant web : l'OCR mélange la demande tapée par l'employé et la réponse
- * dans le texte « assistant ». Seuls les journaux Claude Code et Codex séparent vraiment ce que l'employé a écrit.
+ * Session read on screen (Screenpipe) or in a web assistant: OCR mixes the ask typed by the employee and the answer
+ * in the "assistant" text. Only Claude Code and Codex logs truly separate what the employee wrote.
  */
 export function isScreenCapture(conv: Pick<Conversation, "id" | "tool" | "screenpipe_ref">): boolean {
   return !(conv.tool === "claude-code" || conv.tool === "codex") || conv.id.startsWith("screenpipe:") || Boolean(conv.screenpipe_ref)
 }
 
-/** Ensemble de fenêtres de texte (cf. verbatimWindows) ; un Set<string> convient aussi. */
+/** Set of text windows (see verbatimWindows); a Set<string> works too. */
 export type VerbatimWindows = { has(window: string): boolean; readonly size: number }
 
 const HASH_MOD = 1_000_000_007
 const HASH_BASE = 131
 
-/** Empreinte polynomiale d'une fenêtre (modulo un nombre premier < 2^30 : un petit entier, rapide comme clé de Map). */
+/** Polynomial fingerprint of a window (modulo a prime < 2^30: a small integer, fast as a Map key). */
 function windowHash(s: string, from: number, len: number): number {
   let h = 0
   for (let i = from; i < from + len; i++) h = (h * HASH_BASE + s.charCodeAt(i)) % HASH_MOD
@@ -342,27 +325,27 @@ function windowHash(s: string, from: number, len: number): number {
 }
 
 /**
- * Fenêtres de `max + 1` caractères des textes de l'employé (espaces normalisés, déjà masqués) : un passage plus long recopié
- * s'y retrouve. Indexées par empreinte glissante (la position de chaque fenêtre, chaînée par empreinte, au lieu de 320 000
- * chaînes de 81 caractères) ; une recherche vérifie caractère par caractère : même réponse qu'un Set des fenêtres.
- * `size` compte les fenêtres (doublons compris) : seul « aucune fenêtre » sert.
+ * Windows of `max + 1` characters of the employee's texts (normalized whitespace, already redacted): a longer copied passage
+ * shows up in them. Indexed by rolling hash (the position of each window, chained by hash, instead of 320,000 strings of
+ * 81 characters); a lookup checks character by character: same answer as a Set of the windows.
+ * `size` counts the windows (duplicates included): only "no window" matters.
  */
 export function verbatimWindows(texts: string[], max: number): VerbatimWindows {
   const w = max + 1
-  // Les textes, mis bout à bout ; « \n » (absent d'un texte aux espaces normalisés) les sépare, et aucune fenêtre ne le contient.
+  // The texts, joined; "\n" (absent from a text with normalized whitespace) separates them, and no window contains it.
   const all = texts.map((t) => redactText(t.replace(/\s+/g, " ").trim())).join("\n")
   const n = Math.max(0, all.length - w + 1)
   let bits = 10
   while (1 << bits < 2 * n) bits++
   const mask = (1 << bits) - 1
-  const head = new Int32Array(1 << bits) // empreinte & mask → dernière position + 1 (0 : vide)
-  const next = new Int32Array(n) // position → position précédente du même seau + 1
+  const head = new Int32Array(1 << bits) // hash & mask → last position + 1 (0: empty)
+  const next = new Int32Array(n) // position → previous position in the same bucket + 1
   const hashes = new Int32Array(n)
   let size = 0
   let top = 1
   for (let i = 1; i < w; i++) top = (top * HASH_BASE) % HASH_MOD
   let h = 0
-  let start = 0 // début du texte courant
+  let start = 0 // start of the current text
   for (let i = 0; i < all.length; i++) {
     if (all.charCodeAt(i) === 10) {
       start = i + 1
@@ -390,14 +373,14 @@ export function verbatimWindows(texts: string[], max: number): VerbatimWindows {
 }
 
 /**
- * Raccourcit tout passage de plus de `max` caractères recopié tel quel (garde-fou final, quel que soit le gabarit).
- * La comparaison se fait espaces normalisés, comme les fenêtres : un champ sur plusieurs lignes (étapes jointes par « \n »)
- * est vu comme la source, où ces lignes se suivent. La coupe est reportée sur le texte du champ, retours à la ligne compris.
+ * Shortens any passage of more than `max` characters copied verbatim (final safety net, whatever the template).
+ * Comparison is done with normalized whitespace, like the windows: a multi-line field (steps joined by "\n")
+ * is seen like the source, where those lines follow each other. The cut is mapped back onto the field, line breaks included.
  */
 export function clipVerbatim(field: string, windows: VerbatimWindows, max: number): string {
   const w = max + 1
   if (windows.size === 0 || field.length < w) return field
-  // norm : le champ aux espaces normalisés ; at[k] : position dans `field` du k-ième caractère de norm.
+  // norm: the field with normalized whitespace; at[k]: position in `field` of the k-th character of norm.
   let norm = ""
   const at: number[] = []
   for (let i = 0; i < field.length; i++) {
@@ -417,23 +400,23 @@ export function clipVerbatim(field: string, windows: VerbatimWindows, max: numbe
     while (end < norm.length && windows.has(norm.slice(end + 1 - w, end + 1))) end++
     const cut = at[i + max - 1]
     const next = end < norm.length ? at[end] : field.length
-    // La partie coupée enjambe une fin de ligne (une étape et la suivante) : la suite reste sur sa propre ligne.
+    // The cut part spans a line end (one step and the next): what follows stays on its own line.
     const rest = field.slice(next)
     out += `${field.slice(from, cut).trimEnd()}…${field.slice(cut, next).includes("\n") ? "\n" : /^\s/.test(rest) ? "" : " "}`
     from = next
     i = end
   }
-  // « …car la l… … — » : une coupe juste avant l'ellipse d'un extrait déjà raccourci n'en ajoute pas une seconde.
+  // "…because the l… … —": a cut right before the ellipsis of an already shortened excerpt does not add a second one.
   return (out + field.slice(from)).replace(/…(\s*)…/g, (_, s: string) => (s.includes("\n") ? "…\n" : "…")).trim()
 }
 
 /**
- * Distille une conversation en items de connaissance, sans LLM.
- * Rien de brut : la demande de l'employé n'apparaît qu'en extrait de 80 caractères au plus (titre), jamais en « contexte » ;
- * les phrases de l'assistant sont des extraits courts et re-masqués. Un garde-fou final raccourcit tout passage de plus de
- * 80 caractères recopié depuis ce que l'employé a écrit. Pour une capture d'écran (cf. isScreenCapture), tout le texte
- * capturé compte comme écrit par l'employé : aucun champ ne recopie plus de 80 caractères d'affilée de la source.
- * La zone de chaque item est celle de la conversation, sauf indice nettement plus fort pour une autre zone.
+ * Distills a conversation into knowledge items, without an LLM.
+ * Nothing raw: the employee's ask only appears as an excerpt of at most 80 characters (title), never as "context";
+ * assistant sentences are short, re-redacted excerpts. A final safety net shortens any passage of more than
+ * 80 characters copied from what the employee wrote. For a screen capture (see isScreenCapture), all the captured text
+ * counts as written by the employee: no field copies more than 80 characters in a row from the source.
+ * Each item's zone is the conversation's, unless there is a clearly stronger cue for another zone.
  */
 export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallbackZone?: string): KnowledgeItemInput[] {
   const userMsgs = conv.messages.filter((m) => m.role === "user" && m.text.trim())
@@ -441,13 +424,13 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
   if (asstMsgs.length === 0) return []
 
   const all = conv.messages.map((m) => m.text).join("\n")
-  // Garde-fou : applyPrivacy écarte déjà ces sessions, mais l'heuristique sert aussi de repli quand le LLM échoue.
+  // Safety net: applyPrivacy already drops these sessions, but the heuristic is also the fallback when the LLM fails.
   if (looksPersonal(`${conv.title ?? ""}\n${conv.ask ?? ""}\n${all}`)) return []
 
-  // La demande : titre de session, rappel de la demande initiale (segment de fin), ou premier message.
+  // The ask: session title, reminder of the initial ask (trailing segment), or first message.
   const askText = conv.title || conv.ask || userMsgs[0]?.text || ""
   const ask = askText ? excerpt(firstSentence(askText, 200), MAX_PROMPT_VERBATIM) : ""
-  // Mots-clés des zones normalisés une fois pour toute la distillation (pas à chaque item).
+  // Zone keywords normalized once for the whole distillation (not for each item).
   const score = zoneScorer(zones)
   const askZone = askText ? score(askText)[0]?.zone : undefined
   const zone =
@@ -455,7 +438,7 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
     fallbackZone ??
     zones[0]?.id ??
     "general"
-  // Une ligne isolée ne change de zone que sur un indice net (≥ 2 mots-clés et 1 point d'avance), jamais sur une égalité.
+  // A single line only changes zone on a clear cue (≥ 2 keywords and a 1-point lead), never on a tie.
   const zoneFor = (text: string): string => {
     const scores = score(text, { prefer: [zone] })
     const top = scores[0]
@@ -467,7 +450,7 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
   const entities = extractEntities(all, conv.cwd)
   const project = entities.find((e) => e.type === "project")?.name
   const source = { app: conv.app, tool: conv.tool, at: conv.ended_at, session_id: conv.id, screenpipe_ref: conv.screenpipe_ref }
-  const where = project ? `${conv.tool}, projet ${project}` : conv.tool
+  const where = project ? `${conv.tool}, project ${project}` : conv.tool
   const screen = isScreenCapture(conv)
   const typed = [conv.title, conv.ask, ...(screen ? conv.messages : userMsgs).map((m) => m.text)].filter((t): t is string => Boolean(t))
   const windows = verbatimWindows(typed, MAX_PROMPT_VERBATIM)
@@ -475,7 +458,7 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
   const usable = (s: string) => !looksPersonal(s)
   const items: KnowledgeItemInput[] = []
   const seen = new Set<string>()
-  // La zone d'un item se lit sur l'extrait lui-même, pas sur le gabarit (« session claude-code » n'est pas un indice Dev).
+  // An item's zone is read from the excerpt itself, not from the template ("claude-code session" is not a Dev cue).
   const push = (kind: KnowledgeKind, title: string, body: string, confidence: number, zoneText = `${title} ${body}`) => {
     const t = clip(truncate(title, 140))
     const key = `${kind}:${t.toLowerCase()}`
@@ -483,21 +466,21 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
     seen.add(key)
     items.push({ zone: zoneFor(zoneText), kind, title: t, body: clip(truncate(body, 1500)), entities, source, confidence })
   }
-  // Ce que l'employé a écrit n'est repris qu'en extrait de 80 caractères ; une phrase de l'assistant, 200 au plus.
+  // What the employee wrote is only reused as an 80-character excerpt; an assistant sentence, 200 at most.
   const limitFor = (role: ConversationMessage["role"]) => (screen || role === "user" ? MAX_PROMPT_VERBATIM : MAX_ANSWER_EXCERPT)
 
-  // 1. Résumé de la session : le sujet + deux phrases clés de la réponse finale (extraits séparés, pas la demande brute).
+  // 1. Session summary: the topic + two key sentences from the final answer (separate excerpts, not the raw ask).
   const gist: string[] = []
   for (const s of sentences(asstMsgs[asstMsgs.length - 1].text)) {
     if (gist.length >= 2) break
     if (usable(s)) gist.push(excerpt(s, screen ? MAX_PROMPT_VERBATIM : 160))
   }
-  if (ask && gist.length) push("fact", ask, `Ce qui en est ressorti (${where}) : ${gist.join(" — ")}`, 0.45, `${ask} ${gist.join(" ")}`)
+  if (ask && gist.length) push("fact", ask, `Outcome (${where}): ${gist.join(" — ")}`, 0.45, `${ask} ${gist.join(" ")}`)
 
-  // Seuls les MAX_ITEMS premiers items sont gardés : au-delà, plus rien n'est lu (ni masqué, ni classé, ni vérifié).
+  // Only the first MAX_ITEMS items are kept: beyond that, nothing more is read (nor redacted, classified or checked).
   const full = () => items.length >= MAX_ITEMS
 
-  // 2. Décisions explicites (une question ou une hypothèse n'est pas une décision : « on garde combien de temps ? », « si on garde… »).
+  // 2. Explicit decisions (a question or a hypothesis is not a decision: "how long do we keep it?", "if we keep…").
   for (const m of conv.messages) {
     if (full()) break
     const max = limitFor(m.role)
@@ -506,12 +489,12 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
       if (s.trimEnd().endsWith("?")) continue
       const pending = PENDING_RE.test(s)
       if ((!pending && !isDecision(s)) || !usable(s)) continue
-      if (pending) push("question", excerpt(s, Math.min(max, 140)), `${excerpt(s, max)}\n(Question ouverte, session ${where})`, 0.5, s)
-      else push("decision", excerpt(s, Math.min(max, 140)), `${excerpt(s, max)}\n(Décision, session ${where})`, 0.6, s)
+      if (pending) push("question", excerpt(s, Math.min(max, 140)), `${excerpt(s, max)}\n(Open question, ${where} session)`, 0.5, s)
+      else push("decision", excerpt(s, Math.min(max, 140)), `${excerpt(s, max)}\n(Decision, ${where} session)`, 0.6, s)
     }
   }
 
-  // 3. Tâches.
+  // 3. Tasks.
   for (const m of conv.messages) {
     if (full()) break
     const max = limitFor(m.role)
@@ -519,11 +502,11 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
       if (full()) break
       if (!TASK_RE.test(line) || PENDING_RE.test(line) || !usable(line)) continue
       const clean = line.replace(TASK_RE, "").replace(/^[-*\s]+/, "").trim()
-      if (clean.length >= 8) push("task", excerpt(clean, Math.min(max, 140)), `${excerpt(clean, max)}\n(À faire, session ${where})`, 0.55, clean)
+      if (clean.length >= 8) push("task", excerpt(clean, Math.min(max, 140)), `${excerpt(clean, max)}\n(To do, ${where} session)`, 0.55, clean)
     }
   }
 
-  // 4. Procédures : une réponse avec au moins 3 étapes numérotées (8 au plus, chacune raccourcie), cf. procedureBody.
+  // 4. Procedures: an answer with at least 3 numbered steps (8 at most, each shortened), see procedureBody.
   for (const m of full() ? [] : asstMsgs) {
     const steps: string[] = []
     for (const l of stripCode(m.text).split("\n")) {
@@ -532,7 +515,7 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
     }
     if (steps.length >= 3) {
       const subject = ask || excerpt(steps[0], screen ? MAX_PROMPT_VERBATIM : 100)
-      const title = /^proc[ée]dure\b/i.test(subject) ? subject : `Procédure : ${subject}`
+      const title = /^procedure\b/i.test(subject) ? subject : `Procedure: ${subject}`
       const body = procedureBody(steps.map((s) => excerpt(s, screen ? MAX_PROMPT_VERBATIM : 140)))
       push("procedure", title, body, 0.6, `${ask} ${body}`)
       break
@@ -542,26 +525,26 @@ export function distillHeuristic(conv: Conversation, zones: ZoneHint[], fallback
   return items.slice(0, MAX_ITEMS)
 }
 
-/** Items gardés par session, étapes gardées par procédure. */
+/** Items kept per session, steps kept per procedure. */
 const MAX_ITEMS = 6
 const MAX_STEPS = 8
 
 /**
- * Corps d'une procédure, une étape par ligne, numérotée « Étape N/M : » (la source a perdu son propre numéro « 1. »).
- * Ni la numérotation de la source (« 1. … »), ni celle qu'un employé tape souvent (« Étape 1 : … ») : la suite des étapes
- * ne recopie pas un bloc de la source (texte capturé, ou demande que l'assistant reprend), et le garde-fou ne coupe qu'une
- * étape trop longue, pas toute la procédure. Une étape qui se nomme déjà (« Étape 1 du runbook ») n'est pas renumérotée.
+ * Body of a procedure, one step per line, numbered "Step N/M: " (the source lost its own "1." number).
+ * Neither the source's numbering ("1. …") nor the one an employee often types ("Step 1: …"): the list of steps does not
+ * copy a block of the source (captured text, or an ask the assistant repeats), and the safety net only cuts a step that is
+ * too long, not the whole procedure. A step that already names itself ("Step 1 of the runbook") is not renumbered.
  */
 function procedureBody(steps: string[]): string {
   return steps
     .map((s) => s.replace(STEP_LABEL_RE, "") || s)
-    .map((s, i) => (/^(?:[ÉéEe]tape|step)\s?\d/i.test(s) ? s : `Étape ${i + 1}/${steps.length} : ${s}`))
+    .map((s, i) => (/^step\s?\d/i.test(s) ? s : `Step ${i + 1}/${steps.length}: ${s}`))
     .join("\n")
 }
-/** Libellé d'étape déjà présent, gras compris : « Étape 1 : », « **Étape 2 :** », « Step 3. », « Étape 1/5 — ». */
-const STEP_LABEL_RE = /^[*_]{0,3}(?:[ÉéEe]tape|step)[ \t]?\d{1,3}(?:\/\d{1,3})?[ \t]?[*_]{0,3}[ \t]?[:.)—–-][ \t]?[*_]{0,3}[ \t]?/i
+/** Step label already present, bold included: "Step 1: ", "**Step 2:** ", "Step 3. ", "Step 1/5 — ". */
+const STEP_LABEL_RE = /^[*_]{0,3}step[ \t]?\d{1,3}(?:\/\d{1,3})?[ \t]?[*_]{0,3}[ \t]?[:.)—–-][ \t]?[*_]{0,3}[ \t]?/i
 
-/** Coupe un texte trop long en morceaux, de préférence en fin de paragraphe, de ligne ou de phrase. */
+/** Splits a text that is too long into pieces, preferably at the end of a paragraph, a line or a sentence. */
 function splitLong(text: string, max: number): string[] {
   const out: string[] = []
   let rest = text
@@ -579,9 +562,9 @@ function splitLong(text: string, max: number): string[] {
 }
 
 /**
- * Découpe une conversation trop longue en segments (par messages entiers) pour la distillation.
- * Un message trop long est coupé en morceaux, pas tronqué : la fin d'une longue réponse porte souvent les décisions et
- * les tâches. Les segments qui ne contiennent pas la demande initiale en reçoivent un rappel (`ask`).
+ * Splits a conversation that is too long into segments (whole messages) for distillation.
+ * A message that is too long is cut into pieces, not truncated: the end of a long answer often carries the decisions and
+ * the tasks. Segments that do not contain the initial ask get a reminder of it (`ask`).
  */
 export function chunkConversation(conv: Conversation, maxChars = 24000): Conversation[] {
   const pieces = conv.messages.flatMap((m) => (m.text.length > maxChars ? splitLong(m.text, maxChars).map((text) => ({ ...m, text })) : [m]))
@@ -608,18 +591,18 @@ export function chunkConversation(conv: Conversation, maxChars = 24000): Convers
   })
 }
 
-/** Rend une conversation lisible pour un LLM. */
+/** Renders a conversation readably for an LLM. */
 export function renderConversation(conv: Conversation): string {
   const head = [
-    `Outil : ${conv.tool} (${conv.app})`,
-    conv.cwd ? `Projet / dossier : ${conv.cwd}` : "",
-    `Période : ${conv.started_at} → ${conv.ended_at}`,
-    conv.ask ? `Demande initiale (rappel, hors de ce segment) : ${conv.ask}` : "",
+    `Tool: ${conv.tool} (${conv.app})`,
+    conv.cwd ? `Project / folder: ${conv.cwd}` : "",
+    `Period: ${conv.started_at} → ${conv.ended_at}`,
+    conv.ask ? `Initial ask (reminder, outside this segment): ${conv.ask}` : "",
   ]
     .filter(Boolean)
     .join("\n")
   const meeting = conv.tool === "meeting"
-  const label = (role: string) => (meeting ? (role === "user" ? "Transcription de la réunion" : "Notes enregistrées") : role === "user" ? "Employé" : "Assistant IA")
+  const label = (role: string) => (meeting ? (role === "user" ? "Meeting transcript" : "Recorded notes") : role === "user" ? "Employee" : "AI assistant")
   const body = conv.messages.map((m) => `### ${label(m.role)}\n${m.text.trim()}`).join("\n\n")
   return `${head}\n\n${body}`
 }

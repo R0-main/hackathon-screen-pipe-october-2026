@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
-import type { PosteHealth } from "@brain/core"
+import type { WorkstationHealth } from "@brain/core"
 import type { MonitoringState } from "@/app/api/admin/monitoring/route"
 import { fmt } from "@/lib/i18n"
 import { PageScroll } from "./AppShell"
@@ -14,8 +14,8 @@ import { ErrorText } from "./ui"
 
 const REFRESH_MS = 30_000
 
-/** Pastille d'état : encre pour « à jour », cerclée pour les autres (jamais de couleur seule, le libellé suit toujours). */
-function HealthDot({ status }: { status: PosteHealth }) {
+/** State dot: ink for "up to date", outlined for the others (never color alone, the label always follows). */
+function HealthDot({ status }: { status: WorkstationHealth }) {
   const cls = status === "ok" ? "bg-ink" : status === "error" ? "border-2 border-danger" : status === "late" ? "border-2 border-ink" : "border border-line-strong"
   return <span aria-hidden className={`inline-block size-2.5 shrink-0 rounded-full ${cls}`} />
 }
@@ -47,7 +47,7 @@ export function MonitoringPanel() {
   }, [load])
 
   const m = t.monitoring
-  const label: Record<PosteHealth, string> = { ok: m.ok, late: m.late, error: m.error, never: m.never }
+  const label: Record<WorkstationHealth, string> = { ok: m.ok, late: m.late, error: m.error, never: m.never }
 
   return (
     <PageScroll>
@@ -76,9 +76,9 @@ export function MonitoringPanel() {
           <>
             <section className="panel p-4 sm:p-5">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="panel-title">{m.postes}</h2>
+                <h2 className="panel-title">{m.workstations}</h2>
                 <p className="flex flex-wrap gap-x-3 text-[12px] tabular-nums text-trace">
-                  {(["ok", "late", "error", "never"] as PosteHealth[]).map((s) => (
+                  {(["ok", "late", "error", "never"] as WorkstationHealth[]).map((s) => (
                     <span key={s} className="inline-flex items-center gap-1.5">
                       <HealthDot status={s} />
                       {data.counts[s]} {label[s]}
@@ -86,9 +86,9 @@ export function MonitoringPanel() {
                   ))}
                 </p>
               </div>
-              {data.postes.length === 0 && <p className="mt-3 text-[13px] text-trace">{m.noPostes}</p>}
+              {data.workstations.length === 0 && <p className="mt-3 text-[13px] text-trace">{m.noWorkstations}</p>}
               <ul className="mt-3 divide-y divide-line">
-                {data.postes.map((p) => (
+                {data.workstations.map((p) => (
                   <li key={p.profile.id} className="grid gap-x-4 gap-y-1 py-3 md:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))]">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <PersonAvatar id={p.profile.id} size={28} bg="surface" />
@@ -127,7 +127,7 @@ export function MonitoringPanel() {
                     </Cell>
                     {p.health.status !== "ok" && (
                       <p className="text-[12px] text-trace md:col-span-5">
-                        {m.reason} : {p.health.reason}
+                        {m.reason}: {p.health.reason}
                       </p>
                     )}
                   </li>

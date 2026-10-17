@@ -13,7 +13,7 @@ import { ZoneTag, zoneColor } from "@/components/ui"
 
 export const dynamic = "force-dynamic"
 
-/** Tout ce qui concerne une entité (client, projet, outil…) : connaissances lisibles qui la citent, entités liées. */
+/** Everything about an entity (client, project, tool…): readable knowledge that cites it, related entities. */
 export default async function EntityPage({ params }: { params: Promise<{ type: string; name: string }> }) {
   const { type, name: rawName } = await params
   if (!(ENTITY_TYPES as readonly string[]).includes(type)) notFound()
@@ -26,7 +26,7 @@ export default async function EntityPage({ params }: { params: Promise<{ type: s
     <PageScroll>
       <div className="space-y-4">
         <p className="text-[13px] text-trace">
-          <Link href="/entites" className="underline underline-offset-2 hover:text-ink">
+          <Link href="/entities" className="underline underline-offset-2 hover:text-ink">
             {t.entities.backToList}
           </Link>
         </p>

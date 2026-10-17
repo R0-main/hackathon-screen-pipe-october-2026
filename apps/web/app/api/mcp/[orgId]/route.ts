@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic"
 
 type Ctx = { params: Promise<{ orgId: string }> }
 
-/** Serveur MCP d'une entreprise, jeton en en-tête `Authorization: Bearer cb_…` (pour un client qui le permet). */
+/** A company's MCP server, token in the `Authorization: Bearer cb_…` header (for a client that allows it). */
 async function handler(req: Request, { params }: Ctx) {
   const { orgId } = await params
   return handleMcp(req, orgId, req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim())

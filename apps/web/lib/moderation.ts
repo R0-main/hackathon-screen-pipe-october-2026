@@ -1,8 +1,8 @@
-// Modérateur du cerveau : toutes les 15 min, Claude relit ce qui est arrivé depuis le passage précédent et garde,
-// corrige ou retire chaque connaissance. Le passage est fait par Claude Code sur le poste d'un admin (`brain moderate`,
-// lancé par sa synchro planifiée, avec son jeton d'abonnement), ou par le serveur avec la clé API de l'entreprise
-// (« Lancer maintenant »). Un curseur (date d'arrivée) retient où le dernier passage s'est arrêté.
-// Le journal des admins ne garde que des métadonnées (zone, type, motif), jamais le texte retiré.
+// The brain's moderator: every 15 min, Claude rereads what arrived since the previous run and keeps, fixes or removes
+// each knowledge item. The run is done by Claude Code on an admin's computer (`brain moderate`, started by its scheduled
+// sync, with their subscription token), or by the server with the company's API key ("Run now"). A cursor (arrival
+// date) remembers where the last run stopped.
+// The admins' log only keeps metadata (zone, kind, reason), never the removed text.
 
 import {
   MODERATION_BATCH,
@@ -10,6 +10,7 @@ import {
   MODERATION_REASON_LABELS,
   applyModeration,
   buildModerationInput,
+  moderationReason,
   redactText,
   truncate,
   type KnowledgeItem,
@@ -21,7 +22,7 @@ import { moderateKnowledge } from "@brain/core/claude"
 import { getClaude } from "./ai"
 import { getStore } from "./store"
 
-/** `claude-code` : Claude Code sur le poste d'un admin (son abonnement) ; `server` : la clé API de l'entreprise. */
+/** `claude-code`: Claude Code on an admin's computer (their subscription); `server`: the company's API key. */
 export type ModerationVia = "claude-code" | "server"
 
 export type ModerationLogEntry = {
@@ -31,7 +32,7 @@ export type ModerationLogEntry = {
   kind: string
   decision: "edit" | "reject"
   category?: ModerationReason
-  /** Motif en une phrase (masqué) ; absent pour un retrait « personnel » ou « secret », dont le motif pourrait citer le contenu. */
+  /** One-sentence reason (redacted); absent for a "personal" or "secret" removal, whose reason could quote the content. */
   reason?: string
 }
 
@@ -42,7 +43,7 @@ export type ModerationRun = {
   reviewed: number
   edited: number
   rejected: number
-  /** Connaissances encore en attente après ce passage (relues au suivant). */
+  /** Knowledge still waiting after this run (reviewed at the next one). */
   remaining?: number
 }
 
@@ -54,12 +55,12 @@ const LOG_SETTING = "moderation-log"
 const RUNS_SETTING = "moderation-runs"
 const LOG_MAX = 100
 const RUNS_MAX = 30
-/** Premier passage : ce qui est arrivé dans les dernières 24 h. */
+/** First run: what arrived in the last 24 h. */
 const FIRST_WINDOW_MS = 24 * 3600_000
-/** Connaissances déjà en place montrées en regard (doublons) : les plus récentes, sur 90 jours. */
+/** Knowledge already in place shown alongside (duplicates): the most recent, over 90 days. */
 const PUBLISHED_DAYS = 90
 const PUBLISHED_MAX = 400
-/** Ajoutées par un admin (onboarding, connecteurs) : pas relues. */
+/** Added by an admin (onboarding, connectors): not reviewed. */
 const UNMODERATED_TOOLS = new Set(["onboarding", "connector"])
 const CONCURRENCY = 3
 
@@ -83,7 +84,9 @@ export async function setModerationEnabled(on: boolean) {
   await store().setOrgSetting(ENABLED_SETTING, on ? null : "off")
 }
 
-export const loadModerationLog = () => readSetting<ModerationLogEntry[]>(LOG_SETTING, [])
+/** The admins' log; reasons saved by earlier (French) versions are read with their current id. */
+export const loadModerationLog = async () =>
+  (await readSetting<ModerationLogEntry[]>(LOG_SETTING, [])).map((e) => (e.category ? { ...e, category: moderationReason(e.category) ?? "other" } : e))
 export const loadModerationRuns = () => readSetting<ModerationRun[]>(RUNS_SETTING, [])
 
 async function loadCursor(): Promise<Cursor | null> {
@@ -97,7 +100,7 @@ function isPending(item: KnowledgeItem, cursor: Cursor | null, since: string): b
   return !(cursor && item.created_at === cursor.at && cursor.ids.includes(item.id))
 }
 
-/** Connaissances pas encore relues, les plus anciennes d'abord. */
+/** Knowledge not reviewed yet, oldest first. */
 async function pendingItems(): Promise<KnowledgeItem[]> {
   const cursor = await loadCursor()
   const since = cursor?.at ?? new Date(Date.now() - FIRST_WINDOW_MS).toISOString()
@@ -105,7 +108,7 @@ async function pendingItems(): Promise<KnowledgeItem[]> {
   return items.filter((i) => isPending(i, cursor, since)).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
 }
 
-/** Matière d'un passage : jusqu'à MODERATION_BATCH connaissances à relire (avec leur `id`), ou la raison de ne rien faire. */
+/** Material for a run: up to MODERATION_BATCH knowledge items to review (with their `id`), or the reason to do nothing. */
 export async function moderationInput(): Promise<{ input: ModerationInput; remaining: number } | { skipped: "off" | "nothing" }> {
   if (!(await moderationEnabled())) return { skipped: "off" }
   const pending = await pendingItems()
@@ -122,7 +125,7 @@ export async function moderationInput(): Promise<{ input: ModerationInput; remai
   const input = buildModerationInput({
     companyName: org.name,
     zones,
-    items: batch.map((i) => ({ ...i, author: names.get(i.author_id) ?? "inconnu" })),
+    items: batch.map((i) => ({ ...i, author: names.get(i.author_id) ?? "unknown" })),
     published,
   })
   return { input, remaining: pending.length - batch.length }
@@ -131,9 +134,9 @@ export async function moderationInput(): Promise<{ input: ModerationInput; remai
 export type VerdictById = Omit<ModerationVerdict, "ref"> & { id: string }
 
 /**
- * Applique un passage : `ids` = les connaissances relues (dans l'ordre de la matière), `verdicts` = les décisions de
- * Claude (sans verdict : gardée telle quelle). Une connaissance déjà relue, supprimée entre-temps ou ajoutée par un
- * admin est ignorée. Retire les refusées, corrige les autres, puis avance le curseur après la dernière relue.
+ * Applies a run: `ids` = the reviewed knowledge (in the material's order), `verdicts` = Claude's decisions (no verdict:
+ * kept as is). Knowledge already reviewed, deleted in the meantime or added by an admin is ignored. Removes the
+ * rejected ones, fixes the others, then moves the cursor past the last one reviewed.
  */
 export async function applyModerationVerdicts(ids: string[], verdicts: VerdictById[], via: ModerationVia): Promise<ModerationRun> {
   const s = store()
@@ -155,7 +158,7 @@ export async function applyModerationVerdicts(ids: string[], verdicts: VerdictBy
   const edited = out.kept.filter((k) => k.edited)
   for (const k of edited) await s.updateItem(k.item.id, { title: k.item.title, body: k.item.body, kind: k.item.kind, zone: k.item.zone })
 
-  // Curseur : après la plus récente des connaissances relues (celles arrivées à la même milliseconde sont retenues par id).
+  // Cursor: after the most recent of the reviewed knowledge (those that arrived in the same millisecond are kept by id).
   if (batch.length) {
     const last = batch.reduce((m, i) => (i.created_at > m ? i.created_at : m), batch[0].created_at)
     const atLast = batch.filter((i) => i.created_at === last).map((i) => i.id)
@@ -167,20 +170,20 @@ export async function applyModerationVerdicts(ids: string[], verdicts: VerdictBy
   const names = new Map(profiles.map((p) => [p.id, p.name]))
   const at = new Date().toISOString()
   const entries: ModerationLogEntry[] = [
-    ...edited.map((k) => ({ at, author: names.get(k.item.author_id) ?? "inconnu", zone: k.item.zone, kind: k.item.kind, decision: "edit" as const })),
+    ...edited.map((k) => ({ at, author: names.get(k.item.author_id) ?? "unknown", zone: k.item.zone, kind: k.item.kind, decision: "edit" as const })),
     ...out.rejected.map((r) => ({
       at,
-      author: names.get(r.item.author_id) ?? "inconnu",
+      author: names.get(r.item.author_id) ?? "unknown",
       zone: r.item.zone,
       kind: r.item.kind,
       decision: "reject" as const,
       category: r.category,
-      ...(r.category === "personnel" || r.category === "secret" || !r.reason ? {} : { reason: truncate(redactText(r.reason), 160) }),
+      ...(r.category === "personal" || r.category === "secret" || !r.reason ? {} : { reason: truncate(redactText(r.reason), 160) }),
     })),
   ]
   if (entries.length) await s.setOrgSetting(LOG_SETTING, JSON.stringify([...entries, ...(await loadModerationLog())].slice(0, LOG_MAX)))
 
-  // Le fil d'activité montre le modérateur au travail : une ligne par zone, sans rien citer du texte retiré.
+  // The activity feed shows the moderator at work: one line per zone, quoting nothing of the removed text.
   const byZone = new Map<string, ModerationReason[]>()
   for (const r of out.rejected) byZone.set(r.item.zone, [...(byZone.get(r.item.zone) ?? []), r.category])
   const actor = profiles.find((p) => p.role === "admin") ?? profiles[0]
@@ -191,7 +194,7 @@ export async function applyModerationVerdicts(ids: string[], verdicts: VerdictBy
         agent: "job" as const,
         type: "write" as const,
         zones: [zone],
-        summary: `Modérateur : ${reasons.length} connaissance${reasons.length > 1 ? "s" : ""} retirée${reasons.length > 1 ? "s" : ""} (${[...new Set(reasons.map((c) => MODERATION_REASON_LABELS[c]))].join(", ")})`,
+        summary: `Moderator: ${reasons.length} knowledge item${reasons.length > 1 ? "s" : ""} removed (${[...new Set(reasons.map((c) => MODERATION_REASON_LABELS[c]))].join(", ")})`,
         at,
       })),
     )
@@ -202,7 +205,7 @@ export async function applyModerationVerdicts(ids: string[], verdicts: VerdictBy
 }
 
 async function recordRun(run: ModerationRun): Promise<ModerationRun> {
-  // Les passages à vide (toutes les 15 min) ne remplissent pas l'historique.
+  // Empty runs (every 15 min) do not fill the history.
   if (run.status !== "nothing" && run.status !== "off") {
     await store().setOrgSetting(RUNS_SETTING, JSON.stringify([run, ...(await loadModerationRuns())].slice(0, RUNS_MAX)))
   }
@@ -212,9 +215,9 @@ async function recordRun(run: ModerationRun): Promise<ModerationRun> {
 type Moderate = (input: ModerationInput) => Promise<ModerationVerdict[] | null>
 
 /**
- * Passage fait par le serveur, avec la clé API de l'entreprise (« Lancer maintenant ») : lots de MODERATION_CHUNK relus
- * en parallèle. Seuls les lots relus d'affilée depuis le début comptent : un lot sans réponse (et la suite) attend le
- * passage suivant, pour que le curseur ne saute jamais une connaissance pas relue. `moderate` remplace Claude (tests).
+ * Run done by the server, with the company's API key ("Run now"): batches of MODERATION_CHUNK reviewed in parallel. Only
+ * the batches reviewed in a row from the start count: a batch without an answer (and the rest) waits for the next run,
+ * so the cursor never skips knowledge that was not reviewed. `moderate` replaces Claude (tests).
  */
 export async function runModeration(moderate?: Moderate): Promise<ModerationRun> {
   const at = new Date().toISOString()
@@ -236,7 +239,7 @@ export async function runModeration(moderate?: Moderate): Promise<ModerationRun>
       try {
         answers[k] = await moderate!(chunks[k])
       } catch (err) {
-        console.error("[modération]", err instanceof Error ? err.message : err)
+        console.error("[moderation]", err instanceof Error ? err.message : err)
       }
     }
   }

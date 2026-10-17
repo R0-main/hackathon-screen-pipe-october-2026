@@ -3,13 +3,13 @@ import { hashString } from "./brain-geometry"
 
 type ThreeModule = typeof import("three")
 
-/** Les tenues des dots : choisies par l'identifiant de la personne, elles ne changent jamais d'une visite à l'autre. */
+/** The dots' outfits: chosen from the person's id, they never change from one visit to the next. */
 export const LOOKS = ["plain", "beret", "frog", "glasses", "shades"] as const
 export type DotLook = (typeof LOOKS)[number]
 
 export const dotLook = (id: string): DotLook => LOOKS[hashString(id) % LOOKS.length]
 
-/** Tenue de chacun : deux voisins de zone ne portent pas la même (tant qu'il en reste une libre). */
+/** Everyone's outfit: two neighbors in a zone don't wear the same one (as long as a free one remains). */
 export function assignLooks(people: { id: string; zone: string | null }[]): Map<string, DotLook> {
   const looks = new Map<string, DotLook>()
   for (const p of [...people].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -21,20 +21,20 @@ export function assignLooks(people: { id: string; zone: string | null }[]): Map<
   return looks
 }
 
-/** Profil du corps (rayon, hauteur), tourné autour de l'axe vertical ; partagé avec le dot à plat. */
+/** Body profile (radius, height), turned around the vertical axis; shared with the flat dot. */
 export const DOT_PROFILE: [number, number][] = [[0, 0], [0.84, 0], [0.97, 0.07], [1.02, 0.24], [1, 0.5], [0.94, 0.8], [0.82, 1.1], [0.62, 1.36], [0.36, 1.52], [0, 1.58]]
 
 const INK = 0x141414
 
-/** Ressources partagées par tous les dots d'une scène : géométries et matériaux noirs, libérés ensemble. */
+/** Resources shared by all the dots of a scene: geometries and black materials, freed together. */
 export type DotKit = { make: (color: number, look: DotLook) => THREE.Group; dispose: () => void }
 
 /**
- * Le dot d'une personne en volume : une boule de feutrine (reflet velours), un peu écrasée, dans la couleur de sa
- * zone, avec sa tenue. Modèle d'une unité de rayon, face à +z ; la base repose sur y = 0.
+ * A person's dot in 3D: a felt ball (velvet sheen), slightly squashed, in their zone's
+ * color, with their outfit. Model of one unit of radius, facing +z; the base rests on y = 0.
  */
 export function dotKit(T: ThreeModule): DotKit {
-  // Le corps : un dôme à base plate (profil tourné), comme une goutte de feutre posée.
+  // The body: a flat-based dome (turned profile), like a drop of felt set down.
   const body = new T.LatheGeometry(
     DOT_PROFILE.map(([x, y]) => new T.Vector2(x, y)),
     40,

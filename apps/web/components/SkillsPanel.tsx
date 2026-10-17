@@ -11,12 +11,12 @@ import { CloseIcon, Dot, ErrorText, LockIcon, ZoneTag, zoneColor } from "./ui"
 
 type ApiSkill = Skill & { can_manage: boolean }
 
-const COMPANY = "__entreprise__"
-const CLI_PUSH = "~/.company-brain/brain skills push ./mon-skill --cortex compta"
+const COMPANY = "__company__"
+const CLI_PUSH = "~/.company-brain/brain skills push ./my-skill --cortex finance"
 
 /**
- * L'onglet Skills : les skills de l'entreprise (SKILL.md et leurs scripts) regroupés par cortex. Chacun ne voit que ceux
- * de toute l'entreprise et ceux des cortex qu'il lit ; ce sont aussi ceux que son poste installe dans ~/.claude/skills.
+ * The Skills tab: the company's skills (SKILL.md and their scripts) grouped by cortex. Each person only sees the
+ * company-wide ones and those of the cortexes they read; these are also the ones their computer installs in ~/.claude/skills.
  */
 export function SkillsView() {
   const { state, now, refresh } = useBrainLive()
@@ -31,14 +31,14 @@ export function SkillsView() {
     try {
       setSkills((await api<{ skills: ApiSkill[] }>("/api/skills")).skills)
     } catch (e) {
-      setErr(`Chargement des skills impossible : ${errorMessage(e)}`)
+      setErr(`Could not load the skills: ${errorMessage(e)}`)
     }
   }, [])
   useEffect(() => {
     void load()
   }, [load])
 
-  // Cortex qu'on peut attribuer : tous pour un admin, sinon ceux qu'on lit.
+  // Cortexes one can assign: all for an admin, otherwise those one reads.
   const assignable = state.zones.filter((z) => isAdmin || !z.locked)
   const groups = useMemo(() => {
     const list = skills ?? []
@@ -55,7 +55,7 @@ export function SkillsView() {
       await load()
       refresh()
     } catch (e) {
-      setErr(`${what} impossible pour ${s.name} : ${errorMessage(e)}`)
+      setErr(`${what} failed for ${s.name}: ${errorMessage(e)}`)
     } finally {
       setBusy(null)
     }
@@ -65,20 +65,20 @@ export function SkillsView() {
     <PageScroll>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-2xl">
-          <h1 className="text-[22px] font-medium leading-tight">Skills de l&apos;entreprise</h1>
+          <h1 className="text-[22px] font-medium leading-tight">Company skills</h1>
           <p className="mt-1 text-[13px] leading-relaxed text-trace">
-            Les savoir-faire prêts à l&apos;emploi pour Claude Code, avec les scripts qu&apos;ils utilisent. Un skill attribué à un cortex n&apos;est donné qu&apos;aux
-            personnes qui ont accès à ce contexte ; chaque poste installe les siens dans ~/.claude/skills à chaque synchro.
+            Ready-to-use know-how for Claude Code, with the scripts it uses. A skill assigned to a cortex is only given to the
+            people who have access to that context; each computer installs its own in ~/.claude/skills at every sync.
           </p>
         </div>
         {canPublish ? (
           <button type="button" className="btn btn-primary" onClick={() => setPublishing(true)}>
-            Publier un skill
+            Publish a skill
           </button>
         ) : (
           <p className="inset flex max-w-xs items-start gap-2 px-3 py-2 text-[12px] leading-snug">
             <LockIcon size={14} className="mt-px shrink-0" />
-            Publier un skill demande une autorisation : demandez-la à un admin.
+            Publishing a skill requires permission: ask an admin for it.
           </p>
         )}
       </header>
@@ -86,17 +86,17 @@ export function SkillsView() {
       {err && <ErrorText className="mt-4">{err}</ErrorText>}
 
       <div className="mt-6 space-y-6" aria-busy={skills === null}>
-        {skills === null && !err && <p className="text-[13px] text-trace">Chargement des skills…</p>}
+        {skills === null && !err && <p className="text-[13px] text-trace">Loading skills…</p>}
         {skills !== null && groups.length === 0 && (
           <p className="panel p-5 text-[13px] text-trace">
-            Aucun skill pour vous pour l&apos;instant.{" "}
-            {canPublish ? "Publiez le premier : un dossier avec un SKILL.md, et les scripts qu'il utilise." : "Ils apparaîtront ici dès qu'une personne autorisée en publiera."}
+            No skill for you yet.{" "}
+            {canPublish ? "Publish the first one: a folder with a SKILL.md, and the scripts it uses." : "They will show up here as soon as an authorized person publishes one."}
           </p>
         )}
         {groups.map((g) => (
           <section key={g.id} aria-labelledby={`cortex-${g.id}`}>
             <h2 id={`cortex-${g.id}`} className="mb-2.5 flex items-baseline gap-2 text-[15px] font-medium">
-              {g.zone ? <ZoneTag name={`Cortex ${g.zone.name}`} color={zoneColor(g.zone.color, g.zone.position)} /> : "Toute l'entreprise"}
+              {g.zone ? <ZoneTag name={`${g.zone.name} cortex`} color={zoneColor(g.zone.color, g.zone.position)} /> : "The whole company"}
               <span className="text-[12px] font-normal tabular-nums text-trace">{g.skills.length}</span>
             </h2>
             <div className="grid gap-2.5 md:grid-cols-2">
@@ -108,10 +108,10 @@ export function SkillsView() {
                   zones={assignable}
                   now={now}
                   busy={busy === s.id}
-                  onZone={(zone) => act(s, () => api(`/api/skills/${s.id}`, { method: "PATCH", json: { zone } }), "Changement de cortex")}
+                  onZone={(zone) => act(s, () => api(`/api/skills/${s.id}`, { method: "PATCH", json: { zone } }), "Changing the cortex")}
                   onDelete={() => {
-                    if (confirm(`Retirer le skill « ${s.name} » ? Les postes le désinstallent à leur prochaine synchro.`))
-                      void act(s, () => api(`/api/skills/${s.id}`, { method: "DELETE" }), "Retrait")
+                    if (confirm(`Remove the skill "${s.name}"? Computers uninstall it at their next sync.`))
+                      void act(s, () => api(`/api/skills/${s.id}`, { method: "DELETE" }), "Removal")
                   }}
                 />
               ))}
@@ -175,7 +175,7 @@ function SkillCard(props: {
       {open && (
         <div className="mt-3 space-y-3 border-t border-line pt-3">
           {s.files.length > 1 && (
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Fichiers de ${s.name}`}>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Files of ${s.name}`}>
               {s.files.map((f) => (
                 <button key={f.path} type="button" className={`chip mono ${f.path === shown.path ? "chip-on" : ""}`} aria-pressed={f.path === shown.path} onClick={() => setFile(f.path)}>
                   {f.path}
@@ -189,7 +189,7 @@ function SkillCard(props: {
               <label className="flex min-w-0 items-center gap-2 text-[13px]">
                 <span className="shrink-0">Cortex</span>
                 <select className="input input-sm" value={s.zone ?? ""} disabled={props.busy} onChange={(e) => props.onZone(e.target.value || null)}>
-                  <option value="">Toute l&apos;entreprise</option>
+                  <option value="">The whole company</option>
                   {props.zones.map((z) => (
                     <option key={z.id} value={z.id}>
                       {z.name}
@@ -198,7 +198,7 @@ function SkillCard(props: {
                 </select>
               </label>
               <button type="button" className="btn btn-sm ml-auto" disabled={props.busy} onClick={props.onDelete}>
-                Retirer
+                Remove
               </button>
             </div>
           )}
@@ -208,7 +208,7 @@ function SkillCard(props: {
   )
 }
 
-/** Chemin relatif d'un fichier importé d'un dossier (sans le dossier lui-même), ou null s'il faut l'ignorer. */
+/** Relative path of a file imported from a folder (without the folder itself), or null if it must be ignored. */
 function importedPath(file: File): string | null {
   const parts = (file.webkitRelativePath || file.name).split("/")
   if (parts.length > 1) parts.shift()
@@ -231,7 +231,7 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
     return () => window.removeEventListener("keydown", onKey)
   }, [onClose])
 
-  /** Reprend nom et description de l'en-tête de SKILL.md quand les champs sont encore vides. */
+  /** Takes name and description from the SKILL.md front matter when the fields are still empty. */
   function applyMain(content: string, folder?: string) {
     setMain(content)
     const front = parseSkillFrontmatter(content).data
@@ -253,11 +253,11 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
         continue
       }
       if (path === SKILL_MAIN_FILE) applyMain(content, f.webkitRelativePath.split("/")[0] || undefined)
-      // Un fichier ajouté seul (sans dossier) va dans scripts/.
+      // A file added on its own (without a folder) goes into scripts/.
       else added.push({ path: f.webkitRelativePath ? path : `scripts/${path}`, content })
     }
     setScripts((prev) => [...prev.filter((p) => !added.some((a) => a.path === p.path)), ...added])
-    if (skipped.length) setErr(`Fichiers ignorés (pas du texte) : ${skipped.join(", ")}`)
+    if (skipped.length) setErr(`Files ignored (not text): ${skipped.join(", ")}`)
   }
 
   async function submit(e: React.FormEvent) {
@@ -290,18 +290,18 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="publish-skill-title" className="text-[18px] font-medium">
-              Publier un skill
+              Publish a skill
             </h2>
-            <p className="mt-1 text-[13px] text-trace">Même nom qu&apos;un skill existant : il passe à la version suivante.</p>
+            <p className="mt-1 text-[13px] text-trace">Same name as an existing skill: it moves to the next version.</p>
           </div>
-          <button type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Fermer">
+          <button type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Close">
             <CloseIcon />
           </button>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <label className="btn btn-sm cursor-pointer">
-            Importer un dossier
+            Import a folder
             <input
               type="file"
               className="sr-only"
@@ -311,21 +311,21 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
             />
           </label>
           <label className="btn btn-sm cursor-pointer">
-            Ajouter des scripts
+            Add scripts
             <input type="file" className="sr-only" multiple onChange={(e) => void addFiles(e.target.files)} />
           </label>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1.5 block text-[13px] font-medium">Nom</span>
-            <input className="input mono" required value={name} placeholder="cloture-mensuelle" pattern="[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?" onChange={(e) => setName(e.target.value)} />
-            <span className="mt-1 block text-[12px] text-trace">Minuscules, chiffres et tirets : c&apos;est le nom du dossier sur les postes.</span>
+            <span className="mb-1.5 block text-[13px] font-medium">Name</span>
+            <input className="input mono" required value={name} placeholder="month-end-close" pattern="[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?" onChange={(e) => setName(e.target.value)} />
+            <span className="mt-1 block text-[12px] text-trace">Lowercase, digits and dashes: it is the folder name on the computers.</span>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-[13px] font-medium">Cortex</span>
             <select className="input" value={zone} onChange={(e) => setZone(e.target.value)}>
-              <option value="">Toute l&apos;entreprise</option>
+              <option value="">The whole company</option>
               {zones.map((z) => (
                 <option key={z.id} value={z.id}>
                   {z.name}
@@ -336,10 +336,10 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
               {zone ? (
                 <>
                   <Dot color={zoneColor(zones.find((z) => z.id === zone)?.color, zones.find((z) => z.id === zone)?.position)} />
-                  Seules les personnes qui ont accès à ce cortex le reçoivent.
+                  Only people with access to this cortex receive it.
                 </>
               ) : (
-                "Tout le monde le reçoit."
+                "Everyone receives it."
               )}
             </span>
           </label>
@@ -352,10 +352,10 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
             required
             maxLength={1024}
             value={description}
-            placeholder="Clôturer le mois : export Pennylane et envoi au cabinet avant le 5"
+            placeholder="Close the month: Pennylane export and send to the firm before the 5th"
             onChange={(e) => setDescription(e.target.value)}
           />
-          <span className="mt-1 block text-[12px] text-trace">Claude Code s&apos;en sert pour savoir quand utiliser le skill.</span>
+          <span className="mt-1 block text-[12px] text-trace">Claude Code uses it to know when to use the skill.</span>
         </label>
 
         <label className="block">
@@ -365,21 +365,21 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
             required
             rows={10}
             value={main}
-            placeholder={"# Clôture mensuelle\n\n1. Lancer scripts/export.py\n2. …"}
+            placeholder={"# Month-end close\n\n1. Run scripts/export.py\n2. …"}
             onChange={(e) => setMain(e.target.value)}
           />
         </label>
 
         <div>
-          <span className="mb-1.5 block text-[13px] font-medium">Scripts utilisés par le skill</span>
+          <span className="mb-1.5 block text-[13px] font-medium">Scripts used by the skill</span>
           {scripts.length === 0 ? (
-            <p className="text-[12px] text-trace">Aucun. Importez le dossier du skill, ou ajoutez ses scripts.</p>
+            <p className="text-[12px] text-trace">None. Import the skill&apos;s folder, or add its scripts.</p>
           ) : (
             <ul className="flex flex-wrap gap-1.5">
               {scripts.map((f) => (
                 <li key={f.path} className="chip mono">
                   {f.path}
-                  <button type="button" className="-mr-1 rounded-full p-0.5 hover:bg-bone" aria-label={`Retirer ${f.path}`} onClick={() => setScripts((prev) => prev.filter((p) => p.path !== f.path))}>
+                  <button type="button" className="-mr-1 rounded-full p-0.5 hover:bg-bone" aria-label={`Remove ${f.path}`} onClick={() => setScripts((prev) => prev.filter((p) => p.path !== f.path))}>
                     <CloseIcon size={12} />
                   </button>
                 </li>
@@ -389,17 +389,17 @@ function PublishModal({ zones, onClose, onPublished }: { zones: ZoneView[]; onCl
         </div>
 
         <p className="inset px-3 py-2 text-[12px] leading-snug text-trace">
-          Depuis un poste : <span className="mono text-ink">{CLI_PUSH}</span>. Un fichier qui contient un secret (clé API, mot de passe) est refusé : lisez-le
-          depuis une variable d&apos;environnement.
+          From a computer: <span className="mono text-ink">{CLI_PUSH}</span>. A file containing a secret (API key, password) is refused: read it
+          from an environment variable.
         </p>
 
         {err && <ErrorText>{err}</ErrorText>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn" onClick={onClose}>
-            Annuler
+            Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? "Publication en cours" : "Publier"}
+            {busy ? "Publishing" : "Publish"}
           </button>
         </div>
       </form>

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 
-// Le fil des agents vit désormais sur le cerveau : les anciens liens vers /activite y mènent.
+// The agents feed now lives on the brain: old links to /activity lead there.
 export default function Page() {
   redirect("/dashboard")
 }

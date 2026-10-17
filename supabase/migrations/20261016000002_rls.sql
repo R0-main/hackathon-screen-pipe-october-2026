@@ -1,10 +1,11 @@
--- Row Level Security : un utilisateur ne lit que les zones auxquelles il a accès, les admins voient tout.
+-- Row Level Security: a user only reads the zones they have access to, admins see everything.
 --
--- L'API du dashboard se connecte avec le rôle propriétaire (DATABASE_URL) et applique elle-même ces règles
--- (lib/access.ts). Ces politiques protègent l'accès DIRECT à la base (clé anon / utilisateurs Supabase Auth
--- reliés via profiles.auth_user_id) : sans politique correspondante, l'accès est refusé par défaut.
+-- The dashboard API connects with the owner role (DATABASE_URL) and applies these rules itself
+-- (lib/access.ts). These policies protect DIRECT access to the database (anon key / Supabase Auth users
+-- linked through profiles.auth_user_id): without a matching policy, access is denied by default.
 --
--- Sur un Postgres sans Supabase, créer d'abord un schéma « auth » minimal (voir supabase/local/auth_stub.sql).
+-- On a Postgres without Supabase, first create a minimal "auth" schema (see supabase/local/auth_stub.sql).
+-- The policy names below were renamed to English by 20261018000001_english.sql.
 
 alter table orgs enable row level security;
 alter table profiles enable row level security;
@@ -86,7 +87,7 @@ create policy "automatisations : admins et intéressé" on automation_suggestion
 drop policy if exists "état : membres" on company_status;
 create policy "état : membres" on company_status for select using (org_id = brain_org_id());
 
--- Supabase Realtime (optionnel : le dashboard utilise son propre flux SSE, mais un client Supabase peut s'abonner).
+-- Supabase Realtime (optional: the dashboard uses its own SSE stream, but a Supabase client can subscribe).
 do $$
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then

@@ -1,5 +1,5 @@
-// Contrats partagés entre brain-sync (poste), le MCP, les hooks et le cerveau.
-// Voir ARCHITECTURE.md § « Modèle de données ».
+// Contracts shared by brain-sync (on the workstation), the MCP server, the hooks and the brain.
+// See ARCHITECTURE.md, "Data model".
 
 export const KNOWLEDGE_KINDS = ["fact", "decision", "task", "procedure", "question"] as const
 export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number]
@@ -26,7 +26,7 @@ export type KnowledgeSource = {
   session_id?: string
 }
 
-/** Ce que brain-sync envoie au cerveau (POST /api/ingest). */
+/** What brain-sync sends to the brain (POST /api/ingest). */
 export type KnowledgeItemInput = {
   zone: string
   kind: KnowledgeKind
@@ -37,29 +37,29 @@ export type KnowledgeItemInput = {
   confidence: number
 }
 
-/** Un item tel que stocké dans le cerveau. */
+/** An item as stored in the brain. */
 export type KnowledgeItem = KnowledgeItemInput & {
   id: string
   org_id: string
   author_id: string
   created_at: string
-  /** Identifiant d'une connaissance plus récente qui remplace celle-ci (décision revue, procédure mise à jour). */
+  /** Id of a newer piece of knowledge that replaces this one (revised decision, updated procedure). */
   superseded_by?: string | null
 }
 
-/** Ce que les hooks / le MCP / brain-sync envoient (POST /api/events). */
+/** What the hooks, the MCP server and brain-sync send (POST /api/events). */
 export type AgentEventInput = {
   agent: AgentName
   type: AgentEventType
   zones?: string[]
   summary?: string
-  /** Empreinte du prompt normalisé : sert à détecter les tâches répétitives sans stocker le prompt brut. */
+  /** Fingerprint of the normalized prompt: spots repetitive tasks without storing the raw prompt. */
   fingerprint?: string
   session_id?: string
   at?: string
 }
 
-/** Ce qui fait s'allumer le cerveau. */
+/** What makes the brain light up. */
 export type AgentEvent = {
   id: number
   org_id: string
@@ -82,9 +82,9 @@ export type Profile = {
   email?: string
   title?: string
   role: Role
-  /** Personne à qui ce poste est rattaché dans l'organigramme ; absent pour la tête (ou les têtes). */
+  /** Person this seat reports to in the org chart; absent for the head (or heads). */
   manager_id?: string | null
-  /** Droit de pousser des skills dans le cerveau (les admins l'ont toujours). */
+  /** Allowed to push skills into the brain (admins always are). */
   can_publish_skills?: boolean
   created_at: string
 }
@@ -110,7 +110,7 @@ export type Task = {
   assignee_id?: string
   status: TaskStatus
   source_item_id?: string
-  /** Tâche importée par un connecteur (linear, todoist) : son identifiant chez l'outil et le lien pour l'ouvrir. */
+  /** Task imported by a connector (linear, todoist): its id in that tool and the link to open it. */
   external_source?: string
   external_id?: string
   external_url?: string
@@ -121,7 +121,7 @@ export type Task = {
 export type AutomationStatus = "proposed" | "accepted" | "dismissed"
 export type AutomationSuggestion = {
   id: string
-  /** Clé stable (dédoublonnage entre deux détections). */
+  /** Stable key (deduplication between two detections). */
   key: string
   user_id?: string
   zone?: string
@@ -154,51 +154,51 @@ export type CompanyStatus = {
 export type ScoredItem = KnowledgeItem & { score: number }
 
 /**
- * Compte rendu d'une synchronisation envoyé par le poste (POST /api/sync/report) à la fin de chaque `brain sync`,
- * réussie ou non : c'est ce que la page Supervision montre par poste. Jamais de contenu, seulement des compteurs.
+ * Sync report sent by the workstation (POST /api/sync/report) at the end of every `brain sync`, successful or not:
+ * this is what the Monitoring page shows per workstation. Never any content, only counters.
  */
 export type SyncReport = {
-  /** Fin de la synchronisation (ISO). */
+  /** End of the sync (ISO). */
   at: string
   ok: boolean
   duration_ms: number
   items_sent: number
   duplicates: number
-  /** Conversations lues par source (claude, codex, screenpipe). */
+  /** Conversations read per source (claude, codex, screenpipe). */
   conversations: Record<string, number>
   distiller: string
-  /** Conversations que Claude n'a pas su distiller (retentées plus tard). */
+  /** Conversations Claude could not distill (retried later). */
   failed: number
   deferred: number
-  /** Message d'erreur (masqué sur le poste) si `ok` est faux. */
+  /** Error message (redacted on the workstation) when `ok` is false. */
   error?: string
   client_version?: string
   platform?: string
-  /** Screenpipe joignable sur le poste au moment de la synchro (absent si la source n'est pas lue). */
+  /** Screenpipe reachable on the workstation at sync time (absent when that source is not read). */
   screenpipe?: boolean
 }
 
 export type SyncReportRow = SyncReport & { id: string; org_id: string; user_id: string }
 
-/** État d'un poste vu par la supervision. */
-export type PosteHealth = "never" | "ok" | "late" | "error"
+/** Health of a workstation as seen by monitoring. */
+export type WorkstationHealth = "never" | "ok" | "late" | "error"
 
-/** Un fichier d'un skill : SKILL.md à la racine, ou un script qu'il utilise (`scripts/export.py`…). Texte seulement. */
+/** A file of a skill: SKILL.md at the root, or a script it uses (`scripts/export.py`…). Text only. */
 export type SkillFile = { path: string; content: string }
 
 /**
- * Un skill de l'entreprise (format Claude Code : un dossier avec SKILL.md et ses scripts), conservé dans le cerveau.
- * `zone` : le cortex auquel il est attribué ; seuls ceux qui lisent cette zone le reçoivent. null : toute l'entreprise.
+ * A company skill (Claude Code format: a folder with SKILL.md and its scripts), kept in the brain.
+ * `zone`: the cortex it is assigned to; only people who read that zone receive it. null: the whole company.
  */
 export type Skill = {
   id: string
-  /** Nom du dossier installé dans ~/.claude/skills (minuscules, chiffres, tirets). Unique dans l'entreprise. */
+  /** Name of the folder installed in ~/.claude/skills (lowercase, digits, dashes). Unique within the company. */
   name: string
   description: string
   zone: string | null
   files: SkillFile[]
   author_id: string | null
-  /** Dernière personne qui a publié une version. */
+  /** Last person who published a version. */
   updated_by: string | null
   version: number
   created_at: string

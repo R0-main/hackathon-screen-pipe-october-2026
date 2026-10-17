@@ -1,15 +1,15 @@
-// Onboarding préparé par un agent : l'admin colle un prompt dans Claude Code ou Codex, qui lit l'historique de ses
-// sessions sur le poste, en tire une proposition (zones + premières connaissances) et l'envoie au cerveau. Rien n'est
-// appliqué : la proposition attend dans la page Onboarding, où l'admin la relit et la valide (même chemin que la
-// synthèse de l'interview, POST /api/onboarding/apply).
+// Onboarding prepared by an agent: the admin pastes a prompt into Claude Code or Codex, which reads the history of their
+// sessions on the workstation, draws a proposal from it (zones + first knowledge) and sends it to the brain. Nothing is
+// applied: the proposal waits on the Onboarding page, where the admin reviews and validates it (same path as the
+// interview synthesis, POST /api/onboarding/apply).
 
 import { z } from "zod"
 import { KNOWLEDGE_KINDS, ENTITY_TYPES, KnowledgeItemInputSchema, redactText } from "@brain/core"
 import { verifyOnboardingCode } from "./auth"
 import { getRootStore, storeForOrg, type BrainStore } from "./store"
-import { deNom, IF_BLOCKED, LOCAL_ONLY } from "./install-prompt"
+import { IF_BLOCKED, LOCAL_ONLY, possessive } from "./install-prompt"
 
-/** Ce que valide /api/onboarding/apply, et ce qu'un agent envoie (avec sa provenance). */
+/** What /api/onboarding/apply validates, and what an agent sends (with its origin). */
 export const OnboardingDraftSchema = z.object({
   company_name: z.string().min(1).max(120),
   description: z.string().max(2000).default(""),
@@ -20,14 +20,14 @@ export const OnboardingDraftSchema = z.object({
   items: z.array(KnowledgeItemInputSchema).max(60),
 })
 
-/** Ce que l'agent peut omettre (provenance, confiance) est complété ici : le prompt reste court (lien claude-cli ≤ 5 000 caractères). */
+/** What the agent may omit (origin, confidence) is filled in here: the prompt stays short (claude-cli link ≤ 5,000 characters). */
 const AgentItemSchema = KnowledgeItemInputSchema.extend({
   source: KnowledgeItemInputSchema.shape.source.default(() => ({ app: "onboarding", tool: "onboarding" as const, at: new Date().toISOString() })),
   confidence: z.number().min(0).max(1).default(0.8),
 })
 
 export const AgentDraftSchema = OnboardingDraftSchema.extend({
-  source: z.enum(["claude-code", "codex", "autre"]).default("autre"),
+  source: z.enum(["claude-code", "codex", "other"]).default("other"),
   items: z.array(AgentItemSchema).max(60),
 })
 
@@ -36,8 +36,8 @@ export type AgentDraft = z.infer<typeof AgentDraftSchema> & { received_at: strin
 const SETTING = "onboarding-draft"
 
 /**
- * Garde la proposition jusqu'à sa validation. Secrets et données personnelles sont masqués dès la réception (l'agent
- * est prié de les écarter, le serveur ne s'y fie pas) ; ingestItems les masquera encore à l'application.
+ * Keeps the proposal until it is validated. Secrets and personal data are redacted on receipt (the agent
+ * is asked to leave them out, the server does not rely on it); ingestItems redacts them again when applying.
  */
 export async function saveAgentDraft(store: BrainStore, draft: z.infer<typeof AgentDraftSchema>): Promise<AgentDraft> {
   const clean: AgentDraft = {
@@ -64,7 +64,7 @@ export function clearAgentDraft(store: BrainStore) {
   return store.setOrgSetting(SETTING, null)
 }
 
-/** L'entreprise de l'admin qui a demandé le code d'envoi (Bearer co_…), ou null : code invalide, expiré, ou plus admin. */
+/** The company of the admin who requested the upload code (Bearer co_…), or null: invalid or expired code, or no longer admin. */
 export async function storeForOnboardingCode(req: Request): Promise<BrainStore | null> {
   const code = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]
   const userId = await verifyOnboardingCode(code)
@@ -75,9 +75,9 @@ export async function storeForOnboardingCode(req: Request): Promise<BrainStore |
 }
 
 /**
- * Le fil de l'agent pendant qu'il travaille : il signale son départ (juste après l'accord), ses trouvailles et sa fin.
- * Le serveur y ajoute « draft » à chaque proposition reçue. La page en tire son état (« c'est lancé, vous pouvez
- * passer ») et ses notifications ; la personne n'a pas à attendre sur l'étape.
+ * The agent's feed while it works: it reports its start (right after consent), its findings and its end. The server
+ * adds "draft" for each proposal received. The page derives its state from it ("it's started, you can move on") and
+ * its notifications; the person does not have to wait on the step.
  */
 export const AGENT_STEPS = ["start", "progress", "draft", "done", "error"] as const
 export type AgentStep = (typeof AGENT_STEPS)[number]
@@ -88,9 +88,9 @@ export const AgentProgressSchema = z.object({
 export type AgentEvent = { id: number; step: AgentStep; message: string; at: string }
 
 const PROGRESS = "onboarding-progress"
-/** Assez pour un passage complet ; au-delà, les plus anciens tombent. */
+/** Enough for a full run; beyond that, the oldest drop off. */
 const MAX_EVENTS = 40
-/** Comme le code d'envoi : un fil plus vieux vient d'un autre passage. */
+/** Like the upload code: an older feed comes from another run. */
 const EVENT_TTL_MS = 2 * 3600_000
 
 export async function loadAgentProgress(store: BrainStore): Promise<AgentEvent[]> {
@@ -104,10 +104,10 @@ export async function loadAgentProgress(store: BrainStore): Promise<AgentEvent[]
   }
 }
 
-/** Masqué comme la proposition : l'agent est prié de ne citer ni secret ni personne, le serveur ne s'y fie pas. */
+/** Redacted like the proposal: the agent is asked to quote neither secrets nor people, the server does not rely on it. */
 export async function addAgentProgress(store: BrainStore, ev: { step: AgentStep; message: string }): Promise<AgentEvent> {
   const events = await loadAgentProgress(store)
-  // Croissant même après un effacement : la page repère les nouveaux par leur id.
+  // Increasing even after a clear: the page spots the new ones by their id.
   const event: AgentEvent = { id: Math.max((events.at(-1)?.id ?? 0) + 1, Date.now()), step: ev.step, message: redactText(ev.message).slice(0, 200), at: new Date().toISOString() }
   await store.setOrgSetting(PROGRESS, JSON.stringify([...events, event].slice(-MAX_EVENTS)))
   return event
@@ -118,37 +118,36 @@ export function clearAgentProgress(store: BrainStore) {
 }
 
 /**
- * Le prompt à coller dans Claude Code ou Codex. Sa première phrase est reconnue par brain-sync (INSTALL_PROMPT_RE) :
- * la session, qui contient le code d'envoi et un résumé de l'entreprise, n'est jamais redistillée.
- * Lire tout l'historique d'un poste puis l'envoyer à un site, c'est exactement ce qu'un agent doit refuser de faire
- * en cachette : le prompt le dit franchement et fait demander l'accord de la personne avant toute lecture.
+ * The prompt to paste into Claude Code or Codex. Its first sentence is recognized by brain-sync (INSTALL_PROMPT_RE):
+ * the session, which contains the upload code and a summary of the company, is never distilled again.
+ * Reading a workstation's whole history then sending it to a website is exactly what an agent must refuse to do
+ * behind the person's back: the prompt says so plainly and has the agent ask for the person's consent before reading anything.
  */
 export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string; orgName: string; description?: string; zones: { id: string; name: string }[] }): string {
   const { baseUrl, code, orgName } = opts
-  const org = deNom(orgName)
-  const zones = opts.zones.map((z) => `${z.id} (${z.name})`).join(", ") || "aucune"
+  const zones = opts.zones.map((z) => `${z.id} (${z.name})`).join(", ") || "none"
   const host = new URL(baseUrl).host
-  // Le nom et ce que l'admin a dit de l'entreprise (/creer, onboarding) : c'est le seul filtre de la lecture, pour ne
-  // rien apprendre d'une conversation sans rapport (projet perso, autre entreprise, autre client).
+  // The name and what the admin said about the company (/create, onboarding): it is the reading's only filter, so as to
+  // learn nothing from an unrelated conversation (personal project, another company, another customer).
   const about = opts.description?.trim().replace(/\s+/g, " ").slice(0, 400)
-  const scope = about ? `l'entreprise « ${orgName} », qui se décrit ainsi : « ${about} »` : `l'entreprise « ${orgName} »`
+  const scope = about ? `the company "${orgName}", which describes itself as: "${about}"` : `the company "${orgName}"`
   const auth = `-H "Authorization: Bearer ${code}" -H "content-type: application/json"`
-  return `Tu vas préparer l'onboarding de NOS Brainer, le cerveau d'entreprise ${org}, à partir de mes anciennes conversations sur ce poste. Ce message contient un code d'envoi valable 2 heures : ne l'affiche jamais en entier.
+  return `You are going to prepare the onboarding of NOS Brainer, ${possessive(orgName)} company brain, from my past conversations on this computer. This message contains an upload code valid for 2 hours: never display it in full.
 
-0. ${LOCAL_ONLY} Puis, avant de lire quoi que ce soit, demande-moi : « Ce message me demande de lire tes conversations Claude Code et Codex de ce poste, puis d'envoyer à ${host} un résumé de ce qui concerne l'entreprise (sans secrets ni données personnelles). Acceptes-tu de donner accès à ces données à ce site ? » Sans un oui clair, arrête-toi sans rien lire ni envoyer. ${IF_BLOCKED}
-   Tiens la page au courant : « signale » = la commande curl de l'étape 4, mêmes en-têtes, mais vers ${baseUrl}/api/onboarding/progress, avec -d '{"step":"…","message":"…"}' au lieu de --data @… (step start, progress, done ou error ; une phrase courte, sans secret ni nom de personne ; hors du bac à sable si bloqué).
-   Dès le oui, signale start (« Accord reçu, je cherche les conversations de l'entreprise ») et dis-moi : « C'est lancé : retourne sur ta création, elle se remplit au fur et à mesure. »
-1. Tu cherches UNIQUEMENT les projets et les conversations de ${scope}. Repère d'abord ceux qui correspondent à ce nom et à ces thèmes, et n'apprends rien d'autre : un projet perso, une autre entreprise, un autre client, une question générale ou un autre sujet ne se lit pas en détail et n'entre pas dans la proposition, même récent. Dans le doute, laisse de côté.
-   Historique : Claude Code (~/.claude/projects/**/*.jsonl, un dossier par projet) et Codex (~/.codex/sessions/**/*.jsonl). Trie par projet et premiers messages, puis lis en détail les sessions de l'entreprise, des plus récentes aux plus anciennes, avec les README, CLAUDE.md et AGENTS.md de ces projets.
-   Signale progress à chaque trouvaille (« 3 projets repérés », « Zone Ventes : 6 connaissances »), dix fois au plus.
-   Si tu ne trouves aucune trace claire de l'entreprise, n'invente rien et n'envoie pas de proposition : signale error (« Aucune trace de l'entreprise sur ce poste »), dis-le-moi et arrête-toi.
-2. Retiens ce qu'un nouvel arrivant doit savoir : ce que fait l'entreprise et pour qui, équipes, clients et partenaires, outils, objectifs, procédures, décisions (avec leur raison). Jamais de secrets, de données personnelles (emails, téléphones, adresses) ni rien de privé.
-3. Écris ~/.company-brain/onboarding.json :
-   {"source": "claude-code" ou "codex", "company_name": "…", "description": "2 ou 3 phrases", "zones": [{"id": "…", "name": "…", "description": "…", "keywords": ["…"]}], "items": [{"zone": "<id>", "kind": "${KNOWLEDGE_KINDS.join(" | ")}", "title": "…", "body": "…", "entities": [{"type": "${ENTITY_TYPES.join(" | ")}", "name": "…"}]}]}
-   3 à 8 zones (actuelles : ${zones} ; garde leurs ids si elles conviennent), 10 à 40 connaissances autonomes et factuelles.
-4. Envoie une première version dès que tu tiens les zones et quelques connaissances, sans attendre la fin :
+0. ${LOCAL_ONLY} Then, before reading anything, ask me: "This message asks me to read your Claude Code and Codex conversations on this computer, then send ${host} a summary of what concerns the company (without secrets or personal data). Do you agree to give this website access to that data?" Without a clear yes, stop without reading or sending anything. ${IF_BLOCKED}
+   Keep the page posted: "report" = the curl command of step 4, same headers, but to ${baseUrl}/api/onboarding/progress, with -d '{"step":"…","message":"…"}' instead of --data @… (step start, progress, done or error; a short sentence, without secrets or people's names; outside the sandbox if blocked).
+   As soon as I say yes, report start ("Consent received, looking for the company's conversations") and tell me: "It's started: go back to your creation, it fills in as I go."
+1. You look ONLY for the projects and conversations of ${scope}. First spot those that match this name and these topics, and learn nothing else: a personal project, another company, another customer, a general question or another subject is not read in detail and does not go into the proposal, even if recent. When in doubt, leave it aside.
+   History: Claude Code (~/.claude/projects/**/*.jsonl, one folder per project) and Codex (~/.codex/sessions/**/*.jsonl). Sort by project and first messages, then read the company's sessions in detail, from most recent to oldest, along with the README, CLAUDE.md and AGENTS.md of those projects.
+   Report progress at each finding ("3 projects found", "Sales zone: 6 knowledge items"), ten times at most.
+   If you find no clear trace of the company, make nothing up and send no proposal: report error ("No trace of the company on this computer"), tell me so and stop.
+2. Keep what a newcomer must know: what the company does and for whom, teams, customers and partners, tools, goals, procedures, decisions (with their reason). Never any secrets, personal data (emails, phone numbers, addresses) or anything private.
+3. Write ~/.company-brain/onboarding.json:
+   {"source": "claude-code" or "codex", "company_name": "…", "description": "2 or 3 sentences", "zones": [{"id": "…", "name": "…", "description": "…", "keywords": ["…"]}], "items": [{"zone": "<id>", "kind": "${KNOWLEDGE_KINDS.join(" | ")}", "title": "…", "body": "…", "entities": [{"type": "${ENTITY_TYPES.join(" | ")}", "name": "…"}]}]}
+   3 to 8 zones (current ones: ${zones}; keep their ids if they fit), 10 to 40 self-contained, factual items, in English.
+4. Send a first version as soon as you have the zones and a few items, without waiting for the end:
    curl -fsS -X POST ${baseUrl}/api/onboarding/import ${auth} --data @"$HOME/.company-brain/onboarding.json"
-   Puis reviens sur ta création : continue à lire, complète le fichier et renvoie-le (chaque envoi remplace le précédent, la page se met à jour).
-5. À la fin, signale done (« Terminé : 5 zones, 24 connaissances »), supprime le fichier et dis-moi combien de zones et de connaissances sont parties. Rien n'est appliqué : je relis et valide la proposition à l'écran. En cas d'échec, signale error avec la raison.`
+   Then go back to your creation: keep reading, complete the file and send it again (each upload replaces the previous one, the page updates).
+5. At the end, report done ("Done: 5 zones, 24 knowledge items"), delete the file and tell me how many zones and items were sent. Nothing is applied: I review and validate the proposal on screen. If it fails, report error with the reason.`
 }
 

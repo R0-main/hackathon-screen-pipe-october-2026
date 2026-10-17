@@ -14,18 +14,18 @@ import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage } from "./format"
 import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
-import { deNom } from "@/lib/install-prompt"
+import { possessive } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
 type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team" | "connectors"
-/** Une personne ajoutée depuis cette page : invitée (son prompt personnel), ou acceptée via le message d'équipe (prompt vide). */
+/** A person added from this page: invited (their personal prompt), or accepted through the team message (empty prompt). */
 type Invite = { id: string; name: string; title?: string; zones: string[]; prompt: string }
-/** `token` : le jeton de l'admin (déjà dans `prompt`), renvoyé à l'étape des zones pour refaire ce prompt. */
+/** `token`: the admin's token (already in `prompt`), sent back at the zones step to remake this prompt. */
 type Created = { orgName: string; meId: string; prompt: string; zones: ZoneOption[]; token?: string }
 type TeamUser = { id: string; last_at: string | null }
-/** Zone proposée par Claude Code ou Codex (étape « context »). */
+/** Zone proposed by Claude Code or Codex ("context" step). */
 type ProposedZone = { id: string; name: string; description: string; keywords: string[] }
-/** Proposition de Claude Code ou Codex : zones, premières connaissances, description de l'entreprise. `received_at` : sa version. */
+/** Proposal from Claude Code or Codex: zones, first knowledge, company description. `received_at`: its version. */
 type Proposal = { zones: ProposedZone[]; items: unknown[]; description: string; received_at?: string }
 
 type Saved = {
@@ -41,21 +41,21 @@ type Saved = {
   proposal: Proposal | null
 }
 
-/** Étapes numérotées (barre de progression) : l'intro n'en fait pas partie. */
+/** Numbered steps (progress bar): the intro is not one of them. */
 const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team", "connectors"]
-const DEFAULT_PICK = ["dev", "produit", "direction"]
+const DEFAULT_PICK = ["dev", "product", "leadership"]
 /**
- * La progression survit à un rechargement, dans cet onglet seulement (sessionStorage, effacé à sa fermeture). Elle
- * contient les prompts, donc les jetons : c'est ce qui permet de les recopier après un rechargement.
+ * Progress survives a reload, in this tab only (sessionStorage, cleared when it closes). It
+ * contains the prompts, hence the tokens: that is what lets them be copied again after a reload.
  */
-const STORAGE_KEY = "nos-brainer:creer"
+const STORAGE_KEY = "nos-brainer:create"
 /**
- * Posé dans l'adresse à l'ouverture du parcours (`/creer?brouillon=1`) : un rechargement ou un retour arrière reprend le
- * brouillon, alors qu'arriver par un lien (« Créer mon entreprise ») recommence de zéro, même après une entreprise créée.
+ * Set in the address when the flow opens (`/create?draft=1`): a reload or going back resumes the draft, whereas
+ * arriving through a link ("Create my company") starts from scratch, even after a company was created.
  */
-const DRAFT_PARAM = "brouillon"
+const DRAFT_PARAM = "draft"
 const POLL_MS = 3000
-/** Fond de la page (--color-bone) : le cerveau de l'aperçu s'y fond, comme sur la landing. */
+/** Page background (--color-bone): the preview brain blends into it, as on the landing. */
 const BONE = 0xf6f6f3
 
 function load(): Partial<Saved> | null {
@@ -67,7 +67,7 @@ function load(): Partial<Saved> | null {
   }
 }
 
-/** Zones du brouillon avec leurs couleurs (proposées par Claude et gardées, cochées, ajoutées) : l'aperçu du petit cerveau. */
+/** Draft zones with their colors (proposed by Claude and kept, ticked, added): the little brain's preview. */
 function draftZoneList(all: ZoneOption[], picked: string[], custom: string[], proposed: ProposedZone[] = []): ZoneOption[] {
   const fromClaude = proposed
     .filter((z) => picked.includes(z.id))
@@ -91,11 +91,11 @@ function clear() {
 }
 
 /**
- * Créer son entreprise à partir de zéro, une question par écran : nom, activité, qui on est. Le cerveau est alors créé
- * (sans zone) ; Claude Code ou Codex peut proposer ses zones à partir des conversations du poste (étape passable), et
- * l'étape des zones part de sa proposition. Ensuite, le prompt à coller dans Claude Code ou Codex pour brancher son poste,
- * puis un prompt par collègue pour l'inviter.
- * Les postes branchés apparaissent en direct (lecture de /api/admin/team).
+ * Create your company from scratch, one question per screen: name, business, who you are. The brain is then created
+ * (with no zone); Claude Code or Codex can propose its zones from the computer's conversations (skippable step), and
+ * the zones step starts from its proposal. Then, the prompt to paste into Claude Code or Codex to connect your computer,
+ * then one prompt per colleague to invite them.
+ * Connected computers show up live (reading /api/admin/team).
  */
 export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: boolean }) {
   const [ready, setReady] = useState(false)
@@ -113,8 +113,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const [team, setTeam] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  // Claude Code ou Codex travaille en arrière-plan une fois le cerveau créé : on peut passer à la suite, ses
-  // signaux arrivent en notifications et sa proposition rejoint l'étape des zones dès qu'il l'envoie.
+  // Claude Code or Codex works in the background once the brain is created: you can move on, its
+  // signals arrive as notifications and its proposal joins the zones step as soon as it sends it.
   const agent = useAgentOnboarding<Proposal>(Boolean(created) && step !== "intro", step !== "context")
   const incoming = agent.draft
 
@@ -145,7 +145,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     if (ready) save({ step, company, description, name, title, picked, custom, created, invites, proposal })
   }, [ready, step, company, description, name, title, picked, custom, created, invites, proposal])
 
-  // Une fois l'entreprise créée : qui s'est branché ? Relu régulièrement, la page se met à jour toute seule.
+  // Once the company is created: who has connected? Re-read regularly, the page updates on its own.
   useEffect(() => {
     if (!created) return
     let stop = false
@@ -163,8 +163,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     }
   }, [created])
 
-  // Une proposition (ou sa version complétée) arrive pendant l'étape des zones : elle s'y ajoute, sans retirer ce
-  // que la personne a déjà coché ou décoché. Le choix par défaut, s'il n'a pas été touché, lui cède la place.
+  // A proposal (or its completed version) arrives during the zones step: it is added there, without removing what
+  // the person already ticked or unticked. The default choice, if it has not been touched, gives way to it.
   useEffect(() => {
     if (step !== "zones" || !incoming || incoming.received_at === proposal?.received_at) return
     const before = new Set((proposal?.zones ?? []).map((z) => z.id))
@@ -175,14 +175,14 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     )
   }, [step, incoming, proposal])
 
-  // Zones du brouillon, ou celles réellement créées : c'est ce que montre le petit cerveau à droite.
-  // Connaissances proposées par zone : le cerveau de l'aperçu en a déjà, en billes.
+  // Draft zones, or the ones actually created: that is what the little brain on the right shows.
+  // Proposed knowledge per zone: the preview brain already has some, as beads.
   const proposalCounts = useMemo(() => {
     const out: Record<string, number> = {}
     for (const i of (proposal?.items ?? []) as { zone?: string }[]) if (i.zone) out[i.zone] = (out[i.zone] ?? 0) + 1
     return out
   }, [proposal])
-  // Pendant que Claude prépare sa proposition, pas encore de zone : le petit cerveau n'en montre aucune.
+  // While Claude prepares its proposal, no zone yet: the little brain shows none.
   const draftZones = useMemo<ZoneOption[]>(
     () => (created?.zones.length ? created.zones : step === "context" ? [] : draftZoneList(zones, picked, custom, proposal?.zones)),
     [zones, picked, custom, created, proposal, step],
@@ -193,7 +193,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     setStep(s)
   }
 
-  /** Après « Et vous ? » : le cerveau est créé sans zone, pour que Claude puisse les proposer (code d'envoi lié à l'admin). */
+  /** After "And you?": the brain is created without a zone, so that Claude can propose them (upload code tied to the admin). */
   async function createOrg() {
     if (created) return go("context")
     setBusy(true)
@@ -212,14 +212,14 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     }
   }
 
-  /** Proposition reçue (ou étape passée) : l'étape des zones part de ses zones, toutes cochées. */
+  /** Proposal received (or step skipped): the zones step starts from its zones, all ticked. */
   function toZones(p: Proposal | null) {
     setProposal(p)
     if (p?.zones.length) setPicked(p.zones.map((z) => z.id))
     go("zones")
   }
 
-  /** Étape des zones : crée celles retenues, ajoute les connaissances proposées, et reçoit le prompt d'installation. */
+  /** Zones step: creates the ones kept, adds the proposed knowledge, and receives the install prompt. */
   async function applyZones() {
     if (!created) return
     setBusy(true)
@@ -237,7 +237,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
           token: created.token,
         },
       })
-      // La proposition reste en mémoire : l'aperçu garde ses connaissances par zone.
+      // The proposal stays in memory: the preview keeps its knowledge per zone.
       setCreated({ ...created, zones: r.zones, prompt: r.prompt ?? created.prompt })
       setStep("install")
     } catch (e) {
@@ -248,7 +248,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   }
 
   function restart() {
-    if (created && !confirm(`Recommencer ? Le cerveau ${deNom(created.orgName)} reste en place, vous en créerez un nouveau.`)) return
+    if (created && !confirm(`Start over? ${possessive(created.orgName)} brain stays in place, you will create a new one.`)) return
     clear()
     setCompany("")
     setDescription("")
@@ -264,8 +264,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   }
 
   const index = STEPS.indexOf(step)
-  const org = created?.orgName ?? (company.trim() || "votre entreprise")
-  // Une fois le cerveau créé (après « Et vous ? »), plus de retour vers les questions qui l'ont nommé.
+  const org = created?.orgName ?? (company.trim() || "your company")
+  // Once the brain is created (after "And you?"), no going back to the questions that named it.
   const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install", connectors: "team" }
   const people = created
     ? [{ id: created.meId, name, connected: Boolean(team[created.meId]) }, ...invites.map((i) => ({ id: i.id, name: i.name, connected: Boolean(team[i.id]) }))]
@@ -275,7 +275,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
   return (
     <main className="create flex min-h-dvh flex-col">
-      {/* Positionné et premier : tout ce qui suit (positionné aussi) passe devant. */}
+      {/* Positioned and first: everything that follows (positioned too) goes in front. */}
       <MiniBrain frame={brainFrame} zones={draftZones} people={people} counts={proposalCounts} />
       <header className="create-wrap relative flex items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
@@ -285,16 +285,16 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
         <div className="flex items-center gap-3 text-[13px] text-trace">
           {index >= 0 && (
             <span className="hidden whitespace-nowrap tabular-nums sm:inline">
-              Étape {index + 1} sur {STEPS.length}
+              Step {index + 1} of {STEPS.length}
             </span>
           )}
           {created ? (
             <Link href="/dashboard" className="btn">
-              Ouvrir le dashboard
+              Open the dashboard
             </Link>
           ) : (
             <Link href={demo ? "/demo" : "/login"} className="btn btn-ghost">
-              {demo ? "Voir la démo" : "Se connecter"}
+              {demo ? "See the demo" : "Sign in"}
             </Link>
           )}
         </div>
@@ -303,32 +303,32 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
         <div className="create-progress-fill" style={{ transform: `scaleX(${index < 0 ? 0 : (index + 1) / STEPS.length})` }} />
       </div>
 
-      {/* Le cerveau est en fond de page : là où il n'y a pas de contenu, glisser et zoomer lui reviennent. */}
+      {/* The brain is the page background: where there is no content, dragging and zooming go to it. */}
       <div className="create-wrap pointer-events-none relative grid flex-1 gap-12 py-[clamp(40px,9vh,112px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-20">
         <section className="pointer-events-auto min-w-0 max-w-[640px]" aria-live="polite">
           {!ready ? null : (
             <div key={step} className="step-in">
               {back[step] && (
                 <button type="button" className="mb-8 text-[13px] text-trace hover:text-ink" onClick={() => go(back[step]!)}>
-                  Retour
+                  Back
                 </button>
               )}
 
               {step === "intro" && (
                 <>
-                  <h1 className="create-title">Créons le cerveau de votre entreprise.</h1>
+                  <h1 className="create-title">Let&apos;s build your company&apos;s brain.</h1>
                   <p className="create-lead">
-                    Trois questions pour monter votre dashboard, puis Claude Code ou Codex peut proposer ses zones à partir de vos conversations. Ensuite, un message
-                    branche votre poste, et un message par collègue les fait rejoindre le cerveau. Pour finir, branchez vos outils (Notion, Linear, GitHub…) en un
-                    clic. Quelques minutes en tout.
+                    Three questions to set up your dashboard, then Claude Code or Codex can propose its zones from your conversations. Then, a message
+                    connects your computer, and one message per colleague brings them into the brain. To finish, connect your tools (Notion, Linear, GitHub…) in one
+                    click. A few minutes in all.
                   </p>
                   <div className="mt-9 flex flex-wrap items-center gap-3">
                     <button type="button" className="btn btn-primary btn-lg" onClick={() => go("company")} autoFocus>
-                      Commencer
+                      Get started
                     </button>
                     {demo && (
                       <Link href="/demo" className="btn btn-lg">
-                        Voir d'abord la démo
+                        See the demo first
                       </Link>
                     )}
                   </div>
@@ -337,7 +337,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
               {step === "company" && (
                 <Question
-                  title="Comment s'appelle votre entreprise ?"
+                  title="What is your company called?"
                   onSubmit={() => go("about")}
                   canContinue={company.trim().length > 0}
                 >
@@ -346,7 +346,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     value={company}
                     maxLength={80}
                     autoFocus
-                    aria-label="Nom de l'entreprise"
+                    aria-label="Company name"
                     placeholder="Butine"
                     onChange={(e) => setCompany(e.target.value)}
                   />
@@ -355,8 +355,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
               {step === "about" && (
                 <Question
-                  title={`Que fait ${org}, en une phrase ?`}
-                  lead="Le cerveau s'en sert pour situer ce qu'il apprend. Facultatif."
+                  title={`What does ${org} do, in one sentence?`}
+                  lead="The brain uses it to place what it learns. Optional."
                   onSubmit={() => go("you")}
                   canContinue
                   skip={description.trim() ? undefined : () => go("you")}
@@ -367,8 +367,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     maxLength={300}
                     rows={2}
                     autoFocus
-                    aria-label="Activité de l'entreprise"
-                    placeholder="Des balances connectées pour ruches : l'apiculteur suit ses abeilles depuis son téléphone."
+                    aria-label="Company business"
+                    placeholder="Connected scales for beehives: beekeepers follow their bees from their phone."
                     onChange={(e) => setDescription(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -382,8 +382,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
               {step === "you" && (
                 <Question
-                  title="Et vous ?"
-                  lead="Vous serez admin du cerveau : c'est vous qui choisissez qui voit quoi."
+                  title="And you?"
+                  lead="You will be the brain's admin: you decide who sees what."
                   onSubmit={createOrg}
                   canContinue={name.trim().length > 0 && !busy}
                 >
@@ -393,8 +393,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                       value={name}
                       maxLength={80}
                       autoFocus
-                      aria-label="Votre nom"
-                      placeholder="Votre nom"
+                      aria-label="Your name"
+                      placeholder="Your name"
                       autoComplete="name"
                       onChange={(e) => setName(e.target.value)}
                     />
@@ -402,12 +402,12 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                       className="create-input create-input-sm"
                       value={title}
                       maxLength={80}
-                      aria-label="Votre rôle"
-                      placeholder="Votre rôle : CEO, CTO, office manager…"
+                      aria-label="Your role"
+                      placeholder="Your role: CEO, CTO, office manager…"
                       autoComplete="organization-title"
                       onChange={(e) => setTitle(e.target.value)}
                     />
-                    {busy && <p className="text-[13px] text-trace">Création du cerveau…</p>}
+                    {busy && <p className="text-[13px] text-trace">Creating the brain…</p>}
                     {err && <ErrorText>{err}</ErrorText>}
                   </div>
                 </Question>
@@ -434,24 +434,24 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
               {step === "install" && created && (
                 <>
-                  <h1 className="create-title">Le cerveau {deNom(created.orgName)} est prêt.</h1>
+                  <h1 className="create-title">{possessive(created.orgName)} brain is ready.</h1>
                   <p className="create-lead">
-                    Branchez votre poste : ouvrez ce message dans Claude Code ou Codex. Il installe Screenpipe, branche le MCP et les hooks, puis ouvre votre dashboard déjà
-                    connecté. Sur Mac, il faudra autoriser l'enregistrement de l'écran.
+                    Connect your computer: open this message in Claude Code or Codex. It installs Screenpipe, connects the MCP and the hooks, then opens your dashboard
+                    already signed in. On a Mac, you will need to allow screen recording.
                   </p>
                   <div className="panel mt-8 px-5 py-5">
                     <PromptActions getPrompt={() => Promise.resolve(created.prompt)} />
                     <p className="mt-4 border-t border-line pt-4 text-[13px] leading-relaxed text-trace">
-                      Ce message contient votre jeton personnel : gardez-le pour vous. Aucun historique n'est envoyé, le cerveau apprend à partir de l'installation.
+                      This message contains your personal token: keep it to yourself. No history is sent, the brain learns from the install onward.
                     </p>
                   </div>
                   <Presence connected={Boolean(team[created.meId])} self />
                   <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
                     <button type="button" className="btn btn-lg" onClick={() => go("team")}>
-                      Continuer
+                      Continue
                     </button>
                     <Link href="/dashboard" className="landing-link text-[15px]">
-                      Ouvrir le dashboard
+                      Open the dashboard
                     </Link>
                   </div>
                 </>
@@ -465,14 +465,14 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
               {(step === "context" || step === "zones" || step === "install" || step === "team" || step === "connectors") && !created && (
                 <>
-                  <h1 className="create-title">Cette page a perdu votre cerveau.</h1>
-                  <p className="create-lead">Il existe toujours : retrouvez-le depuis le dashboard, ou recommencez.</p>
+                  <h1 className="create-title">This page lost your brain.</h1>
+                  <p className="create-lead">It still exists: find it from the dashboard, or start over.</p>
                   <div className="mt-9 flex flex-wrap gap-3">
                     <Link href="/dashboard" className="btn btn-primary btn-lg">
-                      Ouvrir le dashboard
+                      Open the dashboard
                     </Link>
                     <button type="button" className="btn btn-lg" onClick={restart}>
-                      Recommencer
+                      Start over
                     </button>
                   </div>
                 </>
@@ -481,20 +481,20 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
           )}
         </section>
 
-        <aside className="hidden lg:block" aria-label={`Aperçu du cerveau ${deNom(org)}`}>
+        <aside className="hidden lg:block" aria-label={`Preview of ${possessive(org)} brain`}>
           <div className="sticky top-10">
             <BrainCaption frame={brainFrame} org={org} zones={draftZones} people={people} />
             {created && step !== "intro" && (
               <p className="mt-6 text-center text-[13px] text-trace">
                 <button type="button" className="pointer-events-auto hover:text-ink" onClick={restart}>
-                  Créer une autre entreprise
+                  Create another company
                 </button>
               </p>
             )}
           </div>
         </aside>
       </div>
-      {/* À l'étape « context », le fil est déjà dans la page. Après les zones, la proposition se relit dans Onboarding. */}
+      {/* At the "context" step, the thread is already in the page. After the zones, the proposal is reviewed in Onboarding. */}
       {step !== "context" && (
         <AgentToasts
           toasts={agent.toasts}
@@ -502,7 +502,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
           draftAction={
             step === "install" || step === "team" ? (
               <Link href="/onboarding" className="landing-link">
-                La relire dans Onboarding
+                Review it in Onboarding
               </Link>
             ) : undefined
           }
@@ -513,9 +513,9 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 }
 
 /**
- * Avant les zones (facultatif) : Claude Code ou Codex relit les conversations du poste qui concernent l'entreprise (son
- * nom et sa description, et rien d'autre), puis propose zones et premières connaissances (POST /api/onboarding/import).
- * La page la reçoit en direct ; l'étape des zones part de cette proposition. On peut passer et choisir soi-même.
+ * Before the zones (optional): Claude Code or Codex rereads the computer's conversations about the company (its name
+ * and description, and nothing else), then proposes zones and first knowledge (POST /api/onboarding/import).
+ * The page receives it live; the zones step starts from this proposal. You can skip and choose yourself.
  */
 function ContextStep(props: { orgName: string; run: AgentEvent[]; state: RunState; received: Proposal | null; onNext: (p: Proposal | null) => void }) {
   const { orgName, run, state, received, onNext } = props
@@ -530,55 +530,55 @@ function ContextStep(props: { orgName: string; run: AgentEvent[]; state: RunStat
   const started = state !== "idle"
   return (
     <>
-      <h1 className="create-title">Laissez Claude proposer les zones.</h1>
+      <h1 className="create-title">Let Claude propose the zones.</h1>
       <p className="create-lead">
-        Ouvrez ce message dans Claude Code ou Codex. Il relit vos conversations sur ce poste qui concernent {orgName}, et seulement elles, puis propose les zones
-        du cerveau et ses premières connaissances. Il vous demande votre accord avant de lire quoi que ce soit, et vous relisez tout à l&apos;étape suivante.
+        Open this message in Claude Code or Codex. It rereads your conversations on this computer about {orgName}, and only those, then proposes the
+        brain&apos;s zones and its first knowledge. It asks for your consent before reading anything, and you review everything at the next step.
       </p>
       <div className="panel mt-8 px-5 py-5">
         <PromptActions getPrompt={getPrompt} sends />
         <p className="mt-4 border-t border-line pt-4 text-[13px] leading-relaxed text-trace">
-          Claude Code ou Codex, au choix. Jamais de secrets ni de données personnelles ; le code d&apos;envoi qu&apos;il contient vaut 2 heures.
+          Claude Code or Codex, your choice. Never any secrets or personal data; the upload code it contains is valid for 2 hours.
         </p>
       </div>
       {received ? (
         <p className="mt-6 flex items-center gap-2 text-[14px]" aria-live="polite">
           <span className="live-dot is-live" aria-hidden />
-          Proposition reçue : {received.zones.length} zone{received.zones.length > 1 ? "s" : ""}, {received.items.length} connaissance
-          {received.items.length > 1 ? "s" : ""}.{state === "running" && " Claude continue de la compléter : l'étape suivante suivra."}
+          Proposal received: {received.zones.length} zone{received.zones.length === 1 ? "" : "s"}, {received.items.length} knowledge item
+          {received.items.length === 1 ? "" : "s"}.{state === "running" && " Claude keeps completing it: the next step will follow."}
         </p>
       ) : started ? (
         <p className="mt-6 text-[14px]" aria-live="polite">
           {state === "error"
-            ? "Claude s'est arrêté avant d'envoyer sa proposition. Relancez le message, ou choisissez les zones vous-même."
-            : "C'est lancé. Vous pouvez passer à la suite : Claude continue en arrière-plan, ses zones s'ajouteront à l'étape suivante dès qu'il les envoie, et chaque trouvaille s'affiche en notification."}
+            ? "Claude stopped before sending its proposal. Send the message again, or choose the zones yourself."
+            : "It's running. You can move on: Claude keeps going in the background, its zones will be added to the next step as soon as it sends them, and each finding shows up as a notification."}
         </p>
       ) : (
         <p className="mt-6 flex items-center gap-2 text-[14px]" aria-live="polite">
-          <span className="live-dot" aria-hidden /> En attente de Claude. Cette page se met à jour toute seule.
+          <span className="live-dot" aria-hidden /> Waiting for Claude. This page updates on its own.
         </p>
       )}
       <AgentRun run={run} className="mt-4" />
       <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
         {received && (
           <button type="button" className="btn btn-primary btn-lg" onClick={() => onNext(received)}>
-            Voir les zones proposées
+            See the proposed zones
           </button>
         )}
         {!received && started && state !== "error" && (
           <button type="button" className="btn btn-primary btn-lg" onClick={() => onNext(null)}>
-            Continuer pendant que Claude travaille
+            Continue while Claude works
           </button>
         )}
         <button type="button" className={received || (started && state !== "error") ? "landing-link text-[15px]" : "btn btn-lg"} onClick={() => onNext(null)}>
-          {received ? "Ignorer et choisir moi-même" : started && state !== "error" ? "Choisir les zones sans attendre Claude" : "Passer : je choisis les zones moi-même"}
+          {received ? "Ignore it and choose myself" : started && state !== "error" ? "Choose the zones without waiting for Claude" : "Skip: I'll choose the zones myself"}
         </button>
       </div>
     </>
   )
 }
 
-/** Une question par écran : titre, aide, champ, puis « Continuer » (ou Entrée). */
+/** One question per screen: title, help, field, then "Continue" (or Enter). */
 function Question(props: { title: string; lead?: string; children: React.ReactNode; onSubmit: () => void; canContinue: boolean; skip?: () => void }) {
   return (
     <form
@@ -592,14 +592,14 @@ function Question(props: { title: string; lead?: string; children: React.ReactNo
       <div className="mt-9">{props.children}</div>
       <div className="mt-9 flex flex-wrap items-center gap-4">
         <button type="submit" className="btn btn-primary btn-lg" disabled={!props.canContinue}>
-          Continuer
+          Continue
         </button>
         {props.skip ? (
           <button type="button" className="landing-link text-[15px]" onClick={props.skip}>
-            Passer
+            Skip
           </button>
         ) : (
-          <span className="hidden text-[13px] text-trace sm:inline">ou appuyez sur Entrée</span>
+          <span className="hidden text-[13px] text-trace sm:inline">or press Enter</span>
         )}
       </div>
     </form>
@@ -610,7 +610,7 @@ function ZonesStep(props: {
   org: string
   zones: ZoneOption[]
   proposal: Proposal | null
-  /** Claude travaille encore : sa proposition (ou sa version complétée) s'ajoutera à cette étape. */
+  /** Claude is still working: its proposal (or its completed version) will be added to this step. */
   agentBusy: boolean
   preview: ZoneOption[]
   picked: string[]
@@ -652,23 +652,23 @@ function ZonesStep(props: {
 
   return (
     <div>
-      <h1 className="create-title">Que doit connaître le cerveau {deNom(props.org)} ?</h1>
+      <h1 className="create-title">What should {possessive(props.org)} brain know?</h1>
       <p className="create-lead">
         {proposed.length
-          ? "Claude les a proposées à partir de vos conversations : gardez, retirez, ajoutez. Vous réglerez ensuite qui lit quelle zone."
-          : "Une zone par métier. Vous réglerez ensuite qui lit quelle zone : la compta n'a pas besoin du code."}
+          ? "Claude proposed them from your conversations: keep, remove, add. You will then decide who reads which zone."
+          : "One zone per function. You will then decide who reads which zone: finance doesn't need the code."}
       </p>
       {props.agentBusy && (
         <p className="mt-4 flex items-center gap-2 text-[13px] text-trace" aria-live="polite">
           <span className="live-dot is-live" aria-hidden />
-          {proposed.length ? "Claude complète encore sa proposition : ses nouvelles zones s'ajouteront ici." : "Claude prépare encore ses zones : elles s'ajouteront ici dès qu'il les envoie."}
+          {proposed.length ? "Claude is still completing its proposal: its new zones will be added here." : "Claude is still preparing its zones: they will be added here as soon as it sends them."}
         </p>
       )}
       {proposed.length > 0 && (
         <>
-          <h2 className="mt-9 text-[13px] font-medium text-trace">Proposées par Claude</h2>
+          <h2 className="mt-9 text-[13px] font-medium text-trace">Proposed by Claude</h2>
           <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">{proposed.map((z, i) => option(z, ZONE_PALETTE[i % ZONE_PALETTE.length]))}</div>
-          <h2 className="mt-8 text-[13px] font-medium text-trace">Autres zones</h2>
+          <h2 className="mt-8 text-[13px] font-medium text-trace">Other zones</h2>
         </>
       )}
       <div className={`${proposed.length ? "mt-3" : "mt-9"} grid grid-cols-1 gap-2.5 sm:grid-cols-2`}>
@@ -677,7 +677,7 @@ function ZonesStep(props: {
 
       <div className="mt-5">
         {props.custom.length > 0 && (
-          <ul className="mb-3 flex flex-wrap gap-1.5" aria-label="Zones ajoutées">
+          <ul className="mb-3 flex flex-wrap gap-1.5" aria-label="Added zones">
             {props.custom.map((c, i) => (
               <li key={c} className="chip h-7 pr-1 text-[13px]">
                 <Dot color={props.preview.find((z) => z.name === c)?.color ?? zoneColor(null, props.zones.length + i)} />
@@ -685,7 +685,7 @@ function ZonesStep(props: {
                 <button
                   type="button"
                   className="grid size-5 place-items-center rounded-[4px] text-trace hover:text-ink"
-                  aria-label={`Retirer la zone ${c}`}
+                  aria-label={`Remove the ${c} zone`}
                   onClick={() => props.setCustom((list) => list.filter((x) => x !== c))}
                 >
                   <CloseIcon size={12} />
@@ -705,11 +705,11 @@ function ZonesStep(props: {
             className="input"
             value={draft}
             maxLength={40}
-            aria-label="Ajouter une zone"
-            placeholder="Ajouter une zone : juridique, ops, recrutement…"
+            aria-label="Add a zone"
+            placeholder="Add a zone: legal, ops, hiring…"
             onChange={(e) => setDraft(e.target.value)}
           />
-          <button type="submit" className="btn btn-icon h-9 w-9 shrink-0" aria-label="Ajouter cette zone" disabled={!draft.trim() || props.custom.length >= 8}>
+          <button type="submit" className="btn btn-icon h-9 w-9 shrink-0" aria-label="Add this zone" disabled={!draft.trim() || props.custom.length >= 8}>
             <PlusIcon />
           </button>
         </form>
@@ -717,12 +717,12 @@ function ZonesStep(props: {
 
       <div className="mt-10 flex flex-wrap items-center gap-4">
         <button type="button" className="btn btn-primary btn-lg" onClick={props.onCreate} disabled={props.busy || count === 0}>
-          {props.busy ? "Création des zones…" : "Valider les zones"}
+          {props.busy ? "Creating the zones…" : "Confirm the zones"}
         </button>
         <span className="text-[13px] tabular-nums text-trace">
           {count === 0
-            ? "Choisissez au moins une zone."
-            : `${count} zone${count > 1 ? "s" : ""}${items ? `, ${items} connaissance${items > 1 ? "s" : ""} proposée${items > 1 ? "s" : ""} ajoutée${items > 1 ? "s" : ""} au cerveau` : ""}`}
+            ? "Choose at least one zone."
+            : `${count} zone${count === 1 ? "" : "s"}${items ? `, ${items} proposed knowledge item${items === 1 ? "" : "s"} added to the brain` : ""}`}
         </span>
       </div>
       {props.err && <ErrorText className="mt-3">{props.err}</ErrorText>}
@@ -768,7 +768,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       await copyText(prompt)
       setCopied(id)
     } catch {
-      setErr("Copie impossible : votre navigateur l'a refusée.")
+      setErr("Could not copy: your browser refused it.")
     }
   }
 
@@ -776,20 +776,20 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
 
   return (
     <div>
-      <h1 className="create-title">Invitez l'équipe {deNom(created.orgName)}.</h1>
+      <h1 className="create-title">Invite {possessive(created.orgName)} team.</h1>
       <p className="create-lead">
-        Deux façons, au choix : un message par personne, avec son propre jeton, ou un seul message pour toute l'équipe, où chacun demande à entrer. Dans les deux
-        cas, il se colle dans Claude Code ou Codex, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
+        Two ways, your choice: one message per person, with their own token, or a single message for the whole team, where each person asks to join. Either
+        way, it is pasted into Claude Code or Codex, and the computer shows up here as soon as it is connected to {possessive(created.orgName)} brain.
       </p>
-      <h2 className="mt-10 text-[19px] font-medium">Un message par personne</h2>
+      <h2 className="mt-10 text-[19px] font-medium">One message per person</h2>
 
       <form onSubmit={invite} className="panel mt-4 space-y-4 px-5 py-5">
         <div className="grid gap-3 sm:grid-cols-2">
-          <input ref={nameRef} className="input" value={name} maxLength={80} aria-label="Nom" placeholder="Prénom Nom" onChange={(e) => setName(e.target.value)} />
-          <input className="input" value={title} maxLength={80} aria-label="Rôle" placeholder="Rôle : dev, compta, sales…" onChange={(e) => setTitle(e.target.value)} />
+          <input ref={nameRef} className="input" value={name} maxLength={80} aria-label="Name" placeholder="First Last" onChange={(e) => setName(e.target.value)} />
+          <input className="input" value={title} maxLength={80} aria-label="Role" placeholder="Role: dev, finance, sales…" onChange={(e) => setTitle(e.target.value)} />
         </div>
         <div>
-          <p className="text-[13px] text-trace">Zones qu'elle peut lire</p>
+          <p className="text-[13px] text-trace">Zones they can read</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {created.zones.map((z) => {
               const on = zones.includes(z.id)
@@ -807,15 +807,15 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
               )
             })}
           </div>
-          {zones.length === 0 && <p className="mt-2 text-[12px] text-trace">Sans zone, elle nourrit le cerveau mais n'en lit rien.</p>}
+          {zones.length === 0 && <p className="mt-2 text-[12px] text-trace">Without a zone, they feed the brain but read nothing from it.</p>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
             {busy ? (
-              "Création du prompt…"
+              "Creating the prompt…"
             ) : (
               <>
-                <AgentLogos /> Créer et copier son prompt
+                <AgentLogos /> Create and copy their prompt
               </>
             )}
           </button>
@@ -824,7 +824,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       </form>
 
       {invites.length > 0 && (
-        <ul className="mt-6 divide-y divide-line border-y border-line" aria-label="Personnes invitées">
+        <ul className="mt-6 divide-y divide-line border-y border-line" aria-label="Invited people">
           {invites.map((i) => {
             const connected = Boolean(props.team[i.id])
             const first = i.zones.length > 0 ? zone(i.zones[0]) : undefined
@@ -837,7 +837,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-medium">{i.name}</p>
                   <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-trace">
-                    <span>{connected ? "Connecté" : "En attente de son poste"}</span>
+                    <span>{connected ? "Connected" : "Waiting for their computer"}</span>
                     {i.zones.map((zid) => {
                       const z = zone(zid)
                       return z ? <ZoneTag key={zid} name={z.name} color={zoneColor(z.color, z.position)} /> : null
@@ -848,23 +848,23 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
                   <button type="button" className="btn" onClick={() => copy(i.id, i.prompt)}>
                     {copied === i.id ? (
                       <>
-                        <CheckIcon size={14} /> Copié
+                        <CheckIcon size={14} /> Copied
                       </>
                     ) : (
-                      "Copier son prompt"
+                      "Copy their prompt"
                     )}
                   </button>
                 ) : (
-                  <span className="text-[12px] text-trace">Par le message d'équipe</span>
+                  <span className="text-[12px] text-trace">Through the team message</span>
                 )}
               </li>
             )
           })}
         </ul>
       )}
-      {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copié : envoyez-le-lui (Slack, mail), il le colle dans Claude Code ou Codex.</p>}
+      {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copied: send it to them (Slack, email), they paste it into Claude Code or Codex.</p>}
 
-      <h2 className="mt-12 text-[19px] font-medium">Ou un seul message pour toute l'équipe</h2>
+      <h2 className="mt-12 text-[19px] font-medium">Or a single message for the whole team</h2>
       <div className="mt-3">
         <TeamJoin
           compact
@@ -877,10 +877,10 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
 
       <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
         <button type="button" className="btn btn-primary btn-lg" onClick={props.onNext}>
-          Brancher vos outils
+          Connect your tools
         </button>
         <Link href="/dashboard" className="landing-link text-[15px]">
-          Ouvrir le dashboard
+          Open the dashboard
         </Link>
         <Presence connected={Boolean(props.team[created.meId])} self compact />
       </div>
@@ -889,8 +889,8 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
 }
 
 /**
- * Étape 8 : brancher les outils de l'équipe par leur serveur MCP officiel (Notion, Linear, GitHub…). « Se connecter »
- * passe par la page de connexion du fournisseur, puis revient ici (/creer?brouillon=1 reprend le parcours à cette étape).
+ * Step 8: connect the team's tools through their official MCP server (Notion, Linear, GitHub…). "Connect" goes
+ * through the provider's sign-in page, then comes back here (/create?draft=1 resumes the flow at this step).
  */
 function ConnectorsStep({ orgName, meConnected }: { orgName: string; meConnected: boolean }) {
   const [data, setData] = useState<{ connectors: McpConnectorPublic[]; redirect_uri: string } | null>(null)
@@ -902,17 +902,17 @@ function ConnectorsStep({ orgName, meConnected }: { orgName: string; meConnected
 
   return (
     <>
-      <h1 className="create-title">Branchez les outils {deNom(orgName)}.</h1>
+      <h1 className="create-title">Connect {possessive(orgName)} tools.</h1>
       <p className="create-lead">
-        Notion, Linear, GitHub, Slack, Stripe… Cliquez sur « Se connecter » : vous passez par la page de connexion de l&apos;outil, puis revenez ici. Les jetons restent
-        sur le serveur du cerveau. Vous pourrez en ajouter d&apos;autres plus tard, depuis la page Connecteurs.
+        Notion, Linear, GitHub, Slack, Stripe… Click &quot;Connect&quot;: you go through the tool&apos;s sign-in page, then come back here. Tokens stay on the
+        brain&apos;s server. You can add others later, from the Connectors page.
       </p>
       <div className="mt-8">
-        {err ? <ErrorText>{err}</ErrorText> : data ? <McpConnectors initial={data.connectors} redirectUri={data.redirect_uri} returnTo="creer" bare /> : <p className="text-[14px] text-trace">Chargement…</p>}
+        {err ? <ErrorText>{err}</ErrorText> : data ? <McpConnectors initial={data.connectors} redirectUri={data.redirect_uri} returnTo="create" bare /> : <p className="text-[14px] text-trace">Loading…</p>}
       </div>
       <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
         <Link href="/dashboard" className="btn btn-primary btn-lg">
-          Ouvrir le dashboard
+          Open the dashboard
         </Link>
         <Presence connected={meConnected} self compact />
       </div>
@@ -920,33 +920,29 @@ function ConnectorsStep({ orgName, meConnected }: { orgName: string; meConnected
   )
 }
 
-/** Où en est le branchement d'un poste : en attente (témoin vide), ou connecté (témoin allumé). */
+/** Connection state of a computer: waiting (empty indicator), or connected (lit indicator). */
 function Presence({ connected, self, compact = false }: { connected: boolean; self?: boolean; compact?: boolean }) {
   return (
     <p className={`flex items-center gap-2 text-[14px] ${compact ? "" : "mt-6"}`} aria-live="polite">
       <span className={`live-dot ${connected ? "is-live" : ""}`} aria-hidden />
       {connected
         ? self
-          ? "Votre poste est connecté. Le cerveau s'allume à chaque session Claude Code."
-          : "Connecté."
+          ? "Your computer is connected. The brain lights up at every Claude Code session."
+          : "Connected."
         : self
           ? compact
-            ? "Votre poste n'est pas encore branché."
-            : "En attente de votre poste. Cette page se met à jour toute seule."
-          : "En attente."}
+            ? "Your computer is not connected yet."
+            : "Waiting for your computer. This page updates on its own."
+          : "Waiting."}
     </p>
   )
 }
 
 /**
- * Le cerveau en train de se construire, dans la langue du dashboard : un centre, une bille par zone reliée au centre,
- * et les personnes autour (pleines une fois leur poste branché).
- */
-/**
- * Le cerveau de l'entreprise en train de naître : le même cerveau 3D que le dashboard et la landing, sans ses
- * commandes. Chaque zone qui apparaît s'allume un instant ; les personnes y prennent place une fois le cerveau créé.
- * Il se cadre sur sa case, à droite, mais il est dessiné sur toute la page, derrière le contenu : on zoome jusque
- * dedans sans jamais buter sur un cadre.
+ * The company's brain being born: the same 3D brain as the dashboard and the landing, without its controls. Each zone
+ * that appears lights up for a moment; people take their place once the brain is created. It frames itself on its
+ * box, on the right, but it is drawn over the whole page, behind the content: you zoom right into it without ever
+ * hitting a frame.
  */
 function MiniBrain(props: { frame: React.RefObject<HTMLDivElement | null>; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[]; counts: Record<string, number> }) {
   const { frame, zones, people, counts } = props
@@ -967,7 +963,7 @@ function MiniBrain(props: { frame: React.RefObject<HTMLDivElement | null>; zones
     const id = setInterval(() => setNow(Date.now()), 250)
     return () => clearInterval(id)
   }, [])
-  // Un dot par personne déjà créée (pas avant : il mène à sa page), posé au bord de la première zone.
+  // One dot per person already created (not before: it leads to their page), placed at the edge of the first zone.
   const dots: BrainPerson[] = people
     .filter((p) => p.id !== "me")
     .map((p, i) => ({ id: p.id, name: p.name, zone: zones[0]?.id ?? null, working: p.connected, me: i === 0 }))
@@ -978,7 +974,7 @@ function MiniBrain(props: { frame: React.RefObject<HTMLDivElement | null>; zones
   )
 }
 
-/** La case où se cadre le cerveau (dessiné, lui, sur toute la page), et sa légende. */
+/** The box the brain frames itself on (the brain itself is drawn over the whole page), and its caption. */
 function BrainCaption(props: { frame: React.RefObject<HTMLDivElement | null>; org: string; zones: ZoneOption[]; people: { connected: boolean }[] }) {
   const { frame, org, zones, people } = props
   const connected = people.filter((p) => p.connected).length
@@ -988,8 +984,8 @@ function BrainCaption(props: { frame: React.RefObject<HTMLDivElement | null>; or
       <figcaption className="mt-2 text-center">
         <span className="block text-[17px] font-medium">{org.charAt(0).toUpperCase() + org.slice(1)}</span>
         <span className="text-[13px] tabular-nums text-trace">
-          {zones.length} zone{zones.length > 1 ? "s" : ""}
-          {people.length > 0 && `, ${connected} poste${connected > 1 ? "s" : ""} branché${connected > 1 ? "s" : ""} sur ${people.length}`}
+          {zones.length} zone{zones.length === 1 ? "" : "s"}
+          {people.length > 0 && `, ${connected} of ${people.length} computer${people.length === 1 ? "" : "s"} connected`}
         </span>
       </figcaption>
     </figure>

@@ -5,7 +5,7 @@ import { error, json, parseBody, publicBaseUrl, withViewer } from "@/lib/http"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** GET /api/connectors/mcp — les serveurs MCP ajoutés (sans jeton ni secret) et l'adresse de retour OAuth. Admins. */
+/** GET /api/connectors/mcp — the MCP servers added (without token or secret) and the OAuth redirect URI. Admins. */
 export const GET = withViewer(async (req) => json({ connectors: await listMcpConnectors(), redirect_uri: mcpRedirectUri(publicBaseUrl(req)) }), { admin: true })
 
 const Schema = z.union([
@@ -13,7 +13,7 @@ const Schema = z.union([
   z.object({ name: z.string().max(80), url: z.string().min(1).max(2000), token: z.string().max(4000).optional() }),
 ])
 
-/** POST /api/connectors/mcp — ajoute un serveur du catalogue, ou un serveur quelconque (adresse, jeton facultatif). */
+/** POST /api/connectors/mcp — adds a catalog server, or any server (address, optional token). */
 export const POST = withViewer(
   async (req) => {
     const body = await parseBody(req, Schema)

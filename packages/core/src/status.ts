@@ -1,15 +1,15 @@
-// Résumé « état de l'entreprise » : repli sans LLM, matière envoyée à Claude (serveur ou poste d'un admin)
-// et lecture tolérante de sa réponse quand elle vient de `claude -p` sur un poste.
+// "State of the company" summary: LLM-free fallback, material sent to Claude (server or an admin's workstation)
+// and lenient reading of its answer when it comes from `claude -p` on a workstation.
 
 import { z } from "zod"
 import type { CompanyStatus, KnowledgeItem, Profile, Task, Zone, ZoneStatus } from "./types"
 import { truncate } from "./text"
 import { slugify } from "./zones"
 
-/** Auteur sans profil (compte supprimé…) : libellé neutre, sans présumer du genre de la personne. */
-export const UNKNOWN_PERSON = "Personne inconnue"
+/** Author without a profile (deleted account…): a neutral label, without assuming the person's gender. */
+export const UNKNOWN_PERSON = "Unknown person"
 
-const OBJECTIVE_RE = /\b(objectif|objectifs|okr|goal|cible|vise|viser|d'ici|target)\b/i
+const OBJECTIVE_RE = /\b(objective|objectives|okr|okrs|goal|goals|target|targets|aim|aims|aiming|by the end of)\b/i
 
 export function heuristicStatus(input: {
   zones: Zone[]
@@ -48,21 +48,21 @@ export function heuristicStatus(input: {
       .slice(0, 3)
       .map(([author, list]) => ({
         person: names.get(author) ?? UNKNOWN_PERSON,
-        did: `${list.length} contribution${list.length > 1 ? "s" : ""}, dont « ${truncate(list[0].title, 70)} »`,
+        did: `${list.length} contribution${list.length > 1 ? "s" : ""}, including "${truncate(list[0].title, 70)}"`,
       }))
 
     const lastDecision = items.find((i) => i.kind === "decision")
     const summary =
       items.length === 0
-        ? "Aucune connaissance pour l'instant."
-        : `${items.length} connaissances, ${recent.length} cette semaine.` +
-          (lastDecision ? ` Dernière décision : ${truncate(lastDecision.title, 100)}.` : "")
+        ? "No knowledge yet."
+        : `${items.length} items, ${recent.length} this week.` +
+          (lastDecision ? ` Latest decision: ${truncate(lastDecision.title, 100)}.` : "")
 
     zones.push({
       zone: z.id,
       summary,
       objectives,
-      progress: tasks.length ? `${done.length}/${tasks.length} tâches terminées` : recent.length ? "Activité régulière, pas de tâche suivie" : "Calme",
+      progress: tasks.length ? `${done.length}/${tasks.length} tasks done` : recent.length ? "Steady activity, no tracked task" : "Quiet",
       next_steps: open.slice(0, 3).map((t) => truncate(t.title, 110)),
       who_did_what,
     })
@@ -70,16 +70,16 @@ export function heuristicStatus(input: {
 
   const openTasks = input.tasks.filter((t) => t.status === "open").length
   const headline =
-    `${weekCount} nouvelles connaissances cette semaine, ${decisions} décision${decisions > 1 ? "s" : ""}, ` +
-    `${openTasks} tâche${openTasks > 1 ? "s" : ""} ouverte${openTasks > 1 ? "s" : ""}.` +
-    (busiest && busiest.n > 0 ? ` Zone la plus active : ${busiest.zone}.` : "")
+    `${weekCount} new item${weekCount === 1 ? "" : "s"} this week, ${decisions} decision${decisions === 1 ? "" : "s"}, ` +
+    `${openTasks} open task${openTasks === 1 ? "" : "s"}.` +
+    (busiest && busiest.n > 0 ? ` Most active zone: ${busiest.zone}.` : "")
 
   return { headline, zones, generated_at: now.toISOString(), generator: "heuristic" }
 }
 
 /**
- * Matière du résumé « où en est la boîte » (GET /api/status/input) : connaissances récentes et tâches, zone par zone.
- * `generated_for` : le jour couvert (AAAA-MM-JJ). Les auteurs et responsables sont des noms, pas des identifiants.
+ * Material for the "where the company stands" summary (GET /api/status/input): recent knowledge and tasks, zone by zone.
+ * `generated_for`: the day covered (YYYY-MM-DD). Authors and owners are names, not ids.
  */
 export type StatusInput = {
   company_name: string
@@ -93,7 +93,7 @@ export const STATUS_WINDOW_DAYS = 30
 export const STATUS_MAX_ITEMS = 400
 export const STATUS_MAX_TASKS = 400
 
-/** Construit la matière du résumé : 30 derniers jours, 400 connaissances au plus (les plus récentes d'abord), noms des personnes. */
+/** Builds the summary material: last 30 days, 400 items at most (most recent first), people's names. */
 export function buildStatusInput(input: {
   companyName: string
   zones: Pick<Zone, "id" | "name" | "description">[]
@@ -134,9 +134,9 @@ export function buildStatusInput(input: {
   }
 }
 
-// --- Lecture tolérante d'une réponse « JSON » de Claude ----------------------------------------------------------------
+// --- Lenient reading of a "JSON" answer from Claude --------------------------------------------------------------------
 
-/** Indice de l'accolade fermante qui équilibre celle de `start` (chaînes JSON comprises), ou -1. */
+/** Index of the closing brace that balances the one at `start` (JSON strings included), or -1. */
 function matchingBrace(text: string, start: number): number {
   let depth = 0
   let inString = false
@@ -160,7 +160,7 @@ function parseLoose(json: string): unknown {
   try {
     return JSON.parse(json)
   } catch {
-    // virgules finales (« [1, 2,] ») : erreur fréquente des sorties de modèle
+    // trailing commas ("[1, 2,]"): a frequent error in model output
     try {
       return JSON.parse(json.replace(/,\s*([}\]])/g, "$1"))
     } catch {
@@ -169,8 +169,7 @@ function parseLoose(json: string): unknown {
   }
 }
 
-/** Objets JSON trouvés dans un texte (blocs de code, texte autour), du premier au dernier, sans descendre dans un objet trouvé. */
-/** Objets JSON trouvés dans un texte libre (bloc de code, prose autour…), du premier au dernier. */
+/** JSON objects found in free text (code blocks, prose around…), first to last, without descending into a found object. */
 export function jsonObjects(text: string): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = []
   let tries = 0
@@ -210,15 +209,15 @@ const firstString = (o: Record<string, unknown>, keys: string[]) => {
 }
 
 /**
- * Lit la réponse de Claude au prompt de buildCliStatusPrompt : la sortie brute de `claude -p --output-format json`
- * (enveloppe { result: "…" }) ou le texte lui-même, avec ou sans bloc de code ni texte autour.
- * Valide la forme (zod), écarte les zones inconnues ou en double, borne les longueurs.
- * Null si rien d'utilisable (pas de JSON, pas de headline, enveloppe en erreur).
+ * Reads Claude's answer to the buildCliStatusPrompt prompt: the raw output of `claude -p --output-format json`
+ * ({ result: "…" } envelope) or the text itself, with or without a code block or text around it.
+ * Validates the shape (zod), drops unknown or duplicate zones, bounds the lengths.
+ * Null if nothing is usable (no JSON, no headline, envelope in error).
  */
 export function parseStatusJson(text: string, zoneIds: string[]): { headline: string; zones: ZoneStatus[] } | null {
   if (typeof text !== "string" || !text.trim()) return null
   const objects = jsonObjects(text)
-  // Enveloppe de la CLI : le résumé est dans `result` (texte) ou `structured_output` (objet).
+  // CLI envelope: the summary is in `result` (text) or `structured_output` (object).
   const envelope = objects.find((o) => !("headline" in o) && ("result" in o || "structured_output" in o || "is_error" in o))
   if (envelope && !objects.some((o) => "headline" in o)) {
     if (envelope.is_error === true) return null
@@ -246,7 +245,7 @@ export function parseStatusJson(text: string, zoneIds: string[]): { headline: st
       next_steps: strings(z.next_steps, 10, 300),
       who_did_what: z.who_did_what
         .filter((w): w is Record<string, unknown> => Boolean(w) && typeof w === "object" && !Array.isArray(w))
-        .map((w) => ({ person: clean(firstString(w, ["person", "name", "qui"]), 80), did: clean(firstString(w, ["did", "action", "quoi", "what"]), 300) }))
+        .map((w) => ({ person: clean(firstString(w, ["person", "name", "who"]), 80), did: clean(firstString(w, ["did", "action", "what"]), 300) }))
         .filter((w) => w.person && w.did)
         .slice(0, 12),
     })

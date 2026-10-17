@@ -6,13 +6,13 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * Claude Code ou Codex signale où il en est (Bearer co_…, le code d'envoi du prompt) : départ, trouvailles, fin. La page
- * de création et la page Onboarding en font des notifications ; rien n'est appliqué ici.
+ * Claude Code or Codex reports where it stands (Bearer co_…, the prompt's upload code): start, findings, end. The
+ * creation page and the Onboarding page turn them into notifications; nothing is applied here.
  */
 export async function POST(req: Request) {
   try {
     const store = await storeForOnboardingCode(req)
-    if (!store) return error(401, "Code d'envoi invalide ou expiré : recopiez le prompt depuis la page Onboarding.")
+    if (!store) return error(401, "Invalid or expired upload code: copy the prompt again from the Onboarding page.")
     const body = await parseBody(req, AgentProgressSchema)
     if ("response" in body) return body.response
     const event = await addAgentProgress(store, body.data)
@@ -22,5 +22,5 @@ export async function POST(req: Request) {
   }
 }
 
-/** Admins : le fil du passage en cours (2 dernières heures). */
+/** Admins: the feed of the current run (last 2 hours). */
 export const GET = withViewer(async () => json({ events: await loadAgentProgress(getStore()) }), { admin: true })

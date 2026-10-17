@@ -1,6 +1,6 @@
-// install.sh et install.ps1, les amorces servies par le dashboard (apps/web/public) : testées contre un faux serveur de
-// cerveau, dans des dossiers temporaires (HOME et COMPANY_BRAIN_HOME), jamais dans le vrai dossier de l'utilisateur.
-// Sans réseau, sauf BRAIN_TEST_NETWORK=1 : la copie privée de Node.js est alors vraiment téléchargée (~30 Mo).
+// install.sh and install.ps1, the bootstrap scripts served by the dashboard (apps/web/public): tested against a fake brain
+// server, in temporary folders (HOME and COMPANY_BRAIN_HOME), never in the user's real folder.
+// No network, except with BRAIN_TEST_NETWORK=1: the private copy of Node.js is then really downloaded (~30 MB).
 
 import { strict as assert } from "node:assert"
 import { spawn, spawnSync } from "node:child_process"
@@ -20,15 +20,15 @@ const installPs1 = join(publicDir, "install.ps1")
 const NODE_VERSION = readFileSync(installSh, "utf8").match(/^NODE_VERSION="([^"]+)"/m)![1]
 const NETWORK = process.env.BRAIN_TEST_NETWORK === "1"
 const WIN = process.platform === "win32"
-const POSIX_ONLY = { skip: WIN ? "POSIX seulement" : false }
-const WIN_ONLY = { skip: WIN ? false : "Windows seulement" }
+const POSIX_ONLY = { skip: WIN ? "POSIX only" : false }
+const WIN_ONLY = { skip: WIN ? false : "Windows only" }
 const TOKEN = "cb_TEST_tok3n_never_printed"
 
-// --- Outils --------------------------------------------------------------------------------------------------------
+// --- Tools ---------------------------------------------------------------------------------------------------------
 
 type Run = { code: number | null; stdout: string; stderr: string }
 
-/** Lance une commande, avec un minuteur qui la tue (60 s par défaut) : un script bloqué ne bloque pas la suite. */
+/** Runs a command, with a timer that kills it (60 s by default): a stuck script does not block the rest. */
 function run(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number; windowsVerbatimArguments?: boolean } = {}): Promise<Run> {
   return new Promise((ok, ko) => {
     const child = spawn(cmd, args, { env: opts.env, cwd: opts.cwd, windowsHide: true, windowsVerbatimArguments: opts.windowsVerbatimArguments })
@@ -50,7 +50,7 @@ function run(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?:
 
 const has = (cmd: string, args: string[]) => spawnSync(cmd, args, { stdio: "ignore", timeout: 60_000 }).status === 0
 
-/** Faux serveur du cerveau : sert les fichiers donnés, 404 pour le reste, et note les chemins demandés. */
+/** Fake brain server: serves the given files, 404 for the rest, and records the paths requested. */
 async function brainServer(files: Record<string, { status?: number; body: string }>) {
   const hits: string[] = []
   const server = createServer((req, res) => {
@@ -67,31 +67,31 @@ async function brainServer(files: Record<string, { status?: number; body: string
   }
 }
 
-/** Faux client : affiche ses arguments et le dossier qu'il voit, puis sort avec le code donné (3 = autorisation en attente). */
+/** Fake client: prints its arguments and the folder it sees, then exits with the given code (3 = permission pending). */
 const fakeClient = (code: number) =>
   `#!/usr/bin/env node\nconsole.log(JSON.stringify({ argv: process.argv.slice(2), home: process.env.COMPANY_BRAIN_HOME ?? null }))\nprocess.exit(${code})\n`
-const HTML = "<!DOCTYPE html>\n<html><body>Connexion au Wi-Fi de l'hôtel</body></html>\n"
+const HTML = "<!DOCTYPE html>\n<html><body>Hotel Wi-Fi sign-in</body></html>\n"
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
-/** La ligne JSON écrite par le faux client. */
+/** The JSON line written by the fake client. */
 function clientOutput(stdout: string): { argv: string[]; home: string | null } {
   const line = stdout.split("\n").find((l) => l.startsWith('{"argv"'))
-  assert.ok(line, `le faux client n'a pas tourné :\n${stdout}`)
+  assert.ok(line, `the fake client did not run:\n${stdout}`)
   return JSON.parse(line)
 }
 
-// --- Postes de test POSIX ----------------------------------------------------------------------------------------
+// --- POSIX test computers ---------------------------------------------------------------------------------------
 
-// Même règle qu'install.sh : un Node.js de gestionnaire de versions (ou x64 sur Apple Silicon) n'est pas retenu. Sur un
-// tel poste de développement, les tests fournissent une fausse copie privée plutôt que de télécharger Node.js.
+// Same rule as install.sh: a Node.js from a version manager (or x64 on Apple Silicon) is not kept. On such a
+// development computer, the tests provide a fake private copy rather than downloading Node.js.
 const VERSIONED = /\/(Cellar|\.nvm|fnm|\.fnm|\.volta|\.asdf|mise|\.nodenv|n\/versions|\.local\/share\/pnpm|pnpm\/nodejs)\/|^\/snap\//
 const realNode = realpathSync(process.execPath)
 const appleSilicon = process.platform === "darwin" && spawnSync("sysctl", ["-n", "hw.optional.arm64"], { encoding: "utf8" }).stdout?.trim() === "1"
 const systemNodeUsable = !WIN && !VERSIONED.test(realNode) && (!appleSilicon || process.arch === "arm64")
 const realCurl = WIN ? "" : spawnSync("sh", ["-c", "command -v curl"], { encoding: "utf8" }).stdout.trim()
 
-/** Shells POSIX disponibles : install.sh doit marcher avec chacun. */
+/** POSIX shells available: install.sh must work with each one. */
 function shells(): string[][] {
   if (WIN) return []
   const list = [["sh"]]
@@ -107,8 +107,8 @@ function writeExec(file: string, content: string) {
 }
 
 /**
- * Un poste de test : HOME et COMPANY_BRAIN_HOME dans un dossier temporaire, et devant le PATH un curl espion qui note
- * chaque URL. nodejs.org y est bloqué, sauf ALLOW_NODEJS_ORG=1 : jamais de téléchargement de Node.js par surprise.
+ * A test computer: HOME and COMPANY_BRAIN_HOME in a temporary folder, and in front of the PATH a spy curl that records
+ * every URL. nodejs.org is blocked there, except with ALLOW_NODEJS_ORG=1: never a surprise download of Node.js.
  */
 function workstation(opts: { home?: (root: string) => string } = {}) {
   const root = tempDir("brain-install-")
@@ -118,7 +118,7 @@ function workstation(opts: { home?: (root: string) => string } = {}) {
     join(bin, "curl"),
     `#!/bin/sh
 printf '%s\\n' "$*" >> '${root}/curl.log'
-case "$*" in *nodejs.org*) [ "\${ALLOW_NODEJS_ORG:-}" = 1 ] || { echo "curl: nodejs.org bloqué par le test" >&2; exit 7; } ;; esac
+case "$*" in *nodejs.org*) [ "\${ALLOW_NODEJS_ORG:-}" = 1 ] || { echo "curl: nodejs.org blocked by the test" >&2; exit 7; } ;; esac
 exec '${realCurl}' "$@"
 `,
   )
@@ -137,27 +137,27 @@ exec '${realCurl}' "$@"
 }
 type Workstation = ReturnType<typeof workstation>
 
-/** Faux Node.js privé : répond à la sonde d'install.sh (-p) avec la version voulue, passe tout le reste au vrai Node.js. */
+/** Fake private Node.js: answers install.sh's probe (-p) with the wanted version, passes everything else to the real Node.js. */
 function fakePrivateNode(home: string, version: string): string {
   const file = join(home, "node", "bin", "node")
   writeExec(file, `#!/bin/sh\nif [ "$1" = "-p" ]; then echo "${version} ${process.arch} $0"; exit 0; fi\nexec '${process.execPath}' "$@"\n`)
   return file
 }
 
-/** Faux Node.js du système, rangé dans `dir` : sonde avec la version voulue ; ancien (< 20), il refuse tout le reste. */
+/** Fake system Node.js, stored in `dir`: probe with the wanted version; old (< 20), it refuses everything else. */
 function fakeSystemNode(dir: string, version: string, arch: string = process.arch): string {
   const file = join(dir, "node")
-  const rest = Number(version.split(".")[0]) >= 20 ? `exec '${process.execPath}' "$@"` : `echo "node v${version} : trop ancien pour ce test" >&2; exit 1`
+  const rest = Number(version.split(".")[0]) >= 20 ? `exec '${process.execPath}' "$@"` : `echo "node v${version}: too old for this test" >&2; exit 1`
   writeExec(file, `#!/bin/sh\nif [ "$1" = "-p" ]; then echo "${version} ${arch} $0"; exit 0; fi\n${rest}\n`)
   return file
 }
 
-/** Faux uname : système et processeur voulus (install.sh ne lit que -s et -m). */
+/** Fake uname: the wanted system and processor (install.sh only reads -s and -m). */
 function fakeUname(bin: string, system: string, machine: string) {
   writeExec(join(bin, "uname"), `#!/bin/sh\ncase "$1" in -m) echo ${machine} ;; *) echo ${system} ;; esac\n`)
 }
 
-/** Node.js sans téléchargement : celui du système s'il est retenu par install.sh, sinon une fausse copie privée figée. */
+/** Node.js without a download: the system one if install.sh keeps it, otherwise a fake pinned private copy. */
 function withNode(ws: Workstation) {
   if (!systemNodeUsable) fakePrivateNode(ws.home, NODE_VERSION)
 }
@@ -167,7 +167,7 @@ function installShell(shell: string[], args: string[], ws: Workstation, extra: {
 }
 const install = (args: string[], ws: Workstation, extra: { env?: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number } = {}) => installShell(["sh"], args, ws, extra)
 
-/** Lance le raccourci ~/.company-brain/brain sans COMPANY_BRAIN_HOME : il doit le fixer lui-même. */
+/** Runs the ~/.company-brain/brain shortcut without COMPANY_BRAIN_HOME: it must set it itself. */
 function shortcut(ws: Workstation, args: string[], cwd = tmpdir()) {
   const env = { ...ws.env }
   delete env.COMPANY_BRAIN_HOME
@@ -180,58 +180,58 @@ function leftovers(home: string): string[] {
 
 // --- install.sh ----------------------------------------------------------------------------------------------------
 
-test("install.sh : syntaxe POSIX valide (sh, dash, bash --posix)", POSIX_ONLY, () => {
+test("install.sh: valid POSIX syntax (sh, dash, bash --posix)", POSIX_ONLY, () => {
   for (const shell of shells()) {
     const r = spawnSync(shell[0], [...shell.slice(1), "-n", installSh], { encoding: "utf8" })
-    assert.equal(r.status, 0, `${shell.join(" ")} -n : ${r.stderr}`)
+    assert.equal(r.status, 0, `${shell.join(" ")} -n: ${r.stderr}`)
   }
 })
 
-test("install.sh : mauvais appel → code 2, rien d'installé, le jeton jamais affiché", POSIX_ONLY, async () => {
+test("install.sh: bad call → code 2, nothing installed, the token never shown", POSIX_ONLY, async () => {
   const ws = workstation()
   try {
     const cases: [string[], RegExp][] = [
       [["--token", TOKEN], /Usage/],
-      [["--url", "ftp://cerveau.example.com", "--token", TOKEN], /https:\/\//],
-      [["--url", "cerveau.example.com", "--token", TOKEN], /https:\/\//],
+      [["--url", "ftp://brain.example.com", "--token", TOKEN], /https:\/\//],
+      [["--url", "brain.example.com", "--token", TOKEN], /https:\/\//],
       [["--url", TOKEN], /https:\/\//],
     ]
     for (const [args, message] of cases) {
       const r = await install(args, ws)
-      assert.equal(r.code, 2, `${args.join(" ")} : ${r.stderr}`)
+      assert.equal(r.code, 2, `${args.join(" ")}: ${r.stderr}`)
       assert.match(r.stderr, message)
-      assert.ok(!(r.stdout + r.stderr).includes(TOKEN), "jeton affiché")
+      assert.ok(!(r.stdout + r.stderr).includes(TOKEN), "token shown")
     }
-    // sudo : un faux `id` qui répond 0 (root) et SUDO_USER, comme sous sudo. Le script s'arrête avant toute écriture.
+    // sudo: a fake `id` that answers 0 (root) and SUDO_USER, as under sudo. The script stops before writing anything.
     writeExec(join(ws.bin, "id"), `#!/bin/sh\nif [ "$1" = "-u" ]; then echo 0; else exec /usr/bin/id "$@"; fi\n`)
-    const sudo = await install(["--url", "https://cerveau.example.com", "--token", TOKEN], ws, { env: { SUDO_USER: "jean" } })
+    const sudo = await install(["--url", "https://brain.example.com", "--token", TOKEN], ws, { env: { SUDO_USER: "jean" } })
     assert.equal(sudo.code, 2, sudo.stderr)
-    assert.match(sudo.stderr, /sans sudo/)
-    assert.ok(!existsSync(ws.home), "rien n'est créé")
-    assert.equal(ws.curlLog(), "", "rien n'est téléchargé")
+    assert.match(sudo.stderr, /without sudo/)
+    assert.ok(!existsSync(ws.home), "nothing is created")
+    assert.equal(ws.curlLog(), "", "nothing is downloaded")
   } finally {
     ws.cleanup()
   }
 })
 
 for (const shell of shells()) {
-  test(`install.sh (${shell.join(" ")}) : télécharge brain.mjs, écrit le raccourci, lance setup avec les mêmes options et rend son code`, POSIX_ONLY, async () => {
+  test(`install.sh (${shell.join(" ")}): downloads brain.mjs, writes the shortcut, runs setup with the same options and returns its code`, POSIX_ONLY, async () => {
     const srv = await brainServer({ "/brain.mjs": { body: fakeClient(3) } })
     const ws = workstation()
     withNode(ws)
     try {
       const r = await installShell(shell, ["--url", `${srv.url}/`, "--token", TOKEN, "--no-open"], ws)
-      assert.equal(r.code, 3, `le code de setup est rendu tel quel\n${r.stdout}\n${r.stderr}`)
+      assert.equal(r.code, 3, `setup's code is returned as is\n${r.stdout}\n${r.stderr}`)
       assert.deepEqual(clientOutput(r.stdout), { argv: ["setup", "--url", `${srv.url}/`, "--token", TOKEN, "--no-open"], home: ws.home })
       const rest = r.stdout.split("\n").filter((l) => !l.startsWith('{"argv"')).join("\n") + r.stderr
-      assert.ok(!rest.includes(TOKEN), "jeton affiché par install.sh")
+      assert.ok(!rest.includes(TOKEN), "token shown by install.sh")
       assert.equal(readFileSync(join(ws.home, "brain.mjs"), "utf8"), fakeClient(3))
-      assert.equal(statSync(ws.home).mode & 0o777, 0o700, "dossier privé")
-      assert.ok(statSync(join(ws.home, "brain")).mode & 0o100, "raccourci exécutable")
+      assert.equal(statSync(ws.home).mode & 0o777, 0o700, "private folder")
+      assert.ok(statSync(join(ws.home, "brain")).mode & 0o100, "executable shortcut")
       assert.deepEqual(leftovers(ws.home), [])
-      assert.equal(ws.curlLog().trim().split("\n").length, 1, `seul brain.mjs est téléchargé :\n${ws.curlLog()}`)
+      assert.equal(ws.curlLog().trim().split("\n").length, 1, `only brain.mjs is downloaded:\n${ws.curlLog()}`)
       assert.ok(ws.curlLog().includes(`${srv.url}/brain.mjs`))
-      // Le raccourci marche d'ailleurs, sans COMPANY_BRAIN_HOME dans l'environnement : il le fixe lui-même.
+      // The shortcut works from elsewhere, without COMPANY_BRAIN_HOME in the environment: it sets it itself.
       const s = await shortcut(ws, ["status"])
       assert.equal(s.code, 3)
       assert.deepEqual(clientOutput(s.stdout), { argv: ["status"], home: ws.home })
@@ -242,7 +242,7 @@ for (const shell of shells()) {
   })
 }
 
-test("install.sh : --url=… marche aussi, et passe tel quel à setup", POSIX_ONLY, async () => {
+test("install.sh: --url=… works too, and is passed as is to setup", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation()
   withNode(ws)
@@ -256,12 +256,12 @@ test("install.sh : --url=… marche aussi, et passe tel quel à setup", POSIX_ON
   }
 })
 
-test("install.sh --join (message d'équipe) : lance join, et non setup, avec les mêmes options ; code rendu tel quel", POSIX_ONLY, async () => {
+test("install.sh --join (team message): runs join, not setup, with the same options; code returned as is", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(7) } })
   const ws = workstation()
   withNode(ws)
   try {
-    const args = ["--url", srv.url, "--join", "cj_test", "--name", "Léa Bernard", "--title", "Compta"]
+    const args = ["--url", srv.url, "--join", "cj_test", "--name", "Léa Bernard", "--title", "Finance"]
     const r = await install(args, ws)
     assert.equal(r.code, 7, `${r.stdout}\n${r.stderr}`)
     assert.deepEqual(clientOutput(r.stdout).argv, ["join", ...args])
@@ -271,14 +271,14 @@ test("install.sh --join (message d'équipe) : lance join, et non setup, avec les
   }
 })
 
-test("install.sh : brain.mjs introuvable (404) → code 5, message en français, rien d'installé", POSIX_ONLY, async () => {
+test("install.sh: brain.mjs not found (404) → code 5, clear message, nothing installed", POSIX_ONLY, async () => {
   const srv = await brainServer({})
   const ws = workstation()
   withNode(ws)
   try {
     const r = await install(["--url", srv.url, "--token", TOKEN], ws)
     assert.equal(r.code, 5, r.stderr)
-    assert.match(r.stderr, /Téléchargement impossible : http:\/\/127\.0\.0\.1:\d+\/brain\.mjs .*Relance la même commande/)
+    assert.match(r.stderr, /Download failed: http:\/\/127\.0\.0\.1:\d+\/brain\.mjs .*Run the same command again/)
     assert.ok(!existsSync(join(ws.home, "brain.mjs")) && !existsSync(join(ws.home, "brain")))
     assert.deepEqual(leftovers(ws.home), [])
   } finally {
@@ -287,19 +287,19 @@ test("install.sh : brain.mjs introuvable (404) → code 5, message en français,
   }
 })
 
-test("install.sh : une page HTML servie en 200 → code 5, l'ancien client et le raccourci restent intacts", POSIX_ONLY, async () => {
+test("install.sh: an HTML page served with 200 → code 5, the old client and the shortcut stay intact", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: HTML } })
   const ws = workstation()
   withNode(ws)
   try {
     mkdirSync(ws.home, { recursive: true })
-    const oldClient = "// ancien client, qui marche\nconsole.log('ok')\n"
-    const oldShortcut = "#!/bin/sh\necho ancien raccourci\n"
+    const oldClient = "// old client, which works\nconsole.log('ok')\n"
+    const oldShortcut = "#!/bin/sh\necho old shortcut\n"
     writeFileSync(join(ws.home, "brain.mjs"), oldClient)
     writeExec(join(ws.home, "brain"), oldShortcut)
     const r = await install(["--url", srv.url, "--token", TOKEN], ws)
     assert.equal(r.code, 5, r.stderr)
-    assert.match(r.stderr, /n'est pas le client du cerveau .*relance la même commande/)
+    assert.match(r.stderr, /is not the brain client .*run the same command again/)
     assert.equal(readFileSync(join(ws.home, "brain.mjs"), "utf8"), oldClient)
     assert.equal(readFileSync(join(ws.home, "brain"), "utf8"), oldShortcut)
     assert.deepEqual(leftovers(ws.home), [])
@@ -309,7 +309,7 @@ test("install.sh : une page HTML servie en 200 → code 5, l'ancien client et le
   }
 })
 
-test("install.sh : dossier avec espace, apostrophe et $ → le raccourci marche et rien n'est interprété", POSIX_ONLY, async () => {
+test("install.sh: folder with a space, an apostrophe and $ → the shortcut works and nothing is interpreted", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation({ home: (root) => join(root, "Jean Marc's $(touch PWNED) `touch PWNED2` $HOME") })
   withNode(ws)
@@ -320,20 +320,20 @@ test("install.sh : dossier avec espace, apostrophe et $ → le raccourci marche 
     const s = await shortcut(ws, ["status"], ws.root)
     assert.equal(s.code, 0, s.stderr)
     assert.deepEqual(clientOutput(s.stdout), { argv: ["status"], home: ws.home })
-    assert.ok(!existsSync(join(ws.root, "PWNED")) && !existsSync(join(ws.root, "PWNED2")), "le chemin a été interprété")
+    assert.ok(!existsSync(join(ws.root, "PWNED")) && !existsSync(join(ws.root, "PWNED2")), "the path was interpreted")
   } finally {
     ws.cleanup()
     await srv.close()
   }
 })
 
-test("install.sh : COMPANY_BRAIN_HOME relatif devient absolu, pour setup comme pour le raccourci", POSIX_ONLY, async () => {
+test("install.sh: a relative COMPANY_BRAIN_HOME becomes absolute, for setup as for the shortcut", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation()
   try {
-    const abs = join(ws.root, "dossier relatif", "brain")
+    const abs = join(ws.root, "relative folder", "brain")
     if (!systemNodeUsable) fakePrivateNode(abs, NODE_VERSION)
-    const r = await install(["--url", srv.url, "--token", TOKEN], ws, { env: { COMPANY_BRAIN_HOME: "dossier relatif/brain" }, cwd: ws.root })
+    const r = await install(["--url", srv.url, "--token", TOKEN], ws, { env: { COMPANY_BRAIN_HOME: "relative folder/brain" }, cwd: ws.root })
     assert.equal(r.code, 0, r.stderr)
     assert.equal(clientOutput(r.stdout).home, abs)
     const s = await run(join(abs, "brain"), ["status"], { env: { ...ws.env, COMPANY_BRAIN_HOME: undefined }, cwd: tmpdir() })
@@ -344,7 +344,7 @@ test("install.sh : COMPANY_BRAIN_HOME relatif devient absolu, pour setup comme p
   }
 })
 
-test("install.sh : copie privée à la version figée → gardée, même avec un vieux node (v18) dans le PATH ; aucun téléchargement de Node.js", POSIX_ONLY, async () => {
+test("install.sh: private copy at the pinned version → kept, even with an old node (v18) in the PATH; no download of Node.js", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(3) } })
   const ws = workstation()
   try {
@@ -360,15 +360,15 @@ test("install.sh : copie privée à la version figée → gardée, même avec un
   }
 })
 
-test("install.sh : Node.js trop ancien et nodejs.org injoignable → code 5, rien de cassé", POSIX_ONLY, async () => {
+test("install.sh: Node.js too old and nodejs.org unreachable → code 5, nothing broken", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation()
   try {
     fakeSystemNode(join(ws.root, "old"), "18.20.4")
     const r = await install(["--url", srv.url, "--token", TOKEN], ws, { env: { PATH: [join(ws.root, "old"), ws.env.PATH].join(delimiter) } })
     assert.equal(r.code, 5, r.stderr)
-    assert.match(r.stdout, /v18\.20\.4 .* trop ancien/)
-    assert.match(r.stderr, new RegExp(`Téléchargement impossible : ${esc(`https://nodejs.org/dist/v${NODE_VERSION}/node-v`)}.*Relance la même commande`))
+    assert.match(r.stdout, /v18\.20\.4 .* too old/)
+    assert.match(r.stderr, new RegExp(`Download failed: ${esc(`https://nodejs.org/dist/v${NODE_VERSION}/node-v`)}.*Run the same command again`))
     assert.ok(!existsSync(join(ws.home, "node")) && !existsSync(join(ws.home, "brain.mjs")))
     assert.deepEqual(leftovers(ws.home), [])
   } finally {
@@ -377,15 +377,15 @@ test("install.sh : Node.js trop ancien et nodejs.org injoignable → code 5, rie
   }
 })
 
-test("install.sh : ancienne copie privée et téléchargement impossible → on la garde, avec un avertissement", POSIX_ONLY, async () => {
+test("install.sh: old private copy and download impossible → it is kept, with a warning", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(3) } })
   const ws = workstation()
   try {
     fakePrivateNode(ws.home, "22.1.0")
     const r = await install(["--url", srv.url, "--token", TOKEN], ws, { env: { COMPANY_BRAIN_FORCE_PRIVATE_NODE: "1" } })
     assert.equal(r.code, 3, r.stderr)
-    assert.ok(ws.curlLog().includes("nodejs.org"), "la nouvelle version a été tentée")
-    assert.match(r.stderr, /On continue avec la copie privée déjà installée \(Node\.js v22\.1\.0\)/)
+    assert.ok(ws.curlLog().includes("nodejs.org"), "the new version was attempted")
+    assert.match(r.stderr, /Continuing with the private copy already installed \(Node\.js v22\.1\.0\)/)
     assert.ok(existsSync(join(ws.home, "node", "bin", "node")))
   } finally {
     ws.cleanup()
@@ -393,7 +393,7 @@ test("install.sh : ancienne copie privée et téléchargement impossible → on 
   }
 })
 
-test("install.sh : Node.js d'un gestionnaire de versions (nvm) → copie privée tentée d'abord ; nvm seulement en dernier recours", POSIX_ONLY, async () => {
+test("install.sh: Node.js from a version manager (nvm) → private copy attempted first; nvm only as a last resort", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation()
   try {
@@ -401,9 +401,9 @@ test("install.sh : Node.js d'un gestionnaire de versions (nvm) → copie privée
     const nvmNode = fakeSystemNode(nvmBin, "22.9.0")
     const r = await install(["--url", srv.url, "--token", TOKEN], ws, { env: { PATH: [nvmBin, ws.env.PATH].join(delimiter) } })
     assert.equal(r.code, 0, r.stderr)
-    assert.match(r.stdout, /gestionnaire de versions/)
-    assert.ok(ws.curlLog().includes("nodejs.org"), "la copie privée a été tentée avant nvm")
-    assert.ok(r.stderr.includes(`On continue avec ${nvmNode}`), r.stderr)
+    assert.match(r.stdout, /version manager/)
+    assert.ok(ws.curlLog().includes("nodejs.org"), "the private copy was attempted before nvm")
+    assert.ok(r.stderr.includes(`Continuing with ${nvmNode}`), r.stderr)
     assert.match(readFileSync(join(ws.home, "brain"), "utf8"), new RegExp(`^exec '${esc(nvmNode)}' `, "m"))
   } finally {
     ws.cleanup()
@@ -411,7 +411,7 @@ test("install.sh : Node.js d'un gestionnaire de versions (nvm) → copie privée
   }
 })
 
-test("install.sh : Node.js du système → le raccourci garde son vrai chemin, pas celui du lien ou du shim", { skip: systemNodeUsable ? false : "Node.js de ce poste écarté par install.sh (gestionnaire de versions)" }, async () => {
+test("install.sh: system Node.js → the shortcut keeps its real path, not the link's or the shim's", { skip: systemNodeUsable ? false : "this computer's Node.js is ruled out by install.sh (version manager)" }, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation()
   try {
@@ -429,7 +429,7 @@ test("install.sh : Node.js du système → le raccourci garde son vrai chemin, p
   }
 })
 
-test("install.sh : Linux musl (Alpine) → archive officielle linux-x64-musl ; musl sur ARM → code 4 avec la commande apk", POSIX_ONLY, async () => {
+test("install.sh: Linux musl (Alpine) → official linux-x64-musl archive; musl on ARM → code 4 with the apk command", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation()
   try {
@@ -449,18 +449,18 @@ test("install.sh : Linux musl (Alpine) → archive officielle linux-x64-musl ; m
   }
 })
 
-test("install.sh : Mac Apple Silicon sous Rosetta → Node.js x64 écarté, archive darwin-arm64", POSIX_ONLY, async () => {
+test("install.sh: Apple Silicon Mac under Rosetta → x64 Node.js ruled out, darwin-arm64 archive", POSIX_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(0) } })
   const ws = workstation()
   try {
-    // Sous Rosetta, uname -m dit x86_64 mais hw.optional.arm64 vaut 1.
+    // Under Rosetta, uname -m says x86_64 but hw.optional.arm64 is 1.
     fakeUname(ws.bin, "Darwin", "x86_64")
     writeExec(join(ws.bin, "sysctl"), `#!/bin/sh\n[ "$2" = hw.optional.arm64 ] && echo 1\n`)
     const rosetta = join(ws.root, "usr-local-bin")
     fakeSystemNode(rosetta, "22.9.0", "x64")
     const r = await install(["--url", srv.url, "--token", TOKEN], ws, { env: { PATH: [rosetta, ws.env.PATH].join(delimiter) } })
     assert.equal(r.code, 5, r.stderr)
-    assert.match(r.stdout, /en x64 \(Rosetta\)/)
+    assert.match(r.stdout, /is x64 \(Rosetta\)/)
     assert.ok(ws.curlLog().includes(`node-v${NODE_VERSION}-darwin-arm64.tar.gz`), ws.curlLog())
   } finally {
     ws.cleanup()
@@ -468,12 +468,12 @@ test("install.sh : Mac Apple Silicon sous Rosetta → Node.js x64 écarté, arch
   }
 })
 
-test("install.sh sous Windows (Git Bash) : télécharge install.ps1 et lui passe la main, code rendu tel quel", POSIX_ONLY, async () => {
+test("install.sh on Windows (Git Bash): downloads install.ps1 and hands over to it, code returned as is", POSIX_ONLY, async () => {
   const ps1 = readFileSync(installPs1, "utf8")
   const srv = await brainServer({ "/install.ps1": { body: ps1 } })
   const ws = workstation()
   try {
-    // Faux Git Bash : uname de MINGW, cygpath qui marque les chemins Windows « W: », powershell.exe qui affiche ce qu'il reçoit.
+    // Fake Git Bash: MINGW uname, cygpath that marks Windows paths "W:", powershell.exe that prints what it receives.
     writeExec(join(ws.bin, "uname"), "#!/bin/sh\necho MINGW64_NT-10.0-26100\n")
     writeExec(join(ws.bin, "cygpath"), `#!/bin/sh\ncase "$1" in -u) printf '%s\\n' "$2" ;; -w) printf 'W:%s\\n' "$2" ;; esac\n`)
     writeFileSync(
@@ -492,14 +492,14 @@ test("install.sh sous Windows (Git Bash) : télécharge install.ps1 et lui passe
     })
     assert.equal(readFileSync(join(ws.home, "install.ps1"), "utf8"), ps1)
     assert.deepEqual(leftovers(ws.home), [])
-    assert.ok(!existsSync(join(ws.home, "brain.mjs")), "le travail est fait par install.ps1")
+    assert.ok(!existsSync(join(ws.home, "brain.mjs")), "the work is done by install.ps1")
 
-    // Une page HTML à la place d'install.ps1 : code 5, jamais exécutée.
+    // An HTML page instead of install.ps1: code 5, never run.
     const html = await brainServer({ "/install.ps1": { body: HTML } })
     try {
       const h = await install(["--url", html.url, "--token", TOKEN], ws)
       assert.equal(h.code, 5, h.stderr)
-      assert.match(h.stderr, /n'est pas le script d'installation/)
+      assert.match(h.stderr, /is not the install script/)
       assert.equal(readFileSync(join(ws.home, "install.ps1"), "utf8"), ps1)
     } finally {
       await html.close()
@@ -510,11 +510,11 @@ test("install.sh sous Windows (Git Bash) : télécharge install.ps1 et lui passe
   }
 })
 
-test("install.sh : copie privée de Node.js vraiment téléchargée et vérifiée (BRAIN_TEST_NETWORK=1)", { skip: WIN ? "POSIX seulement" : NETWORK ? false : "BRAIN_TEST_NETWORK=1 pour télécharger Node.js" }, async () => {
+test("install.sh: private copy of Node.js really downloaded and checked (BRAIN_TEST_NETWORK=1)", { skip: WIN ? "POSIX only" : NETWORK ? false : "BRAIN_TEST_NETWORK=1 to download Node.js" }, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(3) } })
   const ws = workstation()
   try {
-    // Une ancienne copie privée en place : la nouvelle la remplace (échange sans perte).
+    // An old private copy in place: the new one replaces it (swap without loss).
     fakePrivateNode(ws.home, "22.1.0")
     const env = { COMPANY_BRAIN_FORCE_PRIVATE_NODE: "1", ALLOW_NODEJS_ORG: "1" }
     const r = await install(["--url", srv.url, "--token", TOKEN], ws, { env, timeoutMs: 300_000 })
@@ -524,7 +524,7 @@ test("install.sh : copie privée de Node.js vraiment téléchargée et vérifié
     assert.deepEqual(clientOutput(r.stdout).argv, ["setup", "--url", srv.url, "--token", TOKEN])
     assert.match(readFileSync(join(ws.home, "brain"), "utf8"), new RegExp(`^exec '${esc(priv)}' `, "m"))
     assert.deepEqual(leftovers(ws.home), [])
-    // Relancé : la copie privée à la version figée est gardée, sans nouveau téléchargement.
+    // Run again: the private copy at the pinned version is kept, without a new download.
     const again = await install(["--url", srv.url, "--token", TOKEN], ws, { env })
     assert.equal(again.code, 3, again.stderr)
     assert.equal(ws.curlLog().split("\n").filter((l) => l.includes("nodejs.org")).length, 1)
@@ -536,17 +536,17 @@ test("install.sh : copie privée de Node.js vraiment téléchargée et vérifié
 
 // --- install.ps1 ---------------------------------------------------------------------------------------------------
 
-test("install.ps1 : ASCII pur (Windows PowerShell 5.1 lit un .ps1 sans BOM en ANSI) et commence par la marque vérifiée par install.sh", () => {
+test("install.ps1: pure ASCII (Windows PowerShell 5.1 reads a .ps1 without a BOM as ANSI) and starts with the mark checked by install.sh", () => {
   const bytes = readFileSync(installPs1)
   const bad = [...bytes].findIndex((b) => b > 0x7e || (b < 0x20 && b !== 0x0a && b !== 0x0d && b !== 0x09))
-  assert.equal(bad, -1, `caractère non ASCII à l'octet ${bad} : ${bytes.subarray(Math.max(0, bad - 40), bad + 10).toString("latin1")}`)
+  assert.equal(bad, -1, `non-ASCII character at byte ${bad}: ${bytes.subarray(Math.max(0, bad - 40), bad + 10).toString("latin1")}`)
   assert.ok(bytes.toString("ascii").startsWith("# NOS Brainer"))
 })
 
-/** PowerShell disponibles sur ce poste : pwsh (7) partout, powershell.exe (5.1) sous Windows. */
+/** PowerShells available on this computer: pwsh (7) everywhere, powershell.exe (5.1) on Windows. */
 const powershells = [...(has("pwsh", ["-NoProfile", "-Command", "exit 0"]) ? ["pwsh"] : []), ...(WIN && has("powershell.exe", ["-NoProfile", "-Command", "exit 0"]) ? ["powershell.exe"] : [])]
 
-test("install.ps1 : analysé sans erreur par PowerShell", { skip: powershells.length ? false : "ni pwsh ni powershell.exe" }, () => {
+test("install.ps1: parsed without errors by PowerShell", { skip: powershells.length ? false : "neither pwsh nor powershell.exe" }, () => {
   const path = installPs1.replace(/'/g, "''")
   for (const ps of powershells) {
     const script = `$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('${path}', [ref]$null, [ref]$e); $e | ForEach-Object { $_.ToString() }; exit $e.Count`
@@ -555,7 +555,7 @@ test("install.ps1 : analysé sans erreur par PowerShell", { skip: powershells.le
   }
 })
 
-/** install.ps1 lancé comme par le prompt : powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 <options>. */
+/** install.ps1 run as the prompt does: powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 <options>. */
 function installPs(ps: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) {
   return run(ps, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", installPs1, ...args], { env, timeoutMs })
 }
@@ -567,21 +567,21 @@ function psEnv(home: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return { ...env, no_proxy: noProxy, NO_PROXY: noProxy }
 }
 
-// Hors Windows, pwsh exécute la même logique (arguments, adresse, téléchargement, vérification, raccourcis) avec le
-// Node.js du système : de quoi tester install.ps1 sur la CI Linux. Ce qui est propre à Windows est testé plus bas.
+// Outside Windows, pwsh runs the same logic (arguments, address, download, check, shortcuts) with the system
+// Node.js: enough to test install.ps1 on the Linux CI. What is specific to Windows is tested further down.
 const pwshHere = !WIN && powershells.includes("pwsh") && systemNodeUsable
-test("install.ps1 (pwsh hors Windows) : options, --url= recollé, code de setup rendu, raccourcis ; HTML → 5 ; sans --url → 2", { skip: pwshHere ? false : "pwsh absent, ou Windows" }, async () => {
+test("install.ps1 (pwsh outside Windows): options, --url= joined back, setup's code returned, shortcuts; HTML → 5; without --url → 2", { skip: pwshHere ? false : "pwsh missing, or Windows" }, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(3) } })
   const root = tempDir("brain-install-ps-")
   const home = join(root, "brain home")
-  // Le Node.js qui fait tourner ces tests d'abord dans le PATH : c'est lui qu'install.ps1 doit retenir.
+  // The Node.js running these tests first in the PATH: it is the one install.ps1 must keep.
   const env = psEnv(home, { PATH: [dirname(process.execPath), process.env.PATH].join(delimiter) })
   try {
-    // "--url=http://…" : powershell -File le coupe en deux ; install.ps1 doit le recoller, pour lui comme pour setup.
+    // "--url=http://…": powershell -File splits it in two; install.ps1 must join it back, for itself as for setup.
     const r = await installPs("pwsh", [`--url=${srv.url}/`, "--token", TOKEN, "--wait", "300"], env)
     assert.equal(r.code, 3, `${r.stdout}\n${r.stderr}`)
     assert.deepEqual(clientOutput(r.stdout), { argv: ["setup", `--url=${srv.url}/`, "--token", TOKEN, "--wait", "300"], home })
-    assert.ok(!(r.stdout.split("\n").filter((l) => !l.startsWith('{"argv"')).join("\n") + r.stderr).includes(TOKEN), "jeton affiché")
+    assert.ok(!(r.stdout.split("\n").filter((l) => !l.startsWith('{"argv"')).join("\n") + r.stderr).includes(TOKEN), "token shown")
     const cmd = readFileSync(join(home, "brain.cmd"), "latin1")
     assert.equal(cmd, `@setlocal\r\n@set "COMPANY_BRAIN_HOME=${home}"\r\n@"${realNode}" "%~dp0brain.mjs" %*\r\n`)
     const s = await run("sh", [join(home, "brain"), "status"], { env: { ...process.env, COMPANY_BRAIN_HOME: undefined }, cwd: tmpdir() })
@@ -592,12 +592,12 @@ test("install.ps1 (pwsh hors Windows) : options, --url= recollé, code de setup 
     try {
       const h = await installPs("pwsh", ["--url", html.url, "--token", TOKEN], env)
       assert.equal(h.code, 5, h.stderr)
-      assert.match(h.stderr, /n'est pas le client du cerveau/)
-      assert.equal(readFileSync(join(home, "brain.mjs"), "utf8"), fakeClient(3), "l'ancien client reste intact")
+      assert.match(h.stderr, /is not the brain client/)
+      assert.equal(readFileSync(join(home, "brain.mjs"), "utf8"), fakeClient(3), "the old client stays intact")
     } finally {
       await html.close()
     }
-    // --join (message d'équipe) : join au lieu de setup, mêmes options, code rendu tel quel.
+    // --join (team message): join instead of setup, same options, code returned as is.
     const joinSrv = await brainServer({ "/brain.mjs": { body: fakeClient(8) } })
     try {
       const j = await installPs("pwsh", ["--url", joinSrv.url, "--join", "cj_test", "--name", "Léa Bernard"], env)
@@ -618,16 +618,16 @@ test("install.ps1 (pwsh hors Windows) : options, --url= recollé, code de setup 
 })
 
 /**
- * La ligne Windows du prompt, telle quelle, passée à `powershell -Command` comme par l'outil PowerShell de Claude Code :
- * le code de setup doit remonter (3, 6), et un téléchargement raté donner 5. Hors Windows (pwsh), « \\ » n'est pas un
- * séparateur de chemin : remplacé par « / » pour l'essai, et `powershell` par `pwsh`.
+ * The prompt's Windows line, as is, passed to `powershell -Command` as Claude Code's PowerShell tool does:
+ * setup's code must come back up (3, 6), and a failed download give 5. Outside Windows (pwsh), "\\" is not a
+ * path separator: replaced with "/" for the trial, and `powershell` with `pwsh`.
  */
 async function promptLine(ps: string, files: Record<string, { status?: number; body: string }>): Promise<Run> {
   const srv = await brainServer(files)
   const profile = tempDir("brain-prompt-ps-")
   try {
     const windows = installCommands(srv.url, TOKEN).windows
-    if (!windows) throw new Error("sans certificat privé, le prompt a toujours une commande Windows")
+    if (!windows) throw new Error("without a private certificate, the prompt always has a Windows command")
     let line = windows
     if (!WIN) line = line.replace(/\\/g, "/").replace(/\bpowershell -NoProfile/, `${ps} -NoProfile`)
     const env: NodeJS.ProcessEnv = { ...process.env, USERPROFILE: profile }
@@ -641,12 +641,12 @@ async function promptLine(ps: string, files: Record<string, { status?: number; b
 }
 
 const promptShell = WIN ? (powershells.includes("powershell.exe") ? "powershell.exe" : "") : pwshHere ? "pwsh" : ""
-test("ligne Windows du prompt : code de setup rendu tel quel, téléchargement raté → 5, jeton jamais affiché", { skip: promptShell ? false : "ni powershell.exe (Windows) ni pwsh" }, async () => {
+test("Windows line of the prompt: setup's code returned as is, failed download → 5, token never shown", { skip: promptShell ? false : "neither powershell.exe (Windows) nor pwsh" }, async () => {
   const ps1 = { body: readFileSync(installPs1, "utf8") }
   for (const code of [0, 3, 6]) {
     const r = await promptLine(promptShell, { "/install.ps1": ps1, "/brain.mjs": { body: fakeClient(code) } })
     assert.equal(r.code, code, `${r.stdout}\n${r.stderr}`)
-    assert.ok(!(r.stdout.split("\n").filter((l) => !l.startsWith('{"argv"')).join("\n") + r.stderr).includes(TOKEN), "jeton affiché")
+    assert.ok(!(r.stdout.split("\n").filter((l) => !l.startsWith('{"argv"')).join("\n") + r.stderr).includes(TOKEN), "token shown")
   }
   const missing = await promptLine(promptShell, { "/brain.mjs": { body: fakeClient(0) } })
   assert.equal(missing.code, 5, `${missing.stdout}\n${missing.stderr}`)
@@ -654,16 +654,16 @@ test("ligne Windows du prompt : code de setup rendu tel quel, téléchargement r
 
 // --- Windows -------------------------------------------------------------------------------------------------------
 
-/** Lance brain.cmd par cmd, comme depuis un terminal Windows. */
+/** Runs brain.cmd through cmd, as from a Windows terminal. */
 function runCmd(file: string, args: string[], env: NodeJS.ProcessEnv) {
   return run("cmd.exe", ["/d", "/s", "/c", `""${file}" ${args.join(" ")}"`], { env, windowsVerbatimArguments: true })
 }
 
-test("install.ps1 (Windows) : --url= recollé, brain.cmd et brain écrits, setup lancé avec les mêmes options, code rendu ; brain.cmd marche par cmd", WIN_ONLY, async () => {
+test("install.ps1 (Windows): --url= joined back, brain.cmd and brain written, setup run with the same options, code returned; brain.cmd works through cmd", WIN_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(3) } })
   const home = join(tempDir("brain-install-win-"), "brain")
   try {
-    // Forme --url= : Windows PowerShell 5.1 coupe aussi "-nom:valeur" ; install.ps1 doit recoller l'adresse.
+    // --url= form: Windows PowerShell 5.1 also splits "-name:value"; install.ps1 must join the address back.
     const r = await installPs("powershell.exe", [`--url=${srv.url}`, "--token", TOKEN, "--no-open"], psEnv(home))
     assert.equal(r.code, 3, `${r.stdout}\n${r.stderr}`)
     assert.deepEqual(clientOutput(r.stdout), { argv: ["setup", `--url=${srv.url}`, "--token", TOKEN, "--no-open"], home })
@@ -679,15 +679,15 @@ test("install.ps1 (Windows) : --url= recollé, brain.cmd et brain écrits, setup
   }
 })
 
-test("install.ps1 (Windows) : page HTML au lieu du client → code 5, l'ancien client reste intact", WIN_ONLY, async () => {
+test("install.ps1 (Windows): HTML page instead of the client → code 5, the old client stays intact", WIN_ONLY, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: HTML } })
   const home = join(tempDir("brain-install-win-"), "brain")
   try {
     mkdirSync(home, { recursive: true })
-    writeFileSync(join(home, "brain.mjs"), "// ancien client\n")
+    writeFileSync(join(home, "brain.mjs"), "// old client\n")
     const r = await installPs("powershell.exe", ["--url", srv.url, "--token", TOKEN], psEnv(home))
     assert.equal(r.code, 5, `${r.stdout}\n${r.stderr}`)
-    assert.equal(readFileSync(join(home, "brain.mjs"), "utf8"), "// ancien client\n")
+    assert.equal(readFileSync(join(home, "brain.mjs"), "utf8"), "// old client\n")
   } finally {
     rmSync(dirname(home), { recursive: true, force: true })
     await srv.close()
@@ -695,13 +695,13 @@ test("install.ps1 (Windows) : page HTML au lieu du client → code 5, l'ancien c
 })
 
 const gitBash = WIN ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe") : ""
-test("install.sh dans Git Bash (Windows) : passe la main à install.ps1 et rend le code de setup", { skip: WIN ? (existsSync(gitBash) ? false : "Git Bash absent") : "Windows seulement" }, async () => {
+test("install.sh in Git Bash (Windows): hands over to install.ps1 and returns setup's code", { skip: WIN ? (existsSync(gitBash) ? false : "Git Bash missing") : "Windows only" }, async () => {
   const ps1 = readFileSync(installPs1, "utf8")
   const srv = await brainServer({ "/install.ps1": { body: ps1 }, "/brain.mjs": { body: fakeClient(3) } })
   const root = tempDir("brain-install-gitbash-")
   const home = join(root, "brain")
   try {
-    // Copie en fins de ligne LF : un dépôt extrait avec core.autocrlf=true donnerait un install.sh illisible par sh.
+    // Copy with LF line endings: a repo checked out with core.autocrlf=true would give an install.sh sh cannot read.
     const sh = join(root, "install.sh")
     writeFileSync(sh, readFileSync(installSh, "utf8").replace(/\r\n/g, "\n"))
     const r = await run(gitBash, [sh.replace(/\\/g, "/"), "--url", srv.url, "--token", TOKEN], { env: psEnv(home) })
@@ -714,7 +714,7 @@ test("install.sh dans Git Bash (Windows) : passe la main à install.ps1 et rend 
   }
 })
 
-test("install.ps1 (Windows) : copie privée de Node.js (zip officiel) vraiment téléchargée et vérifiée (BRAIN_TEST_NETWORK=1)", { skip: WIN ? (NETWORK ? false : "BRAIN_TEST_NETWORK=1 pour télécharger Node.js") : "Windows seulement" }, async () => {
+test("install.ps1 (Windows): private copy of Node.js (official zip) really downloaded and checked (BRAIN_TEST_NETWORK=1)", { skip: WIN ? (NETWORK ? false : "BRAIN_TEST_NETWORK=1 to download Node.js") : "Windows only" }, async () => {
   const srv = await brainServer({ "/brain.mjs": { body: fakeClient(3) } })
   const home = join(tempDir("brain-install-win-"), "brain")
   try {

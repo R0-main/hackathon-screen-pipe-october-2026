@@ -1,7 +1,7 @@
-// `moderate` : un passage du modérateur du cerveau fait par Claude Code sur le poste d'un admin (`claude -p`, Sonnet, son
-// abonnement). La synchro planifiée d'un poste admin le lance toutes les 15 min, avec le jeton enregistré à l'installation
-// (`connect-claude`). Le poste lit ce qui est arrivé depuis le passage précédent, Claude décide ici, le cerveau applique.
-// Le jeton Claude ne quitte jamais le poste.
+// `moderate`: a run of the brain's moderator done by Claude Code on an admin's computer (`claude -p`, Sonnet, their
+// subscription). The scheduled sync of an admin's computer runs it every 15 min, with the token saved at install
+// (`connect-claude`). The computer reads what arrived since the previous run, Claude decides here, the brain applies.
+// The Claude token never leaves the computer.
 
 import { MODERATION_REASON_LABELS, buildCliModerationPrompt, parseModerationJson, truncate, type ModerationVerdict } from "@brain/core"
 import { ApiError, BrainApi } from "./api"
@@ -15,15 +15,15 @@ type Log = (s: string) => void
 
 function adminOnly(err: unknown, what: string): never {
   if (err instanceof ApiError && err.status === 403) {
-    throw new UserError(`moderate est réservé aux administrateurs du cerveau : votre jeton n'a pas les droits admin (${what} refusé, 403).`)
+    throw new UserError(`moderate is reserved to the brain's administrators: your token does not have admin rights (${what} refused, 403).`)
   }
   if (err instanceof ApiError && err.status === 404) {
-    throw new UserError("Ce cerveau ne connaît pas encore le modérateur (route absente, 404) : mettez le serveur à jour.")
+    throw new UserError("This brain does not know the moderator yet (route missing, 404): update the server.")
   }
   throw err
 }
 
-/** `brain.mjs moderate [--dry-run] [--refresh-status]` (admin) : matière → Claude Code ici → POST /api/admin/moderation. */
+/** `brain.mjs moderate [--dry-run] [--refresh-status]` (admin): material → Claude Code here → POST /api/admin/moderation. */
 export async function cmdModerate(opts: { dryRun?: boolean; refreshStatus?: boolean; timeoutMs?: number } = {}, log: Log = console.log): Promise<number> {
   const cfg = requireConfig()
   const api = new BrainApi(cfg.url, cfg.token)
@@ -34,32 +34,32 @@ export async function cmdModerate(opts: { dryRun?: boolean; refreshStatus?: bool
     adminOnly(err, "GET /api/admin/moderation/input")
   }
   if ("skipped" in material) {
-    log(material.skipped === "off" ? "moderate : le modérateur est coupé (Admin → Zones → Modérateur)." : "moderate : rien de nouveau à relire.")
+    log(material.skipped === "off" ? "moderate: the moderator is off (Admin → Zones → Moderator)." : "moderate: nothing new to review.")
     return 0
   }
   const { input, remaining } = material
-  log(`moderate — ${input.companyName || "entreprise"} : ${input.items.length} connaissance(s) à relire${remaining ? ` (${remaining} au passage suivant)` : ""}.`)
+  log(`moderate — ${input.companyName || "company"}: ${input.items.length} knowledge item(s) to review${remaining ? ` (${remaining} at the next run)` : ""}.`)
 
   const claudePath = cfg.use_claude_cli !== false ? findOnPath("claude") : null
-  if (!claudePath) throw new UserError("CLI `claude` introuvable : installez Claude Code (`npm install -g @anthropic-ai/claude-code`) et donnez-lui un jeton (`claude setup-token`).")
+  if (!claudePath) throw new UserError("`claude` CLI not found: install Claude Code (`npm install -g @anthropic-ai/claude-code`) and give it a token (`claude setup-token`).")
   const cli = claudeCliOptions(cfg)
-  const token = cli.oauthToken ? ", jeton Claude Code de la config" : process.env.CLAUDE_CODE_OAUTH_TOKEN ? ", jeton CLAUDE_CODE_OAUTH_TOKEN" : ""
-  log(`Claude Code (\`claude -p\`, Sonnet${token}) : relecture…`)
+  const token = cli.oauthToken ? ", Claude Code token from the config" : process.env.CLAUDE_CODE_OAUTH_TOKEN ? ", CLAUDE_CODE_OAUTH_TOKEN token" : ""
+  log(`Claude Code (\`claude -p\`, Sonnet${token}): reviewing…`)
   const run = await runClaudeCli(claudePath, buildCliModerationPrompt(input), opts.timeoutMs ?? MODERATION_CLI_TIMEOUT_MS, cli)
   const fail = cliFailure(run)
   if (fail) {
     const detail = maskOwnSecrets(fail.error, ownSecrets(cfg)).text
-    if (fail.failure === "auth") throw new UserError(`${claudeAuthHelp(detail)} Puis relancez \`moderate\`.`)
-    throw new UserError(`\`claude -p\` a échoué : ${detail}. Rien n'est appliqué : ces connaissances seront relues au passage suivant.`)
+    if (fail.failure === "auth") throw new UserError(`${claudeAuthHelp(detail)} Then run \`moderate\` again.`)
+    throw new UserError(`\`claude -p\` failed: ${detail}. Nothing is applied: this knowledge will be reviewed at the next run.`)
   }
   const verdicts = parseModerationJson(run.stdout)
   if (!verdicts) {
     throw new UserError(
-      `Réponse de \`claude -p\` illisible (pas de JSON « verdicts ») : ${truncate(maskOwnSecrets(run.stdout.trim(), ownSecrets(cfg)).text, 200) || "sortie vide"}. Rien n'est appliqué.`,
+      `Unreadable \`claude -p\` answer (no "verdicts" JSON): ${truncate(maskOwnSecrets(run.stdout.trim(), ownSecrets(cfg)).text, 200) || "empty output"}. Nothing is applied.`,
     )
   }
 
-  // Numéros → identifiants : seules les connaissances de la matière, chacune une fois.
+  // Numbers → ids: only the knowledge of the material, each one once.
   const byRef = new Map(input.items.map((i) => [i.ref, i]))
   const seen = new Set<number>()
   const decided: (Omit<ModerationVerdict, "ref"> & { id: string })[] = []
@@ -73,11 +73,11 @@ export async function cmdModerate(opts: { dryRun?: boolean; refreshStatus?: bool
     const v = decided.find((d) => d.id === i.id)
     if (!v || v.decision === "publish") continue
     const what = `[${i.zone}] ${truncate(i.title, 80)}`
-    if (v.decision === "edit") log(`  ✎ corrigée : ${what}${v.title ? ` → ${truncate(v.title, 80)}` : ""}${v.zone && v.zone !== i.zone ? ` (vers ${v.zone})` : ""}`)
-    else log(`  ✕ retirée : ${what} — ${MODERATION_REASON_LABELS[v.category ?? "autre"]}`)
+    if (v.decision === "edit") log(`  ✎ edited: ${what}${v.title ? ` → ${truncate(v.title, 80)}` : ""}${v.zone && v.zone !== i.zone ? ` (to ${v.zone})` : ""}`)
+    else log(`  ✕ removed: ${what} — ${MODERATION_REASON_LABELS[v.category ?? "other"]}`)
   }
   if (opts.dryRun) {
-    log("Rien n'a été appliqué (simulation).")
+    log("Nothing was applied (dry run).")
     return 0
   }
   let result
@@ -89,7 +89,7 @@ export async function cmdModerate(opts: { dryRun?: boolean; refreshStatus?: bool
   } catch (err) {
     adminOnly(err, "POST /api/admin/moderation")
   }
-  log(`Modérateur : ${result.reviewed} relue(s), ${result.edited} corrigée(s), ${result.rejected} retirée(s)${result.remaining ? `, ${result.remaining} en attente` : ""}.`)
+  log(`Moderator: ${result.reviewed} reviewed, ${result.edited} edited, ${result.rejected} removed${result.remaining ? `, ${result.remaining} waiting` : ""}.`)
   if (opts.refreshStatus && result.reviewed > 0) {
     log("")
     const { cmdRefreshStatus } = await import("./refresh-status")
@@ -99,14 +99,14 @@ export async function cmdModerate(opts: { dryRun?: boolean; refreshStatus?: bool
 }
 
 /**
- * Synchro planifiée d'un poste admin : un passage du modérateur, puis le résumé s'il y avait du nouveau. Une erreur
- * (Claude déconnecté, cerveau sans modérateur) est écrite dans le journal de la synchro, jamais remontée.
+ * Scheduled sync of an admin's computer: one moderator run, then the summary if there was something new. An error
+ * (Claude signed out, brain without a moderator) is written to the sync log, never thrown.
  */
 export async function scheduledModeration(log: Log = console.log): Promise<void> {
   if (loadCache()?.whoami?.role !== "admin") return
   try {
     await cmdModerate({ refreshStatus: true }, log)
   } catch (err) {
-    log(`Modérateur : ${(err as Error).message}`)
+    log(`Moderator: ${(err as Error).message}`)
   }
 }

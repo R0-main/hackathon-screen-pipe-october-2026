@@ -1,5 +1,5 @@
--- Tâches importées par un connecteur (Linear, Todoist) : d'où elles viennent, leur identifiant chez l'outil (pour les
--- mettre à jour sans doublon) et le lien pour les ouvrir. Les tâches extraites des sessions IA gardent ces colonnes nulles.
+-- Tasks imported by a connector (Linear, Todoist): where they come from, their id in the tool (to update them
+-- without duplicates) and the link to open them. Tasks extracted from AI sessions keep these columns null.
 
 alter table tasks add column if not exists external_source text;
 alter table tasks add column if not exists external_id text;

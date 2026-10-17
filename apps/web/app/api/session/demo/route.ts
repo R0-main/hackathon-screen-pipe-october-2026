@@ -8,11 +8,11 @@ import { ensureDemoBrain } from "@/lib/demo-seed"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-/** Mode démo uniquement (BRAIN_DEMO=1) : liste des comptes pour la connexion en un clic. */
+/** Demo mode only (BRAIN_DEMO=1): list of accounts for one-click sign-in. */
 export async function GET() {
-  if (!isDemoMode()) return error(404, "Mode démo désactivé.")
+  if (!isDemoMode()) return error(404, "Demo mode is off.")
   try {
-    // Déploiement neuf : la base est vide, on l'amorce avec l'entreprise fictive de la démo.
+    // Fresh deployment: the database is empty, it is seeded with the demo's fictional company.
     await ensureDemoBrain()
     const profiles = await getStore().listProfiles()
     return json({ users: profiles.map((p) => ({ id: p.id, name: p.name, title: p.title, role: p.role })) })
@@ -24,12 +24,12 @@ export async function GET() {
 const Schema = z.object({ userId: z.string().max(64) })
 
 export async function POST(req: Request) {
-  if (!isDemoMode()) return error(404, "Mode démo désactivé.")
+  if (!isDemoMode()) return error(404, "Demo mode is off.")
   const body = await parseBody(req, Schema)
   if ("response" in body) return body.response
   try {
     const profile = await getStore().getProfile(body.data.userId)
-    if (!profile) return error(404, "Membre introuvable.")
+    if (!profile) return error(404, "Member not found.")
     await openSession(profile.id)
     return json({ ok: true, profile })
   } catch (err) {

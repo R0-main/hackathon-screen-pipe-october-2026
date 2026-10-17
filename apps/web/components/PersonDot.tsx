@@ -6,15 +6,15 @@ import { useBrainLiveOptional } from "./BrainLive"
 import { DOT_PROFILE, assignLooks, dotLook, type DotLook } from "./dot-model"
 import { zoneColor } from "./ui"
 
-/** Comme dans le cerveau : une zone verrouillée, ou personne sans zone, donne un dot gris. */
+/** As in the brain: a locked zone, or a person without a zone, gives a gray dot. */
 const NEUTRAL = "#b8b8b8"
 const INK = "#141414"
 
-// Repère du modèle 3D (une unité de rayon, base à y = 0), y retourné pour le SVG. Le cadre rond entoure le dot et sa tenue.
+// Frame of the 3D model (one unit of radius, base at y = 0), y flipped for the SVG. The round frame surrounds the dot and its outfit.
 const FRAME = { cy: -0.74, r: 1.4 }
 const VIEW = `${-FRAME.r} ${FRAME.cy - FRAME.r} ${FRAME.r * 2} ${FRAME.r * 2}`
 
-/** Silhouette de face du corps : le profil tourné, mis à plat et lissé (Catmull-Rom). */
+/** Front silhouette of the body: the turned profile, flattened and smoothed (Catmull-Rom). */
 const BODY = (() => {
   const right = DOT_PROFILE.slice(1).map(([x, y]) => [x, -y])
   const pts = [...right, ...right.slice(0, -1).reverse().map(([x, y]) => [-x, y])]
@@ -31,8 +31,8 @@ const BODY = (() => {
 const EYE_Y = -0.86
 
 /**
- * Le dot d'une personne à plat, dans un rond : sa photo de profil. Même corps de feutrine, même couleur de zone et même
- * tenue que dans le cerveau. Décoratif : le nom est toujours écrit à côté.
+ * A person's dot, flat, in a circle: their profile picture. Same felt body, same zone color and same outfit as in the
+ * brain. Decorative: the name is always written next to it.
  */
 export function PersonDot(props: { id: string; color?: string; look?: DotLook; size: number; bg?: "bone" | "surface"; dashed?: boolean; className?: string }) {
   const { size, color = NEUTRAL, look = dotLook(props.id), bg = "bone", className = "" } = props
@@ -52,7 +52,7 @@ export function PersonDot(props: { id: string; color?: string; look?: DotLook; s
           <circle cx={0} cy={FRAME.cy} r={FRAME.r} />
         </clipPath>
         <clipPath id={`${uid}-felt`}>{felt}</clipPath>
-        {/* Lumière en haut à gauche, comme la lampe de la scène ; le bord s'assombrit (feutrine, pas de reflet net). */}
+        {/* Light at the top left, like the scene's lamp; the edge darkens (felt, no sharp highlight). */}
         <radialGradient id={`${uid}-light`} gradientUnits="userSpaceOnUse" cx={-0.38} cy={-1.18} r={1.5}>
           <stop offset="0" stopColor="#fff" stopOpacity={0.42} />
           <stop offset="0.65" stopColor="#fff" stopOpacity={0} />
@@ -137,7 +137,7 @@ function Face({ look }: { look: DotLook }) {
 export type PersonLook = { color: string; look: DotLook }
 const looksCache = new WeakMap<DashboardState, Map<string, PersonLook>>()
 
-/** Couleur (sa zone) et tenue de chacun, calculées comme le cerveau les calcule : un même état, une seule fois. */
+/** Everyone's color (their zone) and outfit, computed the way the brain computes them: one state, once. */
 export function peopleLooks(state: DashboardState): Map<string, PersonLook> {
   const hit = looksCache.get(state)
   if (hit) return hit
@@ -154,8 +154,8 @@ export function peopleLooks(state: DashboardState): Map<string, PersonLook> {
 }
 
 /**
- * Le dot d'un membre de l'équipe, retrouvé dans l'état du cerveau (sa zone, sa tenue). Hors du cerveau (création de
- * l'entreprise), ou pour quelqu'un qu'il ne connaît pas encore, `color` et la tenue tirée de l'identifiant prennent le relais.
+ * A team member's dot, found in the brain's state (their zone, their outfit). Outside the brain (company creation), or
+ * for someone it doesn't know yet, `color` and the outfit drawn from the id take over.
  */
 export function PersonAvatar(props: { id: string; size: number; color?: string; bg?: "bone" | "surface"; dashed?: boolean; className?: string }) {
   const live = useBrainLiveOptional()

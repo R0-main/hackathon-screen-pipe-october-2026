@@ -31,7 +31,7 @@ before(async () => {
 
 after(() => srv.close())
 
-// spawn asynchrone : le faux serveur tourne dans ce processus et doit pouvoir répondre.
+// Asynchronous spawn: the fake server runs in this process and must be able to answer.
 function runHook(input: unknown, env: Record<string, string> = {}): Promise<{ status: number | null; stdout: string; ms: number }> {
   const t0 = Date.now()
   return new Promise((resolve) => {
@@ -50,9 +50,9 @@ function lastEvent(): Recorded | undefined {
   return srv.requests.filter((r) => r.url === "/api/events").at(-1)
 }
 
-test("UserPromptSubmit : envoie zones + empreinte + résumé masqué, n'écrit rien sur stdout", async () => {
+test("UserPromptSubmit: sends zones + fingerprint + redacted summary, writes nothing on stdout", async () => {
   const before = srv.requests.length
-  const prompt = "Comment déployer la migration Supabase en production ? ma clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz"
+  const prompt = "How do I deploy the Supabase migration to production? my key sk-ant-api03-abcdefghijklmnopqrstuvwxyz"
   const r = await runHook({ session_id: "sess-1", transcript_path: "/tmp/x.jsonl", cwd: "/w", hook_event_name: "UserPromptSubmit", prompt })
   assert.equal(r.status, 0)
   assert.equal(r.stdout, "")
@@ -67,22 +67,22 @@ test("UserPromptSubmit : envoie zones + empreinte + résumé masqué, n'écrit r
   assert.equal(body.session_id, "sess-1")
   assert.ok(typeof body.summary === "string" && body.summary.length <= 160)
   assert.ok(!String(body.summary).includes("sk-ant"))
-  assert.match(String(body.summary), /\[secret masqué\]/)
+  assert.match(String(body.summary), /\[secret redacted\]/)
 })
 
-test("SessionStart : une seule ligne de contexte + événement started", async () => {
+test("SessionStart: a single line of context + started event", async () => {
   const r = await runHook({ session_id: "sess-2", hook_event_name: "SessionStart", source: "startup" })
   assert.equal(r.status, 0)
   const lines = r.stdout.trim().split("\n")
   assert.equal(lines.length, 1)
-  assert.match(lines[0], /Cerveau d'entreprise de Fournil connecté/)
+  assert.match(lines[0], /Company brain for Fournil connected/)
   assert.match(lines[0], /Dev/)
   assert.match(lines[0], /search_brain/)
   assert.match(lines[0], /company-brain/)
   assert.deepEqual(lastEvent()!.body, { agent: "claude-code", type: "started", session_id: "sess-2" })
 })
 
-test("Stop : événement stopped ; événement inconnu ignoré", async () => {
+test("Stop: stopped event; unknown event ignored", async () => {
   await runHook({ session_id: "sess-3", hook_event_name: "Stop" })
   assert.deepEqual(lastEvent()!.body, { agent: "claude-code", type: "stopped", session_id: "sess-3" })
   const n = srv.requests.length
@@ -91,7 +91,7 @@ test("Stop : événement stopped ; événement inconnu ignoré", async () => {
   assert.equal(srv.requests.length, n)
 })
 
-test("COMPANY_BRAIN_INTERNAL=1 : aucune requête, aucune sortie", async () => {
+test("COMPANY_BRAIN_INTERNAL=1: no request, no output", async () => {
   const n = srv.requests.length
   const r = await runHook({ hook_event_name: "SessionStart" }, { COMPANY_BRAIN_INTERNAL: "1" })
   assert.equal(r.status, 0)
@@ -99,39 +99,39 @@ test("COMPANY_BRAIN_INTERNAL=1 : aucune requête, aucune sortie", async () => {
   assert.equal(srv.requests.length, n)
 })
 
-test("JSON invalide ou cerveau injoignable : code 0, rapide", async () => {
-  assert.equal((await runHook("pas du json")).status, 0)
+test("invalid JSON or brain unreachable: code 0, fast", async () => {
+  assert.equal((await runHook("not json")).status, 0)
   const badHome = tempDir()
   writeFileSync(join(badHome, "config.json"), JSON.stringify({ url: "http://10.255.255.1:81", token: "cb_x" }))
   const r = await runHook({ hook_event_name: "UserPromptSubmit", prompt: "test" }, { COMPANY_BRAIN_HOME: badHome })
   assert.equal(r.status, 0)
   assert.equal(r.stdout, "")
-  assert.ok(r.ms < 6000, `trop lent : ${r.ms} ms`)
+  assert.ok(r.ms < 6000, `too slow: ${r.ms} ms`)
 })
 
 const CACHE: Cache = { updated_at: "", zones: TEST_ZONES }
 const prompt = (p: string) => ({ session_id: "s", hook_event_name: "UserPromptSubmit", prompt: p })
 
-test("eventForHook : prompt perso → ni résumé, ni empreinte, ni zone (même classé par mot-clé)", () => {
+test("eventForHook: personal prompt → no summary, no fingerprint, no zone (even if classified by keyword)", () => {
   for (const p of [
-    "REVIEWPRIV3 écris un message whatsapp à ma femme : je serai en retard ce soir",
-    "réserve-moi un rdv doctolib pour mon fils, et vérifie la facture de la cantine",
+    "REVIEWPRIV3 write a whatsapp message to my wife: I will be late tonight",
+    "book me a doctolib appointment for my son, and check the school canteen invoice",
   ]) {
     const ev = eventForHook(prompt(p), CACHE)!
     assert.deepEqual(ev, { agent: "claude-code", type: "query", zones: [], session_id: "s" }, p)
   }
 })
 
-test("eventForHook : prompt sans zone → empreinte seule, pas de résumé", () => {
-  const p = "Quelle est la meilleure façon de structurer un tableau croisé ?"
+test("eventForHook: prompt without a zone → fingerprint only, no summary", () => {
+  const p = "What is the best way to structure a pivot table?"
   const ev = eventForHook(prompt(p), CACHE)!
   assert.deepEqual(ev.zones, [])
   assert.equal(ev.summary, undefined)
   assert.equal(ev.fingerprint, promptFingerprint(p))
 })
 
-test("eventForHook : prompt classé dans une zone → résumé masqué ; share_prompt_summaries=false → jamais de résumé", () => {
-  const p = "Comment déployer la migration Supabase en production ?"
+test("eventForHook: prompt classified in a zone → redacted summary; share_prompt_summaries=false → never a summary", () => {
+  const p = "How do I deploy the Supabase migration to production?"
   const ev = eventForHook(prompt(p), CACHE)!
   assert.deepEqual(ev.zones, ["dev"])
   assert.equal(ev.summary, p)
@@ -141,20 +141,20 @@ test("eventForHook : prompt classé dans une zone → résumé masqué ; share_p
   assert.equal(off.fingerprint, promptFingerprint(p))
 })
 
-test("eventForHook : prompt d'installation ou jeton du poste collé → rien du texte ne part", () => {
+test("eventForHook: install prompt or the computer's token pasted → nothing of the text goes", () => {
   const install = buildInstallPrompt({ baseUrl: "https://c.example", token: "cb_tqoelDcQG1aiU0jik075v5hdhINhmVhv", name: "Hugo", orgName: "Fournil", zones: ["dev"] })
   assert.deepEqual(eventForHook(prompt(install), CACHE), { agent: "claude-code", type: "query", zones: [], session_id: "s" })
-  const pasted = "Le déploiement en production renvoie 401 avec mon jeton cb_tqoelDcQG1aiU0jik075v5hdhINhmVhv, pourquoi ?"
+  const pasted = "The production deployment returns 401 with my token cb_tqoelDcQG1aiU0jik075v5hdhINhmVhv, why?"
   assert.deepEqual(eventForHook(prompt(pasted), CACHE), { agent: "claude-code", type: "query", zones: [], session_id: "s" })
-  const literal = "Le déploiement en production échoue avec la clé maclesecrete-123456789"
-  assert.deepEqual(eventForHook(prompt(literal), CACHE, { secrets: ["maclesecrete-123456789"] }), { agent: "claude-code", type: "query", zones: [], session_id: "s" })
+  const literal = "The production deployment fails with the key mysecretkey-123456789"
+  assert.deepEqual(eventForHook(prompt(literal), CACHE, { secrets: ["mysecretkey-123456789"] }), { agent: "claude-code", type: "query", zones: [], session_id: "s" })
 })
 
-test("hook réel : share_prompt_summaries=false dans la config → événement sans résumé", async () => {
+test("real hook: share_prompt_summaries=false in the config → event without a summary", async () => {
   const off = tempDir()
   writeFileSync(join(off, "config.json"), JSON.stringify({ url: srv.url, token: "cb_test_token_123456", share_prompt_summaries: false }))
   writeFileSync(join(off, "cache.json"), JSON.stringify({ updated_at: new Date().toISOString(), zones: TEST_ZONES }))
-  const p = "Comment déployer la migration Supabase en production ?"
+  const p = "How do I deploy the Supabase migration to production?"
   const r = await runHook({ session_id: "sess-off", hook_event_name: "UserPromptSubmit", prompt: p }, { COMPANY_BRAIN_HOME: off })
   assert.equal(r.status, 0)
   const body = lastEvent()!.body as Record<string, unknown>
@@ -164,22 +164,22 @@ test("hook réel : share_prompt_summaries=false dans la config → événement s
   assert.equal(body.fingerprint, promptFingerprint(p))
 })
 
-test("hook réel : prompt perso → l'événement envoyé ne contient pas le texte", async () => {
-  const p = "VRFPRIV1 écris un message whatsapp à ma femme : je serai en retard ce soir"
-  await runHook({ session_id: "sess-perso", hook_event_name: "UserPromptSubmit", prompt: p })
+test("real hook: personal prompt → the event sent does not contain the text", async () => {
+  const p = "VRFPRIV1 write a whatsapp message to my wife: I will be late tonight"
+  await runHook({ session_id: "sess-personal", hook_event_name: "UserPromptSubmit", prompt: p })
   const ev = lastEvent()!
-  assert.deepEqual(ev.body, { agent: "claude-code", type: "query", zones: [], session_id: "sess-perso" })
+  assert.deepEqual(ev.body, { agent: "claude-code", type: "query", zones: [], session_id: "sess-personal" })
 })
 
-test("eventForHook : un secret configuré du poste (jeton Screenpipe, jeton Claude Code) n'est jamais envoyé, même non reconnaissable", () => {
-  // Assemblés à l'exécution : aucun motif de secret en clair dans le dépôt.
+test("eventForHook: a configured secret of the computer (Screenpipe token, Claude Code token) is never sent, even when not recognizable", () => {
+  // Assembled at run time: no plain secret pattern in the repo.
   const spTok = ["sp", "-local-", "Kd83hQpz2Lm"].join("")
   const cache: Cache = { updated_at: "", zones: TEST_ZONES.map((z) => ({ ...z })) }
-  const prompt = `Le déploiement de l'API en production échoue avec ${spTok} dans le code`
-  // Prompt contenant un secret configuré : rien du texte ne part.
+  const prompt = `The API deployment to production fails with ${spTok} in the code`
+  // Prompt containing a configured secret: nothing of the text goes.
   const e = eventForHook({ hook_event_name: "UserPromptSubmit", prompt }, cache, { secrets: [spTok] })
   assert.deepEqual(e, { agent: "claude-code", type: "query", zones: [], session_id: undefined })
-  // Sans le secret dans la liste, le texte passe par redact() : la valeur n'est pas reconnue comme un secret générique…
+  // Without the secret in the list, the text goes through redact(): the value is not recognized as a generic secret…
   const plain = eventForHook({ hook_event_name: "UserPromptSubmit", prompt }, cache, {})
   assert.ok(plain?.summary?.includes(spTok))
 })

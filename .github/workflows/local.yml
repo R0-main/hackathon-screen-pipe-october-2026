@@ -1,6 +1,6 @@
-# Cerveau auto-hébergé (docs/LOCAL.md) : l'image Docker se construit, Postgres + cerveau + Caddy démarrent, le certificat
-# racine est servi et épinglé dans le prompt, et un poste s'installe exactement comme le ferait le prompt (sans Screenpipe).
-name: Auto-hébergement (Docker)
+# Self-hosted brain (docs/LOCAL.md): the Docker image builds, Postgres + brain + Caddy start, the root certificate
+# is served and pinned in the prompt, and a computer installs exactly as the prompt would do it (without Screenpipe).
+name: Self-hosting (Docker)
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ on:
 
 jobs:
   compose:
-    name: compose up, HTTPS local, installation d'un poste
+    name: compose up, local HTTPS, install of a computer
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -46,10 +46,10 @@ jobs:
           BRAIN_TLS=internal
           ENV
 
-      - name: Construire et démarrer (Postgres, cerveau, Caddy)
+      - name: Build and start (Postgres, brain, Caddy)
         run: docker compose up -d --build --wait
 
-      - name: Certificat racine servi en HTTP, le même en HTTPS, santé du cerveau
+      - name: Root certificate served over HTTP, the same over HTTPS, brain health
         run: |
           for i in $(seq 1 30); do curl -fsS http://localhost/ca.crt -o ca.crt && break; sleep 2; done
           openssl x509 -in ca.crt -noout -subject -fingerprint -sha256
@@ -59,20 +59,20 @@ jobs:
           echo
           echo "FP=$FP" >> "$GITHUB_ENV"
 
-      - name: Création d'une entreprise (/creer) et prompt d'installation épinglé
+      - name: Create a company (/create) and pinned install prompt
         run: |
           curl -fsS --cacert ca.crt -X POST https://localhost/api/orgs -H 'content-type: application/json' \
-            -d '{"company":"Butine CI","name":"Claire CI","title":"CEO","zones":["compta","dev"]}' -o org.json
+            -d '{"company":"Butine CI","name":"Claire CI","title":"CEO","zones":["finance","dev"]}' -o org.json
           node -e '
             const fs = require("fs");
             const o = JSON.parse(fs.readFileSync("org.json", "utf8"));
-            if (!o.prompt.includes(process.env.FP)) { console.error(o.prompt); throw new Error("empreinte du certificat absente du prompt"); }
+            if (!o.prompt.includes(process.env.FP)) { console.error(o.prompt); throw new Error("certificate fingerprint missing from the prompt"); }
             const token = /--token (cb_[A-Za-z0-9_-]+)/.exec(o.prompt)[1];
             fs.writeFileSync("token.txt", token);
-            console.log("prompt OK (" + o.prompt.length + " caractères), entreprise " + o.org.name);
+            console.log("prompt OK (" + o.prompt.length + " characters), company " + o.org.name);
           '
 
-      - name: Installation d'un poste comme le ferait le prompt (sans Screenpipe)
+      - name: Install a computer as the prompt would do it (without Screenpipe)
         env:
           HOME: ${{ runner.temp }}/home
           CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude
@@ -84,10 +84,10 @@ jobs:
             && curl -fsSL --cacert ~/.company-brain/ca.crt https://localhost/install.sh -o ~/.company-brain/install.sh \
             && sh ~/.company-brain/install.sh --url https://localhost --token "$TOKEN" --ca ~/.company-brain/ca.crt --skip-screenpipe --no-open
           ~/.company-brain/brain status | tee status.txt
-          grep -E "Connexion +: OK — Claire CI, Butine CI" status.txt
-          grep -E "Certificat +: .*empreinte SHA-256 $FP" status.txt
-          grep -E "Hooks Claude +: installés" status.txt
+          grep -E "Connection +: OK — Claire CI, Butine CI" status.txt
+          grep -E "Certificate +: .*SHA-256 fingerprint $FP" status.txt
+          grep -E "Claude hooks +: installed" status.txt
 
-      - name: Journaux des conteneurs
+      - name: Container logs
         if: failure()
         run: docker compose logs --no-color --tail=200

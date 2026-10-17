@@ -1,59 +1,59 @@
-// Le flux entre zones, partagé par le cerveau du dashboard et celui de la page d'accueil : des arcs en tubes,
-// dans lesquels circulent de petites billes de lumière, l'arc gonflant légèrement autour de chacune.
+// The flow between zones, shared by the dashboard brain and the home page brain: tube arcs, in which small light
+// beads flow, the arc swelling slightly around each one.
 
 import type * as THREE from "three"
 import { hashString } from "./brain-geometry"
 
 type ThreeModule = typeof import("three")
 
-/** Assez d'anneaux pour que l'arc gonfle en douceur autour d'une bille, pas plus longue que deux ou trois d'entre eux. */
+/** Enough rings for the arc to swell gently around a bead no longer than two or three of them. */
 const TUBULAR = 384
 const RADIAL = 6
 /**
- * Les billes : par sens et par arc, leur nombre ; leur vitesse (en tours d'arc par seconde) ; leur rayon, relatif à
- * celui de l'arc (sous 1 : elles restent dans le trait) ; leur part de blanc, qui les fait ressortir sur sa couleur.
+ * The beads: per direction and per arc, their number; their speed (in arc turns per second); their radius, relative to
+ * the arc's (under 1: they stay inside the line); their share of white, which makes them stand out on its color.
  */
 const BEADS_PER_WAY = 4
 const BEAD_SPEED = 0.1
 const BEAD_R = 0.6
 const BEAD_LIGHT = 0.88
-/** Allongement des billes le long de l'arc : leur longueur vaut BEAD_STRETCH fois leur largeur. */
+/** Stretch of the beads along the arc: their length is BEAD_STRETCH times their width. */
 const BEAD_STRETCH = 3
-/** Gonflement de l'arc autour de chaque bille : rayon ajouté au cœur de la bille, en part du rayon de l'arc. */
+/** Swelling of the arc around each bead: radius added at the bead's core, as a share of the arc's radius. */
 const BEAD_BULGE = 0.55
-/** Accélération des billes sur l'arc d'une zone active. */
+/** Speed-up of the beads on the arc of an active zone. */
 const FAST = 1.8
 
-/** Un arc entre deux zones, avec ce qu'il faut pour y faire circuler les billes et le faire gonfler. */
+/** An arc between two zones, with what it takes to make beads flow in it and make it swell. */
 export type FlowArc = {
   curve: THREE.CatmullRomCurve3
   from: THREE.Color
   to: THREE.Color
   radius: number
-  /** Décalage de départ des billes, propre à chaque arc : elles ne partent pas toutes ensemble. */
+  /** Starting offset of the beads, specific to each arc: they don't all start together. */
   phase: number
-  /** Le tube : centre de chaque anneau, et direction de chaque sommet depuis ce centre. */
+  /** The tube: center of each ring, and direction of each vertex from that center. */
   tube: THREE.BufferAttribute
   rings: Float32Array
   spokes: Float32Array
   length: number
-  /** À régler par l'appelant à chaque image : billes plus rapides (zone active), force du gonflement (0 à 1). */
+  /** To set by the caller on each frame: faster beads (active zone), strength of the swelling (0 to 1). */
   fast: boolean
   gain: number
 }
 
-/** Le tube d'un arc, en dégradé de la couleur d'une zone à celle de l'autre, prêt à gonfler autour de ses billes. */
+/** An arc's tube, as a gradient from one zone's color to the other's, ready to swell around its beads. */
 export function arcTube(T: ThreeModule, pts: THREE.Vector3[], from: THREE.Color, to: THREE.Color, radius: number, key: string) {
   const curve = new T.CatmullRomCurve3(pts)
   const geo = new T.TubeGeometry(curve, TUBULAR, radius, RADIAL, false)
   const tube = geo.attributes.position as THREE.BufferAttribute
   const cols = new Float32Array(tube.count * 3)
   const tone = new T.Color()
-  // Les sommets du tube vont anneau par anneau : l'anneau donne la position le long de l'arc.
+  // The tube's vertices go ring by ring: the ring gives the position along the arc.
   for (let v = 0; v < tube.count; v++) tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / TUBULAR).toArray(cols, v * 3)
   geo.setAttribute("color", new T.BufferAttribute(cols, 3))
-  // Chaque anneau est centré sur l'arc (au même point que TubeGeometry) ; chaque sommet en part dans une direction
-  // fixe : le gonflement l'y pousse plus loin.
+  // Each ring is centered on the arc (at the same point as TubeGeometry); each vertex leaves it in a fixed
+  // direction: the swelling pushes it further that way.
   const rings = new Float32Array((TUBULAR + 1) * 3)
   const spokes = new Float32Array(tube.count * 3)
   const at = new T.Vector3()
@@ -69,10 +69,10 @@ export function arcTube(T: ThreeModule, pts: THREE.Vector3[], from: THREE.Color,
 }
 
 /**
- * Les billes de lumière de tous les arcs, dans un seul maillage : dans chaque arc, de petites billes vont de A vers
- * B et d'autres de B vers A, en continu et régulièrement espacées. Chacune prend la couleur de l'arc là où elle
- * passe, très éclaircie ; elles rapetissent jusqu'à disparaître en arrivant sur une zone. Dessinées après les arcs
- * (transparents), elles se voient dans le trait au lieu d'être teintées par lui.
+ * The light beads of all arcs, in a single mesh: in each arc, small beads go from A to B and others from B to A,
+ * continuously and evenly spaced. Each takes the arc's color where it passes, much lightened; they shrink until they
+ * disappear when reaching a zone. Drawn after the arcs (transparent), they show inside the line instead of being
+ * tinted by it.
  */
 export function arcBeads(T: ThreeModule, arcs: FlowArc[]) {
   const geometry = new T.SphereGeometry(1, 12, 8)
@@ -92,7 +92,7 @@ export function arcBeads(T: ThreeModule, arcs: FlowArc[]) {
   const axis = new T.Vector3(0, 0, 1)
   const on: { u: number; half: number; size: number }[] = []
 
-  /** L'arc gonfle légèrement autour de chaque bille, sur sa longueur à elle : une bosse douce qui la suit. */
+  /** The arc swells slightly around each bead, over the bead's own length: a soft bump that follows it. */
   const bulge = (a: FlowArc) => {
     const arr = a.tube.array as Float32Array
     for (let ring = 0; ring <= TUBULAR; ring++) {
@@ -112,18 +112,18 @@ export function arcBeads(T: ThreeModule, arcs: FlowArc[]) {
     a.tube.needsUpdate = true
   }
 
-  /** Une image du flux, `time` en secondes. */
+  /** One frame of the flow, `time` in seconds. */
   const frame = (time: number) => {
     let n = 0
     for (const a of arcs) {
       const run = time * BEAD_SPEED * (a.fast ? FAST : 1) + a.phase
       on.length = 0
       for (let j = 0; j < BEADS_PER_WAY * 2; j++) {
-        // Les billes paires vont de A vers B, les impaires de B vers A ; chaque sens est décalé d'une demi-bille.
+        // Even beads go from A to B, odd ones from B to A; each direction is offset by half a bead.
         const along = (run + Math.floor(j / 2) / BEADS_PER_WAY + (j % 2) * (0.5 / BEADS_PER_WAY)) % 1
         const u = j % 2 === 0 ? along : 1 - along
         a.curve.getPointAt(u, at)
-        // Allongée dans le sens de l'arc : son grand axe suit la tangente au point où elle passe.
+        // Stretched along the arc: its long axis follows the tangent at the point where it passes.
         a.curve.getTangentAt(u, dir)
         turn.setFromUnitVectors(axis, dir)
         const fade = Math.min(1, u / 0.1, (1 - u) / 0.1)

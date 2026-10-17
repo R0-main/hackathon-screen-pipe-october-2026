@@ -1,5 +1,5 @@
-// refresh-zones : le passage « nouvelles zones » fait par le Claude Code de l'entreprise (abonnement, jeton en CI).
-// Jamais la vraie CLI : une fausse `claude` enregistre son environnement et son entrée standard.
+// refresh-zones: the "new zones" run done by the company's Claude Code (subscription, token in CI).
+// Never the real CLI: a fake `claude` records its environment and its standard input.
 
 import { strict as assert } from "node:assert"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -11,26 +11,26 @@ import { mockServer, tempDir } from "./helpers"
 
 const ADMIN = "cb_admin_token_abcdef"
 const MEMBER = "cb_member_token_abcdef"
-// Assemblé à l'exécution : aucun motif de jeton en clair dans le dépôt.
+// Assembled at run time: no plain token pattern in the repo.
 const CLAUDE_TOKEN = ["sk-ant-", "oat01-", "Zz9", "q".repeat(48)].join("")
 
 const item = (ref: number, zone: string, title: string) => ({ ref, id: `id-${ref}`, author_id: "u1", zone, kind: "fact" as const, title, body: `${title}.` })
 const INPUT: NewZonesInput = {
   company_name: "Fournil",
   zones: [
-    { id: "direction", name: "Direction", description: "Stratégie", keywords: [] },
+    { id: "leadership", name: "Leadership", description: "Strategy", keywords: [] },
     { id: "dev", name: "Dev", description: "Code", keywords: [] },
   ],
-  items: [item(1, "direction", "Modèle de contrat"), item(2, "direction", "CGV"), item(3, "direction", "RGPD"), item(4, "dev", "Mentions légales"), item(5, "dev", "Déploiement")],
+  items: [item(1, "leadership", "Contract template"), item(2, "leadership", "Terms of sale"), item(3, "leadership", "GDPR"), item(4, "dev", "Legal notice"), item(5, "dev", "Deployment")],
 }
 
-/** Faux cerveau : matière et application réservées à l'admin ; `skipped` simule une entreprise trop petite. */
+/** Fake brain: material and application reserved to the admin; `skipped` simulates a company that is too small. */
 async function zonesBrain(opts: { skipped?: string } = {}) {
   const applied: unknown[] = []
   const srv = await mockServer((req) => {
     const auth = req.headers.authorization
-    if (auth !== `Bearer ${ADMIN}` && auth !== `Bearer ${MEMBER}`) return { status: 401, body: { error: "Non authentifié" } }
-    if (auth !== `Bearer ${ADMIN}`) return { status: 403, body: { error: "Réservé aux admins." } }
+    if (auth !== `Bearer ${ADMIN}` && auth !== `Bearer ${MEMBER}`) return { status: 401, body: { error: "Not authenticated" } }
+    if (auth !== `Bearer ${ADMIN}`) return { status: 403, body: { error: "Reserved to admins." } }
     const path = req.url.split("?")[0]
     if (req.method === "GET" && path === "/api/admin/zones/auto/input") return { body: opts.skipped ? { skipped: opts.skipped } : { input: INPUT } }
     if (req.method === "POST" && path === "/api/admin/zones/auto") {
@@ -43,7 +43,7 @@ async function zonesBrain(opts: { skipped?: string } = {}) {
   return { ...srv, applied }
 }
 
-/** Fausse CLI `claude` : répond `answer` dans l'enveloppe JSON de `claude -p`. */
+/** Fake `claude` CLI: answers `answer` in the JSON envelope of `claude -p`. */
 function fakeClaude(answer: unknown) {
   const dir = tempDir()
   const bin = join(dir, "bin")
@@ -90,51 +90,51 @@ function logs() {
   return { log: (s: string) => out.push(s), text: () => out.join("\n") }
 }
 
-test("refresh-zones : claude -p (jeton CLAUDE_CODE_OAUTH_TOKEN de la CI) propose, le cerveau reçoit des identifiants", async () => {
+test("refresh-zones: claude -p (CLAUDE_CODE_OAUTH_TOKEN token of the CI) proposes, the brain receives ids", async () => {
   const brain = await zonesBrain()
-  const claude = fakeClaude({ zones: [{ name: "Juridique", description: "Contrats et conformité.", keywords: ["contrat"], items: [1, "#2", 3, 4, 99] }] })
+  const claude = fakeClaude({ zones: [{ name: "Legal", description: "Contracts and compliance.", keywords: ["contract"], items: [1, "#2", 3, 4, 99] }] })
   try {
     station(brain.url, ADMIN)
     const l = logs()
     assert.equal(await withEnv(claude.bin, { CLAUDE_CODE_OAUTH_TOKEN: CLAUDE_TOKEN }, () => cmdRefreshZones({}, l.log)), 0)
-    assert.ok(claude.stdin().startsWith(DISTILL_MARKER) && claude.stdin().includes("#4 [dev] fact — Mentions légales"), "Claude reçoit la matière numérotée")
-    assert.equal(claude.token(), CLAUDE_TOKEN, "le jeton de la CI passe à claude -p")
-    assert.deepEqual(brain.applied, [[{ name: "Juridique", description: "Contrats et conformité.", keywords: ["contrat"], item_ids: ["id-1", "id-2", "id-3", "id-4"] }]])
-    assert.ok(!JSON.stringify(brain.requests).includes(CLAUDE_TOKEN), "le jeton Claude n'est jamais envoyé au cerveau")
-    assert.match(l.text(), /Zone\(s\) créée\(s\) : Juridique \(4 connaissances rangées\)/)
+    assert.ok(claude.stdin().startsWith(DISTILL_MARKER) && claude.stdin().includes("#4 [dev] fact — Legal notice"), "Claude receives the numbered material")
+    assert.equal(claude.token(), CLAUDE_TOKEN, "the CI token is passed to claude -p")
+    assert.deepEqual(brain.applied, [[{ name: "Legal", description: "Contracts and compliance.", keywords: ["contract"], item_ids: ["id-1", "id-2", "id-3", "id-4"] }]])
+    assert.ok(!JSON.stringify(brain.requests).includes(CLAUDE_TOKEN), "the Claude token is never sent to the brain")
+    assert.match(l.text(), /Zone\(s\) created: Legal \(4 knowledge items filed\)/)
   } finally {
     await brain.close()
   }
 })
 
-test("refresh-zones --dry-run : affiche sans rien envoyer ; rien à proposer, le passage est quand même consigné", async () => {
+test("refresh-zones --dry-run: shows without sending anything; nothing to propose, the run is still recorded", async () => {
   const brain = await zonesBrain()
   try {
     station(brain.url, ADMIN)
-    const dry = fakeClaude({ zones: [{ name: "Juridique", description: "Contrats.", keywords: [], items: [1, 2, 3, 4] }] })
+    const dry = fakeClaude({ zones: [{ name: "Legal", description: "Contracts.", keywords: [], items: [1, 2, 3, 4] }] })
     const l = logs()
     assert.equal(await withEnv(dry.bin, {}, () => cmdRefreshZones({ dryRun: true }, l.log)), 0)
     assert.equal(brain.applied.length, 0)
-    assert.match(l.text(), /Juridique — Contrats\. \(4 connaissances\)[\s\S]*Rien n'a été envoyé/)
+    assert.match(l.text(), /Legal — Contracts\. \(4 knowledge items\)[\s\S]*Nothing was sent/)
 
     const none = fakeClaude({ zones: [] })
     const l2 = logs()
     assert.equal(await withEnv(none.bin, {}, () => cmdRefreshZones({}, l2.log)), 0)
-    assert.deepEqual(brain.applied, [[]], "un passage sans proposition apparaît dans l'historique du dashboard")
-    assert.match(l2.text(), /aucune nouvelle zone ne s'impose/)
+    assert.deepEqual(brain.applied, [[]], "a run without a proposal shows in the dashboard history")
+    assert.match(l2.text(), /no new zone is needed/)
   } finally {
     await brain.close()
   }
 })
 
-test("refresh-zones : réservé aux admins ; une entreprise trop petite n'appelle pas Claude", async () => {
+test("refresh-zones: reserved to admins; a company that is too small does not call Claude", async () => {
   const member = await zonesBrain()
   const claude = fakeClaude({ zones: [] })
   try {
     station(member.url, MEMBER)
     await assert.rejects(
       withEnv(claude.bin, {}, () => cmdRefreshZones({}, () => {})),
-      /réservé aux administrateurs/,
+      /reserved to the brain's administrators/,
     )
   } finally {
     await member.close()
@@ -145,7 +145,7 @@ test("refresh-zones : réservé aux admins ; une entreprise trop petite n'appell
     const l = logs()
     assert.equal(await withEnv(claude.bin, {}, () => cmdRefreshZones({}, l.log)), 0)
     assert.equal(claude.called(), false)
-    assert.match(l.text(), /pas assez de connaissances récentes/)
+    assert.match(l.text(), /not enough recent knowledge/)
   } finally {
     await small.close()
   }

@@ -1,13 +1,12 @@
-// Petits outils texte partagés (normalisation, tokens, empreintes).
+// Small shared text helpers (normalization, tokens, fingerprints).
 
 const STOPWORDS = new Set(
   (
-    "le la les un une des du de d l et ou mais donc or ni car a au aux en dans sur sous par pour avec sans ce cet cette ces " +
-    "mon ma mes ton ta tes son sa ses notre nos votre vos leur leurs je tu il elle on nous vous ils elles me te se moi toi lui " +
-    "qui que quoi dont ou est sont etre avoir ai as avons avez ont fait faire peux peut veux veut plus moins tres bien tout " +
-    "tous toute toutes ne pas y c s n qu j m t si comme alors aussi encore deja the a an of to in on for with and or but is are " +
-    "be it this that these those i you he she we they my your our me us can could would should will do does did please stp merci " +
-    "svp hello bonjour salut ok okay"
+    "the a an of to in on at for with and or but nor so yet is are was were be been being it its this that these those " +
+    "i you he she we they me him her us them my your his our their mine yours can could would should will shall may might " +
+    "must do does did done have has had having not no from by as if then than there here what which who whom whose when " +
+    "where why how all any both each few more most other some such only own same too very just also again already still " +
+    "into out up down over under about after before between through during please thanks thank hello hi hey ok okay"
   ).split(/\s+/),
 )
 
@@ -19,33 +18,29 @@ export function normalize(s: string): string {
   return stripAccents(s.toLowerCase())
 }
 
-/** Tokens significatifs (sans accents, sans mots vides), pour la recherche et la classification. */
+/** Meaningful tokens (no accents, no stopwords), for search and classification. */
 export function tokenize(s: string): string[] {
   return normalize(s)
-    // le sigle CI : « gitlab-ci.yml », « github-ci », et « CI/CD » (intégration + déploiement continus : deux signaux, plus « cicd »)
+    // the CI acronym: "gitlab-ci.yml", "github-ci", and "CI/CD" (continuous integration + delivery: two signals, plus "cicd")
     .replace(/\bci\s*[/-]\s*cd\b/g, " ci ci cicd ")
     .replace(/\b(gitlab|github|circle|circleci|travis|drone|bitbucket|woodpecker|azure|jenkins)-ci\b/g, "$1 ci ")
     .replace(/-ci(?=\.(?:ya?ml|json|toml)\b)/g, " ci ")
-    // particules « ce mois-ci », « ci-joint », « ci-dessous », « comme ci comme ça » : pas le sigle CI
-    .replace(/\bcomme ci,? comme ca\b/g, " ")
-    .replace(/([a-z0-9])-ci\b/g, "$1 ")
-    .replace(/\bci-(?=[a-z])/g, " ")
     .split(/[^a-z0-9]+/)
     .filter((t) => t.length > 1 && !STOPWORDS.has(t))
 }
 
-/** Normalise un prompt pour comparer deux exécutions « du même prompt » (dates, nombres, espaces). */
+/** Normalizes a prompt to compare two runs of "the same prompt" (dates, numbers, whitespace). */
 export function normalizePrompt(s: string): string {
   return normalize(s)
     .replace(/\b\d{1,4}[/-]\d{1,2}([/-]\d{1,4})?\b/g, " <date> ")
-    .replace(/\b(hier|aujourd'?hui|demain|yesterday|today|tomorrow)\b/g, " <day> ")
+    .replace(/\b(yesterday|today|tomorrow)\b/g, " <day> ")
     .replace(/\d+/g, " <n> ")
     .replace(/[^a-z<> ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
 }
 
-/** FNV-1a 32 bits, en hexadécimal. Suffisant pour regrouper des prompts, pas pour de la crypto. */
+/** 32-bit FNV-1a, in hex. Good enough to group prompts, not for cryptography. */
 export function fnv1a(s: string): string {
   let h = 0x811c9dc5
   for (let i = 0; i < s.length; i++) {

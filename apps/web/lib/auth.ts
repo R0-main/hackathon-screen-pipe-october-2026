@@ -1,7 +1,7 @@
 // Authentification :
-// - agents (brain-sync, MCP, hooks) : jeton personnel en en-tête `Authorization: Bearer cb_…` ;
-// - dashboard : cookie de session signé (HMAC), obtenu en se connectant avec son jeton.
-// Un admin peut « voir en tant que » un autre membre pour montrer les accès par zone.
+// - agents (brain-sync, MCP, hooks): personal token in the `Authorization: Bearer cb_…` header;
+// - dashboard: signed session cookie (HMAC), obtained by signing in with one's token.
+// An admin can "view as" another member to show per-zone access.
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import type { Profile } from "@brain/core"
@@ -20,16 +20,16 @@ export function newToken(): string {
   return `cb_${randomBytes(24).toString("base64url")}`
 }
 
-// Secret HMAC des sessions : BRAIN_SESSION_SECRET s'il est défini, sinon un secret aléatoire de 32 octets généré
-// une seule fois et conservé par le stockage (<dataDir>/session-secret en mode 600, ou table brain_settings).
-// Jamais dérivé de valeurs devinables (URL de base, dossier, cwd…).
+// HMAC secret for sessions: BRAIN_SESSION_SECRET if set, otherwise a random 32-byte secret generated
+// once and kept by the store (<dataDir>/session-secret with mode 600, or the brain_settings table).
+// Never derived from guessable values (base URL, folder, cwd…).
 let warnedShortSecret = false
 async function sessionSecret(): Promise<string> {
   const env = process.env.BRAIN_SESSION_SECRET?.trim()
   if (env) {
     if (env.length < 32 && !warnedShortSecret) {
       warnedShortSecret = true
-      console.warn("[auth] BRAIN_SESSION_SECRET est court (< 32 caractères) : utilisez une valeur aléatoire plus longue.")
+      console.warn("[auth] BRAIN_SESSION_SECRET is short (< 32 characters): use a longer random value.")
     }
     return env
   }
@@ -37,14 +37,14 @@ async function sessionSecret(): Promise<string> {
 }
 
 /**
- * Charge signée : usage, membre, expiration et début de l'empreinte de son jeton (régénérer le jeton invalide les
- * sessions). L'usage sépare les cookies de session (« v2 ») des liens de connexion (« link1 ») : l'un ne vaut pas l'autre.
+ * Signed payload: purpose, member, expiry and the start of their token's fingerprint (regenerating the token invalidates
+ * the sessions). The purpose separates session cookies ("v2") from sign-in links ("link1"): one is not worth the other.
  */
 async function sign(userId: string, exp: string, tokenHash: string, purpose = "v2"): Promise<string> {
   return createHmac("sha256", await sessionSecret()).update(`${purpose}.${userId}.${exp}.${tokenHash.slice(0, 16)}`).digest("base64url")
 }
 
-/** Le stockage de l'entreprise d'un compte (les comptes de toutes les entreprises se connectent au même endroit). */
+/** The store of an account's company (accounts of all companies sign in at the same place). */
 async function storeForUser(userId: string): Promise<BrainStore | null> {
   const orgId = await getRootStore().findUserOrg({ id: userId })
   return orgId ? storeForOrg(orgId) : null
@@ -54,12 +54,12 @@ async function tokenHashOf(userId: string): Promise<string | null> {
   return (await (await storeForUser(userId))?.getTokenHash(userId)) ?? null
 }
 
-/** Durée de validité d'un lien de connexion ouvert par `brain.mjs setup`. */
+/** Validity of a sign-in link opened by `brain.mjs setup`. */
 export const LOGIN_LINK_SECONDS = 120
 
 export async function createSessionValue(userId: string): Promise<string> {
   const tokenHash = await tokenHashOf(userId)
-  if (!tokenHash) throw new Error("Membre introuvable.")
+  if (!tokenHash) throw new Error("Member not found.")
   const exp = String(Date.now() + SESSION_DAYS * 86400_000)
   return `${userId}.${exp}.${await sign(userId, exp, tokenHash)}`
 }
@@ -86,7 +86,7 @@ async function verifySigned(value: string | undefined, purpose: string): Promise
   try {
     expected = await sign(userId, exp, tokenHash, purpose)
   } catch (err) {
-    // Secret introuvable (migration non appliquée) : session invérifiable, donc refusée (401 / page de connexion).
+    // Secret not found (migration not applied): session cannot be verified, so it is refused (401 / sign-in page).
     if (!isStoreSetupError(err)) throw err
     if (!warnedSetup) {
       warnedSetup = true
@@ -100,21 +100,21 @@ async function verifySigned(value: string | undefined, purpose: string): Promise
   return userId
 }
 
-/** Le compte d'une valeur de cookie de session, si elle est valable (signature, expiration, jeton non régénéré). */
+/** The account of a session cookie value, if it is valid (signature, expiry, token not regenerated). */
 export function sessionUserId(value: string | undefined): Promise<string | null> {
   return verifySigned(value, "v2")
 }
 const verifySession = sessionUserId
 
 /**
- * Entreprises retenues par ce navigateur (séparées par `~`), la plus récente d'abord : une entrée signée par entreprise,
- * d'un usage à part (« acct1 », qui ne vaut pas session), valable un an et renouvelée à chaque ouverture. Elles
- * permettent de revenir à une entreprise, ou de passer de l'une à l'autre, sans ressaisir son jeton ; quand la session
- * expire, la plus récente est rouverte toute seule. Protection : httpOnly (aucun script ne lit le jeton ni l'entrée),
- * signature, et invalidation quand le jeton est régénéré.
+ * Companies remembered by this browser (separated by `~`), most recent first: one signed entry per company, for a
+ * separate use ("acct1", which is not a session), valid for a year and renewed each time it is opened. They let you
+ * come back to a company, or switch from one to another, without retyping its token; when the session expires, the
+ * most recent one is reopened on its own. Protection: httpOnly (no script reads the token or the entry), signature,
+ * and invalidation when the token is regenerated.
  */
 export const ACCOUNTS_COOKIE = "brain_accounts"
-/** Posé par la déconnexion : pas de reconnexion automatique tant qu'on n'a pas rouvert une entreprise soi-même. */
+/** Set by signing out: no automatic sign-in until a company has been reopened by hand. */
 export const SIGNED_OUT_COOKIE = "brain_signed_out"
 const MAX_ACCOUNTS = 8
 const REMEMBER_DAYS = 365
@@ -123,7 +123,7 @@ export const accountsCookieOptions = { ...sessionCookieOptions, maxAge: REMEMBER
 
 async function createRememberValue(userId: string): Promise<string> {
   const tokenHash = await tokenHashOf(userId)
-  if (!tokenHash) throw new Error("Membre introuvable.")
+  if (!tokenHash) throw new Error("Member not found.")
   const exp = String(Date.now() + REMEMBER_DAYS * 86400_000)
   return `${userId}.${exp}.${await sign(userId, exp, tokenHash, "acct1")}`
 }
@@ -136,12 +136,12 @@ export type RememberedAccount = {
   org: { id: string; name: string; description: string }
 }
 
-/** `value` : l'entrée telle quelle ; `remembered` : faux pour une session (à convertir en entrée d'un an). */
+/** `value`: the entry as is; `remembered`: false for a session (to convert into a one-year entry). */
 type Remembered = RememberedAccount & { value: string; remembered: boolean }
 
 /**
- * Les entrées encore valables, avec leur compte et leur entreprise ; une seule par entreprise (la première). Une session
- * (cookie de session, ou entrée retenue avant les entrées d'un an) est acceptée aussi.
+ * The entries still valid, with their account and company; only one per company (the first). A session (session
+ * cookie, or entry remembered before the one-year entries) is accepted too.
  */
 async function readRemembered(value: string | undefined): Promise<Remembered[]> {
   const out: Remembered[] = []
@@ -166,15 +166,15 @@ async function readRemembered(value: string | undefined): Promise<Remembered[]> 
   return out
 }
 
-/** Les entreprises retenues par ce navigateur, sans les entrées signées (pour l'affichage). */
+/** The companies remembered by this browser, without the signed entries (for display). */
 export async function listRememberedAccounts(value: string | undefined): Promise<RememberedAccount[]> {
   return (await readRemembered(value)).map(({ value: _v, remembered: _r, ...account }) => account)
 }
 
 /**
- * Nouvelle valeur du cookie des entreprises : les comptes donnés, dans l'ordre (le plus récent d'abord), sans les
- * entrées expirées ni un second compte de la même entreprise. Chaque argument est une session, une entrée ou une liste
- * `~` ; une session devient une entrée d'un an (celle qu'on vient d'ouvrir repart donc pour un an).
+ * New value of the companies cookie: the given accounts, in order (most recent first), without expired entries or a
+ * second account of the same company. Each argument is a session, an entry or a `~` list; a session becomes a one-year
+ * entry (the one just opened thus starts again for a year).
  */
 export async function rememberAccounts(...values: (string | undefined)[]): Promise<string> {
   const out: string[] = []
@@ -182,7 +182,7 @@ export async function rememberAccounts(...values: (string | undefined)[]): Promi
   return out.join("~")
 }
 
-/** La liste des entreprises retenues, sans le compte `userId`. */
+/** The list of remembered companies, without the `userId` account. */
 export async function forgetAccount(value: string | undefined, userId: string): Promise<string> {
   return (await readRemembered(value))
     .filter((a) => a.userId !== userId)
@@ -190,23 +190,23 @@ export async function forgetAccount(value: string | undefined, userId: string): 
     .join("~")
 }
 
-/** Le compte de l'entreprise retenue la plus récente (reconnexion automatique), ou null. */
+/** The account of the most recently remembered company (automatic sign-in), or null. */
 export async function latestRemembered(value: string | undefined): Promise<string | null> {
   return (await readRemembered(value))[0]?.userId ?? null
 }
 
-/** Vrai si ce navigateur retient encore ce compte. */
+/** True if this browser still remembers this account. */
 export async function isRemembered(value: string | undefined, userId: string): Promise<boolean> {
   return (await readRemembered(value)).some((a) => a.userId === userId)
 }
 
 /**
- * Lien de connexion à usage court : après l'installation, le poste ouvre le dashboard déjà connecté, sans mettre le
- * jeton personnel dans une URL (historique du navigateur, journaux). Expire au bout de LOGIN_LINK_SECONDS.
+ * Short-lived sign-in link: after the install, the workstation opens the dashboard already signed in, without putting
+ * the personal token in a URL (browser history, logs). Expires after LOGIN_LINK_SECONDS.
  */
 export async function createLoginCode(userId: string): Promise<string> {
   const tokenHash = await tokenHashOf(userId)
-  if (!tokenHash) throw new Error("Membre introuvable.")
+  if (!tokenHash) throw new Error("Member not found.")
   const exp = String(Date.now() + LOGIN_LINK_SECONDS * 1000)
   return `${userId}.${exp}.${await sign(userId, exp, tokenHash, "link1")}`
 }
@@ -215,17 +215,17 @@ export function verifyLoginCode(code: string | null | undefined): Promise<string
   return verifySigned(code ?? undefined, "link1")
 }
 
-/** Durée de validité du code d'envoi d'un onboarding préparé par Claude Code ou Codex (lecture de l'historique comprise). */
+/** Validity of the upload code of an onboarding prepared by Claude Code or Codex (reading the history included). */
 export const ONBOARDING_CODE_HOURS = 2
 
 /**
- * Code d'envoi de l'onboarding par un agent : il permet seulement de déposer une proposition (POST
- * /api/onboarding/import) pour l'entreprise de cet admin, qui la relit avant de l'appliquer. Signé comme un lien de
- * connexion, avec son propre usage ; préfixé `co_` pour que brain-sync le reconnaisse et le masque.
+ * Upload code for an onboarding done by an agent: it only allows depositing a proposal (POST
+ * /api/onboarding/import) for this admin's company, who reviews it before applying it. Signed like a sign-in
+ * link, with its own purpose; prefixed `co_` so that brain-sync recognizes and redacts it.
  */
 export async function createOnboardingCode(userId: string): Promise<string> {
   const tokenHash = await tokenHashOf(userId)
-  if (!tokenHash) throw new Error("Membre introuvable.")
+  if (!tokenHash) throw new Error("Member not found.")
   const exp = String(Date.now() + ONBOARDING_CODE_HOURS * 3600_000)
   return `co_${Buffer.from(`${userId}.${exp}.${await sign(userId, exp, tokenHash, "onb1")}`).toString("base64url")}`
 }
@@ -237,9 +237,9 @@ export async function verifyOnboardingCode(code: string | null | undefined): Pro
 }
 
 export type Viewer = {
-  /** Profil effectif (celui dont on applique les droits). */
+  /** Effective profile (the one whose permissions apply). */
   profile: Profile
-  /** Profil réellement connecté (différent si un admin « voit en tant que »). */
+  /** Profile actually signed in (different if an admin "views as"). */
   real: Profile
   access: Access
 }
@@ -257,7 +257,7 @@ export async function profileFromToken(token: string): Promise<Profile | null> {
   return orgId ? storeForOrg(orgId).getProfileByTokenHash(hash) : null
 }
 
-/** Pour les pages (server components) : à partir des valeurs de cookies. */
+/** For pages (server components): from the cookie values. */
 export async function viewerFromCookies(session: string | undefined, viewAs: string | undefined): Promise<Viewer | null> {
   const userId = await verifySession(session)
   if (!userId) return null
@@ -273,7 +273,7 @@ function readCookie(header: string | null, name: string): string | undefined {
   return undefined
 }
 
-/** Pour les routes API : jeton Bearer (agents) ou cookie de session (dashboard). */
+/** For API routes: Bearer token (agents) or session cookie (dashboard). */
 export async function viewerFromRequest(req: Request): Promise<Viewer | null> {
   const bearer = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
   if (bearer) return buildViewer(await profileFromToken(bearer))
@@ -281,13 +281,13 @@ export async function viewerFromRequest(req: Request): Promise<Viewer | null> {
   return viewerFromCookies(readCookie(cookie, SESSION_COOKIE), readCookie(cookie, VIEW_AS_COOKIE))
 }
 
-/** Mode démo : connexion en un clic sur /login. À n'activer qu'avec des données fictives. */
+/** Demo mode: one-click sign-in on /login. Only enable with fictional data. */
 export function isDemoMode(): boolean {
   return process.env.BRAIN_DEMO === "1" || process.env.BRAIN_DEMO === "true"
 }
 
-/** Création d'entreprise depuis la page d'accueil (/creer). `BRAIN_SIGNUP=0` la ferme : cerveau sur invitation seulement. */
-/** Page publique sur `/`. `BRAIN_LANDING=0` (cerveau lancé en local) : `/` mène à /creer, /login ou au dashboard. */
+/** Company creation from the home page (/create). `BRAIN_SIGNUP=0` closes it: invitation-only brain. */
+/** Public page on `/`. `BRAIN_LANDING=0` (brain run locally): `/` leads to /create, /login or the dashboard. */
 export function landingEnabled(): boolean {
   return process.env.BRAIN_LANDING !== "0" && process.env.BRAIN_LANDING !== "false"
 }

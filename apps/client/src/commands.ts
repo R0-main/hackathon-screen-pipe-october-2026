@@ -1,4 +1,4 @@
-// Commandes init, hello et status.
+// init, hello and status commands.
 
 import { BrainApi, type WhoAmI } from "./api"
 import { applyCa, describeCa, readCaFile, type CaInfo } from "./ca"
@@ -27,7 +27,7 @@ import {
 import { DISTILLER_LABELS, pickDistiller } from "./distill"
 import { hooksInstalled, pipeInstalled, pipePath, scheduleInstalled } from "./install"
 import { TOKEN_COMMAND, screenpipeHealth, screenpipeProbe } from "./sources/screenpipe"
-import { frDate } from "@brain/core/mcp"
+import { shortDate } from "@brain/core/mcp"
 
 type Log = (s: string) => void
 
@@ -35,13 +35,13 @@ export async function cmdInit(flags: Record<string, string | boolean>, log: Log 
   return (await initBrain(flags, log)).code
 }
 
-/** Résultat d'`init` : `added` quand le jeton était celui d'une autre entreprise, ajoutée à côté de la première. */
+/** Result of `init`: `added` when the token was another company's, added next to the first one. */
 export type InitResult = { code: number; company: Company; added: boolean }
 
 /**
- * Le jeton donné est-il celui d'une AUTRE entreprise que la première du poste ? Oui seulement si les deux jetons sont
- * acceptés et désignent des entreprises différentes. Sinon (même entreprise, ancien jeton régénéré ou refusé, nouveau
- * jeton refusé), il remplace celui de la première, comme avant.
+ * Is the given token that of ANOTHER company than the computer's first one? Only if both tokens are accepted and
+ * point to different companies. Otherwise (same company, old token regenerated or refused, new token refused), it
+ * replaces the first one's, as before.
  */
 async function otherCompany(first: Company, fresh: Company): Promise<{ first: WhoAmI; other: WhoAmI } | null> {
   const [a, b] = await Promise.allSettled([new BrainApi(first.url, first.token, 8000).whoami(), new BrainApi(fresh.url, fresh.token, 8000).whoami()])
@@ -66,25 +66,25 @@ export async function initBrain(flags: Record<string, string | boolean>, log: Lo
   if (str("screenpipe-token")) next.screenpipe_token = str("screenpipe-token")
   if (str("anthropic-key")) next.anthropic_api_key = str("anthropic-key")
   const claudeToken = str("claude-token")
-  if (flags["claude-token"] === true) throw new UserError("--claude-token : donnez le jeton affiché par `claude setup-token` (ou « aucun » pour le retirer).")
+  if (flags["claude-token"] === true) throw new UserError("--claude-token: give the token shown by `claude setup-token` (or \"none\" to remove it).")
   if (claudeToken !== undefined) {
-    if (["aucun", "none", "non", ""].includes(claudeToken.toLowerCase())) delete next.claude_oauth_token
-    else if (/\s/.test(claudeToken) || claudeToken.length < 20) throw new UserError("--claude-token : jeton invalide (une seule chaîne, celle affichée par `claude setup-token`).")
+    if (["none", "aucun", "no", ""].includes(claudeToken.toLowerCase())) delete next.claude_oauth_token
+    else if (/\s/.test(claudeToken) || claudeToken.length < 20) throw new UserError("--claude-token: invalid token (a single string, the one shown by `claude setup-token`).")
     else next.claude_oauth_token = claudeToken
   }
   const share = str("share-prompt-summaries")
   if (share !== undefined) {
     const v = share.toLowerCase()
-    if (["oui", "on", "true", "1", "yes"].includes(v)) next.share_prompt_summaries = true
-    else if (["non", "off", "false", "0", "no"].includes(v)) next.share_prompt_summaries = false
-    else throw new UserError(`--share-prompt-summaries : « oui » ou « non » (reçu « ${share} »).`)
+    if (["yes", "on", "true", "1", "oui"].includes(v)) next.share_prompt_summaries = true
+    else if (["no", "off", "false", "0", "non"].includes(v)) next.share_prompt_summaries = false
+    else throw new UserError(`--share-prompt-summaries: "yes" or "no" (got "${share}").`)
   }
   const meetings = str("screenpipe-meetings")
   if (meetings !== undefined) {
     const v = meetings.toLowerCase()
-    if (["oui", "on", "true", "1", "yes"].includes(v)) next.screenpipe_meetings = true
-    else if (["non", "off", "false", "0", "no"].includes(v)) next.screenpipe_meetings = false
-    else throw new UserError(`--screenpipe-meetings : « oui » ou « non » (reçu « ${meetings} »).`)
+    if (["yes", "on", "true", "1", "oui"].includes(v)) next.screenpipe_meetings = true
+    else if (["no", "off", "false", "0", "non"].includes(v)) next.screenpipe_meetings = false
+    else throw new UserError(`--screenpipe-meetings: "yes" or "no" (got "${meetings}").`)
   }
   const agent = str("screenpipe-agent")
   if (agent !== undefined) {
@@ -92,41 +92,41 @@ export async function initBrain(flags: Record<string, string | boolean>, log: Lo
     if (["oui", "on", "true", "1", "yes"].includes(v)) next.screenpipe_agent = true
     else if (["non", "off", "false", "0", "no"].includes(v)) next.screenpipe_agent = false
     else if (v === "claude" || v === "codex") next.screenpipe_agent = v
-    else throw new UserError(`--screenpipe-agent : « oui », « non », « claude » ou « codex » (reçu « ${agent} »).`)
+    else throw new UserError(`--screenpipe-agent: "yes", "no", "claude" or "codex" (got "${agent}").`)
   }
   const agentModel = str("agent-model")
-  if (flags["agent-model"] === true) throw new UserError("--agent-model : donnez un modèle (ex. sonnet), ou « défaut » pour revenir au modèle par défaut.")
+  if (flags["agent-model"] === true) throw new UserError("--agent-model: give a model (e.g. sonnet), or \"default\" to go back to the default model.")
   if (agentModel !== undefined) {
     if (["défaut", "defaut", "default", ""].includes(agentModel.toLowerCase())) delete next.agent_model
-    else if (/\s/.test(agentModel)) throw new UserError(`--agent-model : nom de modèle invalide (« ${agentModel} »).`)
+    else if (/\s/.test(agentModel)) throw new UserError(`--agent-model: invalid model name ("${agentModel}").`)
     else next.agent_model = agentModel
   }
   const ca = str("ca")
-  if (flags.ca === true) throw new UserError("--ca : donnez le fichier PEM du certificat du cerveau (ou « aucun » pour le retirer).")
+  if (flags.ca === true) throw new UserError("--ca: give the PEM file of the brain's certificate (or \"none\" to remove it).")
   let caInfo: CaInfo | null = null
   if (ca !== undefined) {
-    if (["aucun", "none", "non", ""].includes(ca.toLowerCase())) delete next.ca_file
+    if (["none", "aucun", "no", ""].includes(ca.toLowerCase())) delete next.ca_file
     else {
       caInfo = readCaFile(ca)
-      // Dès maintenant pour ce processus : le test de connexion qui suit passe par HTTPS.
+      // Right away for this process: the connection test that follows goes over HTTPS.
       applyCa(caInfo.certs)
       next.ca_file = caInfo.file
     }
   }
   if (!next.url || !next.token) {
-    throw new UserError("Première configuration : --url et --token sont obligatoires (ex. init --url https://cerveau.exemple --token cb_…).")
+    throw new UserError("First configuration: --url and --token are required (e.g. init --url https://brain.example --token cb_…).")
   }
-  if (next.url && !/^https?:\/\//.test(next.url)) throw new UserError(`URL invalide : « ${next.url} » (attendu http:// ou https://).`)
+  if (next.url && !/^https?:\/\//.test(next.url)) throw new UserError(`Invalid URL: "${next.url}" (expected http:// or https://).`)
 
-  // Un jeton d'une autre entreprise (prompt d'installation d'une deuxième entreprise) : elle s'ajoute à côté de la
-  // première, qui reste celle par défaut. Celui d'une entreprise déjà ajoutée : mise à jour de cette entreprise.
+  // A token of another company (install prompt of a second company): it is added next to the
+  // first one, which stays the default. The token of a company already added: that company is updated.
   const fresh: Company = { url: next.url, token: next.token }
   if (prev.url && prev.token && fresh.token !== prev.token) {
     const known = prev.companies?.find((c) => c.token === fresh.token)
     if (known) {
       const who = await new BrainApi(fresh.url, fresh.token, 8000).whoami().catch((err: Error) => err)
       if (who instanceof Error) {
-        log(`Échec du test de connexion à ${companyLabel(known)} : ${who.message}`)
+        log(`Connection test to ${companyLabel(known)} failed: ${who.message}`)
         return { code: 1, company: known, added: true }
       }
       return addCompany(next, prev, { ...fresh, ...orgOf(who) }, who, log)
@@ -136,15 +136,15 @@ export async function initBrain(flags: Record<string, string | boolean>, log: Lo
   }
 
   saveConfig(next)
-  log(`Configuration enregistrée dans ${paths.config()} (mode 600, jeton ${maskSecret(next.token)}).`)
+  log(`Configuration saved in ${paths.config()} (mode 600, token ${maskSecret(next.token)}).`)
   if (ca !== undefined) {
-    log(caInfo ? `Certificat du cerveau enregistré : ${caInfo.file} (${caInfo.cn}, empreinte SHA-256 ${caInfo.fingerprint}).` : "Certificat du cerveau retiré de la config.")
+    log(caInfo ? `Brain certificate saved: ${caInfo.file} (${caInfo.cn}, SHA-256 fingerprint ${caInfo.fingerprint}).` : "Brain certificate removed from the config.")
   }
   if (claudeToken !== undefined) {
     log(
       next.claude_oauth_token
-        ? `Jeton Claude Code enregistré (${maskSecret(next.claude_oauth_token)}) : chaque \`claude -p\` du client (distillation, refresh-status) l'utilise, synchro planifiée comprise. Il reste dans config.json, jamais dans le planificateur.`
-        : "Jeton Claude Code retiré de la config.",
+        ? `Claude Code token saved (${maskSecret(next.claude_oauth_token)}): every \`claude -p\` of the client (distillation, refresh-status) uses it, scheduled sync included. It stays in config.json, never in the scheduler.`
+        : "Claude Code token removed from the config.",
     )
   }
 
@@ -153,68 +153,68 @@ export async function initBrain(flags: Record<string, string | boolean>, log: Lo
   try {
     const [who, zones] = await Promise.all([api.whoami(), api.zones()])
     saveCache(cacheFrom(who, zones, loadCache()))
-    // Qui est la première entreprise : son nom et sa description guident le choix d'entreprise des outils MCP.
-    // Elle ne figure pas une seconde fois parmi les autres (ancien jeton refusé, remplacé par celui d'une entreprise ajoutée).
+    // Who the first company is: its name and description guide the MCP tools' choice of company.
+    // It does not appear a second time among the others (old token refused, replaced by that of an added company).
     const companies = next.companies?.filter((c) => !(who.org.id && c.id === who.org.id))
     saveConfig({ ...next, org: orgOf(who), companies: companies?.length ? companies : undefined })
     const readable = zones.filter((z) => z.readable).map((z) => z.name)
-    log(`Connexion au cerveau OK : ${who.profile.name}${who.profile.title ? ` (${who.profile.title})` : ""} chez ${who.org.name}.`)
-    log(`Zones accessibles : ${readable.join(", ") || "aucune pour l'instant"}${who.access.isAdmin ? " (admin)" : ""}.`)
+    log(`Connection to the brain OK: ${who.profile.name}${who.profile.title ? ` (${who.profile.title})` : ""} at ${who.org.name}.`)
+    log(`Accessible zones: ${readable.join(", ") || "none for now"}${who.access.isAdmin ? " (admin)" : ""}.`)
   } catch (err) {
-    log(`Échec du test de connexion : ${(err as Error).message}`)
+    log(`Connection test failed: ${(err as Error).message}`)
     code = 1
   }
   if (str("screenpipe-token") || str("screenpipe-url")) {
     const spUrl = next.screenpipe_url ?? DEFAULT_SCREENPIPE_URL
     const h = await screenpipeHealth(spUrl, next.screenpipe_token)
-    log(`Screenpipe (${spUrl}) : ${h.ok ? "OK" : "KO"} — ${h.detail}.`)
+    log(`Screenpipe (${spUrl}): ${h.ok ? "OK" : "KO"} — ${h.detail}.`)
     if (h.ok) {
       const p = await screenpipeProbe(spUrl, next.screenpipe_token)
-      log(`Screenpipe, lecture des données : ${p.detail}.`)
-      if (p.auth === "token_required") log(`  → affichez le jeton avec \`${TOKEN_COMMAND}\` puis relancez init --screenpipe-token <jeton>.`)
+      log(`Screenpipe, reading the data: ${p.detail}.`)
+      if (p.auth === "token_required") log(`  → show the token with \`${TOKEN_COMMAND}\` then run init --screenpipe-token <token> again.`)
       if (p.auth === "ok" && p.parsed === false)
-        log("  → activez le contexte sémantique dans Screenpipe (app : Settings → Recording → app context « memory » ; CLI : --enable-semantic-context), utilisez ChatGPT ou Claude quelques minutes, puis relancez `status`.")
+        log("  → turn on semantic context in Screenpipe (app: Settings → Recording → app context \"memory\"; CLI: --enable-semantic-context), use ChatGPT or Claude for a few minutes, then run `status` again.")
     }
   }
   return { code, company: { url: next.url, token: next.token }, added: false }
 }
 
-/** Ajoute (ou met à jour) une autre entreprise ; la première, ses réglages et le cache des hooks ne bougent pas. */
+/** Adds (or updates) another company; the first one, its settings and the hooks' cache do not move. */
 function addCompany(next: Partial<Config>, prev: Partial<Config>, company: Company, who: WhoAmI, log: Log): InitResult {
   const others = prev.companies ?? []
-  // Même entreprise déjà ajoutée (même jeton, ou nouveau jeton de la même entreprise) : remplacée à sa place.
+  // Same company already added (same token, or new token of the same company): replaced in place.
   const at = others.findIndex((c) => c.token === company.token || (company.id !== undefined && c.id === company.id))
   const companies = at >= 0 ? others.map((c, i) => (i === at ? company : c)) : [...others, company]
   saveConfig({ ...next, url: prev.url, token: prev.token, companies })
   const list = companiesOf({ url: prev.url!, token: prev.token!, org: next.org, companies })
   const first = companyLabel(list[0])
-  log(`Configuration enregistrée dans ${paths.config()} (mode 600, jeton ${maskSecret(company.token)}).`)
-  log(`Connexion au cerveau OK : ${who.profile.name}${who.profile.title ? ` (${who.profile.title})` : ""} chez ${who.org.name}.`)
+  log(`Configuration saved in ${paths.config()} (mode 600, token ${maskSecret(company.token)}).`)
+  log(`Connection to the brain OK: ${who.profile.name}${who.profile.title ? ` (${who.profile.title})` : ""} at ${who.org.name}.`)
   log(
-    `${at >= 0 ? "Entreprise mise à jour" : "Entreprise ajoutée"} sur ce poste : ${companyLabel(company)}, à côté de ${first}, qui reste celle par défaut ` +
-      `(la synchro, les hooks et les skills restent sur ${first}). setup branche le serveur MCP de chaque entreprise dans Claude Code et Codex.`,
+    `${at >= 0 ? "Company updated" : "Company added"} on this computer: ${companyLabel(company)}, next to ${first}, which stays the default ` +
+      `(the sync, the hooks and the skills stay on ${first}). setup connects each company's MCP server in Claude Code and Codex.`,
   )
   log(describeCompanies(list))
-  log(`Changer l'entreprise par défaut : ${selfCommand()} companies --default "${companyLabel(company)}"`)
+  log(`Change the default company: ${selfCommand()} companies --default "${companyLabel(company)}"`)
   return { code: 0, company, added: true }
 }
 
-/** `company` : l'entreprise à allumer (celle que setup vient d'ajouter) ; par défaut, la première. */
+/** `company`: the company to light up (the one setup just added); by default, the first one. */
 export async function cmdHello(log: Log = console.log, company?: Company): Promise<number> {
   const cfg = requireConfig()
   const target = company ?? cfg
   const api = new BrainApi(target.url, target.token)
   const who = await api.whoami()
-  const prenom = firstName(who.profile.name)
+  const first = firstName(who.profile.name)
   const zones = who.access.readable
   const res = await api.events([
-    { agent: "brain-sync", type: "started", zones, summary: `${prenom} vient de connecter son poste au cerveau` },
-    { agent: "brain-sync", type: "query", zones, summary: `Test de connexion de ${prenom}` },
+    { agent: "brain-sync", type: "started", zones, summary: `${first} just connected their computer to the brain` },
+    { agent: "brain-sync", type: "query", zones, summary: `${first}'s connection test` },
   ])
-  // Le cache est celui de la première entreprise : une autre ne le touche pas.
+  // The cache is the first company's: another one does not touch it.
   const cache = company ? null : loadCache()
   if (!company) saveCache(cacheFrom(who, null, cache))
-  log(`Bonjour ${prenom} ! ${res.recorded} événements envoyés : vos zones (${zones.map((z) => zoneName(cache, z)).join(", ") || "aucune"}) s'allument sur ${target.url}${company ? ` (${who.org.name})` : ""}.`)
+  log(`Hello ${first}. ${res.recorded} events sent: your zones (${zones.map((z) => zoneName(cache, z)).join(", ") || "none"}) light up on ${target.url}${company ? ` (${who.org.name})` : ""}.`)
   return 0
 }
 
@@ -222,36 +222,36 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   const cfg = requireConfig()
   const state = loadState()
   const cache = loadCache()
-  log("NOS Brainer — état du client")
+  log("NOS Brainer — client status")
   log(`  Script        : ${selfScript()}`)
   log(`  Config        : ${paths.config()}`)
-  log(`  Cerveau       : ${cfg.url} (jeton ${maskSecret(cfg.token)})`)
+  log(`  Brain         : ${cfg.url} (token ${maskSecret(cfg.token)})`)
   const companies = companiesOf(cfg)
-  if (companies.length > 1) log(`  Entreprises   : ${companies.map((c, i) => `${i + 1}. ${companyLabel(c)}${i === 0 ? " (par défaut)" : ""}`).join(", ")} (détail : companies)`)
-  if (cfg.ca_file) log(`  Certificat    : ${cfg.ca_file} (${describeCa(cfg.ca_file)})`)
+  if (companies.length > 1) log(`  Companies     : ${companies.map((c, i) => `${i + 1}. ${companyLabel(c)}${i === 0 ? " (default)" : ""}`).join(", ")} (details: companies)`)
+  if (cfg.ca_file) log(`  Certificate   : ${cfg.ca_file} (${describeCa(cfg.ca_file)})`)
   try {
     const who = await new BrainApi(cfg.url, cfg.token, 5000).whoami()
-    log(`  Connexion     : OK — ${who.profile.name}, ${who.org.name}, zones : ${who.access.readable.map((z) => zoneName(cache, z)).join(", ") || "aucune"}`)
+    log(`  Connection    : OK — ${who.profile.name}, ${who.org.name}, zones: ${who.access.readable.map((z) => zoneName(cache, z)).join(", ") || "none"}`)
   } catch (err) {
-    log(`  Connexion     : KO — ${(err as Error).message}`)
+    log(`  Connection    : KO — ${(err as Error).message}`)
   }
   const ls = state.last_sync
   log(
-    `  Dernière synchro : ${ls ? `${frDate(ls.at)} ${new Date(ls.at).toLocaleTimeString("fr-FR")} — ${ls.items_sent} connaissance(s) envoyée(s), distillation ${DISTILLER_LABELS[ls.distiller as keyof typeof DISTILLER_LABELS] ?? ls.distiller}` : "jamais"}`,
+    `  Last sync     : ${ls ? `${shortDate(ls.at)} ${new Date(ls.at).toLocaleTimeString("en-GB")} — ${ls.items_sent} knowledge item(s) sent, distillation ${DISTILLER_LABELS[ls.distiller as keyof typeof DISTILLER_LABELS] ?? ls.distiller}` : "never"}`,
   )
   log(`  Sources       : ${cfg.sources.join(", ")}`)
-  log(`  Claude Code   : ${claudeDir()} (${Object.keys(state.claude?.files ?? {}).length} fichier(s) suivis)`)
-  log(`  Codex         : ${codexDir()} (${Object.keys(state.codex?.files ?? {}).length} fichier(s) suivis)`)
+  log(`  Claude Code   : ${claudeDir()} (${Object.keys(state.claude?.files ?? {}).length} file(s) followed)`)
+  log(`  Codex         : ${codexDir()} (${Object.keys(state.codex?.files ?? {}).length} file(s) followed)`)
   const h = await screenpipeHealth(cfg.screenpipe_url, cfg.screenpipe_token)
-  log(`  Screenpipe    : ${cfg.screenpipe_url} — ${h.ok ? "OK" : "KO"} (${h.detail})${cfg.screenpipe_token ? `, jeton ${maskSecret(cfg.screenpipe_token)}` : ""}`)
+  log(`  Screenpipe    : ${cfg.screenpipe_url} — ${h.ok ? "OK" : "KO"} (${h.detail})${cfg.screenpipe_token ? `, token ${maskSecret(cfg.screenpipe_token)}` : ""}`)
   if (h.ok) {
     const p = await screenpipeProbe(cfg.screenpipe_url, cfg.screenpipe_token)
-    log(`                  données : ${p.detail}${cfg.screenpipe_meetings === false ? " ; réunions non distillées (--screenpipe-meetings non)" : " ; réunions distillées"}`)
+    log(`                  data: ${p.detail}${cfg.screenpipe_meetings === false ? "; meetings not distilled (--screenpipe-meetings no)" : "; meetings distilled"}`)
   }
-  log(`  Pipe Screenpipe : ${pipeInstalled() ? `installé (${pipePath()})` : "non installé (install-pipe, si l'application Screenpipe est présente)"}`)
-  log(`  Hooks Claude  : ${hooksInstalled() ? "installés" : "non installés"} (${paths.claudeSettings()})`)
+  log(`  Screenpipe pipe : ${pipeInstalled() ? `installed (${pipePath()})` : "not installed (install-pipe, if the Screenpipe app is present)"}`)
+  log(`  Claude hooks  : ${hooksInstalled() ? "installed" : "not installed"} (${paths.claudeSettings()})`)
   log(
-    `  Résumés de prompts : ${cfg.share_prompt_summaries === false ? "désactivés (empreinte seule)" : "envoyés seulement pour les prompts classés dans une zone et non personnels"}`,
+    `  Prompt summaries : ${cfg.share_prompt_summaries === false ? "disabled (fingerprint only)" : "sent only for prompts classified in a zone and not personal"}`,
   )
   let sched = false
   try {
@@ -259,10 +259,10 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   } catch {
     sched = false
   }
-  log(`  Synchro auto  : ${sched ? "planifiée toutes les 15 min" : "non planifiée (install-schedule)"}`)
+  log(`  Auto sync     : ${sched ? "scheduled every 15 min" : "not scheduled (install-schedule)"}`)
   const d = pickDistiller(cfg)
   log(`  Distillation  : ${DISTILLER_LABELS[d.kind]} — ${d.reason}`)
-  log(`  Clé Anthropic : ${maskSecret(cfg.anthropic_api_key ?? process.env.ANTHROPIC_API_KEY)}`)
-  log(`  Jeton Claude Code : ${cfg.claude_oauth_token ? `${maskSecret(cfg.claude_oauth_token)} (passé à chaque \`claude -p\`)` : "(aucun) — `claude setup-token` puis `init --claude-token <jeton>` pour la synchro planifiée"}`)
+  log(`  Anthropic key: ${maskSecret(cfg.anthropic_api_key ?? process.env.ANTHROPIC_API_KEY)}`)
+  log(`  Claude Code token : ${cfg.claude_oauth_token ? `${maskSecret(cfg.claude_oauth_token)} (passed to every \`claude -p\`)` : "(none) — `claude setup-token` then `init --claude-token <token>` for the scheduled sync"}`)
   return 0
 }

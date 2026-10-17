@@ -12,16 +12,16 @@ const POLL_MS = 3000
 const TOAST_MS = 7000
 
 /**
- * Suit Claude Code ou Codex pendant qu'il prépare l'onboarding : sa proposition (qu'il envoie tôt puis complète) et le
- * fil de ses signaux (POST /api/onboarding/progress). Le fil déjà là au premier passage s'affiche sans notifier ; seuls
- * les signaux arrivés ensuite deviennent des notifications, pour qu'on puisse passer à la suite sans rien manquer.
+ * Follows Claude Code or Codex while it prepares the onboarding: its proposal (which it sends early then completes) and
+ * the thread of its signals (POST /api/onboarding/progress). The thread already there on the first read shows without
+ * notifying; only the signals that arrive afterwards become notifications, so you can move on without missing anything.
  */
 export function useAgentOnboarding<D extends { received_at?: string }>(active: boolean, notify = true) {
   const [draft, setDraft] = useState<D | null>(null)
   const [events, setEvents] = useState<AgentEvent[]>([])
   const [toasts, setToasts] = useState<AgentEvent[]>([])
   const seen = useRef<number | null>(null)
-  // Quand le fil est déjà à l'écran, ses signaux ne deviennent pas des notifications (ni plus tard, en quittant l'étape).
+  // When the thread is already on screen, its signals do not become notifications (nor later, when leaving the step).
   const notifyRef = useRef(notify)
   notifyRef.current = notify
   useEffect(() => {
@@ -57,7 +57,7 @@ export function useAgentOnboarding<D extends { received_at?: string }>(active: b
   }, [active])
 
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
-  // Le passage en cours : depuis son dernier départ.
+  // The current run: since its last start.
   const start = events.findLastIndex((e) => e.step === "start")
   const run = start >= 0 ? events.slice(start) : events
   const lastStep = run.at(-1)?.step
@@ -71,12 +71,12 @@ function EventMark({ ev, current }: { ev: AgentEvent; current: boolean }) {
   return <CheckIcon size={14} />
 }
 
-/** Le fil du passage, dans l'étape : chaque signal s'ajoute en bas, le dernier clignote tant que l'agent travaille. */
+/** The run's thread, in the step: each signal is added at the bottom, the last one blinks while the agent works. */
 export function AgentRun({ run, className = "" }: { run: AgentEvent[]; className?: string }) {
   if (!run.length) return null
   const shown = run.slice(-6)
   return (
-    <ol className={`space-y-1.5 ${className}`} aria-live="polite" aria-label="Avancement de l'agent">
+    <ol className={`space-y-1.5 ${className}`} aria-live="polite" aria-label="Agent progress">
       {shown.map((ev, i) => (
         <li key={ev.id} className={`feed-enter flex items-center gap-2.5 text-[13.5px] ${i === shown.length - 1 ? "" : "text-trace"}`}>
           <span className="grid size-4 shrink-0 place-items-center">
@@ -90,15 +90,15 @@ export function AgentRun({ run, className = "" }: { run: AgentEvent[]; className
 }
 
 const TOAST_TITLE: Record<AgentStep, string> = {
-  start: "Claude a commencé",
-  progress: "Claude avance",
-  draft: "Nouvelle proposition",
-  done: "Claude a terminé",
-  error: "Claude s'est arrêté",
+  start: "Claude started",
+  progress: "Claude is making progress",
+  draft: "New proposal",
+  done: "Claude is done",
+  error: "Claude stopped",
 }
 
 function Toast({ ev, current, dismiss, action }: { ev: AgentEvent; current: boolean; dismiss: (id: number) => void; action?: React.ReactNode }) {
-  // Les erreurs et les propositions à relire restent : on ne doit pas les manquer.
+  // Errors and proposals to review stay: they must not be missed.
   const sticky = ev.step === "error" || Boolean(action)
   useEffect(() => {
     if (sticky) return
@@ -115,18 +115,18 @@ function Toast({ ev, current, dismiss, action }: { ev: AgentEvent; current: bool
         <div className="break-words text-[13px] text-trace">{ev.message}</div>
         {action && <div className="mt-1.5 text-[13px]">{action}</div>}
       </div>
-      <button type="button" className="grid size-5 shrink-0 place-items-center rounded-[4px] text-trace hover:text-ink" aria-label="Fermer" onClick={() => dismiss(ev.id)}>
+      <button type="button" className="grid size-5 shrink-0 place-items-center rounded-[4px] text-trace hover:text-ink" aria-label="Close" onClick={() => dismiss(ev.id)}>
         <CloseIcon size={12} />
       </button>
     </li>
   )
 }
 
-/** Les notifications de l'agent, en bas à droite, pendant qu'on fait autre chose. `draftAction` : quoi faire d'une proposition reçue. */
+/** The agent's notifications, bottom right, while you do something else. `draftAction`: what to do with a received proposal. */
 export function AgentToasts({ toasts, dismiss, draftAction }: { toasts: AgentEvent[]; dismiss: (id: number) => void; draftAction?: React.ReactNode }) {
   if (!toasts.length) return null
   return (
-    <ol className="pointer-events-none fixed inset-x-4 bottom-4 z-50 ml-auto max-w-[360px] space-y-2" aria-live="polite" aria-label="Notifications de l'agent">
+    <ol className="pointer-events-none fixed inset-x-4 bottom-4 z-50 ml-auto max-w-[360px] space-y-2" aria-live="polite" aria-label="Agent notifications">
       {toasts.map((ev, i) => (
         <Toast key={ev.id} ev={ev} current={i === toasts.length - 1} dismiss={dismiss} action={ev.step === "draft" ? draftAction : undefined} />
       ))}

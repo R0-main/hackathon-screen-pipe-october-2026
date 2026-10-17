@@ -1,48 +1,48 @@
-// Le « prompt magique » de NOS Brainer : l'employé le colle dans Claude Code (ou Codex), qui lance UNE commande (celle de
-// son système), lit son code de sortie et dépanne avec `brain doctor` si besoin. Tout le travail est dans notre CLI
-// (docs/CLI.md) : `install.sh` (macOS, Linux, Git Bash) ou `install.ps1` (Windows) trouve ou installe Node.js, télécharge
-// `brain.mjs` et lance `brain setup`, qui installe Screenpipe, ouvre les bons Réglages macOS, branche le MCP et les hooks,
-// planifie la synchro et ouvre le cerveau déjà connecté. Aucun historique n'est envoyé : la synchro part de
-// l'installation ; relire puis envoyer ses dernières 24 h reste une option proposée à la fin.
-// La première phrase est reconnue par brain-sync (INSTALL_PROMPT_RE, apps/client/src/secrets.ts) : cette session contient
-// le jeton en clair et n'est jamais envoyée au cerveau. Ne pas la reformuler sans mettre à jour le client.
+// NOS Brainer's "magic prompt": the employee pastes it into Claude Code (or Codex), which runs ONE command (the one for
+// their system), reads its exit code and troubleshoots with `brain doctor` if needed. All the work is in our CLI
+// (docs/CLI.md): `install.sh` (macOS, Linux, Git Bash) or `install.ps1` (Windows) finds or installs Node.js, downloads
+// `brain.mjs` and runs `brain setup`, which installs Screenpipe, opens the right macOS Settings, connects the MCP and the
+// hooks, schedules the sync and opens the brain already signed in. No history is sent: the sync starts from the
+// install; reviewing then sending the last 24 h stays an option offered at the end.
+// The first sentence is recognized by brain-sync (INSTALL_PROMPT_RE, apps/client/src/secrets.ts): this session contains
+// the token in clear and is never sent to the brain. Do not rephrase it without updating the client.
 //
-// Codes de sortie, les mêmes pour install.sh, install.ps1, `brain setup` et `brain join` (docs/CLI.md) : 0 tout est
-// branché ; 1 échec (→ doctor) ; 2 mauvais appel ; 3 autorisation macOS en attente ; 4 système non géré ; 5 téléchargement
-// impossible ; 6 branché sans Screenpipe ; 7 demande pas encore acceptée ; 8 demande refusée.
+// Exit codes, the same for install.sh, install.ps1, `brain setup` and `brain join` (docs/CLI.md): 0 everything is
+// connected; 1 failure (→ doctor); 2 bad call; 3 macOS permission pending; 4 unsupported system; 5 download
+// failed; 6 connected without Screenpipe; 7 request not accepted yet; 8 request declined.
 
 /**
- * Nos prompts n'ont de sens que sur le poste de la personne (installer le client, lire son historique). Une session
- * Claude Code dans le cloud (app de bureau en environnement distant) s'arrête au lieu d'installer dans un conteneur.
+ * Our prompts only make sense on the person's own workstation (installing the client, reading their history). A Claude
+ * Code session in the cloud (desktop app in a remote environment) stops instead of installing into a container.
  */
-export const LOCAL_ONLY = "Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi en une phrase de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`)."
+export const LOCAL_ONLY = "If you are not running on my computer (cloud session, remote container), stop and tell me in one sentence to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal)."
 
-/** Une action refusée (mode de permission, bac à sable) : une phrase qui dit quoi faire, pas une liste de raisons ni d'options. */
-export const IF_BLOCKED = "Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire, sans liste ni explication, puis attends."
+/** An action refused (permission mode, sandbox): one sentence that says what to do, not a list of reasons or options. */
+export const IF_BLOCKED = "Action blocked or refused: work around nothing, tell me in one sentence what to do, with no list or explanation, then wait."
 
-/** Le raccourci écrit par install.sh : marche même quand Node.js est une copie privée hors du PATH. */
+/** The shortcut written by install.sh: works even when Node.js is a private copy outside the PATH. */
 export const BRAIN_CLI = "~/.company-brain/brain"
-/** Sous Windows (PowerShell comme Git Bash) : le raccourci écrit par install.ps1. */
+/** On Windows (PowerShell as well as Git Bash): the shortcut written by install.ps1. */
 export const BRAIN_CLI_WINDOWS = "~/.company-brain/brain.cmd"
 
-/** Codes de sortie cités par les prompts (voir l'en-tête). */
+/** Exit codes cited by the prompts (see the header). */
 export const EXIT = { permissions: 3, download: 5, noScreenpipe: 6, joinPending: 7, joinRejected: 8, certificate: 9 } as const
 
 /**
- * La commande unique de chaque système, suivie des options (`--token …` ou `--join …`, seul endroit où le jeton ou le
- * code apparaît). Un téléchargement raté rend 5 (jamais le code brut de curl, qui se confondrait avec les nôtres :
- * « curl: (6) » serait lu comme « branché sans Screenpipe ») ; sous Windows, `exit $LASTEXITCODE` rend le code de setup
- * même quand la ligne est passée à `powershell -Command`.
+ * The single command for each system, followed by the options (`--token …` or `--join …`, the only place where the token
+ * or the code appears). A failed download returns 5 (never curl's raw code, which would be confused with ours:
+ * "curl: (6)" would read as "connected without Screenpipe"); on Windows, `exit $LASTEXITCODE` returns setup's code
+ * even when the line is passed to `powershell -Command`.
  */
 export function installCommands(baseUrl: string, options = "", caFingerprint?: string): { posix: string; windows: string } {
   const dir = '"$env:USERPROFILE\\.company-brain'
   const args = `--url ${baseUrl}${options ? ` ${options}` : ""}`
   const ps1 = `try { Invoke-WebRequest -UseBasicParsing ${baseUrl}/install.ps1 -OutFile ${dir}\\install.ps1" -ErrorAction Stop } catch { exit ${EXIT.download} }; `
   if (caFingerprint) {
-    // Cerveau auto-hébergé en HTTPS local : son certificat est d'abord récupéré (sans vérification, il n'y a encore rien
-    // pour le vérifier), puis contrôlé par son empreinte SHA-256 donnée ici (9 si elle diffère) ; tout le reste passe par
-    // lui. Sous Windows, il est ajouté aux certificats de confiance de l'utilisateur (navigateurs et téléchargements ;
-    // Windows demande une confirmation), puis install.ps1 et le client reçoivent --ca.
+    // Self-hosted brain over local HTTPS: its certificate is fetched first (without verification, there is nothing yet
+    // to verify it with), then checked against its SHA-256 fingerprint given here (9 if it differs); everything else goes
+    // through it. On Windows, it is added to the user's trusted certificates (browsers and downloads;
+    // Windows asks for confirmation), then install.ps1 and the client receive --ca.
     const check = `[ "$(openssl x509 -in ${CA_FILE} -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "${caFingerprint}" ]`
     return {
       posix:
@@ -67,8 +67,8 @@ export function installCommands(baseUrl: string, options = "", caFingerprint?: s
 }
 
 /**
- * Relancer l'installation depuis un poste déjà branché (brain doctor) : la config garde le jeton, et le certificat d'un
- * cerveau auto-hébergé est déjà sur le poste (ajouté au magasin Windows à la première installation).
+ * Rerunning the install from an already connected workstation (brain doctor): the config keeps the token, and a
+ * self-hosted brain's certificate is already on the workstation (added to the Windows store at the first install).
  */
 export function reinstallCommands(baseUrl: string, caFile?: string): { posix: string; windows: string } {
   if (!caFile) return installCommands(baseUrl)
@@ -83,38 +83,39 @@ export function reinstallCommands(baseUrl: string, caFile?: string): { posix: st
   }
 }
 
-/** Les deux lignes « système : commande » du prompt. */
+/** The prompt's two "system: command" lines. */
 function commandLines(cmd: { posix: string; windows: string }): string {
-  return `   macOS, Linux, Git Bash : ${cmd.posix}\n   Windows, PowerShell : ${cmd.windows}`
+  return `   macOS, Linux, Git Bash: ${cmd.posix}\n   Windows, PowerShell: ${cmd.windows}`
 }
 
-/** Ce que Claude fait des codes communs (setup, et join une fois la demande acceptée). */
+/** What Claude does with the shared codes (setup, and join once the request is accepted). */
 function commonCodes(brain: string): string {
   return (
-    `Code ${EXIT.permissions} (« EN ATTENTE ») : redis-moi où cocher, puis relance \`${brain} setup\` (même délai). ` +
-    `Code ${EXIT.download} : réseau ou adresse, relance la même commande. ` +
-    `Autre code (${EXIT.noScreenpipe} : branché sans Screenpipe) : lance \`${brain} doctor --json\` et les corrections marquées « safe » (même délai), puis dis-moi en une phrase ce qui reste à faire. ` +
-    `Sous Windows, le client est \`${BRAIN_CLI_WINDOWS}\`. ` +
-    `Ligne « À FAIRE » en sortie : répète-la-moi telle quelle.`
+    `Code ${EXIT.permissions} ("WAITING"): tell me again where to tick, then rerun \`${brain} setup\` (same timeout). ` +
+    `Code ${EXIT.download}: network or address, rerun the same command. ` +
+    `Any other code (${EXIT.noScreenpipe}: connected without Screenpipe): run \`${brain} doctor --json\` and the fixes marked "safe" (same timeout), then tell me in one sentence what is left to do. ` +
+    `On Windows, the client is \`${BRAIN_CLI_WINDOWS}\`. ` +
+    `A "TO DO" line in the output: repeat it to me as is.`
   )
 }
 
-/** Où install.sh et le client gardent le certificat d'un cerveau auto-hébergé. */
+/** Where install.sh and the client keep a self-hosted brain's certificate. */
 export const CA_FILE = "~/.company-brain/ca.crt"
 
-const CA_NOTE = "   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; code 9 = empreinte différente, arrête-toi et préviens-moi. Sous Windows, une boîte de dialogue demande de confirmer l'ajout du certificat : accepter.)\n"
+const CA_NOTE = "   (self-hosted brain over local HTTPS: the command fetches its certificate and checks its fingerprint before using it; code 9 = different fingerprint, stop and tell me. On Windows, a dialog asks to confirm adding the certificate: accept.)\n"
 
-/** « de Butine », « d'Atelier Lumen » : l'élision devant une voyelle ou un h. */
-export function deNom(name: string): string {
-  return /^[aeiouyhàâäéèêëîïôöùûüœæ]/i.test(name.trim()) ? `d'${name.trim()}` : `de ${name.trim()}`
+/** "Fournil's", "Atelier Lumens'": the English possessive of a company name. */
+export function possessive(name: string): string {
+  const n = name.trim()
+  return /s$/i.test(n) ? `${n}'` : `${n}'s`
 }
 
-/** Au-delà, la description de l'entreprise est coupée au dernier mot entier : le prompt reste court. */
+/** Beyond this, the company description is cut at the last whole word: the prompt stays short. */
 export const ABOUT_ORG_MAX = 300
 
 /**
- * « L'entreprise, en deux mots : « … ». », d'après sa description (/creer, onboarding), sur une ligne et entre
- * guillemets (une donnée, pas une consigne). Sans description, rien : le prompt nomme déjà l'entreprise.
+ * "The company, in a nutshell: "…".", from its description (/create, onboarding), on one line and in quotes (data,
+ * not an instruction). Without a description, nothing: the prompt already names the company.
  */
 export function aboutOrg(description?: string): string {
   let d = description?.replace(/\s+/g, " ").trim().replace(/\.$/, "")
@@ -123,42 +124,42 @@ export function aboutOrg(description?: string): string {
     const space = d.lastIndexOf(" ", ABOUT_ORG_MAX)
     d = `${d.slice(0, space > 0 ? space : ABOUT_ORG_MAX).replace(/[\s,;:.]+$/, "")}…`
   }
-  return ` L'entreprise, en deux mots : « ${d} ».`
+  return ` The company, in a nutshell: "${d}".`
 }
 
 export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; orgDescription?: string; zones: string[]; caFingerprint?: string }): string {
   const { baseUrl, token, name, orgName, orgDescription, zones, caFingerprint } = opts
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--token ${token}`, caFingerprint)
-  return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}.${aboutOrg(orgDescription)} Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
-Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
+  return `You are going to connect this computer to NOS Brainer, ${possessive(orgName)} company brain.${aboutOrg(orgDescription)} I am ${name}, zones: ${zones.join(", ") || "none yet"}.
+This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY} ${IF_BLOCKED}
 
-1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
-2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
+1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
+2. Run the command for my system as is, in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there):
 ${commandLines(cmd)}
-${caFingerprint ? CA_NOTE : ""}3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. ${commonCodes(brain)}
-4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (\`${brain} uninstall\`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord \`${brain} sync --dry-run --full --since 24h\` en entier ; rien ne part avant mon accord explicite, puis \`${brain} sync --confirm\` envoie exactement ce que j'ai relu.`
+${caFingerprint ? CA_NOTE : ""}3. Code 0: it's done, the brain has opened in my browser. ${commonCodes(brain)}
+4. Finish in three lines: what is running, what gets sent (distilled knowledge, never the raw screen; no history is sent) and how to remove everything (\`${brain} uninstall\`). Finally, offer to have the brain learn my last 24 h: first show me \`${brain} sync --dry-run --full --since 24h\` in full; nothing is sent before my explicit approval, then \`${brain} sync --confirm\` sends exactly what I reviewed.`
 }
 
-// Le message d'équipe : le même pour toute l'entreprise, à envoyer à ses collègues (jamais publiquement). Il ne donne
-// accès à rien : la commande crée une demande, préremplie par le Claude du demandeur, qu'un admin accepte ou refuse.
-// Le jeton est généré sur le poste et seule son empreinte part avec la demande ; une fois acceptée, `brain join`
-// enchaîne sur `setup`. Première phrase reconnue par brain-sync (INSTALL_PROMPT_RE) : ne pas la reformuler seule.
+// The team message: the same for the whole company, to send to colleagues (never publicly). It grants access to
+// nothing: the command creates a request, pre-filled by the requester's Claude, that an admin accepts or declines.
+// The token is generated on the workstation and only its fingerprint goes with the request; once accepted, `brain join`
+// moves on to `setup`. First sentence recognized by brain-sync (INSTALL_PROMPT_RE): do not rephrase it on its own.
 
-/** Codes de sortie propres à `brain join` (apps/client/src/join.ts). */
+/** Exit codes specific to `brain join` (apps/client/src/join.ts). */
 export const JOIN_EXIT = { pending: EXIT.joinPending, rejected: EXIT.joinRejected } as const
 
 export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string; orgDescription?: string; caFingerprint?: string }): string {
   const { baseUrl, code, orgName, orgDescription, caFingerprint } = opts
-  const org = deNom(orgName)
+  const org = orgName.trim()
   const brain = BRAIN_CLI
-  const cmd = installCommands(baseUrl, `--join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"`, caFingerprint)
-  return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}.${aboutOrg(orgDescription)} Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
+  const cmd = installCommands(baseUrl, `--join ${code} --name "<first last>" --title "<role>" --email "<email>"`, caFingerprint)
+  return `You are going to ask to join NOS Brainer, ${possessive(org)} company brain.${aboutOrg(orgDescription)} This team message contains ${possessive(org)} access code: never display it in full and never pass it on outside the company (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY} ${IF_BLOCKED}
 
-1. Sans me poser de question ni lancer de commande pour chercher, prépare ma demande avec ce que tu sais déjà de moi (mon compte, ta mémoire, nos échanges) : prénom et nom, poste ou métier, email pro. N'invente rien : une information que tu n'as pas, enlève-la de la commande, un admin la complétera.
-2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).
-3. Lance la commande de mon système en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée), en remplaçant les valeurs entre chevrons :
+1. Without asking me anything or running commands to look things up, prepare my request with what you already know about me (my account, your memory, our conversations): first and last name, role or job, work email. Make nothing up: for information you don't have, remove it from the command, an admin will fill it in.
+2. Warn me in one sentence: an admin at ${org} must accept my request; the command waits for it, then installs everything (on a Mac, I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility").
+3. Run the command for my system in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there), replacing the values in angle brackets:
 ${commandLines(cmd)}
-${caFingerprint ? CA_NOTE : ""}4. Code 0 : demande acceptée et poste branché, le cerveau s'est ouvert dans mon navigateur. Code ${JOIN_EXIT.pending} (« EN ATTENTE D'ACCEPTATION ») : dis-moi que ma demande attend un admin et propose de relancer \`${brain} join\`, qui reprend la même demande. Code ${JOIN_EXIT.rejected} : la demande a été refusée, rien n'est installé. ${commonCodes(brain)}
-5. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (\`${brain} uninstall\`).`
+${caFingerprint ? CA_NOTE : ""}4. Code 0: request accepted and computer connected, the brain has opened in my browser. Code ${JOIN_EXIT.pending} ("WAITING FOR APPROVAL"): tell me my request is waiting for an admin and offer to rerun \`${brain} join\`, which resumes the same request. Code ${JOIN_EXIT.rejected}: the request was declined, nothing is installed. ${commonCodes(brain)}
+5. Finish in three lines: what is running, what gets sent (distilled knowledge, never the raw screen; no history is sent) and how to remove everything (\`${brain} uninstall\`).`
 }

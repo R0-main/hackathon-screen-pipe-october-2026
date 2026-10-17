@@ -2,44 +2,44 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { cosine, expandQuery, jaccard, likeness, matchStrength, rrf, strongEnough } from "./search"
 
-test("expandQuery : synonymes FR/EN, expressions à plusieurs mots, pas de doublon", () => {
-  const { tokens, added } = expandQuery("comment déployer en prod ?")
-  assert.deepEqual(tokens, ["comment", "deployer", "prod"])
-  for (const t of ["deploy", "mise", "production", "release"]) assert.ok(added.includes(t), `attendu ${t}`)
-  assert.ok(!added.includes("deployer"), "un token d'origine n'est pas rajouté")
+test("expandQuery: synonyms, multi-word expressions, no duplicates", () => {
+  const { tokens, added } = expandQuery("how do we deploy to prod?")
+  assert.deepEqual(tokens, ["deploy", "prod"])
+  for (const t of ["deployment", "ship", "production", "release"]) assert.ok(added.includes(t), `expected ${t}`)
+  assert.ok(!added.includes("deploy"), "an original token is not added again")
   const inv = expandQuery("invoice overdue")
-  assert.ok(inv.added.includes("facture"))
+  assert.ok(inv.added.includes("billing"))
   assert.deepEqual(expandQuery("xyzzy").added, [])
 })
 
-test("jaccard et likeness : doublon, remplacement, sans rapport", () => {
+test("jaccard and likeness: duplicate, replacement, unrelated", () => {
   assert.equal(jaccard(["a", "b"], ["a", "b"]), 1)
   assert.equal(jaccard(["a", "b"], ["c"]), 0)
-  const a = { kind: "decision", title: "Les abonnements passent à Stripe Billing", body: "On migre de Checkout vers Billing pour la proration des abonnements." }
+  const a = { kind: "decision", title: "Subscriptions move to Stripe Billing", body: "We migrate from Checkout to Billing for subscription proration." }
   assert.equal(likeness({ ...a, body: `${a.body} ` }, a), "duplicate")
-  const revised = { ...a, body: "Finalement on reste sur Checkout : Billing ne gère pas nos remises annuelles." }
+  const revised = { ...a, body: "In the end we stay on Checkout: Billing doesn't handle our annual discounts." }
   assert.equal(likeness(revised, a), "supersedes")
   assert.equal(likeness({ ...revised, kind: "task" }, { ...a, kind: "task" }), "different")
-  assert.equal(likeness({ kind: "fact", title: "Burn mensuel de 62 k€", body: "Runway 14 mois." }, a), "different")
-  // Un titre d'un seul mot (« Déploiement ») ne suffit pas à conclure au remplacement.
-  assert.equal(likeness({ kind: "procedure", title: "Déploiement", body: "Merger sur main puis tagger" }, { kind: "procedure", title: "Déploiement", body: "Lancer le script de release" }), "different")
+  assert.equal(likeness({ kind: "fact", title: "Monthly burn of €62k", body: "14 months of runway." }, a), "different")
+  // A single-word title ("Deployment") is not enough to conclude a replacement.
+  assert.equal(likeness({ kind: "procedure", title: "Deployment", body: "Merge into main then tag" }, { kind: "procedure", title: "Deployment", body: "Run the release script" }), "different")
 })
 
-test("matchStrength : un synonyme qui n'attrape qu'un mot isolé du corps ne suffit pas", () => {
-  const { tokens, added } = expandQuery("déployer en production")
+test("matchStrength: a synonym that only catches an isolated word of the body is not enough", () => {
+  const { tokens, added } = expandQuery("deploy to production")
   const q = [...tokens, ...added]
-  const compta = { title: "Clôture mensuelle : export Pennylane avant le 5 pour le cabinet Durand", body: "L'expert-comptable (cabinet Durand) produit la situation mensuelle sous 10 jours à partir de cet export.", entities: [{ name: "Pennylane" }] }
-  const s = matchStrength(q, compta)
+  const finance = { title: "Month-end close: Pennylane export before the 5th for the Durand firm", body: "The accountant (Durand firm) produces the monthly statement within 10 days from this export.", entities: [{ name: "Pennylane" }] }
+  const s = matchStrength(q, finance)
   assert.equal(s.title, 0)
-  assert.equal(s.total, 1, "« prod » attrape « produit » dans le corps, et rien d'autre")
+  assert.equal(s.total, 1, "\"prod\" catches \"produces\" in the body, and nothing else")
   assert.equal(strongEnough(s), false)
-  const dev = { title: "Déployer Fournil en production", body: "1. Merger sur main. 2. Tagger. 3. Surveiller Sentry.", entities: [{ name: "Vercel" }] }
+  const dev = { title: "Deploy Fournil to production", body: "1. Merge into main. 2. Tag. 3. Watch Sentry.", entities: [{ name: "Vercel" }] }
   assert.equal(strongEnough(matchStrength(q, dev)), true)
   const release = matchStrength([...expandQuery("how do we ship a release").tokens, ...expandQuery("how do we ship a release").added], dev)
-  assert.ok(release.title >= 1, "« release » étend à « deployer », trouvé dans le titre")
+  assert.ok(release.title >= 1, "\"release\" expands to \"deploy\", found in the title")
 })
 
-test("rrf : un résultat présent dans deux listes remonte", () => {
+test("rrf: a result present in two lists rises", () => {
   const out = rrf([
     ["a", "b", "c"],
     ["c", "d"],

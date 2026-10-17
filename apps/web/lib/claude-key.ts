@@ -1,8 +1,8 @@
-// Clé API Claude de l'entreprise, saisie par un admin dans « Zones » : c'est elle qui paie les appels du serveur pour
-// cette entreprise (nouvelles zones, résumé d'état, onboarding). Chiffrée (AES-256-GCM) dans les réglages de
-// l'entreprise et jamais renvoyée en clair : l'API n'en montre que les 4 derniers caractères.
-// Le chiffrement prend BRAIN_SECRET_KEY si elle est définie (la clé reste illisible même avec un accès à la base),
-// sinon le secret de session du cerveau, conservé dans la même base (protège d'une lecture des seuls réglages).
+// The company's Claude API key, entered by an admin in "Zones": it pays for the server's calls for
+// this company (new zones, status summary, onboarding). Encrypted (AES-256-GCM) in the company's
+// settings and never sent back in clear: the API only shows its last 4 characters.
+// Encryption uses BRAIN_SECRET_KEY when it is set (the key stays unreadable even with database access),
+// otherwise the brain's session secret, kept in the same database (protects against reading the settings alone).
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto"
 import Anthropic from "@anthropic-ai/sdk"
@@ -10,13 +10,13 @@ import { getRootStore, type BrainStore } from "./store"
 
 const SETTING = "claude-api-key"
 
-/** Format d'une clé de la Console Anthropic (sk-ant-api03-…, sk-ant-admin…). */
+/** Format of an Anthropic Console key (sk-ant-api03-…, sk-ant-admin…). */
 export const CLAUDE_KEY_RE = /^sk-ant-[A-Za-z0-9_-]{20,200}$/
 
 type Stored = { v: 1; iv: string; tag: string; data: string; last4: string; updated_at: string; updated_by: string }
 
 export type ClaudeKeyInfo = {
-  /** `org` : clé de l'entreprise ; `server` : ANTHROPIC_API_KEY du déploiement ; null : pas de Claude côté serveur. */
+  /** `org`: the company's key; `server`: the deployment's ANTHROPIC_API_KEY; null: no Claude on the server. */
   source: "org" | "server" | null
   last4?: string
   updated_at?: string
@@ -39,7 +39,7 @@ async function readStored(store: BrainStore): Promise<Stored | null> {
   }
 }
 
-/** La clé de l'entreprise en clair, ou null (absente, ou illisible si BRAIN_SECRET_KEY a changé). */
+/** The company's key in clear, or null (missing, or unreadable if BRAIN_SECRET_KEY changed). */
 export async function getOrgClaudeKey(store: BrainStore): Promise<string | null> {
   const s = await readStored(store)
   if (!s) return null
@@ -48,7 +48,7 @@ export async function getOrgClaudeKey(store: BrainStore): Promise<string | null>
     decipher.setAuthTag(Buffer.from(s.tag, "base64"))
     return Buffer.concat([decipher.update(Buffer.from(s.data, "base64")), decipher.final()]).toString("utf8")
   } catch {
-    console.error("[claude-key] clé de l'entreprise illisible (BRAIN_SECRET_KEY a changé ?) : à saisir de nouveau")
+    console.error("[claude-key] the company's key is unreadable (did BRAIN_SECRET_KEY change?): enter it again")
     return null
   }
 }
@@ -78,7 +78,7 @@ export function serverHasClaude(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
 }
 
-/** Ce que l'admin voit : d'où vient Claude pour son entreprise, sans jamais la clé elle-même. */
+/** What the admin sees: where Claude comes from for their company, never the key itself. */
 export async function claudeKeyInfo(store: BrainStore): Promise<ClaudeKeyInfo> {
   const s = await readStored(store)
   if (s) return { source: "org", last4: s.last4, updated_at: s.updated_at, updated_by: s.updated_by }
@@ -86,8 +86,8 @@ export async function claudeKeyInfo(store: BrainStore): Promise<ClaudeKeyInfo> {
 }
 
 /**
- * Essaie la clé auprès d'Anthropic (liste des modèles : gratuit, sans jeton consommé) avant de l'enregistrer.
- * `invalid` : Anthropic la refuse ; `unreachable` : impossible de vérifier (réseau, panne), rien n'est enregistré.
+ * Tries the key against Anthropic (model list: free, no token consumed) before saving it.
+ * `invalid`: Anthropic rejects it; `unreachable`: cannot check (network, outage), nothing is saved.
  */
 export async function verifyClaudeKey(key: string): Promise<{ ok: true } | { ok: false; reason: "invalid" | "unreachable"; message: string }> {
   try {
@@ -95,7 +95,7 @@ export async function verifyClaudeKey(key: string): Promise<{ ok: true } | { ok:
     return { ok: true }
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError)
-      return { ok: false, reason: "invalid", message: "Anthropic refuse cette clé : vérifiez-la dans la Console (console.anthropic.com), ou créez-en une nouvelle." }
-    return { ok: false, reason: "unreachable", message: "Impossible de joindre Anthropic pour vérifier la clé : réessayez dans un instant." }
+      return { ok: false, reason: "invalid", message: "Anthropic rejects this key: check it in the Console (console.anthropic.com), or create a new one." }
+    return { ok: false, reason: "unreachable", message: "Could not reach Anthropic to check the key: try again in a moment." }
   }
 }

@@ -1,5 +1,5 @@
-// Autorisation OAuth d'un serveur MCP distant (spec MCP 2025-06-18) : découverte (WWW-Authenticate, RFC 9728,
-// RFC 8414 / OpenID), enregistrement dynamique du client (RFC 7591), PKCE S256, échange du code et rafraîchissement.
+// OAuth authorization of a remote MCP server (MCP spec 2025-06-18): discovery (WWW-Authenticate, RFC 9728,
+// RFC 8414 / OpenID), dynamic client registration (RFC 7591), PKCE S256, code exchange and refresh.
 
 import { createHash, randomBytes } from "node:crypto"
 import {
@@ -30,13 +30,13 @@ export function pkcePair(): { verifier: string; challenge: string } {
 }
 
 export type Discovery = {
-  /** Le serveur répond sans jeton. */
+  /** The server answers without a token. */
   open: boolean
-  /** Métadonnées OAuth (absentes : le serveur n'annonce pas de serveur d'autorisation). */
+  /** OAuth metadata (absent: the server does not announce an authorization server). */
   meta?: McpOAuthMeta
 }
 
-/** Appel `initialize` sans jeton : 401 attendu, avec l'adresse des métadonnées dans WWW-Authenticate. */
+/** `initialize` call without a token: 401 expected, with the metadata address in WWW-Authenticate. */
 async function probe(serverUrl: string, deps: NetDeps): Promise<{ status: number; www: Record<string, string> }> {
   const res = await guardedRequest(
     serverUrl,
@@ -44,7 +44,7 @@ async function probe(serverUrl: string, deps: NetDeps): Promise<{ status: number
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": PROTOCOL_VERSION },
       body: JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: CLIENT_NAME, version: "0.1" } } }),
-      // On n'a besoin que du statut et des en-têtes.
+      // Only the status and headers are needed.
       until: () => true,
       timeoutMs: 10_000,
     },
@@ -53,13 +53,13 @@ async function probe(serverUrl: string, deps: NetDeps): Promise<{ status: number
   return { status: res.status, www: parseWwwAuthenticate(res.headers["www-authenticate"]) }
 }
 
-/** Au-delà, une liste scopes_supported décrit tout ce que sait faire le fournisseur (écritures comprises), pas un besoin. */
+/** Beyond this, a scopes_supported list describes everything the provider can do (writes included), not a need. */
 export const MAX_DEFAULT_SCOPES = 12
 
 /**
- * Portées demandées : celles du défi WWW-Authenticate, sinon scopes_supported des métadonnées de ressource si la liste
- * est courte ; une longue liste (PagerDuty, Ramp…) n'est pas demandée en bloc : le fournisseur applique ses portées par
- * défaut, au lieu d'un écran de consentement démesuré ou d'un refus invalid_scope.
+ * Requested scopes: those of the WWW-Authenticate challenge, otherwise the resource metadata's scopes_supported if the
+ * list is short; a long list (PagerDuty, Ramp…) is not requested as a block: the provider applies its default scopes,
+ * instead of an oversized consent screen or an invalid_scope refusal.
  */
 export function pickScopes(challenge: string | undefined, supported: unknown): string[] | undefined {
   const list = challenge
@@ -75,7 +75,7 @@ export async function discover(serverUrl: string, deps: NetDeps = DEFAULT_DEPS):
   const { status, www } = await probe(serverUrl, deps)
   const open = status >= 200 && status < 300
 
-  // Métadonnées de ressource protégée : l'adresse annoncée, sinon les adresses bien connues.
+  // Protected resource metadata: the announced address, otherwise the well-known addresses.
   const prmUrls = [...(www.resource_metadata ? [www.resource_metadata] : []), ...protectedResourceUrls(serverUrl)]
   let prm: Record<string, unknown> | null = null
   for (const u of prmUrls) {
@@ -86,7 +86,7 @@ export async function discover(serverUrl: string, deps: NetDeps = DEFAULT_DEPS):
   const resource = typeof prm?.resource === "string" && prm.resource ? prm.resource : canonicalResource(serverUrl)
   const scopes = pickScopes(www.scope, prm?.scopes_supported)
 
-  // Serveur d'autorisation : celui annoncé, sinon (spec 2025-03-26) l'origine du serveur MCP.
+  // Authorization server: the announced one, otherwise (spec 2025-03-26) the MCP server's origin.
   const issuer = prm ? String((prm.authorization_servers as unknown[])[0]) : new URL(serverUrl).origin
   for (const u of authServerMetadataUrls(issuer)) {
     const json = await getJson(u, deps)
@@ -94,16 +94,16 @@ export async function discover(serverUrl: string, deps: NetDeps = DEFAULT_DEPS):
     if (meta) return { open, meta }
   }
   if (!prm && !open && status === 401) {
-    // Ancienne convention : points d'accès par défaut à la racine.
+    // Old convention: default endpoints at the root.
     const origin = new URL(serverUrl).origin
     return { open, meta: { issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`, registration_endpoint: `${origin}/register`, scopes, resource } }
   }
   return { open }
 }
 
-/** Enregistrement dynamique : un client public (PKCE, sans secret) pour cette adresse de retour. */
+/** Dynamic registration: a public client (PKCE, no secret) for this redirect URI. */
 export async function registerClient(meta: McpOAuthMeta, redirectUri: string, deps: NetDeps = DEFAULT_DEPS): Promise<McpClient> {
-  if (!meta.registration_endpoint) throw new Error("ce fournisseur n'accepte pas l'enregistrement automatique : renseignez un client OAuth")
+  if (!meta.registration_endpoint) throw new Error("this provider does not accept automatic registration: fill in an OAuth client")
   const res = await guardedRequest(
     meta.registration_endpoint,
     {
@@ -125,11 +125,11 @@ export async function registerClient(meta: McpOAuthMeta, redirectUri: string, de
   try {
     data = JSON.parse(res.body) as Record<string, unknown>
   } catch {
-    // corps non JSON : traité ci-dessous
+    // non-JSON body: handled below
   }
   if (res.status < 200 || res.status >= 300 || typeof data.client_id !== "string") {
     const detail = typeof data.error_description === "string" ? data.error_description : typeof data.error === "string" ? data.error : `HTTP ${res.status}`
-    throw new Error(`enregistrement du client refusé (${detail})`)
+    throw new Error(`client registration refused (${detail})`)
   }
   return {
     client_id: data.client_id,
@@ -152,7 +152,7 @@ async function tokenRequest(meta: McpOAuthMeta, client: McpClient, params: Recor
     if (method === "client_secret_post") form.set("client_secret", client.client_secret ?? "")
   }
   const res = await guardedRequest(meta.token_endpoint, { method: "POST", headers, body: form.toString() }, deps)
-  if (res.status >= 500) throw new Error(`serveur d'autorisation en erreur (HTTP ${res.status})`)
+  if (res.status >= 500) throw new Error(`authorization server error (HTTP ${res.status})`)
   return parseTokenResponse(res.body, res.headers["content-type"] ?? "")
 }
 
@@ -160,9 +160,9 @@ export function exchangeCode(meta: McpOAuthMeta, client: McpClient, p: { code: s
   return tokenRequest(meta, client, { grant_type: "authorization_code", code: p.code, redirect_uri: p.redirect_uri, code_verifier: p.verifier }, deps)
 }
 
-/** Nouveau jeton d'accès ; le jeton de rafraîchissement est gardé si le serveur n'en renvoie pas de nouveau. */
+/** New access token; the refresh token is kept if the server does not send a new one. */
 export async function refreshTokens(meta: McpOAuthMeta, client: McpClient, tokens: McpTokens, deps: NetDeps = DEFAULT_DEPS): Promise<McpTokens> {
-  if (!tokens.refresh_token) throw new Error("connexion expirée : reconnectez le connecteur")
+  if (!tokens.refresh_token) throw new Error("sign-in expired: reconnect the connector")
   const next = await tokenRequest(meta, client, { grant_type: "refresh_token", refresh_token: tokens.refresh_token }, deps)
   return { ...next, refresh_token: next.refresh_token ?? tokens.refresh_token }
 }

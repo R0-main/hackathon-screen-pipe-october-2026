@@ -7,13 +7,13 @@ import { getStore, type BrainStore } from "./store"
 const g = globalThis as unknown as { __claude?: Anthropic | null; __claudeByKey?: Map<string, Anthropic> }
 
 /**
- * Client Claude côté serveur pour une entreprise (par défaut celle de la requête) : sa propre clé (réglée par un admin)
- * d'abord, sinon ANTHROPIC_API_KEY du déploiement, sinon null (on utilise alors les heuristiques).
+ * Server-side Claude client for a company (by default the request's): its own key (set by an admin)
+ * first, otherwise the deployment's ANTHROPIC_API_KEY, otherwise null (heuristics are then used).
  */
 export async function getClaude(store: BrainStore = getStore()): Promise<Anthropic | null> {
   const key = await getOrgClaudeKey(store)
   if (key) {
-    // Un client par clé (pas par entreprise) : une clé remplacée en crée un neuf, l'ancien n'est plus jamais servi.
+    // One client per key (not per company): a replaced key creates a new one, the old one is never served again.
     const cache = (g.__claudeByKey ??= new Map())
     const id = createHash("sha256").update(key).digest("hex")
     let client = cache.get(id)

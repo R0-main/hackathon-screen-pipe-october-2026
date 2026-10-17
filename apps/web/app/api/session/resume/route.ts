@@ -7,8 +7,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * Session expirée (ou fermée avec le navigateur) : rouvre l'entreprise retenue la plus récente, sans jeton (appelé par
- * la page /reprise). Rien de valable à rouvrir, ou déconnexion volontaire : 404, et les pages vont droit à la connexion.
+ * Expired session (or closed with the browser): reopens the most recently remembered company, without a token (called
+ * by the /resume page). Nothing valid to reopen, or deliberate sign-out: 404, and the pages go straight to sign-in.
  */
 export async function POST() {
   try {
@@ -16,7 +16,7 @@ export async function POST() {
     const userId = jar.get(SIGNED_OUT_COOKIE) ? null : await latestRemembered(jar.get(ACCOUNTS_COOKIE)?.value)
     if (!userId) {
       jar.set(SIGNED_OUT_COOKIE, "1", accountsCookieOptions)
-      return error(404, "Aucune entreprise à rouvrir sur ce navigateur : connectez-vous avec votre jeton.")
+      return error(404, "No company to reopen on this browser: sign in with your token.")
     }
     await openSession(userId)
     return json({ ok: true })

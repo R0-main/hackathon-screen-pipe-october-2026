@@ -6,10 +6,10 @@ import { requirePageViewer } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 
-/** Équipe et accès : /admin (organigramme), /admin/acces, /admin/demandes, /admin/zones. */
-export default async function AdminPage({ params }: { params: Promise<{ vue?: string[] }> }) {
-  const { vue = [] } = await params
-  const view = vue.length <= 1 ? ADMIN_VIEWS.find((v) => v.slug === (vue[0] ?? "")) : undefined
+/** Team and access: /admin (org chart), /admin/access, /admin/requests, /admin/zones. */
+export default async function AdminPage({ params }: { params: Promise<{ view?: string[] }> }) {
+  const { view: segments = [] } = await params
+  const view = segments.length <= 1 ? ADMIN_VIEWS.find((v) => v.slug === (segments[0] ?? "")) : undefined
   if (!view) notFound()
   const viewer = await requirePageViewer({ admin: true })
   const store = storeForOrg(viewer.real.org_id)

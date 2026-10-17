@@ -1,6 +1,6 @@
-// Requêtes HTTP vers les serveurs MCP et leurs serveurs d'autorisation, avec la même protection SSRF que le
-// récupérateur de l'onboarding (adresse vérifiée à la connexion, chaque redirection revérifiée), un délai et une
-// taille bornés. `until` coupe la lecture dès que la réponse attendue est arrivée (flux SSE laissés ouverts).
+// HTTP requests to MCP servers and their authorization servers, with the same SSRF protection as the onboarding
+// fetcher (address checked at connection, each redirect checked again), a bounded timeout and size. `until` stops
+// reading as soon as the expected response has arrived (SSE streams left open).
 
 import http from "node:http"
 import https from "node:https"
@@ -9,7 +9,7 @@ import { DEFAULT_DEPS, checkUrl, guardedLookup, type ScrapeDeps } from "../scrap
 
 export type NetDeps = ScrapeDeps
 
-// Certains fournisseurs (Cloudflare devant) refusent les agents utilisateur inconnus.
+// Some providers (Cloudflare in front) refuse unknown user agents.
 const USER_AGENT = "Mozilla/5.0 (compatible; NOSBrainer/0.1; +https://www.nos-brainer.tech)"
 const TIMEOUT_MS = 15_000
 const MAX_BYTES = 1_000_000
@@ -22,9 +22,9 @@ export type RequestOpts = {
   body?: string
   timeoutMs?: number
   maxBytes?: number
-  /** Arrête la lecture dès que le corps reçu suffit. */
+  /** Stops reading as soon as the body received is enough. */
   until?: (body: string) => boolean
-  /** Redirections suivies (GET seulement ; par défaut 3). */
+  /** Redirects followed (GET only; 3 by default). */
   redirects?: number
 }
 
@@ -88,14 +88,14 @@ function once(url: URL, opts: RequestOpts, deps: NetDeps, deadline: number): Pro
         stream.on("error", (err: Error) => done(err))
       },
     )
-    const timer = setTimeout(() => req.destroy(new Error("délai dépassé")), Math.max(1, deadline - Date.now()))
+    const timer = setTimeout(() => req.destroy(new Error("timed out")), Math.max(1, deadline - Date.now()))
     req.on("error", (err) => done(err))
     if (opts.body !== undefined) req.write(opts.body)
     req.end()
   })
 }
 
-/** Requête protégée ; ne lève que pour une erreur réseau ou une adresse refusée (les statuts HTTP sont renvoyés). */
+/** Guarded request; only throws for a network error or a refused address (HTTP statuses are returned). */
 export async function guardedRequest(raw: string, opts: RequestOpts = {}, deps: NetDeps = DEFAULT_DEPS): Promise<HttpResult> {
   const deadline = Date.now() + (opts.timeoutMs ?? TIMEOUT_MS)
   const method = (opts.method ?? "GET").toUpperCase()
@@ -109,7 +109,7 @@ export async function guardedRequest(raw: string, opts: RequestOpts = {}, deps: 
   return res
 }
 
-/** GET d'un document JSON ; null si absent, non JSON ou en erreur. */
+/** GET of a JSON document; null if missing, not JSON or in error. */
 export async function getJson(raw: string, deps: NetDeps = DEFAULT_DEPS): Promise<Record<string, unknown> | null> {
   try {
     const res = await guardedRequest(raw, { headers: { accept: "application/json" }, timeoutMs: 10_000 }, deps)

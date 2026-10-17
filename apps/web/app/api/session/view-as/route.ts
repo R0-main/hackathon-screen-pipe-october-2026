@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 
 const Schema = z.object({ userId: z.string().max(64).nullable() })
 
-/** Admin : voir le dashboard avec les droits d'un autre membre (démo des accès par zone). */
+/** Admin: see the dashboard with another member's permissions (demo of per-zone access). */
 export const POST = withViewer(
   async (req, viewer) => {
     const body = await parseBody(req, Schema)
@@ -20,7 +20,7 @@ export const POST = withViewer(
       return json({ ok: true, viewAs: null })
     }
     const target = await getStore().getProfile(body.data.userId)
-    if (!target) return error(404, "Membre introuvable.")
+    if (!target) return error(404, "Member not found.")
     jar.set(VIEW_AS_COOKIE, target.id, sessionCookieOptions)
     return json({ ok: true, viewAs: target })
   },

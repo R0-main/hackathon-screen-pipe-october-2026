@@ -8,11 +8,11 @@ import { runInOrg } from "@/lib/store"
 
 export const dynamic = "force-dynamic"
 
-/** Toutes les pages connectées : barre latérale à gauche, page à droite, et l'état vivant du cerveau partagé. */
+/** All signed-in pages: sidebar on the left, page on the right, and the live state of the shared brain. */
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const viewer = await requirePageViewer()
   const [state, accounts] = await Promise.all([runInOrg(viewer.real.org_id, () => getState(viewer)), getRememberedAccounts()])
-  // Même horloge pour le rendu serveur et l'hydratation (dates relatives identiques).
+  // Same clock for the server render and hydration (identical relative dates).
   return (
     <BrainLiveProvider initial={state} now={Date.now()}>
       <AppShell accounts={accounts} signup={signupOpen()}>

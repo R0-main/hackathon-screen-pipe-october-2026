@@ -2,8 +2,8 @@
 
 import { useId } from "react"
 
-// Logos des agents, pour les boutons « ouvrir dans… » et « copier ». Tracés repris tels quels :
-// Claude depuis simple-icons (CC0, https://simpleicons.org), Codex depuis @lobehub/icons-static-svg (MIT).
+// Agent logos, for the "open in…" and "copy" buttons. Paths taken as is:
+// Claude from simple-icons (CC0, https://simpleicons.org), Codex from @lobehub/icons-static-svg (MIT).
 
 type LogoProps = { size?: number; className?: string }
 
@@ -15,7 +15,7 @@ export function ClaudeLogo({ size = 20, className = "" }: LogoProps) {
   )
 }
 
-/** Les deux logos côte à côte, pour un prompt qui se colle aussi bien dans Claude Code que dans Codex. */
+/** Both logos side by side, for a prompt that pastes into Claude Code as well as into Codex. */
 export function AgentLogos({ size = 16, className = "" }: LogoProps) {
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 ${className}`} aria-hidden>

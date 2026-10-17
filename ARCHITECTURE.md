@@ -1,38 +1,38 @@
-# Architecture du MVP — Cerveau d'entreprise
+# MVP architecture — Company brain
 
-Voir [IDEA.md](IDEA.md) pour le produit. Ce document décrit le **comment** et **qui fait quoi**.
+See [IDEA.md](IDEA.md) for the product. This document describes the **how** and **who does what**.
 
-## Principe directeur
+## Guiding principle
 
-**Le brut reste sur le PC, seul le distillé monte au cerveau.**
-Screenpipe enregistre tout en local (~19 Go / 2 semaines). Sur chaque poste, un agent extrait uniquement les sessions IA, les distille en « connaissances » (quelques Ko/jour) et les envoie au cerveau partagé. Ça règle en même temps le stockage, la saturation du contexte et une bonne partie du RGPD.
+**The raw data stays on the computer, only the distilled knowledge goes up to the brain.**
+Screenpipe records everything locally (~19 GB / 2 weeks). On each computer, an agent extracts only the AI sessions, distills them into "knowledge" (a few KB/day) and sends it to the shared brain. That solves storage, context saturation and a good part of GDPR at the same time.
 
-## Vue d'ensemble
+## Overview
 
 ```mermaid
 flowchart LR
-  subgraph PC["PC de chaque employé"]
-    SP[Screenpipe<br/>écran + audio + parsed]
+  subgraph PC["Each employee's computer"]
+    SP[Screenpipe<br/>screen + audio + parsed]
     CC[Claude Code / Codex / ChatGPT]
-    SYNC[brain-sync<br/>pipe Screenpipe]
-    HOOK[Hooks Claude Code]
-    MCP[MCP company-brain]
-    CC -. capturé par .-> SP
-    SP -->|/search parsed, filtré apps IA| SYNC
+    SYNC[brain-sync<br/>Screenpipe pipe]
+    HOOK[Claude Code hooks]
+    MCP[company-brain MCP]
+    CC -. captured by .-> SP
+    SP -->|/search parsed, filtered to AI apps| SYNC
     CC --> HOOK
-    CC <-->|lit le cerveau| MCP
+    CC <-->|reads the brain| MCP
   end
 
-  subgraph CLOUD["Cerveau (Supabase)"]
+  subgraph CLOUD["Brain (Supabase)"]
     API[Edge Functions<br/>/ingest /query /events]
-    DB[(Postgres<br/>knowledge, graphe, zones,<br/>tâches, RLS par zone)]
+    DB[(Postgres<br/>knowledge, graph, zones,<br/>tasks, per-zone RLS)]
     RT[Realtime]
-    JOBS[Jobs planifiés<br/>résumé d'état, automatisations]
+    JOBS[Scheduled jobs<br/>status summary, automations]
   end
 
-  DASH[Dashboard Next.js<br/>cerveau néon]
+  DASH[Next.js dashboard<br/>neon brain]
 
-  SYNC -->|KnowledgeItem distillés| API
+  SYNC -->|distilled KnowledgeItem| API
   HOOK -->|AgentEvent| API
   MCP -->|query + AgentEvent| API
   API --> DB --> RT --> DASH
@@ -41,143 +41,143 @@ flowchart LR
   CLAUDE --- JOBS
 ```
 
-**Boucle clé pour la démo :** un employé travaille avec Claude Code → Screenpipe capte → `brain-sync` distille → le cerveau grossit. Quand un agent (de n'importe qui) a besoin de contexte, il interroge le cerveau via le MCP → la zone concernée **s'allume en néon** sur le dashboard.
+**Key loop for the demo:** an employee works with Claude Code → Screenpipe captures → `brain-sync` distills → the brain grows. When an agent (anyone's) needs context, it queries the brain through the MCP → the zone concerned **lights up in neon** on the dashboard.
 
 ## Stack
 
-| Brique | Choix | Pourquoi |
+| Block | Choice | Why |
 |---|---|---|
-| Capture | **Screenpipe** (local) | Imposé par le hackathon. `/search?content_type=parsed` donne déjà les conversations Claude structurées (messages user/assistant). |
-| Agent local | **Pipe Screenpipe** `brain-sync` (planifié toutes les 15-30 min) | Tourne dans Screenpipe, a accès à l'API locale et au token. Fallback : un script Bun lancé en cron. |
-| Distillation | **Claude API** : `claude-haiku-5-5` pour trier/classer, `claude-sonnet-5-5` pour extraire et résumer | Haiku est peu cher sur le volume, Sonnet est réservé à la qualité. |
-| Backend | **Supabase** : Postgres, Auth, **RLS**, **Realtime**, Edge Functions | RLS = accès par zone sans rien coder. Realtime = néons en direct. Le MCP Supabase est déjà branché ici. |
-| Recherche | Full-text Postgres d'abord, **pgvector** si on a le temps | Le FTS suffit pour la démo, moins de pièces mobiles. |
-| Lecture par les agents | **Serveur MCP `company-brain`** (TypeScript, stdio) | Claude Code interroge le cerveau, et chaque requête émet un `AgentEvent`. |
-| Événements agents | **Hooks Claude Code** (`SessionStart`, `UserPromptSubmit`, `Stop`) → `POST /events` | Rend les néons fiables, sans dépendre de la capture d'écran. |
-| Dashboard | **Next.js + Tailwind**, viz avec **react-force-graph** (ou SVG de cerveau découpé en zones), déployé sur Vercel | Rapide à monter, effet visuel fort. |
-| Automatisations | **Screenpipe Workflows** (`list-workflows` / `/workflows`) + heuristique maison | Screenpipe détecte déjà les workflows répétés en local, on les remonte comme suggestions. |
+| Capture | **Screenpipe** (local) | Required by the hackathon. `/search?content_type=parsed` already gives the Claude conversations structured (user/assistant messages). |
+| Local agent | **Screenpipe pipe** `brain-sync` (scheduled every 15-30 min) | Runs inside Screenpipe, has access to the local API and the token. Fallback: a Bun script run by cron. |
+| Distillation | **Claude API**: `claude-haiku-5-5` to sort/classify, `claude-sonnet-5-5` to extract and summarize | Haiku is cheap on volume, Sonnet is kept for quality. |
+| Backend | **Supabase**: Postgres, Auth, **RLS**, **Realtime**, Edge Functions | RLS = per-zone access without writing code. Realtime = live neons. The Supabase MCP is already connected here. |
+| Search | Postgres full-text first, **pgvector** if there is time | FTS is enough for the demo, fewer moving parts. |
+| Reading by agents | **`company-brain` MCP server** (TypeScript, stdio) | Claude Code queries the brain, and each request emits an `AgentEvent`. |
+| Agent events | **Claude Code hooks** (`SessionStart`, `UserPromptSubmit`, `Stop`) → `POST /events` | Makes the neons reliable, without depending on screen capture. |
+| Dashboard | **Next.js + Tailwind**, viz with **react-force-graph** (or an SVG brain split into zones), deployed on Vercel | Quick to build, strong visual effect. |
+| Automations | **Screenpipe Workflows** (`list-workflows` / `/workflows`) + home-made heuristic | Screenpipe already detects repeated workflows locally, we send them up as suggestions. |
 
-## Modèle de données (contrat entre les équipes)
+## Data model (contract between the teams)
 
-À figer **en premier** : tout le monde code contre ces formats, avec des mocks si besoin.
+To freeze **first**: everyone codes against these formats, with mocks if needed.
 
 ```ts
-// Ce que brain-sync envoie au cerveau
+// What brain-sync sends to the brain
 type KnowledgeItem = {
   org_id: string
-  author_id: string            // l'employé dont la session vient
-  zone: string                 // "dev" | "compta" | "sales" | "produit" | …
+  author_id: string            // the employee the session comes from
+  zone: string                 // "dev" | "finance" | "sales" | "product" | …
   kind: "fact" | "decision" | "task" | "procedure" | "question"
   title: string
-  body: string                 // distillé, jamais de capture brute
+  body: string                 // distilled, never a raw capture
   entities: { type: "person" | "project" | "client" | "tool" | "doc"; name: string }[]
   source: { app: string; tool: "claude-code" | "codex" | "chatgpt" | "meeting" | "onboarding"; at: string; screenpipe_ref?: string }
   confidence: number           // 0-1
 }
 
-// Ce qui fait s'allumer le cerveau
+// What makes the brain light up
 type AgentEvent = {
   org_id: string
   user_id: string
   agent: "claude-code" | "codex" | "brain-sync" | "job"
   type: "started" | "query" | "write" | "stopped"
   zones: string[]
-  summary?: string             // "cherche la procédure de clôture mensuelle"
+  summary?: string             // "looks for the monthly closing procedure"
   at: string
 }
 ```
 
-**Tables Supabase** : `orgs`, `profiles` (rôle), `zones`, `zone_access` (user ↔ zone, lecture/écriture), `knowledge_items`, `entities`, `edges` (graphe : item ↔ entité, entité ↔ entité), `agent_events`, `tasks`, `automation_suggestions`, `company_status` (résumé généré), `skills` (skills Claude Code de l'entreprise et leurs scripts, attribués à un cortex = une zone).
-**RLS** : un utilisateur ne lit `knowledge_items` que si `zone ∈ zone_access(user)`. Les admins voient tout.
+**Supabase tables**: `orgs`, `profiles` (role), `zones`, `zone_access` (user ↔ zone, read/write), `knowledge_items`, `entities`, `edges` (graph: item ↔ entity, entity ↔ entity), `agent_events`, `tasks`, `automation_suggestions`, `company_status` (generated summary), `skills` (the company's Claude Code skills and their scripts, assigned to a cortex = a zone).
+**RLS**: a user only reads `knowledge_items` if `zone ∈ zone_access(user)`. Admins see everything.
 
-## Les flux en détail
+## The flows in detail
 
-### 1. Onboarding entreprise
-1. L'admin crée l'org sur le dashboard.
-2. **Interview de 5-10 min** : chat (ou voix) avec Claude, qui pose des questions guidées (activité, équipes, outils, objectifs, liens).
-3. Les liens fournis sont **scrapés** et distillés en `KnowledgeItem`.
-4. Claude propose **les zones initiales** et les premières connaissances, que l'admin valide.
-5. *(Stretch)* Connecteurs Notion et Calendar.
+### 1. Company onboarding
+1. The admin creates the org on the dashboard.
+2. **5-10 min interview**: chat (or voice) with Claude, which asks guided questions (activity, teams, tools, goals, links).
+3. The links provided are **scraped** and distilled into `KnowledgeItem`s.
+4. Claude proposes **the initial zones** and the first knowledge, which the admin validates.
+5. *(Stretch)* Notion and Calendar connectors.
 
-### 2. Onboarding employé (le « prompt magique »)
-L'admin invite quelqu'un → la personne reçoit **un prompt à coller dans Claude Code**, qui lance une seule commande :
-`install.sh` (macOS, Linux) ou `install.ps1` (Windows) trouve ou installe Node.js, télécharge le client et lance
-`brain.mjs setup` (détail, codes de sortie et autorisations : [install/PROMPT.md](install/PROMPT.md), choix d'un CLI :
-[docs/CLI.md](docs/CLI.md)) :
-- installe et lance Screenpipe s'il est absent (CLI officiel en service, micro coupé), puis récupère le token local ;
-- ouvre les bons Réglages macOS et reprend tout seul dès que l'Enregistrement de l'écran (et l'Accessibilité, facultative) est accordé ;
-- ajoute le MCP `company-brain` et les hooks dans la config Claude Code, planifie `brain-sync` toutes les 15 min ;
-- fait un test de bout en bout (un événement « hello » qui s'allume) et ouvre le dashboard déjà connecté (lien de connexion de 2 min) ;
-- si quelque chose coince, `brain doctor` passe le poste en revue sans rien modifier et donne la commande qui répare.
+### 2. Employee onboarding (the "magic prompt")
+The admin invites someone → the person receives **a prompt to paste into Claude Code**, which runs a single command:
+`install.sh` (macOS, Linux) or `install.ps1` (Windows) finds or installs Node.js, downloads the client and runs
+`brain.mjs setup` (details, exit codes and permissions: [install/PROMPT.md](install/PROMPT.md), why a CLI:
+[docs/CLI.md](docs/CLI.md)):
+- installs and starts Screenpipe if it is missing (official CLI as a service, microphone off), then gets the local token;
+- opens the right macOS Settings and resumes on its own as soon as Screen Recording (and Accessibility, optional) is granted;
+- adds the `company-brain` MCP and the hooks to the Claude Code config, schedules `brain-sync` every 15 min;
+- runs an end-to-end test (a "hello" event that lights up) and opens the dashboard already signed in (2-min sign-in link);
+- if something gets stuck, `brain doctor` reviews the computer without changing anything and gives the command that repairs.
 
-### 3. Capture → cerveau (`brain-sync`, toutes les 15-30 min)
-1. `GET /search?content_type=parsed&start_time=<dernier checkpoint>` filtré sur les apps IA (Claude, Terminal/iTerm pour Claude Code, Codex, onglets ChatGPT/Claude du navigateur), avec un fallback `accessibility`.
-2. **Filtre vie privée** : liste blanche d'apps, suppression des contenus perso, masquage des secrets/emails/numéros.
-3. Haiku : « est-ce que ça contient de la connaissance réutilisable ? » + zone.
-4. Sonnet : extraction en `KnowledgeItem[]` + entités.
-5. `POST /ingest`, puis on avance le checkpoint. Un `AgentEvent{agent:"brain-sync", type:"write"}` est émis.
+### 3. Capture → brain (`brain-sync`, every 15-30 min)
+1. `GET /search?content_type=parsed&start_time=<last checkpoint>` filtered to AI apps (Claude, Terminal/iTerm for Claude Code, Codex, ChatGPT/Claude browser tabs), with an `accessibility` fallback.
+2. **Privacy filter**: app allowlist, removal of personal content, redaction of secrets/emails/numbers.
+3. Haiku: "does this contain reusable knowledge?" + zone.
+4. Sonnet: extraction into `KnowledgeItem[]` + entities.
+5. `POST /ingest`, then the checkpoint moves forward. An `AgentEvent{agent:"brain-sync", type:"write"}` is emitted.
 
-### 4. Lecture par les agents (MCP `company-brain`)
-Outils : `search_brain(query, zones?)`, `get_zone_summary(zone)`, `whoami_context()` (le contexte du poste, utile pour la passation).
-Chaque appel passe par `/query` (RLS appliquée avec le token de l'utilisateur) et émet un `AgentEvent{type:"query"}` → néon.
-Le serveur MCP est servi par le cerveau lui-même, un par entreprise : `/api/mcp/<id de l'entreprise>/<jeton>` (HTTP « streamable », sans état ; le jeton peut aussi passer en `Authorization: Bearer` sur `/api/mcp/<id>`). Les outils (`@brain/core/mcp`) y appellent les routes de l'API sur place, avec les droits du jeton. `brain setup` l'enregistre dans Claude Code (`claude mcp add --transport http`) et Codex (`~/.codex/config.toml`) sous `nos-brainer-<entreprise>` : une personne qui appartient à plusieurs entreprises voit un serveur connecté par entreprise, et ses instructions (nom et description de l'entreprise) disent au modèle lequel interroger. Pour un cerveau à certificat privé, que Claude Code et Codex ne connaissent pas, le serveur MCP du poste (`brain.mjs mcp`, stdio) prend le relais, avec un paramètre `company` s'il y a plusieurs entreprises.
+### 4. Reading by agents (`company-brain` MCP)
+Tools: `search_brain(query, zones?)`, `get_zone_summary(zone)`, `whoami_context()` (the computer's context, useful for handover).
+Each call goes through `/query` (RLS applied with the user's token) and emits an `AgentEvent{type:"query"}` → neon.
+The MCP server is served by the brain itself, one per company: `/api/mcp/<company id>/<token>` ("streamable" HTTP, stateless; the token can also go as `Authorization: Bearer` on `/api/mcp/<id>`). The tools (`@brain/core/mcp`) call the API routes in place there, with the token's rights. `brain setup` registers it in Claude Code (`claude mcp add --transport http`) and Codex (`~/.codex/config.toml`) as `nos-brainer-<company>`: a person who belongs to several companies sees one connected server per company, and its instructions (the company's name and description) tell the model which one to query. For a brain with a private certificate, which Claude Code and Codex do not know, the computer's MCP server (`brain.mjs mcp`, stdio) takes over, with a `company` parameter if there are several companies.
 
-### 5. Jobs planifiés (cloud)
-- **État de l'entreprise** (quotidien + bouton « rafraîchir ») : Sonnet résume par zone les objectifs, l'avancement, les prochaines étapes et qui a fait quoi.
-- **Modérateur** (toutes les 15 min : la synchro planifiée du poste d'un admin lance `brain moderate --refresh-status` avec son jeton d'abonnement Claude Code, demandé à l'installation par `connect-claude` et gardé sur le poste ; ou « Lancer maintenant » avec la clé API) : Claude (Sonnet) relit les connaissances arrivées depuis le passage précédent (curseur sur la date d'arrivée, les plus anciennes d'abord, 40 par passage) et les garde, les corrige sur place ou les retire ; un lot sans réponse attend le passage suivant. Le journal des admins et le fil d'activité ne gardent que zone, type et motif, jamais le texte retiré (`apps/web/lib/moderation.ts`, `packages/core/src/moderation.ts`).
-- **Nouvelles zones** (chaque jour à 10 h : Vercel Cron avec la clé API Claude de l'entreprise, ou `brain refresh-zones` dans la CI GitHub de l'entreprise avec son abonnement Claude Code) : Claude relit les connaissances des 30 derniers jours de chaque entreprise et crée, sans validation, la zone d'un domaine récurrent qui n'en a pas ; ses connaissances y sont rangées et les droits de lecture suivent (`apps/web/lib/new-zones.ts`).
-- **Automatisations** : remonte les workflows détectés par Screenpipe + heuristique « même prompt, même personne, même créneau, ≥ 3 jours » → `automation_suggestions` affichées aux dirigeants.
+### 5. Scheduled jobs (cloud)
+- **Company status** (daily + "refresh" button): Sonnet summarizes per zone the goals, progress, next steps and who did what.
+- **Moderator** (every 15 min: the scheduled sync of an admin's computer runs `brain moderate --refresh-status` with their Claude Code subscription token, asked for at install by `connect-claude` and kept on the computer; or "Run now" with the API key): Claude (Sonnet) rereads the knowledge that arrived since the previous run (cursor on the arrival date, oldest first, 40 per run) and keeps it, fixes it in place or removes it; a batch with no answer waits for the next run. The admins' log and the activity feed keep only zone, kind and reason, never the removed text (`apps/web/lib/moderation.ts`, `packages/core/src/moderation.ts`).
+- **New zones** (every day at 10 am: Vercel Cron with the company's Claude API key, or `brain refresh-zones` in the company's GitHub CI with its Claude Code subscription): Claude rereads each company's knowledge of the last 30 days and creates, without approval, the zone of a recurring area that has none; its knowledge is filed in it and read access follows (`apps/web/lib/new-zones.ts`).
+- **Automations**: sends up the workflows detected by Screenpipe + the heuristic "same prompt, same person, same time slot, ≥ 3 days" → `automation_suggestions` shown to the leaders.
 
-## Découpage pour l'équipe (4 personnes, adaptable à 3)
+## Split for the team (4 people, adaptable to 3)
 
-Chacun avance en parallèle avec les contrats ci-dessus et des mocks. On intègre au jalon 3.
+Everyone moves forward in parallel with the contracts above and mocks. We integrate at milestone 3.
 
-| Rôle | Périmètre | Livrable de démo |
+| Role | Scope | Demo deliverable |
 |---|---|---|
-| **A — Capture** | Pipe `brain-sync`, prompts de distillation, filtre vie privée, hooks Claude Code, **prompt d'installation** | Une vraie session Claude Code devient des `KnowledgeItem` en moins de 15 min |
-| **B — Cerveau** | Schéma Supabase + RLS, Edge Functions `/ingest` `/query` `/events`, serveur MCP `company-brain`, seed de données | Un agent interroge le cerveau, avec des droits respectés par zone |
-| **C — Dashboard** | Next.js : viz du cerveau + **néons Realtime**, comptes et accès par zone, vue tâches | Le cerveau s'allume en direct pendant la démo |
-| **D — Intelligence & démo** | Interview d'onboarding + scraping, résumé « état de l'entreprise », suggestions d'automatisation, **script de démo et pitch** | L'onboarding en 5 min + l'écran « où en est la boîte » |
+| **A — Capture** | `brain-sync` pipe, distillation prompts, privacy filter, Claude Code hooks, **install prompt** | A real Claude Code session becomes `KnowledgeItem`s in less than 15 min |
+| **B — Brain** | Supabase schema + RLS, `/ingest` `/query` `/events` Edge Functions, `company-brain` MCP server, data seed | An agent queries the brain, with access rights respected per zone |
+| **C — Dashboard** | Next.js: brain viz + **Realtime neons**, accounts and per-zone access, tasks view | The brain lights up live during the demo |
+| **D — Intelligence & demo** | Onboarding interview + scraping, "company status" summary, automation suggestions, **demo script and pitch** | Onboarding in 5 min + the "where does the company stand" screen |
 
-À 3 personnes : D se répartit entre A (automatisations) et C (onboarding + état).
+With 3 people: D is split between A (automations) and C (onboarding + status).
 
-### Jalons
-1. **Contrats figés** : types `KnowledgeItem` / `AgentEvent`, schéma SQL, URL Supabase partagée. *Tout le monde ensemble, en court.*
-2. **Chacun en solo avec des mocks** : A envoie vers un endpoint mock, C lit des données seedées, B expose l'API.
-3. **Intégration** : vrai pipeline de bout en bout sur 2-3 laptops de l'équipe (un en « dev », un en « compta », un en « sales »).
-4. **Démo** : seed d'une fausse entreprise crédible + script répété.
+### Milestones
+1. **Contracts frozen**: `KnowledgeItem` / `AgentEvent` types, SQL schema, shared Supabase URL. *Everyone together, briefly.*
+2. **Everyone solo with mocks**: A sends to a mock endpoint, C reads seeded data, B exposes the API.
+3. **Integration**: real end-to-end pipeline on 2-3 of the team's laptops (one in "dev", one in "finance", one in "sales").
+4. **Demo**: seed of a credible fake company + rehearsed script.
 
-## Script de démo (cible)
-1. Onboarding d'une entreprise fictive : interview express → le cerveau apparaît avec ses zones.
-2. Un employé colle le prompt magique dans Claude Code → son néon s'allume.
-3. Il code avec Claude → quelques minutes plus tard, la zone « dev » grossit.
-4. La compta pose une question via son agent → seule la zone compta s'allume ; le code lui reste invisible (RLS).
-5. Écran « état de l'entreprise » + une suggestion d'automatisation (« Jean-Marc lance ce prompt tous les jours à 9h »).
+## Demo script (target)
+1. Onboarding of a fictitious company: quick interview → the brain appears with its zones.
+2. An employee pastes the magic prompt into Claude Code → their neon lights up.
+3. They code with Claude → a few minutes later, the "dev" zone grows.
+4. Finance asks a question through its agent → only the finance zone lights up; the code stays invisible to it (RLS).
+5. "Company status" screen + an automation suggestion ("Jean-Marc runs this prompt every day at 9 am").
 
-## Risques et parades
-- **Capture lente pendant la démo** → bouton « sync maintenant » sur `brain-sync`, et lecture directe des logs Claude Code (`~/.claude/projects/*.jsonl`) en source de secours.
-- **Qualité de `parsed`** (expérimental) → fallback sur `accessibility`, en dédupliquant l'historique de chat répété.
-- **Vie privée** → liste blanche d'apps, rien de brut ne quitte le PC, l'employé peut voir et supprimer ses items.
-- **Coût LLM** → Haiku en premier filtre, Sonnet seulement sur ce qui passe le filtre.
+## Risks and countermeasures
+- **Slow capture during the demo** → "sync now" button on `brain-sync`, and direct reading of the Claude Code logs (`~/.claude/projects/*.jsonl`) as a backup source.
+- **Quality of `parsed`** (experimental) → fallback on `accessibility`, deduplicating the repeated chat history.
+- **Privacy** → app allowlist, nothing raw leaves the computer, the employee can see and delete their items.
+- **LLM cost** → Haiku as the first filter, Sonnet only on what passes the filter.
 
-## Implémentation du MVP (ce qui est construit)
+## MVP implementation (what is built)
 
-Le code suit les contrats ci-dessus (`KnowledgeItem`, `AgentEvent`, tables) avec quelques choix pragmatiques, pour que tout tourne sur un seul laptop comme sur Supabase :
+The code follows the contracts above (`KnowledgeItem`, `AgentEvent`, tables) with a few pragmatic choices, so that everything runs on a single laptop as well as on Supabase:
 
-| Prévu | Construit | Pourquoi |
+| Planned | Built | Why |
 |---|---|---|
-| Edge Functions `/ingest` `/query` `/events` | Routes API Next.js (`apps/web/app/api/*`), mêmes contrats | Un seul déploiement (Vercel ou laptop), testable localement sans Deno. |
-| Supabase Realtime | Flux SSE `/api/stream` qui relit `agent_events` | Marche aussi avec le stockage fichier et sur plusieurs instances ; la publication Realtime est quand même activée par la migration RLS. |
-| Postgres Supabase uniquement | Deux stockages derrière la même interface : fichier JSON (démo zéro config) ou Postgres (`DATABASE_URL`, Supabase ou autre) | La démo ne dépend pas du réseau ; le cerveau partagé utilise Supabase. |
-| RLS par zone | Règle appliquée par l'API sur toutes les routes (`lib/access.ts`) **et** politiques RLS SQL (`supabase/migrations/*_rls.sql`) pour l'accès direct | L'API se connecte avec le rôle propriétaire ; les politiques protègent tout accès direct (clé anon, Supabase Auth via `profiles.auth_user_id`). |
-| Supabase Auth | Jeton personnel par employé (haché SHA-256) pour les agents + cookie de session signé pour le dashboard ; « voir en tant que » pour les admins | Le même jeton sert au prompt d'installation, au MCP, aux hooks et à brain-sync. |
-| Pipe Screenpipe `brain-sync` | Client unique `brain.mjs` (`apps/client`) : `sync`, `mcp`, `hook`, `install-*`, planifié par launchd / cron / schtasks | Un seul fichier téléchargé depuis le dashboard, sans `npm install` sur le poste. Screenpipe est lu via son API REST locale ; les logs Claude Code locaux sont la source la plus fiable. En plus, à chaque synchro, un agent (`claude -p` en Sonnet, sinon `codex exec`) parcourt l'activité récente avec le MCP Screenpipe (`screenpipe-mcp`, outils en lecture seule) ; ses connaissances passent par le même masquage et le même filtre « perso » avant l'envoi (`apps/client/src/agent.ts`). |
-| Haiku puis Sonnet | Tri `claude-haiku-5-5` + extraction `claude-sonnet-5-5` (sorties structurées, repli serveur en cas de refus) si une clé API est présente ; sinon `claude -p` (abonnement Claude Code de l'employé) ; sinon heuristique locale | La distillation marche même sans clé API. |
-| FTS puis pgvector | FTS Postgres (`simple`, texte normalisé sans accents, pondération titre/corps) ; score par tokens en mode fichier | Suffisant pour la démo. pgvector reste l'étape suivante. |
-| react-force-graph | SVG maison : deux hémisphères découpés en zones (Voronoï), neurones = entités, synapses = entités partagées | Effet « néon » maîtrisé et lisible en démo. |
+| `/ingest` `/query` `/events` Edge Functions | Next.js API routes (`apps/web/app/api/*`), same contracts | A single deployment (Vercel or laptop), testable locally without Deno. |
+| Supabase Realtime | SSE stream `/api/stream` that rereads `agent_events` | Also works with the file storage and on several instances; the Realtime publication is still enabled by the RLS migration. |
+| Supabase Postgres only | Two storages behind the same interface: JSON file (zero-config demo) or Postgres (`DATABASE_URL`, Supabase or another) | The demo does not depend on the network; the shared brain uses Supabase. |
+| Per-zone RLS | Rule applied by the API on every route (`lib/access.ts`) **and** SQL RLS policies (`supabase/migrations/*_rls.sql`) for direct access | The API connects with the owner role; the policies protect any direct access (anon key, Supabase Auth through `profiles.auth_user_id`). |
+| Supabase Auth | Personal token per employee (hashed with SHA-256) for agents + signed session cookie for the dashboard; "view as" for admins | The same token serves the install prompt, the MCP, the hooks and brain-sync. |
+| `brain-sync` Screenpipe pipe | Single client `brain.mjs` (`apps/client`): `sync`, `mcp`, `hook`, `install-*`, scheduled by launchd / cron / schtasks | A single file downloaded from the dashboard, without `npm install` on the computer. Screenpipe is read through its local REST API; the local Claude Code logs are the most reliable source. On top of that, at each sync, an agent (`claude -p` with Sonnet, otherwise `codex exec`) goes through the recent activity with the Screenpipe MCP (`screenpipe-mcp`, read-only tools); its knowledge goes through the same redaction and the same "personal" filter before sending (`apps/client/src/agent.ts`). |
+| Haiku then Sonnet | `claude-haiku-5-5` triage + `claude-sonnet-5-5` extraction (structured outputs, server fallback on refusal) if an API key is present; otherwise `claude -p` (the employee's Claude Code subscription); otherwise a local heuristic | Distillation works even without an API key. |
+| FTS then pgvector | Postgres FTS (`simple`, normalized text without accents, title/body weighting); token score in file mode | Enough for the demo. pgvector stays the next step. |
+| react-force-graph | Home-made SVG: two hemispheres split into zones (Voronoi), neurons = entities, synapses = shared entities | Controlled "neon" effect, readable in a demo. |
 
-Détection d'automatisations : les hooks envoient une **empreinte** du prompt normalisé (dates et nombres neutralisés) et un résumé masqué de 160 caractères. Une suggestion naît quand la même personne lance le même prompt sur au moins 3 jours, avec au moins 80 % des journées à ±40 min de l'heure médiane (fuseau `BRAIN_TIMEZONE`, Europe/Paris par défaut). Les workflows détectés par Screenpipe peuvent aussi être remontés (`POST /api/automations`).
+Automation detection: the hooks send a **fingerprint** of the normalized prompt (dates and numbers neutralized) and a redacted 160-character summary. A suggestion is born when the same person runs the same prompt on at least 3 days, with at least 80% of the days within ±40 min of the median time (`BRAIN_TIMEZONE` time zone, Europe/Paris by default). The workflows detected by Screenpipe can also be sent up (`POST /api/automations`).
 
-Robustesse de la synchro : chaque source garde son checkpoint et les conversations en attente. Une panne (limite d'abonnement, surcharge, réseau, jeton expiré) n'est jamais comptée contre une conversation ; une conversation n'est abandonnée qu'après 3 échecs avérés (ou 5 essais sur 24 h si Claude ne répond plus du tout), pour que le checkpoint avance sans perdre de données sur une simple panne.
+Sync robustness: each source keeps its checkpoint and its pending conversations. An outage (subscription limit, overload, network, expired token) is never counted against a conversation; a conversation is only given up after 3 proven failures (or 5 attempts over 24 h if Claude does not answer at all any more), so that the checkpoint moves forward without losing data on a mere outage.
 
-Étapes suivantes : connecteurs Notion / Calendar / Todoist, pgvector, interview d'onboarding vocale, consentement et durée de conservation (RGPD), exécution réelle des automatisations validées.
+Next steps: Notion / Calendar / Todoist connectors, pgvector, voice onboarding interview, consent and retention period (GDPR), real execution of the approved automations.

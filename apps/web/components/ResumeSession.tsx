@@ -6,13 +6,13 @@ import { useT } from "./I18n"
 import { BrainIcon } from "./ui"
 
 /**
- * Rouvre l'entreprise retenue la plus récente (POST /api/session/resume), puis charge le dashboard en navigation
- * complète : le routeur client ne suit jamais de redirection vers une route API, et rien de l'ancienne session ne reste
- * en cache. Échec : la page de connexion, qui propose les entreprises retenues.
+ * Reopens the most recent remembered company (POST /api/session/resume), then loads the dashboard with a full
+ * navigation: the client router never follows a redirect to an API route, and nothing from the old session stays
+ * cached. On failure: the sign-in page, which offers the remembered companies.
  */
 export function ResumeSession() {
   const { t } = useT()
-  // Une seule reprise, même quand React rejoue l'effet (mode strict en développement).
+  // A single resume, even when React replays the effect (strict mode in development).
   const started = useRef(false)
   useEffect(() => {
     if (started.current) return

@@ -16,28 +16,28 @@ const Schema = z.object({
   enabled: z.boolean().optional(),
 })
 
-/** PUT /api/connectors/:id — règle un connecteur (jeton, adresse, zone, actif). Un jeton vide garde l'ancien. */
+/** PUT /api/connectors/:id — configures a connector (token, URL, zone, active). An empty token keeps the old one. */
 export const PUT = withViewer<Ctx>(
   async (req, _viewer, { params }) => {
     const { id } = await params
-    if (!isConnectorId(id)) return error(404, "Connecteur inconnu.")
+    if (!isConnectorId(id)) return error(404, "Unknown connector.")
     const body = await parseBody(req, Schema)
     if ("response" in body) return body.response
-    if (body.data.url !== undefined && body.data.url.trim() && !/^https?:\/\//i.test(body.data.url.trim())) return error(400, "L'adresse du flux doit commencer par http:// ou https://.")
+    if (body.data.url !== undefined && body.data.url.trim() && !/^https?:\/\//i.test(body.data.url.trim())) return error(400, "The feed URL must start with http:// or https://.")
     if (body.data.zone) {
       const zones = await getStore().listZones()
-      if (!zones.some((z) => z.id === body.data.zone)) return error(400, "Zone inconnue.")
+      if (!zones.some((z) => z.id === body.data.zone)) return error(400, "Unknown zone.")
     }
     return json(await updateConnector(id, body.data))
   },
   { admin: true },
 )
 
-/** DELETE /api/connectors/:id — débranche l'outil (le jeton est effacé ; les connaissances importées restent). */
+/** DELETE /api/connectors/:id — disconnects the tool (the token is erased; imported knowledge stays). */
 export const DELETE = withViewer<Ctx>(
   async (_req, _viewer, { params }) => {
     const { id } = await params
-    if (!isConnectorId(id)) return error(404, "Connecteur inconnu.")
+    if (!isConnectorId(id)) return error(404, "Unknown connector.")
     await removeConnector(id)
     return json({ removed: true })
   },

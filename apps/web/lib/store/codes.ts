@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto"
 
-/** Code du message d'équipe : il permet seulement de demander à rejoindre, jamais d'accéder au cerveau. */
+/** Team message code: it only allows asking to join, never accessing the brain. */
 export function newJoinCode(): string {
   return `cj_${randomBytes(18).toString("base64url")}`
 }

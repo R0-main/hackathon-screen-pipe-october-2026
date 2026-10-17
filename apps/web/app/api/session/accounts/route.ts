@@ -9,14 +9,14 @@ export const dynamic = "force-dynamic"
 
 const Schema = z.object({ userId: z.string().max(64) })
 
-/** Passe sur une entreprise retenue par ce navigateur, sans ressaisir son jeton. */
+/** Switches to a company remembered by this browser, without retyping its token. */
 export async function POST(req: Request) {
   const body = await parseBody(req, Schema)
   if ("response" in body) return body.response
   try {
     const jar = await cookies()
     if (!(await isRemembered(jar.get(ACCOUNTS_COOKIE)?.value, body.data.userId))) {
-      return error(404, "Cette entreprise n'est plus retenue sur ce navigateur : reconnectez-vous avec votre jeton.")
+      return error(404, "This company is no longer remembered on this browser: sign in again with your token.")
     }
     await openSession(body.data.userId)
     return json({ ok: true })
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   }
 }
 
-/** Oublie une entreprise sur ce navigateur ; si c'est celle de la session ouverte, la session est fermée. */
+/** Forgets a company on this browser; if it is the open session's, the session is closed. */
 export async function DELETE(req: Request) {
   const body = await parseBody(req, Schema)
   if ("response" in body) return body.response
