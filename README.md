@@ -131,8 +131,16 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 
 ## Créer son entreprise à partir de zéro
 
-Sur la page d'accueil, **Créer mon entreprise** (`/creer`) : quatre questions, une par écran (nom, activité, qui
-vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en êtes l'admin. Ensuite :
+Sur la page d'accueil, **Créer mon entreprise** (`/creer`) : trois questions, une par écran (nom, activité, qui
+vous êtes), et le cerveau de l'entreprise existe, sans zone, vous en êtes l'admin. Puis :
+
+- **Claude propose les zones** (facultatif, « Passer » pour choisir soi-même) : un prompt à ouvrir dans Claude Code ou
+  Codex, cadré par le nom et l'activité saisis (voir plus bas). La page reçoit sa proposition en direct ;
+- **les zones** : celles proposées par Claude, cochées d'office, puis la liste habituelle et les zones ajoutées à la
+  main. « Valider les zones » les crée, ajoute les premières connaissances proposées et refait le prompt
+  d'installation du poste avec ces zones (`POST /api/onboarding/zones`, même jeton : la session reste valide).
+
+Ensuite :
 
 1. **Votre poste** : copiez le prompt (ou « Ouvrir dans Claude Code ») et collez-le dans Claude Code. Il installe tout
    comme la démo de la page d'accueil ; la page passe à « Votre poste est connecté » dès le premier signe de son agent.
@@ -156,16 +164,16 @@ organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_setti
 
 ### Remplir le cerveau depuis ses anciennes conversations
 
-Page **Onboarding** (admins), étape « contexte » de `/creer`, et rappel sur un dashboard vide : « Donnez au cerveau
-le contexte de vos comptes ». Le prompt s'ouvre dans Claude Code en local (lien `claude-cli://`, terminal sur ce
+Page **Onboarding** (admins), étape « Laissez Claude proposer les zones » de `/creer` (juste avant les zones), et
+rappel sur un dashboard vide : « Donnez au cerveau le contexte de vos comptes ». Le prompt s'ouvre dans Claude Code en local (lien `claude-cli://`, terminal sur ce
 poste ; VS Code et l'app de bureau en mode « Local » en option) ou se copie pour Codex. L'agent s'arrête s'il tourne
 dans le cloud, demande d'abord l'accord de la personne (« Acceptes-tu de donner accès à ces données à ce site ? »),
-ne garde que les conversations qui concernent l'entreprise (son nom et ce qu'elle fait, tels que saisis dans
-`/creer`), lit l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README de ces projets, en
+ne cherche que les projets et conversations de l'entreprise (son nom et sa description, tels que saisis dans
+`/creer`) et n'apprend rien d'autre (projet perso, autre entreprise, autre client : laissés de côté), lit l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README de ces projets, en
 tire les zones et 10 à 40 premières connaissances (jamais de secrets ni de données perso), puis les envoie avec un code d'envoi
 valable 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin seulement). La page se remplit toute seule avec la
-proposition, masquée à nouveau côté serveur ; rien n'est appliqué avant que l'admin l'ait relue et validée.
-L'interview en 7 questions reste disponible en dessous. Le lien est aussi proposé à la fin de `/creer`, et la page
+proposition, masquée à nouveau côté serveur ; rien n'est appliqué avant que l'admin l'ait relue et validée (à l'étape
+des zones de `/creer`, ou sur la page Onboarding). L'interview en 7 questions reste disponible en dessous, et la page
 `/demo` propose « Créer mon dashboard ».
 
 ## Brancher un vrai poste

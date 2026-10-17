@@ -366,7 +366,8 @@ button.chip:hover:not(.chip-on) {
   transform: translateX(-50%);
   white-space: nowrap;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  /* Le fond du cerveau (Brain3D, option paper) : blanc sur le dashboard, bone sur /creer. */
+  background: color-mix(in srgb, var(--brain-paper, var(--color-surface)) 75%, transparent);
   padding: 0 4px;
   font-size: 11px;
   line-height: 1.4;

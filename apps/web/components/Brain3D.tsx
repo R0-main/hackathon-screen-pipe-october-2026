@@ -35,6 +35,10 @@ export type Brain3DProps = {
   selected?: string | null
   onSelect?: (zone: string) => void
   people?: BrainPerson[]
+  /** Boutons de zoom et aide « glisser pour tourner » (défaut : oui) ; non dans un aperçu (création d'entreprise). */
+  controls?: boolean
+  /** Couleur du fond sur lequel le cerveau se fond (fond, brouillard, estompage) : blanc par défaut, bone sur /creer. */
+  paper?: number
 }
 
 // Encre sur blanc. Une zone qu'on touche en direct (un agent, un clic) s'allume dans sa propre couleur, avivée.
@@ -128,7 +132,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
  */
 export function Brain3D(props: Brain3DProps) {
-  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [] } = props
+  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [], controls = true, paper = WHITE } = props
+  const paperCss = `#${paper.toString(16).padStart(6, "0")}`
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const labelsRef = useRef(new Map<string, HTMLButtonElement>())
@@ -166,7 +171,7 @@ export function Brain3D(props: Brain3DProps) {
       .then((T) => {
         if (disposed) return
         try {
-          dispose = build(T, container, canvas, zones, synapses, placed.map((p) => ({ ...p, look: looks.get(p.id)! })), { labelsRef, dotsRef, peopleRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef })
+          dispose = build(T, container, canvas, zones, synapses, placed.map((p) => ({ ...p, look: looks.get(p.id)! })), paper, { labelsRef, dotsRef, peopleRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef })
         } catch {
           setFallback(true)
         }
@@ -190,7 +195,7 @@ export function Brain3D(props: Brain3DProps) {
   }
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-surface">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden" style={{ background: paperCss, ["--brain-paper" as string]: paperCss }}>
       <canvas ref={canvasRef} className="block h-full w-full cursor-grab touch-none active:cursor-grabbing" aria-hidden />
 
       {/* Dots : modèles 3D dans la scène. Ici, leur zone cliquable et leur prénom, posés chaque image au même endroit. */}
@@ -237,7 +242,7 @@ export function Brain3D(props: Brain3DProps) {
               data-live={live ? "1" : undefined}
               onClick={() => onSelect?.(z.id)}
             >
-              <span className="flex items-start gap-1.5 rounded-[4px] bg-surface/70 px-1.5 py-0.5">
+              <span className="flex items-start gap-1.5 rounded-[4px] px-1.5 py-0.5" style={{ background: `color-mix(in srgb, ${paperCss} 70%, transparent)` }}>
                 <Dot color={zoneColor(z.color, z.position)} size={7} className="mt-[4px]" />
                 <span>
                   <span className={`block whitespace-nowrap text-[11px] font-medium leading-tight sm:text-[12px] ${isSel ? "underline underline-offset-4" : ""}`}>{z.name}</span>
@@ -263,15 +268,19 @@ export function Brain3D(props: Brain3DProps) {
         })}
       </div>
 
-      <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
-        <button type="button" className="btn btn-icon" aria-label="Zoomer" onClick={() => zoomRef.current(-ZOOM.step)}>
-          <PlusIcon />
-        </button>
-        <button type="button" className="btn btn-icon" aria-label="Dézoomer" onClick={() => zoomRef.current(ZOOM.step)}>
-          <MinusIcon />
-        </button>
-      </div>
-      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Glisser pour tourner, molette ou pincer pour zoomer.</p>
+      {controls && (
+        <>
+          <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
+            <button type="button" className="btn btn-icon" aria-label="Zoomer" onClick={() => zoomRef.current(-ZOOM.step)}>
+              <PlusIcon />
+            </button>
+            <button type="button" className="btn btn-icon" aria-label="Dézoomer" onClick={() => zoomRef.current(ZOOM.step)}>
+              <MinusIcon />
+            </button>
+          </div>
+          <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Glisser pour tourner, molette ou pincer pour zoomer.</p>
+        </>
+      )}
     </div>
   )
 }
@@ -289,14 +298,14 @@ type Refs = {
 }
 
 /** Construit la scène et lance la boucle de rendu. Renvoie la fonction de nettoyage. */
-function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], refs: Refs): () => void {
+function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], paper: number, refs: Refs): () => void {
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   renderer.setClearColor(0x000000, 0)
 
   const scene = new T.Scene()
   // Brouillard blanc : la face arrière pâlit, les liaisons de devant restent lisibles.
-  const fog = new T.Fog(WHITE, 1, 10)
+  const fog = new T.Fog(paper, 1, 10)
   scene.fog = fog
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 50)
   const view = refs.viewRef.current
@@ -396,7 +405,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   materials.push(netMat, neuronMat)
 
   const inkC = new T.Color(INK)
-  const whiteC = new T.Color(WHITE)
+  // Le « blanc » vers lequel tout s'estompe : la couleur du fond, pour que le cerveau s'y fonde.
+  const whiteC = new T.Color(paper)
   const bareC = new T.Color(BARE)
   const zoneList = [...gfx.values()]
   const tone = new T.Color()
@@ -416,7 +426,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     camLocal.copy(camera.position)
     group.worldToLocal(camLocal)
     backFade(net, camLocal.toArray(), fade)
-    shadeCurves(curves, linkBase, fade, BACK, [1, 1, 1], netCol)
+    shadeCurves(curves, linkBase, fade, BACK, whiteC.toArray() as [number, number, number], netCol)
     net.points.forEach((_, i) => neurons.setColorAt(i, tone.copy(dotBase[i]).lerp(whiteC, fade[i] * BACK)))
     netGeo.attributes.color.needsUpdate = true
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
