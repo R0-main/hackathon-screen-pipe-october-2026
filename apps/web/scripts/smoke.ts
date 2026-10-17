@@ -71,6 +71,7 @@ import * as adminJoinRoute from "../app/api/admin/join/route"
 import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
 import * as skillsRoute from "../app/api/skills/route"
 import * as skillRoute from "../app/api/skills/[id]/route"
+import * as mcpRoute from "../app/api/mcp/[orgId]/[token]/route"
 import { DEMO_VISITOR_TITLE, demoVisitorManager, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
@@ -767,6 +768,36 @@ async function main() {
 
       const st = await call(stateRoute.GET, "/api/state", { session: cookie })
       assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "son dashboard ne montre que son entreprise")
+
+      console.log("\n— Serveur MCP de l'entreprise (/api/mcp/<entreprise>/<jeton>) : ce que Claude Code et Codex branchent")
+      const rpc = async (orgId: string, tok: string, body: unknown, method = "POST") => {
+        const res = await mcpRoute.POST(
+          new Request(`http://smoke.test/api/mcp/${orgId}/${tok}`, {
+            method,
+            headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18" },
+            body: method === "POST" ? JSON.stringify(body) : undefined,
+          }),
+          { params: Promise.resolve({ orgId, token: tok }) },
+        )
+        return { status: res.status, data: (await res.json().catch(() => null)) as any }
+      }
+      const hello = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "0" } } }
+      const mcpInit = await rpc(acme.id, token, hello)
+      assert(
+        mcpInit.status === 200 && mcpInit.data.result.instructions.includes(`Acme ${run} : Test de fumée`) && mcpInit.data.result.instructions.includes(`Alice ${run}`),
+        "MCP : poignée de main, consigne au nom et à la description de l'entreprise, pour cette personne",
+      )
+      const mcpTools = await rpc(acme.id, token, { jsonrpc: "2.0", id: 2, method: "tools/list" })
+      assert(
+        mcpTools.data.result.tools.map((t: { name: string }) => t.name).join() === "search_brain,get_zone_summary,list_zones,whoami_context,company_status,remember",
+        "MCP : les six outils du cerveau, sans paramètre company (une entreprise par serveur)",
+      )
+      assert(!JSON.stringify(mcpTools.data).includes('"company"'), "MCP : pas de paramètre company")
+      const mcpZones = await rpc(acme.id, token, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_zones", arguments: {} } })
+      assert(mcpZones.data.result.content[0].text.includes("**Ops** (`ops`)"), "MCP : un outil répond, avec les zones de l'entreprise")
+      assert((await rpc(fournil.id, token, hello)).status === 401, "MCP : le jeton d'une entreprise n'ouvre pas le serveur d'une autre")
+      assert((await rpc(acme.id, newToken(), hello)).status === 401, "MCP : jeton inconnu refusé")
+      assert((await rpc(acme.id, token, null, "GET")).status === 405, "MCP : GET refusé (serveur sans état)")
 
       console.log("\n— Entreprises retenues par le navigateur : revenir à l'une, passer de l'une à l'autre")
       const fournilSession = await createSessionValue(claire.profile.id)

@@ -1,23 +1,17 @@
 // Plusieurs entreprises sur un même poste : on peut appartenir à plusieurs cerveaux (une entreprise créée, une autre
-// rejointe…), chacun avec son jeton. La première est celle par défaut : les outils MCP l'interrogent tant qu'on ne leur
-// en demande pas une autre, et la synchro, les hooks et les skills restent sur elle.
+// rejointe…), chacun avec son jeton et son serveur MCP dans Claude Code et Codex (mcp-config.ts). La première est celle
+// par défaut : la synchro, les hooks et les skills restent sur elle (et le serveur MCP du poste, en secours, l'interroge
+// tant qu'on ne lui en demande pas une autre).
 
 import { normalize, truncate } from "@brain/core"
 import { BrainApi } from "./api"
 import { refreshCache } from "./cache"
-import { companiesOf, requireConfig, saveCache, saveConfig, selfCommand, UserError, withCompanies, type Company } from "./config"
+import { companiesOf, companyLabel, requireConfig, saveCache, saveConfig, selfCommand, UserError, withCompanies, type Company } from "./config"
+import { syncCompanyMcp } from "./mcp-config"
+
+export { companyLabel }
 
 type Log = (s: string) => void
-
-/** Nom affichable d'une entreprise : son nom, à défaut l'adresse de son cerveau. */
-export function companyLabel(c: Company): string {
-  if (c.name) return c.name
-  try {
-    return new URL(c.url).host
-  } catch {
-    return c.url
-  }
-}
 
 /** Une ligne par entreprise, numérotées : « 1. Fournil (par défaut) : boulangerie… ». */
 export function describeCompanies(list: Company[]): string {
@@ -72,11 +66,10 @@ export async function cmdCompanies(flags: Record<string, string | boolean>, log:
       // Le cache (zones, qui je suis) sert aux hooks pour classer les prompts : il suit l'entreprise par défaut.
       const { errors } = await refreshCache(new BrainApi(list[0].url, list[0].token, 8000))
       if (errors.length === 2) saveCache({ updated_at: new Date().toISOString() })
-      log(
-        `Entreprise par défaut : ${companyLabel(list[0])}. Les outils MCP l'interrogent sans qu'on la précise (dès la prochaine session ` +
-          "Claude Code) ; la synchro, les hooks et les skills passent sur elle.",
-      )
+      log(`Entreprise par défaut : ${companyLabel(list[0])}. La synchro, les hooks et les skills passent sur elle.`)
     }
+    // Serveurs MCP de Claude Code et Codex : ceux des entreprises restantes (une entreprise retirée perd le sien).
+    await syncCompanyMcp(requireConfig(), log)
   }
 
   log(list.length > 1 ? "Entreprises de ce poste (les agents passent `company` pour en viser une autre que la première) :" : "Entreprise de ce poste :")

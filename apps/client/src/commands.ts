@@ -27,7 +27,7 @@ import {
 import { DISTILLER_LABELS, pickDistiller } from "./distill"
 import { hooksInstalled, pipeInstalled, pipePath, scheduleInstalled } from "./install"
 import { TOKEN_COMMAND, screenpipeHealth, screenpipeProbe } from "./sources/screenpipe"
-import { frDate } from "./format"
+import { frDate } from "@brain/core/mcp"
 
 type Log = (s: string) => void
 
@@ -176,8 +176,8 @@ function addCompany(next: Partial<Config>, prev: Partial<Config>, company: Compa
   log(`Configuration enregistrée dans ${paths.config()} (mode 600, jeton ${maskSecret(company.token)}).`)
   log(`Connexion au cerveau OK : ${who.profile.name}${who.profile.title ? ` (${who.profile.title})` : ""} chez ${who.org.name}.`)
   log(
-    `${at >= 0 ? "Entreprise mise à jour" : "Entreprise ajoutée"} sur ce poste : ${companyLabel(company)}, à côté de ${first}, qui reste celle par défaut. ` +
-      `Les outils MCP du cerveau interrogent ${first} tant qu'on ne leur demande pas ${companyLabel(company)} ; la synchro, les hooks et les skills restent sur ${first}.`,
+    `${at >= 0 ? "Entreprise mise à jour" : "Entreprise ajoutée"} sur ce poste : ${companyLabel(company)}, à côté de ${first}, qui reste celle par défaut ` +
+      `(la synchro, les hooks et les skills restent sur ${first}). setup branche le serveur MCP de chaque entreprise dans Claude Code et Codex.`,
   )
   log(describeCompanies(list))
   log(`Changer l'entreprise par défaut : ${selfCommand()} companies --default "${companyLabel(company)}"`)
