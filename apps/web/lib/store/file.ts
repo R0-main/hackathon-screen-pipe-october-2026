@@ -21,7 +21,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
@@ -548,6 +548,17 @@ export class FileStore implements BrainStore {
       stats.set(i.zone, s)
     }
     return [...stats.entries()].map(([zone, s]) => ({ zone, count: s.count, last_at: s.last_at, contributors: s.authors.size }))
+  }
+
+  async authorZoneStats(): Promise<AuthorZoneStat[]> {
+    const counts = new Map<string, AuthorZoneStat>()
+    for (const i of this.load().items) {
+      const key = `${i.author_id}|${i.zone}`
+      const c = counts.get(key) ?? { author_id: i.author_id, zone: i.zone, count: 0 }
+      c.count++
+      counts.set(key, c)
+    }
+    return [...counts.values()]
   }
 
   async topEntities(f: { zones?: string[]; authorId?: string; limit: number }): Promise<EntityStat[]> {

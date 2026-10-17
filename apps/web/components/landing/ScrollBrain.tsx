@@ -28,6 +28,10 @@ const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
 
 const CENTER_R = 0.034
+/** Hauteur réservée en haut et en bas de l'écran pendant les chapitres (barre de navigation, barre de progression). */
+const NAV_ROOM = 72
+/** Écart entre la colonne des chapitres et le cerveau, en px. */
+const CHAPTER_GAP = 32
 /** Demi-encombrement du cerveau à l'écran (surface + billes), pour cadrer la caméra. */
 const EXTENT = { w: 1.65, h: 1.45 }
 // Focale longue : peu de perspective, les billes gardent la même taille d'un bord à l'autre.
@@ -245,7 +249,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       const end = onSurface(idx, -(0.04 + rand() * 0.14))
       // Avant de se poser, la connaissance flotte loin de la coque, dans sa direction : elle vient d'un poste.
       const away = scatter(dir, rand, 1.2)
-      const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(2 + rand())
+      // Pas trop loin : la bille ne doit pas flotter sur le titre ni sur les chapitres.
+      const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(1.5 + rand() * 0.45)
       nodes.push({ zone: i, end, start, r: 0.0065 + rand() * 0.005, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2 })
     }
     gfx.push({ id: z.id, color: new T.Color(zoneColor(z.color, z.position)), center, outline, pos, first, last: nodes.length })
@@ -274,7 +279,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const dustRand = seeded(7)
   const dust = Array.from({ length: DUST }, () => {
     const d = scatter([dustRand() - 0.5, dustRand() - 0.5, dustRand() - 0.5], dustRand, 2)
-    return { p: new T.Vector3(d[0], d[1] * 0.8, d[2]).multiplyScalar(1.8 + dustRand() * 1.2), r: 0.005 + dustRand() * 0.006, w: dustRand() * Math.PI * 2 }
+    return { p: new T.Vector3(d[0], d[1] * 0.8, d[2]).multiplyScalar(1.55 + dustRand() * 0.55), r: 0.005 + dustRand() * 0.006, w: dustRand() * Math.PI * 2 }
   })
   const dustMat = new T.MeshBasicMaterial({ color: RAW, transparent: true, opacity: 0, depthWrite: false })
   const dustMesh = new T.InstancedMesh(geoSphere, dustMat, DUST)
@@ -348,16 +353,24 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const halfW = (z: number) => tanH * z * aspect
     const halfH = (z: number) => tanH * z
     const wide = aspect >= 1.05
-    const heroZ = fit(wide ? 0.62 : 0.6)
-    const fullZ = fit(wide ? 0.98 : 1)
-    // Large écran : le cerveau à droite du titre, puis décalé pour laisser la colonne de texte à gauche.
+    // Assez petit pour ne jamais passer sous le titre ni sous la colonne des chapitres.
+    const heroZ = fit(0.5)
+    // Chapitres, large écran : le cerveau tient dans la place laissée à droite de la colonne de texte (mêmes
+    // mesures que .landing-chapter : gouttière, 30rem de texte, 20 px de marge intérieure) et sous la barre du haut.
+    const gutter = Math.min(56, Math.max(16, 0.04 * w))
+    const column = Math.max(gutter, (w - 1440) / 2 + gutter) + 480 + 20 + CHAPTER_GAP
+    const room = { w: Math.max(w * 0.3, w - column - gutter), h: h - 2 * NAV_ROOM }
+    const fullZ = wide ? Math.max(fit(0.8), EXTENT.w / ((room.w / w) * tanH * aspect), EXTENT.h / ((room.h / h) * tanH)) : fit(0.78)
+    // Centre de cette place, en coordonnées de la scène à la distance du cadrage plein écran.
+    const roomCenter = ((column + room.w / 2 - w / 2) / (w / 2)) * halfW(fullZ)
+    // Large écran : le cerveau à droite du titre, puis dans la place à droite des chapitres.
     // Écran étroit : le cerveau au-dessus du texte.
     layout = {
       heroZ,
       fullZ,
-      endZ: fit(0.8),
-      hero: wide ? [0.47 * halfW(heroZ), 0.16 * halfH(heroZ)] : [0, 0.38 * halfH(heroZ)],
-      full: wide ? [0.3 * halfW(fullZ), 0.02 * halfH(fullZ)] : [0, 0.22 * halfH(fullZ)],
+      endZ: fit(0.72),
+      hero: wide ? [0.56 * halfW(heroZ), 0.2 * halfH(heroZ)] : [0, 0.42 * halfH(heroZ)],
+      full: wide ? [roomCenter, 0] : [0, 0.3 * halfH(fullZ)],
     }
     invalidate()
   }

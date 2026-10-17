@@ -11,8 +11,12 @@ dist/
 apps/web/.brain/
 # Built client bundle served by the dashboard
 apps/web/public/brain.mjs
+apps/web/public/brain.mjs.sha256
 .DS_Store
 .next-build/
 
 # Captures de relecture Impeccable (régénérées à chaque passe)
 apps/web/.impeccable/review/
+
+# Worktrees des agents Claude Code (temporaires)
+.claude/worktrees/

@@ -21,11 +21,11 @@ Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données f
 2. **Le cerveau (45 s).** Le dashboard : chaque zone (Dev, Produit, Sales, Compta, Support, Direction) est un domaine de connaissance, les points sont les clients/outils/projets les plus cités, les synapses relient les zones qui partagent des entités. Lancer `npm run simulate` : les zones s'allument au fil des sessions et des requêtes MCP, le flux « Agents en direct » défile.
 
 3. **Comment ça arrive là (45 s).** Montrer `/admin` → « Inviter quelqu'un » → le **prompt magique** : on le colle dans Claude Code, il installe Screenpipe, brain-sync, le MCP et les hooks. « Le brut reste sur le PC : brain-sync filtre, masque les secrets et n'envoie que des connaissances distillées. »
-   *Si un poste est branché :* `node ~/.company-brain/brain.mjs hello` → son néon s'allume en direct ; une question dans Claude Code allume la zone concernée.
+   *Si un poste est branché :* `~/.company-brain/brain hello` → son néon s'allume en direct ; une question dans Claude Code allume la zone concernée.
 
 4. **Les accès par zone (60 s).** Dans la barre du haut : « Voir en tant que : Jean-Marc Dubois ». Le cerveau se verrouille sauf la Compta. Demander « comment déployer en production ? » → rien, et le bandeau indique que la zone Dev pourrait en savoir plus mais lui est fermée. Demander « rapprochement Qonto » → la procédure, et seule la zone Compta s'allume. Revenir en admin.
 
-5. **Où en est la boîte (45 s).** Objectifs, avancement, prochaines étapes et qui a fait quoi, par zone. Pour une version rédigée par Claude avec ton abonnement : lancer avant la démo `node ~/.company-brain/brain.mjs refresh-status` sur le poste admin (le bouton « Rafraîchir l'état » recalcule la version heuristique côté serveur). Montrer aussi « Voir en tant que : Jean-Marc » : Jean-Marc ne reçoit que la compta, avec un titre calculé sur sa zone.
+5. **Où en est la boîte (45 s).** Objectifs, avancement, prochaines étapes et qui a fait quoi, par zone. Pour une version rédigée par Claude avec ton abonnement : lancer avant la démo `~/.company-brain/brain refresh-status` sur le poste admin (le bouton « Rafraîchir l'état » recalcule la version heuristique côté serveur). Montrer aussi « Voir en tant que : Jean-Marc » : Jean-Marc ne reçoit que la compta, avec un titre calculé sur sa zone.
 
 6. **L'automatisation (45 s).** La carte verte : « Jean-Marc lance ce prompt presque chaque jour vers 9h07 (6 jours sur 6) → l'exécuter automatiquement à 9h02 ». Détectée à partir des empreintes de prompts envoyées par les hooks, sans stocker le texte brut. « Mettre en place ».
 
@@ -42,5 +42,6 @@ Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données f
 ## Si quelque chose lâche
 
 - Pas de réseau / pas de poste branché : `npm run simulate` suffit pour toute la démo.
-- Capture lente : `node ~/.company-brain/brain.mjs sync --since 2h` force la synchro (source de secours : les logs Claude Code locaux).
+- Capture lente : `~/.company-brain/brain sync --since 2h` force la synchro (source de secours : les logs Claude Code locaux).
+- Poste qui ne s'allume pas : `~/.company-brain/brain doctor` dit ce qui coince (cerveau, Screenpipe, MCP, hooks, synchro) et la commande qui répare.
 - Données abîmées : `npm run seed -- --force`.

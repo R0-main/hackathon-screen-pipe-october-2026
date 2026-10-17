@@ -74,9 +74,9 @@ export function parseSince(s: string | undefined, now = new Date()): Date {
   return new Date(t)
 }
 
-const LOCK_STALE_MS = 30 * 60_000
+export const LOCK_STALE_MS = 30 * 60_000
 
-function pidAlive(pid: number): boolean {
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true

@@ -35,10 +35,12 @@ reste utile là où il est bon : prévenir des autorisations, lire un code de so
 ## Comment c'est fait
 
 ```
-prompt  →  curl …/install.sh  →  sh install.sh --url … --token …
-                                    ├─ Node.js ≥ 20 trouvé, sinon copie privée dans ~/.company-brain/node
-                                    │  (sans droits admin, empreinte SHA-256 officielle vérifiée)
-                                    ├─ télécharge …/brain.mjs, écrit le raccourci ~/.company-brain/brain
+prompt  →  macOS, Linux, Git Bash : curl …/install.sh  →  sh install.sh --url … --token …
+           Windows (PowerShell)   : Invoke-WebRequest …/install.ps1  →  powershell -File install.ps1 --url … --token …
+                                    ├─ Node.js ≥ 20 trouvé (hors gestionnaire de versions), sinon copie privée figée
+                                    │  dans ~/.company-brain/node (sans droits admin, empreinte SHA-256 officielle vérifiée)
+                                    ├─ télécharge …/brain.mjs, vérifie que c'est bien le client (pas une page d'erreur),
+                                    │  écrit le raccourci ~/.company-brain/brain (Windows : brain.cmd)
                                     └─ brain setup --url … --token …
                                          ├─ config (~/.company-brain/config.json, mode 600)
                                          ├─ Screenpipe installé et lancé en service, micro coupé
@@ -48,23 +50,59 @@ prompt  →  curl …/install.sh  →  sh install.sh --url … --token …
                                          └─ néon, puis le cerveau s'ouvre dans le navigateur, déjà connecté
 ```
 
+Message d'équipe (rejoindre sur demande) : `--join <code>` au lieu de `--token` ; le script lance alors `brain join`, qui
+envoie la demande, attend qu'un admin l'accepte, puis enchaîne sur `setup` avec le jeton créé sur le poste.
+
 | Fichier | Rôle |
 |---|---|
-| `apps/web/public/install.sh` | Amorce POSIX, servie sur `/install.sh`. |
-| `apps/client/src/cli.ts`, `setup.ts` | Le CLI, empaqueté en un seul fichier `brain.mjs` (servi sur `/brain.mjs`). |
+| `apps/web/public/install.sh` | Amorce POSIX (macOS, Linux ; sous Git Bash, passe la main à `install.ps1`), servie sur `/install.sh`. |
+| `apps/web/public/install.ps1` | Amorce Windows (PowerShell 5.1 et 7), servie sur `/install.ps1`. |
+| `apps/client/src/cli.ts`, `setup.ts` | Le CLI, empaqueté en un seul fichier `brain.mjs` (servi sur `/brain.mjs`, empreinte sur `/brain.mjs.sha256`). |
+| `apps/client/src/doctor.ts` | `brain doctor` : diagnostic en lecture seule, avec la commande qui répare chaque point KO (`--json` pour Claude). |
 | `apps/web/lib/install-prompt.ts` | Le prompt court, généré avec le jeton de chaque employé. |
-| `apps/client/test/install-prompt.test.ts` | Le prompt ne cite que des commandes qui existent ; `install.sh` lance bien `setup` et rend son code. |
+| `apps/client/test/install-prompt.test.ts` | Le prompt ne cite que des commandes et des codes qui existent. |
+| `apps/client/test/install-script.test.ts` | `install.sh` / `install.ps1` : téléchargements, page d'erreur refusée, raccourcis, codes ; en CI sous Linux et Windows. |
 
-Codes de sortie : **0** tout est branché, **3** autorisation macOS en attente (relancer `~/.company-brain/brain setup`
-une fois cochée), **2** mauvais appel de `install.sh`, **4** Node.js manquant sur un système que le script ne gère pas.
+Codes de sortie (scripts et `setup`) :
+
+| Code | Sens | Suite |
+|---|---|---|
+| 0 | Tout est branché | — |
+| 1 | `setup` a échoué | `brain doctor` dit quoi, avec la commande qui répare |
+| 2 | Mauvais appel (`--url` absent ou invalide, lancé avec `sudo`) | Relancer la commande du prompt telle quelle |
+| 3 | Autorisation macOS « Enregistrement de l'écran » en attente | La cocher, puis `~/.company-brain/brain setup` |
+| 4 | Système non géré, ou Node.js impossible à installer ici | Le message dit quoi installer |
+| 5 | Téléchargement impossible (réseau, proxy, adresse, page d'erreur) | Relancer la même commande ; l'ancien client reste intact |
+| 6 | Tout est branché sauf Screenpipe (pas de version pour ce poste, ou il ne démarre pas) | `brain doctor` dit pourquoi |
+| 7 | Message d'équipe (`--join`) : la demande attend encore qu'un admin l'accepte | `~/.company-brain/brain join` reprend la même demande |
+| 8 | Message d'équipe : demande refusée, rien n'est installé | — |
+
+Un code a le même sens quelle que soit la commande qui le rend (`install.sh`, `install.ps1`, `setup`, `join`) : un test
+le vérifie (`apps/client/test/install-prompt.test.ts`).
+
+## `brain doctor`
+
+Quand quelque chose coince, Claude n'a pas à deviner : `brain doctor --json` passe le poste en revue (Node.js et
+raccourci, connexion au cerveau et version du client, Screenpipe et ses autorisations, MCP et hooks de Claude Code,
+synchro planifiée et son journal, distillation) **sans rien modifier**, et donne pour chaque point KO la commande qui
+répare. Il lance vraiment ce que lancent le raccourci, les hooks, le MCP et la synchro planifiée (`_probe`) : un
+chemin resté sur un ancien Node.js ou un ancien client se voit tout de suite. Les commandes marquées `safe` ne font que
+rebrancher le poste ; Claude les lance sans redemander. Détail : [install/PROMPT.md](../install/PROMPT.md#brain-doctor--le-diagnostic).
+
+Pas de commande pour interroger le cerveau depuis le terminal : c'est le rôle du MCP `company-brain`, dans Claude Code.
 
 Pourquoi `sh ~/.company-brain/install.sh` plutôt que `curl … | sh` : le script reste sur le disque, Claude ou l'employé
 peut le relire, et un téléchargement coupé ne s'exécute jamais à moitié.
 
 ## Limites et suite
 
-- **Windows** : `install.sh` tourne dans le Git Bash de Claude Code, mais n'installe pas Node lui-même (code 4 avec la
-  commande `winget` à lancer). Le CLI, lui, gère Windows (tâche planifiée).
+- **Windows** : installation, raccourcis, MCP, hooks (lancés sans shell, donc aussi sans Git Bash) et synchro planifiée
+  sont gérés, mais pas encore essayés sur un vrai poste (seulement en CI `windows-latest`). Screenpipe y tourne en
+  arrière-plan, sans service : après un redémarrage, `brain doctor` le signale et `brain setup` le relance. La tâche
+  planifiée ouvre une console toutes les 15 min et ne tourne pas sur batterie (réglages par défaut de `schtasks`) :
+  à passer en tâche XML masquée.
+- **Linux** : Screenpipe 0.4.52 demande glibc ≥ 2.39 (Ubuntu 24.04 et plus) et pipewire / pulseaudio ; sans eux,
+  `setup` branche le reste et sort en 6. Rien pour linux-arm64 ni Windows sur ARM sans émulation x64.
 - **Supprimer Node** : compiler le client en binaire autonome par plateforme (Node SEA ou `bun build --compile`) et le
   publier. `install.sh` téléchargerait alors ce binaire au lieu de Node + `brain.mjs`.
 - **Signer `install.sh` et `brain.mjs`** ou publier leurs empreintes, pour qu'un poste puisse vérifier ce qu'il exécute

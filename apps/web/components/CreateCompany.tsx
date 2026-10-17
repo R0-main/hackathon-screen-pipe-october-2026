@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify } from "@brain/core"
+import { AgentLogos } from "./brand-logos"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage, initials } from "./format"
@@ -10,7 +11,7 @@ import { BrainIcon, CheckIcon, CloseIcon, Dot, ErrorText, PlusIcon, ZONE_PALETTE
 import { deNom } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
-type Step = "intro" | "company" | "about" | "you" | "zones" | "install" | "team"
+type Step = "intro" | "company" | "about" | "you" | "zones" | "install" | "context" | "team"
 /** Une personne ajoutée depuis cette page : invitée (son prompt personnel), ou acceptée via le message d'équipe (prompt vide). */
 type Invite = { id: string; name: string; title?: string; zones: string[]; prompt: string }
 type Created = { orgName: string; meId: string; prompt: string; zones: ZoneOption[] }
@@ -29,7 +30,7 @@ type Saved = {
 }
 
 /** Étapes numérotées (barre de progression) : l'intro n'en fait pas partie. */
-const STEPS: Step[] = ["company", "about", "you", "zones", "install", "team"]
+const STEPS: Step[] = ["company", "about", "you", "zones", "install", "context", "team"]
 const DEFAULT_PICK = ["dev", "produit", "direction"]
 /**
  * La progression survit à un rechargement, dans cet onglet seulement (sessionStorage, effacé à sa fermeture). Elle
@@ -63,7 +64,7 @@ function save(s: Saved) {
 
 /**
  * Créer son entreprise à partir de zéro, une question par écran : nom, activité, qui on est, zones du cerveau.
- * Ensuite, le prompt à coller dans Claude Code pour brancher son poste, puis un prompt par collègue pour l'inviter.
+ * Ensuite, le prompt à coller dans Claude Code ou Codex pour brancher son poste, puis un prompt par collègue pour l'inviter.
  * Les postes branchés apparaissent en direct (lecture de /api/admin/team).
  */
 export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: boolean }) {
@@ -163,7 +164,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
   const index = STEPS.indexOf(step)
   const org = created?.orgName ?? (company.trim() || "votre entreprise")
-  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "you", team: "install" }
+  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "you", context: "install", team: "context" }
   const people = created
     ? [{ id: created.meId, name, connected: Boolean(team[created.meId]) }, ...invites.map((i) => ({ id: i.id, name: i.name, connected: Boolean(team[i.id]) }))]
     : name.trim()
@@ -212,7 +213,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <>
                   <h1 className="create-title">Créons le cerveau de votre entreprise.</h1>
                   <p className="create-lead">
-                    Quatre questions pour monter votre dashboard. Ensuite, un message à coller dans Claude Code branche votre poste, et un message par collègue
+                    Quatre questions pour monter votre dashboard. Ensuite, un message à coller dans Claude Code ou Codex branche votre poste, et un message par collègue
                     les fait rejoindre le cerveau. Deux minutes en tout.
                   </p>
                   <div className="mt-9 flex flex-wrap items-center gap-3">
@@ -323,7 +324,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <>
                   <h1 className="create-title">Le cerveau {deNom(created.orgName)} est prêt.</h1>
                   <p className="create-lead">
-                    Branchez votre poste : collez ce message dans Claude Code. Il installe Screenpipe, branche le MCP et les hooks, puis ouvre votre dashboard déjà
+                    Branchez votre poste : ouvrez ce message dans Claude Code ou Codex. Il installe Screenpipe, branche le MCP et les hooks, puis ouvre votre dashboard déjà
                     connecté. Sur Mac, il faudra autoriser l'enregistrement de l'écran.
                   </p>
                   <div className="panel mt-8 px-5 py-5">
@@ -333,16 +334,9 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     </p>
                   </div>
                   <Presence connected={Boolean(team[created.meId])} self />
-                  <p className="mt-3 max-w-[40em] text-[14px] text-trace">
-                    Pour que le cerveau ne parte pas de zéro :{" "}
-                    <Link href="/onboarding" className="landing-link text-ink">
-                      faites-lui lire vos anciennes conversations
-                    </Link>{" "}
-                    avec Claude Code ou Codex.
-                  </p>
                   <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
-                    <button type="button" className="btn btn-lg" onClick={() => go("team")}>
-                      Inviter mon équipe
+                    <button type="button" className="btn btn-lg" onClick={() => go("context")}>
+                      Continuer
                     </button>
                     <Link href="/dashboard" className="landing-link text-[15px]">
                       Ouvrir le dashboard
@@ -351,11 +345,13 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 </>
               )}
 
+              {step === "context" && created && <ContextStep orgName={created.orgName} onNext={() => go("team")} />}
+
               {step === "team" && created && (
                 <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} />
               )}
 
-              {(step === "install" || step === "team") && !created && (
+              {(step === "install" || step === "context" || step === "team") && !created && (
                 <>
                   <h1 className="create-title">Cette page a perdu votre cerveau.</h1>
                   <p className="create-lead">Il existe toujours : retrouvez-le depuis le dashboard, ou recommencez.</p>
@@ -387,6 +383,79 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
         </aside>
       </div>
     </main>
+  )
+}
+
+/**
+ * Donner au cerveau le contexte de ses comptes : Claude Code ou Codex relit l'historique du poste et propose zones et
+ * premières connaissances (POST /api/onboarding/import). La proposition se relit et se valide dans la page Onboarding.
+ */
+function ContextStep({ orgName, onNext }: { orgName: string; onNext: () => void }) {
+  const prompt = useRef<Promise<string> | null>(null)
+  const [received, setReceived] = useState<{ zones: number; items: number } | null>(null)
+
+  const getPrompt = () => {
+    prompt.current ??= api<{ prompt: string }>("/api/onboarding/agent", { method: "POST" }).then((r) => r.prompt)
+    prompt.current.catch(() => (prompt.current = null))
+    return prompt.current
+  }
+
+  useEffect(() => {
+    if (received) return
+    let stop = false
+    const tick = async () => {
+      try {
+        const r = await api<{ draft: { zones: unknown[]; items: unknown[] } | null }>("/api/onboarding/import")
+        if (!stop && r.draft) setReceived({ zones: r.draft.zones.length, items: r.draft.items.length })
+      } catch {}
+    }
+    void tick()
+    const id = setInterval(tick, POLL_MS)
+    return () => {
+      stop = true
+      clearInterval(id)
+    }
+  }, [received])
+
+  return (
+    <>
+      <h1 className="create-title">Donnez-lui le contexte de vos comptes.</h1>
+      <p className="create-lead">
+        Claude Code ou Codex relit vos anciennes conversations sur ce poste et les README de vos projets, et en tire les zones et les premières connaissances{" "}
+        {deNom(orgName)}. Il vous demande votre accord avant de lire quoi que ce soit, et rien n&apos;entre dans le cerveau avant que vous ayez relu la proposition.
+      </p>
+      <div className="panel mt-8 px-5 py-5">
+        <PromptActions getPrompt={getPrompt} sends />
+        <p className="mt-4 border-t border-line pt-4 text-[13px] leading-relaxed text-trace">
+          Claude Code ou Codex, au choix. Jamais de secrets ni de données personnelles ; le code d&apos;envoi qu&apos;il contient vaut 2 heures.
+        </p>
+      </div>
+      {received ? (
+        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-[14px]" aria-live="polite">
+          <span className="flex items-center gap-2">
+            <span className="live-dot is-live" aria-hidden />
+            Proposition reçue : {received.zones} zone{received.zones > 1 ? "s" : ""}, {received.items} connaissance{received.items > 1 ? "s" : ""}.
+          </span>
+          <Link href="/onboarding" target="_blank" className="btn">
+            Relire et valider
+          </Link>
+        </div>
+      ) : (
+        <p className="mt-6 flex items-center gap-2 text-[14px]" aria-live="polite">
+          <span className="live-dot" aria-hidden /> En attente de la proposition. Cette page se met à jour toute seule.
+        </p>
+      )}
+      <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <button type="button" className="btn btn-lg" onClick={onNext}>
+          Inviter mon équipe
+        </button>
+        {!received && (
+          <button type="button" className="landing-link text-[15px]" onClick={onNext}>
+            Plus tard
+          </button>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -565,7 +634,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       <h1 className="create-title">Invitez votre équipe.</h1>
       <p className="create-lead">
         Deux façons, au choix : un message par personne, avec son propre jeton, ou un seul message pour toute l'équipe, où chacun demande à entrer. Dans les deux
-        cas, il se colle dans Claude Code, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
+        cas, il se colle dans Claude Code ou Codex, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
       </p>
       <h2 className="mt-10 text-[19px] font-medium">Un message par personne</h2>
 
@@ -597,7 +666,13 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
-            {busy ? "Création du prompt…" : "Créer et copier son prompt"}
+            {busy ? (
+              "Création du prompt…"
+            ) : (
+              <>
+                <AgentLogos /> Créer et copier son prompt
+              </>
+            )}
           </button>
           {err && <ErrorText>{err}</ErrorText>}
         </div>
@@ -641,7 +716,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
           })}
         </ul>
       )}
-      {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copié : envoyez-le-lui (Slack, mail), il le colle dans Claude Code.</p>}
+      {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copié : envoyez-le-lui (Slack, mail), il le colle dans Claude Code ou Codex.</p>}
 
       <h2 className="mt-12 text-[19px] font-medium">Ou un seul message pour toute l'équipe</h2>
       <div className="mt-3">

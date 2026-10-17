@@ -25,6 +25,7 @@ import {
   type CompanyStatus,
   type KnowledgeItem,
   type KnowledgeItemInput,
+  type Profile,
   type ScoredItem,
   type StatusInput,
   type Zone,
@@ -32,7 +33,7 @@ import {
 } from "@brain/core"
 import { summarizeStatus } from "@brain/core/claude"
 import { getStore, isStoreSetupError } from "./store"
-import type { NewItem } from "./store/types"
+import type { AuthorZoneStat, NewItem } from "./store/types"
 import { canRead, canSeeEventContent, redactEvent } from "./access"
 import type { Viewer } from "./auth"
 import { getClaude } from "./ai"
@@ -325,13 +326,29 @@ export type ZoneView = Zone & {
   entities: { name: string; type: string; count: number }[]
 }
 
+/**
+ * Zone où une personne travaille le plus : ses connaissances, puis ses événements récents (qui comptent double, c'est
+ * ce qu'elle fait en ce moment). Sans aucune trace, son intitulé de poste la rattache à une zone ; sinon null.
+ */
+function homeZone(p: Profile, zones: Zone[], authorStats: AuthorZoneStat[], events: AgentEvent[]): string | null {
+  const known = new Set(zones.map((z) => z.id))
+  const weight = new Map<string, number>()
+  const add = (zone: string, w: number) => known.has(zone) && weight.set(zone, (weight.get(zone) ?? 0) + w)
+  for (const st of authorStats) if (st.author_id === p.id) add(st.zone, st.count)
+  for (const e of events) if (e.user_id === p.id) for (const z of e.zones) add(z, 2)
+  const best = [...weight.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]
+  if (best) return best[0]
+  return p.title ? (classifyZones(p.title, zones, 1)[0] ?? null) : null
+}
+
 /** GET /api/state — instantané du dashboard, filtré selon les droits du spectateur. */
 export async function getState(viewer: Viewer) {
   const s = store()
-  const [org, zones, stats, profiles, events, status, automations, entities, skills] = await Promise.all([
+  const [org, zones, stats, authorStats, profiles, events, status, automations, entities, skills] = await Promise.all([
     s.getOrg(),
     s.listZones(),
     s.zoneStats(),
+    s.authorZoneStats(),
     s.listProfiles(),
     s.listEvents({ limit: 60 }),
     s.getStatus(),
@@ -393,7 +410,7 @@ export async function getState(viewer: Viewer) {
     me: { ...profile, access },
     real: viewer.real,
     impersonating: viewer.real.id !== profile.id,
-    people: profiles.map((p) => ({ id: p.id, name: p.name, title: p.title, role: p.role })),
+    people: profiles.map((p) => ({ id: p.id, name: p.name, title: p.title, role: p.role, zone: homeZone(p, zones, authorStats, events) })),
     names,
     zones: zoneViews,
     synapses,

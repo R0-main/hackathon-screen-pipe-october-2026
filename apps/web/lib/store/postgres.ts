@@ -22,7 +22,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 import { JOIN_MISSING_MESSAGE, SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
@@ -791,6 +791,13 @@ export class PostgresStore implements BrainStore {
       select zone, count(*)::int as count, max(created_at) as last_at, count(distinct author_id)::int as contributors
       from knowledge_items where org_id = ${await this.orgId()} group by zone`
     return rows.map((r) => ({ zone: r.zone, count: r.count, last_at: isoOrNull(r.last_at), contributors: r.contributors }))
+  }
+
+  async authorZoneStats(): Promise<AuthorZoneStat[]> {
+    const rows = await this.sql`
+      select author_id, zone, count(*)::int as count
+      from knowledge_items where org_id = ${await this.orgId()} group by author_id, zone`
+    return rows.map((r) => ({ author_id: r.author_id, zone: r.zone, count: r.count }))
   }
 
   async topEntities(f: { zones?: string[]; authorId?: string; limit: number }): Promise<EntityStat[]> {

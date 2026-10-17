@@ -28,7 +28,7 @@ function fakeBrain() {
 
 const quiet = () => {}
 
-test("join : la demande part sans le jeton (empreinte seule), préremplie, puis attend ; code 5 et état gardé", async () => {
+test("join : la demande part sans le jeton (empreinte seule), préremplie, puis attend ; code 7 et état gardé", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
   const { brain, fetch } = fakeBrain()
   const code = await cmdJoin({ url: "http://brain.test/", join: "cj_abc", name: "Léa Bernard", title: "Designer", "wait-accept": "0" }, quiet, { fetch })
@@ -81,7 +81,7 @@ test("join : attend l'acceptation pendant la commande", async () => {
   assert.equal(polls, 3)
 })
 
-test("join : refusée, code 6 et rien d'installé", async () => {
+test("join : refusée, code 8 et rien d'installé", async () => {
   process.env.COMPANY_BRAIN_HOME = tempDir()
   const { brain, fetch } = fakeBrain()
   brain.status = "rejected"
