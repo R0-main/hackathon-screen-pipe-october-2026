@@ -37,6 +37,7 @@ import * as stateRoute from "../app/api/state/route"
 import * as demoSessionRoute from "../app/api/session/demo/route"
 import * as skillsRoute from "../app/api/skills/route"
 import * as skillRoute from "../app/api/skills/[id]/route"
+import { DEMO_VISITOR_TITLE, demoVisitorManager, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
@@ -302,6 +303,36 @@ async function main() {
   assert(patched.status === 404, "PATCH d'un skill hors de ses cortex : 404")
   await removeSkill(claire, v1.skill.id)
   assert(!(await store.getSkill(v1.skill.id)), "l'admin retire le skill")
+
+  console.log("\n— Démo remplie par une version antérieure : complétée sans rien effacer")
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "brain-upgrade-"))
+    try {
+      const old = new FileStore(tmp)
+      await seedDemoBrain(old)
+      // Avant les rattachements et les skills : organigramme à plat, aucun skill, personne n'a le droit de publier.
+      const team = await old.listProfiles()
+      for (const p of team) await old.updateProfile(p.id, { manager_id: null, can_publish_skills: false })
+      for (const sk of await old.listSkills()) await old.deleteSkill(sk.id)
+      const visitor = await old.createProfile({ name: "Visiteur 1234", title: DEMO_VISITOR_TITLE, role: "member", token_hash: hashToken(newToken()) })
+      const itemsBefore = (await old.listItems({})).length
+      const res = await upgradeDemoBrain(old)
+      const after = new Map((await old.listProfiles()).map((p) => [p.name, p]))
+      const id = (n: string) => team.find((p) => p.name.startsWith(n))!.id
+      assert(after.get("Inès Lefèvre")?.manager_id === id("Hugo") && after.get("Jean-Marc Dubois")?.manager_id === id("Claire"), "l'organigramme à plat retrouve ses rattachements")
+      assert(after.get("Claire Martin")?.manager_id == null, "la CEO reste en tête")
+      assert(after.get("Visiteur 1234")?.manager_id === id("Hugo"), "les visiteurs rejoignent l'équipe du lead dev")
+      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deployer-fournil")?.version === 3, "les skills de démo sont ajoutés")
+      assert(after.get("Hugo Bernard")?.can_publish_skills === true && after.get("Inès Lefèvre")?.can_publish_skills === false, "Hugo et Jean-Marc reçoivent le droit de publier")
+      assert((await old.listItems({})).length === itemsBefore && visitor.id === after.get("Visiteur 1234")?.id, "rien n'est effacé")
+      await old.updateProfile(id("Inès"), { manager_id: id("Claire") })
+      const again = await upgradeDemoBrain(old)
+      assert(again.managers === 0 && again.skills === 0 && (await old.getProfile(id("Inès")))?.manager_id === id("Claire"), "relancé : ne touche plus aux choix d'un admin")
+      assert((await demoVisitorManager(old)) === id("Hugo"), "un nouveau visiteur est rattaché au lead dev")
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
 
   console.log("\n— Écriture libre, droit de regard de l'auteur (D1)")
   const jmDev = await ingestItems(jm, [item("dev", `Smoke ${run} déploiement Vercel par la compta`, "procedure")])
