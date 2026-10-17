@@ -154,14 +154,17 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
     >
       <CompanySwitcher accounts={accounts} signup={signup} onClose={onClose} />
 
-      <div className="mx-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line pb-3 text-[12px] text-trace">
-        <span className={`live-dot ${live ? "is-live" : ""}`} aria-hidden />
-        <span>{live ? t.shell.live : t.shell.connecting}</span>
-        <span className="tabular-nums">{plural(activeAgents, t.shell.activeAgents, t.shell.activeAgentsPlural)}</span>
-        {!state.claude && (
-          <span className="chip !h-5" title={t.shell.noClaudeHint}>
-            {t.shell.noClaude}
+      <div className="mx-4 space-y-1 border-b border-line pb-3 text-[12px] text-trace">
+        <p className="flex items-center gap-2" title={live ? t.shell.agentsHint : undefined}>
+          <span className={`live-dot ${live ? "is-live" : ""}`} aria-hidden />
+          <span className="tabular-nums">
+            {!live ? t.shell.connecting : activeAgents === 0 ? t.shell.noAgents : plural(activeAgents, t.shell.activeAgents, t.shell.activeAgentsPlural)}
           </span>
+        </p>
+        {!state.claude && isAdmin && (
+          <Link href="/admin/zones" onClick={onClose} title={t.shell.noClaudeHint} className="block pl-4 underline-offset-2 hover:text-ink hover:underline">
+            {t.shell.noClaude} →
+          </Link>
         )}
       </div>
 
