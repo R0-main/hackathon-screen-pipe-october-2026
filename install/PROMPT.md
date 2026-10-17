@@ -44,6 +44,8 @@ lui-même au premier lancement.
 | 3 | EN ATTENTE : autorisation « Enregistrement de l'écran » pas encore accordée (macOS) | Redit où cocher, relance `brain setup` |
 | 5 | Téléchargement impossible (réseau, proxy, mauvaise adresse, page d'erreur au lieu du client) | Relance la même commande |
 | 6 | Tout est branché **sauf Screenpipe** (pas de version pour ce poste, ou il ne démarre pas) | `brain doctor --json`, explique |
+| 7 | Message d'équipe : demande pas encore acceptée par un admin | Propose de relancer `brain join` (même demande) |
+| 8 | Message d'équipe : demande refusée, rien n'est installé | Le dit |
 | 1, 2, 4 | Échec de setup, mauvais appel, système non géré | `brain doctor --json`, explique, lance les corrections « safe » |
 
 ## `brain doctor` : le diagnostic

@@ -91,11 +91,12 @@ vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en �
      Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté ;
    - **un seul message pour toute l'équipe** (Équipe et accès, puis Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
      collègues. Le Claude de chacun remplit la demande avec ce qu'il sait déjà (nom, poste, email ; rien d'inventé,
-     le reste reste vide), et `brain join` l'envoie puis attend. Un admin la complète (poste, rôle, zones,
+     le reste reste vide), et `brain join` (lancé par `install.sh --join`, ou `install.ps1 --join` sous Windows) l'envoie
+     puis attend. Un admin la complète (poste, rôle, zones,
      rattachement) et l'accepte : le poste termine alors son installation tout seul. Le code ne donne accès à rien ;
      le jeton est créé sur le poste et seule son empreinte part avec la demande. « Changer le code » invalide
-     l'ancien message. Code de sortie 5 : toujours en attente (`~/.company-brain/brain join` reprend la même
-     demande) ; 6 : refusée.
+     l'ancien message. Code de sortie 7 : toujours en attente (`~/.company-brain/brain join` reprend la même
+     demande) ; 8 : refusée. Les autres codes sont ceux de l'installation ([docs/CLI.md](docs/CLI.md)).
 
 Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
 Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une

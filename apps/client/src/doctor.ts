@@ -40,6 +40,7 @@ import {
   scheduleTarget,
   type HookCommand,
 } from "./install"
+import { joinStatePath } from "./join"
 import { installedScreenpipeBin, screenpipeLoadError, screenpipeSupported, SCREENPIPE_LAUNCHD_LABEL } from "./screenpipe-cli"
 import { maskOwnSecrets, ownSecrets } from "./secrets"
 import { desktopApp, readHealth } from "./setup"
@@ -355,7 +356,20 @@ function checkClientFiles(ctx: Ctx) {
 function checkConfig(ctx: Ctx): boolean {
   const file = paths.config()
   if (!existsSync(file)) {
-    add(ctx, { id: "config", group: "Cerveau", status: "fail", detail: `${file} absent : le poste n'est pas branché au cerveau`, fix: "Colle ton prompt d'installation dans Claude Code (ou demande-en un nouveau à un admin, page Équipe et accès)." })
+    // Message d'équipe : la demande attend un admin ; le poste se branchera dès qu'elle sera acceptée.
+    const pending = readJson<{ org?: string }>(joinStatePath())
+    if (pending)
+      add(ctx, {
+        id: "config",
+        group: "Cerveau",
+        status: "fail",
+        detail: `demande pour rejoindre ${pending.org ?? "l'entreprise"} pas encore acceptée : le poste n'est pas encore branché`,
+        fix: "Un admin doit l'accepter (Équipe et accès, puis Demandes) ; join reprend la même demande et installe tout une fois acceptée.",
+        command: `${ctx.me} join`,
+        safe: true,
+      })
+    else
+      add(ctx, { id: "config", group: "Cerveau", status: "fail", detail: `${file} absent : le poste n'est pas branché au cerveau`, fix: "Colle ton prompt d'installation dans Claude Code (ou demande-en un nouveau à un admin, page Équipe et accès)." })
     return false
   }
   let raw: Partial<Config>

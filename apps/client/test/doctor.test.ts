@@ -323,6 +323,14 @@ test("doctor sans config : KO config en premier, le reste vérifié quand même"
     assert.equal(r.next?.id, "config")
     assert.equal(byId(r, "connexion")?.status, "skip")
     assert.equal(byId(r, "hooks")?.status, "ok")
+
+    // Message d'équipe en attente d'un admin : doctor le dit, et join est la commande qui reprend.
+    unlinkSync(join(post.home, "config.json"))
+    writeFileSync(join(post.home, "join.json"), JSON.stringify({ url: brain.url, id: "req-1", token: "cb_secret_join_token_000", org: "Fournil" }))
+    const p = await doctorIn(post)
+    assert.match(byId(p, "config")!.detail, /rejoindre Fournil pas encore acceptée/)
+    assert.match(byId(p, "config")!.command!, / join$/)
+    assert.ok(!JSON.stringify(p).includes("cb_secret_join_token_000"))
   } finally {
     await Promise.all([brain.close(), sp.close()])
   }

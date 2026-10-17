@@ -50,6 +50,9 @@ prompt  →  macOS, Linux, Git Bash : curl …/install.sh  →  sh install.sh --
                                          └─ néon, puis le cerveau s'ouvre dans le navigateur, déjà connecté
 ```
 
+Message d'équipe (rejoindre sur demande) : `--join <code>` au lieu de `--token` ; le script lance alors `brain join`, qui
+envoie la demande, attend qu'un admin l'accepte, puis enchaîne sur `setup` avec le jeton créé sur le poste.
+
 | Fichier | Rôle |
 |---|---|
 | `apps/web/public/install.sh` | Amorce POSIX (macOS, Linux ; sous Git Bash, passe la main à `install.ps1`), servie sur `/install.sh`. |
@@ -71,6 +74,11 @@ Codes de sortie (scripts et `setup`) :
 | 4 | Système non géré, ou Node.js impossible à installer ici | Le message dit quoi installer |
 | 5 | Téléchargement impossible (réseau, proxy, adresse, page d'erreur) | Relancer la même commande ; l'ancien client reste intact |
 | 6 | Tout est branché sauf Screenpipe (pas de version pour ce poste, ou il ne démarre pas) | `brain doctor` dit pourquoi |
+| 7 | Message d'équipe (`--join`) : la demande attend encore qu'un admin l'accepte | `~/.company-brain/brain join` reprend la même demande |
+| 8 | Message d'équipe : demande refusée, rien n'est installé | — |
+
+Un code a le même sens quelle que soit la commande qui le rend (`install.sh`, `install.ps1`, `setup`, `join`) : un test
+le vérifie (`apps/client/test/install-prompt.test.ts`).
 
 ## `brain doctor`
 
