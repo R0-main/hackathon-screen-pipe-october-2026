@@ -50,10 +50,11 @@ export type State = {
   /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
   baseline_at?: string
   /**
-   * Conversations que Claude n'a pas su distiller. n : essais décomptés (échecs dus à la conversation elle-même),
-   * abandon à MAX_DISTILL_ATTEMPTS ; n = 0 : échec pendant une panne, non décompté (elle passe après les autres).
+   * Conversations que Claude n'a pas su distiller (elles passent après les autres). n : essais probants (le modèle a
+   * répondu, ou Claude a répondu à un autre appel de la synchro), abandon à MAX_DISTILL_ATTEMPTS ; tries : tous les essais
+   * décomptés, probants ou non, depuis first_at (garde-fou : abandon après 24 h et 5 essais) ; at : dernier échec.
    */
-  distill_failures?: Record<string, { n: number; at: string; error?: string }>
+  distill_failures?: Record<string, { n: number; at: string; error?: string; tries?: number; first_at?: string }>
   last_sync?: {
     at: string
     distiller: string

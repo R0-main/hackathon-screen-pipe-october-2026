@@ -442,7 +442,7 @@ test("STALL : une fenêtre Screenpipe que Claude refuse ne bloque pas le checkpo
   }
 })
 
-test("STALL : tous les appels échouent pareil sans réponse de Claude → panne, rien de décompté ; une seule conversation en erreur → décomptée puis abandonnée", async () => {
+test("STALL : tous les appels échouent pareil sans réponse de Claude → panne, rien de décompté ; une conversation en erreur → décomptée quand Claude répond aux autres, puis abandonnée", async () => {
   const brain = await mockBrain()
   const cli = fakeClaude()
   try {
@@ -470,15 +470,70 @@ test("STALL : tous les appels échouent pareil sans réponse de Claude → panne
     assert.ok(run2.findIndex((c) => c.tags.includes("QZXERR1")) >= 2, `ordre : ${run2.map((c) => c.tags.join("+"))}`)
     assert.deepEqual(tags(brain.ingested), ["QZX0", "QZX1", "QZX2", "QZX3", "QZX4"])
     assert.equal(ws.state().distill_failures?.err?.n, 1)
-    // Seule dans la file ensuite (rien d'autre ne réussit) : décomptée quand même, puis abandonnée.
-    await withPath(cli.bin, () => runSync({}, capture().io))
-    assert.equal(ws.state().distill_failures?.err?.n, 2)
-    const out4 = capture()
-    await withPath(cli.bin, () => runSync({}, out4.io))
-    assert.match(out4.text(), /1 conversation abandonnée après 3 essais infructueux/)
+    // Seule dans la file ensuite (Claude ne répond à aucun appel) : l'échec ne prouve rien, il n'est pas décompté.
+    const out3 = capture()
+    await withPath(cli.bin, () => runSync({}, out3.io))
+    assert.equal(ws.state().distill_failures?.err?.n, 1)
+    assert.match(out3.text(), /Panne générale \(Claude n'a répondu à aucun appel\) : aucun essai n'est décompté/)
+    // Dès que Claude répond à d'autres conversations dans la même synchro, l'échec compte : abandonnée au 3e.
+    for (const k of [5, 6]) {
+      writeFileSync(join(ws.proj, `s${k}.jsonl`), user(`s${k}`, `QZX${k} Comment on teste l'API ?`, 30) + assistant(`s${k}`, "On a décidé de tester avec Vitest.", 29))
+      const out = capture()
+      await withPath(cli.bin, () => runSync({}, out.io))
+      if (k === 5) assert.equal(ws.state().distill_failures?.err?.n, 2)
+      else assert.match(out.text(), /1 conversation abandonnée après 3 essais infructueux/)
+    }
     assert.ok(ws.state().claude.files[err])
+    assert.deepEqual(tags(brain.ingested), ["QZX0", "QZX1", "QZX2", "QZX3", "QZX4", "QZX5", "QZX6"])
     assert.ok(!JSON.stringify(brain.received).includes("QZXERR"))
   } finally {
     await brain.close()
+  }
+})
+
+test("R-LIMIT : une fenêtre Screenpipe qui fait toujours échouer la CLI (erreur inconnue, rien d'autre à distiller) libère le checkpoint en un jour", async () => {
+  const brain = await mockBrain()
+  const cli = fakeClaude()
+  const now = Date.now()
+  const start = now - 2 * 3600_000
+  const rows: Row[] = [
+    { n: 0, at: start, app: "Terminal", window: "claude — bloquée", text: "QZXERR1 Conversation qui fait planter la CLI." },
+    { n: 1, at: start + 20_000, app: "Terminal", window: "claude — bloquée", text: "QZXERR1 suite de la conversation." },
+  ]
+  for (let i = 0; i < 2600; i++) rows.push({ n: i + 2, at: start + 60_000 + i * 2500, app: "Terminal", window: `claude — compta ${Math.floor(i / 100)}`, text: `QZXW${Math.floor(i / 100)} rapprochement bancaire ligne ${i}` })
+  const sp = await screenpipe(rows)
+  try {
+    const ws = workstation(brain.url, { use_claude_cli: true, screenpipe_url: sp.url, sources: ["screenpipe"] })
+    const entry = () => {
+      const all = Object.values(ws.state().distill_failures ?? {}) as { n: number; tries?: number }[]
+      assert.ok(all.length <= 1, "une seule conversation en échec")
+      return all[0]
+    }
+    // 1er passage : les autres fenêtres partent (Claude répond) → l'échec est probant (1/3).
+    await withPath(cli.bin, () => runSync({ limit: 200 }, capture().io))
+    assert.equal(entry()?.n, 1)
+    const lastWindow = (t: string[]) => Math.max(...t.filter((x) => x.startsWith("QZXW")).map((x) => Number(x.slice(4))))
+    const firstPass = lastWindow(tags(brain.ingested))
+    // Ensuite seule la fenêtre bloquée est tentée, sans aucune réponse de Claude : rien de probant, pas d'abandon.
+    for (let run = 2; run <= 5; run++) {
+      await withPath(cli.bin, () => runSync({ limit: 200 }, capture().io))
+      assert.equal(entry()?.n, 1)
+      assert.equal(entry()?.tries, run)
+      assert.equal(ws.state().screenpipe?.last_timestamp, undefined)
+    }
+    // Le lendemain (échecs depuis plus de 24 h, 5 essais au moins) : abandonnée, le checkpoint avance, la suite est lue.
+    const state = ws.state()
+    for (const f of Object.values(state.distill_failures) as { first_at?: string }[]) f.first_at = new Date(now - 25 * 3_600_000).toISOString()
+    writeFileSync(join(process.env.COMPANY_BRAIN_HOME!, "state.json"), JSON.stringify(state))
+    const out = capture()
+    await withPath(cli.bin, () => runSync({ limit: 200 }, out.io))
+    assert.match(out.text(), /1 conversation abandonnée après plus de 24 h d'échecs/)
+    assert.ok(ws.state().screenpipe?.last_timestamp, "checkpoint Screenpipe toujours bloqué")
+    await withPath(cli.bin, () => runSync({ limit: 200 }, capture().io))
+    assert.ok(lastWindow(tags(brain.ingested)) > firstPass, "la suite n'a jamais été lue")
+    assert.ok(!JSON.stringify(brain.received).includes("QZXERR"))
+  } finally {
+    await brain.close()
+    await sp.close()
   }
 })

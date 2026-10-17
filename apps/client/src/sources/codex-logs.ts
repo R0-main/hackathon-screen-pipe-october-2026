@@ -96,8 +96,11 @@ function payloadOf(j: Record<string, unknown>): Record<string, unknown> {
   return (j.payload && typeof j.payload === "object" ? j.payload : {}) as Record<string, unknown>
 }
 
+/** Fin de tour : événement task_complete, turn_aborted…, ou sa trace dans l'historique (message « <turn_aborted> »). */
 function isTurnEnd(j: Record<string, unknown>): boolean {
-  return j.type === "event_msg" && TURN_END_EVENTS.has(String(payloadOf(j).type))
+  if (j.type === "event_msg") return TURN_END_EVENTS.has(String(payloadOf(j).type))
+  const m = j.type === "response_item" ? payloadOf(j) : j
+  return m.role === "user" && contentText(m.content).trimStart().startsWith("<turn_aborted>")
 }
 
 function isWork(j: Record<string, unknown>): boolean {
@@ -112,13 +115,14 @@ function isWork(j: Record<string, unknown>): boolean {
  */
 export function completeCodexLineCount(lines: Record<string, unknown>[], now = Date.now(), idleMs = TURN_IDLE_MS): number {
   // Début du dernier tour : la première ligne de la dernière suite de messages utilisateur (response_item + son doublon
-  // event_msg). Une fin de tour, un appel d'outil ou un raisonnement coupe la suite : après un tour interrompu sans
-  // réponse (q1, turn_aborted, q2), le tour en cours commence à q2, et la fin de tour de q1 ne le clôt pas.
+  // event_msg). Seule une réponse de l'agent ou une fin de tour coupe la suite : après un tour interrompu sans réponse
+  // (q1, turn_aborted, q2), le tour en cours commence à q2 et la fin de tour de q1 ne le clôt pas ; un message ajouté
+  // pendant que l'agent travaille (q1, outil, q2) reste dans le tour de q1, gardé en entier jusqu'à sa réponse.
   let turnStart = -1
   let inUserRun = false
   for (let i = 0; i < lines.length; i++) {
     const j = lines[i]
-    if (isTurnEnd(j) || isWork(j)) {
+    if (isTurnEnd(j)) {
       inUserRun = false
       continue
     }

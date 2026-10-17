@@ -205,3 +205,37 @@ test("CODEX-TURN : q1, outil, interruption, q2 en cours → q2 lue en entier au 
   ]
   assert.equal(completeLineCount(claudeLines, now), 3)
 })
+
+test("R-STEER : un message ajouté pendant qu'un tour Codex travaille ne coupe pas le tour : q1 n'est jamais envoyée sans sa réponse", () => {
+  const dir = tempDir()
+  const reasoning = (minAgo: number) => ({ timestamp: ts(minAgo), type: "response_item", payload: { type: "reasoning", summary: [] } })
+  const f = rollout(dir, [
+    { timestamp: ts(6), type: "session_meta", payload: { id: uuid, cwd: "/home/ines/app" } },
+    ...userMsg("QZXh1 Ajoute l'export CSV des factures", 5),
+    reasoning(5),
+    call(4),
+    callOut(4),
+    ...userMsg("QZXh2 Précision : séparateur point-virgule", 2),
+    reasoning(1),
+  ])
+  const state: State = {}
+  const since = new Date(now - 3600_000)
+  // Le tour (q1 + précision) n'a pas encore de réponse : tout est retenu, l'offset ne dépasse pas q1.
+  const r1 = readCodexLogs({ dir, state, since })
+  assert.equal(r1.stats.pending, 1)
+  assert.equal(r1.conversations.length, 0)
+  for (const c of r1.commits) c.apply(state)
+  appendFileSync(f, l(agentMsg("QZXh Décision : export CSV avec point-virgule.", 0)) + l({ timestamp: ts(0), type: "event_msg", payload: { type: "task_complete" } }))
+  const r2 = readCodexLogs({ dir, state, since })
+  assert.equal(r2.stats.pending, 0)
+  const texts = r2.conversations.flatMap((c) => c.messages.map((m) => `${m.role}:${m.text}`)).join("\n")
+  assert.match(texts, /user:QZXh1 Ajoute l'export CSV des factures/)
+  assert.match(texts, /QZXh2 Précision/)
+  assert.match(texts, /assistant:QZXh Décision/)
+
+  // Les fins de tour restent des coupures : événement turn_aborted, ou sa trace « <turn_aborted> » dans l'historique.
+  const head = [{ timestamp: ts(30), type: "session_meta", payload: { id: uuid } }]
+  const noise = { timestamp: ts(8), type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<turn_aborted>\nThe user interrupted\n</turn_aborted>" }] } }
+  const abortedByNoise = [...head, ...userMsg("Question 1", 10), reasoning(9), noise]
+  assert.equal(completeCodexLineCount([...abortedByNoise, ...userMsg("Question 2", 3), reasoning(2)], now), abortedByNoise.length)
+})

@@ -29,17 +29,18 @@ export const DISTILLER_LABELS: Record<DistillerKind, string> = {
 
 /**
  * Nature d'un échec du LLM. `auth` : Claude n'est plus connecté (jeton expiré ou révoqué, « Please run /login », clé
- * refusée) ; `outage` : panne du poste ou du service (CLI introuvable, réseau, quotas, surcharge). Ces deux-là touchent
- * toutes les conversations : aucun essai n'est décompté. `conversation` : échec sur cette entrée (refus, sortie
- * illisible, délai dépassé, erreur propre à la requête), décompté pour elle.
+ * refusée) ; `outage` : panne du poste ou du service (CLI introuvable, réseau, limite d'abonnement ou quotas,
+ * surcharge). Ces deux-là touchent toutes les conversations : aucun essai n'est décompté. `conversation` : échec sur
+ * cette entrée (refus, sortie illisible, délai dépassé, erreur inconnue), décompté pour elle.
  */
 export type FailureKind = "auth" | "outage" | "conversation"
 
 /**
  * `failed` : le LLM n'a rien donné d'utilisable. Aucun item n'est produit et la conversation n'est pas marquée comme
  * traitée : elle sera redistillée à la prochaine synchro (jamais par l'heuristique).
- * `signature` : pour un échec sans réponse du modèle (délai, erreur), de quoi reconnaître « tous les appels échouent de
- * la même façon » (panne). Absente quand le modèle a répondu (refus, sortie illisible) : Claude fonctionne.
+ * `signature` : pour un échec sans réponse du modèle (délai, erreur inconnue), de quoi reconnaître « tous les appels
+ * échouent de la même façon ». Un tel échec ne prouve rien sur la conversation à lui seul. Absente quand le modèle a
+ * répondu (refus, sortie illisible) : l'échec tient à la conversation.
  */
 export type DistillResult = {
   items: KnowledgeItemInput[]
@@ -52,17 +53,31 @@ export type DistillResult = {
 
 export type Failure = { error: string; failure: FailureKind; signature?: string }
 
-// Motifs d'erreurs de la CLI ou de l'API (jamais appliqués à une réponse du modèle). Alternatives simples, temps linéaire.
+// Motifs d'erreurs de la CLI ou de l'API. Sur une réponse du modèle, ils ne servent qu'à la juger non probante (voir
+// unreadableFailure), jamais à en faire une panne. Alternatives simples, quantificateurs bornés : temps linéaire.
 const AUTH_FAILURE =
   /please run \/login|\/login\b|not logged in|oauth token|token (?:has )?expired|token (?:has been |was )?revoked|authentication_error|authentication failed|failed to authenticate|invalid api key|invalid bearer token|invalid x-api-key|unauthori[sz]ed|(?:api error|status|http)\W{0,3}401\b/i
+// Limites d'abonnement de la CLI actuelle : « You've hit your session limit · resets 3pm » (weekly, Opus…),
+// « Session limit reached », « 5-hour limit reached », « You're out of usage credits », « Your org is out of usage ».
 const OUTAGE_FAILURE =
-  /\b(?:ENOENT|EACCES|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH)\b|fetch failed|connection error|network error|socket hang up|overloaded|rate.?limit|usage limit|credit balance|quota|permission_error|(?:api error|status|http)\W{0,3}(?:403|429|5\d\d)\b/i
+  /\b(?:ENOENT|EACCES|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH)\b|fetch failed|connection error|network error|socket hang up|overloaded|(?:session|weekly|opus|usage|hour|spend|rate)[ _-]?limit|(?:hit|reached) your [\w'’ -]{0,30}limit|out of usage|credit balance|quota|permission_error|(?:api error|status|http)\W{0,3}(?:403|429|5\d\d)\b/i
 
 /** Classe un message d'erreur de la CLI `claude` ou de l'API : connexion perdue, panne générale, ou propre à la requête. */
 export function classifyFailure(text: string): FailureKind {
   if (AUTH_FAILURE.test(text)) return "auth"
   if (OUTAGE_FAILURE.test(text)) return "outage"
   return "conversation"
+}
+
+/**
+ * Statut HTTP de l'erreur d'API qui a terminé un `claude -p` (champ numérique `api_error_status` de l'enveloppe JSON) :
+ * 401/403 → connexion perdue ; 429, 529 et 5xx → panne (limite d'abonnement, surcharge). Sinon null : on lit le texte.
+ */
+export function statusFailure(status: unknown): FailureKind | null {
+  if (typeof status !== "number") return null
+  if (status === 401 || status === 403) return "auth"
+  if (status === 429 || (status >= 500 && status <= 599)) return "outage"
+  return null
 }
 
 /** Claude Code n'est plus connecté : quoi faire (affiché par sync et refresh-status). */
@@ -173,10 +188,16 @@ export function parseCliOutput(stdout: string, conv: Conversation, zones: ZoneHi
 /** Résultat d'un `claude -p` : sortie standard, ou erreur (lancement impossible, délai dépassé, code de sortie non nul). */
 export type ClaudeCliRun = { stdout: string; error?: string; failure?: FailureKind; signature?: string }
 
+type CliEnvelope = { result?: unknown; is_error?: unknown; api_error_status?: unknown }
+
+function cliEnvelope(stdout: string): CliEnvelope | null {
+  const e = extractJsonObject(stdout)
+  return e && typeof e === "object" ? (e as CliEnvelope) : null
+}
+
 /** Texte d'erreur lisible d'une CLI qui a échoué : stderr, sinon le champ `result` de l'enveloppe JSON, sinon stdout. */
-function cliErrorText(stdout: string, stderr: string): string {
+function cliErrorText(stdout: string, stderr: string, envelope: CliEnvelope | null): string {
   if (stderr.trim()) return stderr.trim()
-  const envelope = extractJsonObject(stdout) as { result?: unknown } | null
   return typeof envelope?.result === "string" ? envelope.result.trim() : stdout.trim()
 }
 
@@ -186,10 +207,10 @@ function cliErrorText(stdout: string, stderr: string): string {
  */
 export function cliFailure(run: ClaudeCliRun): Failure | null {
   if (run.error) return { error: run.error, failure: run.failure ?? classifyFailure(run.error), ...(run.signature ? { signature: run.signature } : {}) }
-  const envelope = extractJsonObject(run.stdout) as { result?: unknown; is_error?: unknown } | null
+  const envelope = cliEnvelope(run.stdout)
   if (envelope?.is_error !== true) return null
   const text = typeof envelope.result === "string" && envelope.result.trim() ? envelope.result.trim() : "erreur sans détail"
-  const failure = classifyFailure(text)
+  const failure = statusFailure(envelope.api_error_status) ?? classifyFailure(text)
   const error = truncate(text, 200)
   return failure === "conversation" ? { error, failure, signature: truncate(text, 160) } : { error, failure }
 }
@@ -219,9 +240,14 @@ export type ClaudeCliOptions = {
   oauthToken?: string
 }
 
-/** Environnement de chaque `claude -p` : session marquée interne (nos hooks l'ignorent), jeton Claude Code si configuré. */
+/**
+ * Environnement de chaque `claude -p` : session marquée interne (nos hooks l'ignorent), jeton Claude Code si configuré.
+ * CLAUDE_CODE_SIMPLE est retiré : c'est l'équivalent de `--bare`, qui ignore CLAUDE_CODE_OAUTH_TOKEN. Il est hérité
+ * quand brain.mjs tourne depuis une session `claude --bare` (outil Bash de Claude Code, prompt d'installation).
+ */
 export function claudeCliEnv(opts: ClaudeCliOptions = {}, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, COMPANY_BRAIN_INTERNAL: "1" }
+  delete env.CLAUDE_CODE_SIMPLE
   const token = opts.oauthToken?.trim()
   if (token) env.CLAUDE_CODE_OAUTH_TOKEN = token
   return env
@@ -274,15 +300,32 @@ export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120
     child.on("error", (err) => done({ stdout, error: `lancement de \`claude\` impossible : ${err.message}`, failure: "outage" }))
     child.on("close", (code) => {
       if (code === 0) return done({ stdout })
-      const text = cliErrorText(stdout, stderr)
-      // Classé sur le texte d'erreur (stderr, champ `result`), pas sur l'enveloppe brute (durées, jetons…).
-      const failure = classifyFailure(`${stderr}\n${text}`)
+      const envelope = cliEnvelope(stdout)
+      const text = cliErrorText(stdout, stderr, envelope)
+      // Classé sur le statut HTTP de l'enveloppe s'il y en a un, sinon sur le texte d'erreur (stderr, champ `result`),
+      // jamais sur l'enveloppe brute (durées, jetons…).
+      const failure = statusFailure(envelope?.api_error_status) ?? classifyFailure(`${stderr}\n${text}`)
       const error = `code ${code}${text ? ` : ${truncate(text, 200)}` : ""}`
       done(failure === "conversation" ? { stdout, error, failure, signature: truncate(hideToken(text, opts), 160) || `code ${code}` } : { stdout, error, failure })
     })
     child.stdin.on("error", () => {})
     child.stdin.end(prompt)
   })
+}
+
+/**
+ * Sortie de `claude -p` sans JSON exploitable. En général le modèle a répondu (refus, prose) : échec propre à la
+ * conversation. Mais une sortie vide, ou un texte court qui se lit comme une erreur de la CLI (limite d'abonnement,
+ * connexion…), ne prouve rien sur la conversation : traité comme une erreur inconnue (avec signature), jamais comme
+ * une panne, pour qu'une vraie réponse qui parle de « rate limit » ne bloque pas la file.
+ */
+export function unreadableFailure(stdout: string): Failure {
+  const envelope = cliEnvelope(stdout)
+  const text = (typeof envelope?.result === "string" ? envelope.result : envelope ? "" : stdout).trim()
+  // Rien du tout : le modèle n'a pas répondu, ça ne prouve rien non plus.
+  if (!text) return { error: "sortie de `claude -p` vide", failure: "conversation", signature: "sortie vide" }
+  if (text.length <= 300 && classifyFailure(text) !== "conversation") return { error: `réponse inattendue de \`claude -p\` : ${truncate(text, 160)}`, failure: "conversation", signature: truncate(text, 160) }
+  return { error: "sortie de `claude -p` illisible : refus ou réponse hors format", failure: "conversation" }
 }
 
 function heuristic(conv: Conversation, zones: ZoneHint[], fallbackZone: string): KnowledgeItemInput[] {
@@ -363,8 +406,7 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
         if (fail) return { items: [], used: "claude-cli", failed: true, ...fail }
         const items = parseCliOutput(run.stdout, conv, zones, fallbackZone)
         if (items) return { items, used: "claude-cli" }
-        // Le modèle a répondu, mais pas en JSON exploitable (refus, prose) : échec propre à cette conversation.
-        return { items: [], used: "claude-cli", failed: true, failure: "conversation", error: "sortie de `claude -p` illisible : refus ou réponse hors format" }
+        return { items: [], used: "claude-cli", failed: true, ...unreadableFailure(run.stdout) }
       },
     }
   }

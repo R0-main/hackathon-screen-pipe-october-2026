@@ -83,11 +83,12 @@ test("simulation : textes abrégés par défaut, complets avec --full ; --confir
     const short = capture()
     await runSync({ dryRun: true, distiller: "heuristic" }, short.io)
     assert.match(short.text(), /Textes abrégés : ajoutez --full/)
-    assert.ok(!short.text().includes("5. Étape 5"))
+    assert.ok(!short.text().includes("Étape 5 du runbook"))
 
     const full = capture()
     const preview = await runSync({ dryRun: true, full: true, distiller: "heuristic" }, full.io)
-    for (let n = 1; n <= 5; n++) assert.ok(full.text().includes(`${n}. Étape ${n} du runbook`), `étape ${n} absente de l'aperçu`)
+    // Toutes les étapes, quelle que soit la mise en forme de la procédure par le distillateur.
+    for (let n = 1; n <= 5; n++) assert.ok(full.text().includes(`Étape ${n} du runbook`), `étape ${n} absente de l'aperçu`)
     assert.ok(!full.text().includes("Textes abrégés"))
     assert.match(full.text(), /sync --confirm/)
     assert.equal(brain.ingested.length, 0)

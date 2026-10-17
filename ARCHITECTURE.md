@@ -171,4 +171,6 @@ Le code suit les contrats ci-dessus (`KnowledgeItem`, `AgentEvent`, tables) avec
 
 Détection d'automatisations : les hooks envoient une **empreinte** du prompt normalisé (dates et nombres neutralisés) et un résumé masqué de 160 caractères. Une suggestion naît quand la même personne lance le même prompt sur au moins 3 jours, avec au moins 80 % des journées à ±40 min de l'heure médiane (fuseau `BRAIN_TIMEZONE`, Europe/Paris par défaut). Les workflows détectés par Screenpipe peuvent aussi être remontés (`POST /api/automations`).
 
+Robustesse de la synchro : chaque source garde son checkpoint et les conversations en attente. Une panne (limite d'abonnement, surcharge, réseau, jeton expiré) n'est jamais comptée contre une conversation ; une conversation n'est abandonnée qu'après 3 échecs avérés (ou 5 essais sur 24 h si Claude ne répond plus du tout), pour que le checkpoint avance sans perdre de données sur une simple panne.
+
 Étapes suivantes : connecteurs Notion / Calendar / Todoist, pgvector, interview d'onboarding vocale, consentement et durée de conservation (RGPD), exécution réelle des automatisations validées.

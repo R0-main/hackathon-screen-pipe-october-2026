@@ -46,7 +46,8 @@ Commandes :
                      --dry-run montre ce qui partirait sans rien envoyer (--full : chaque connaissance en entier),
                      et dit ce que l'aperçu ne contient pas (limite atteinte, captures non lues, tours en cours).
                      Si Claude échoue, la conversation est retentée plus tard (jamais distillée sans LLM en secours),
-                     et abandonnée après 3 échecs dus à son contenu ; une panne ou un jeton expiré ne compte pas.
+                     et abandonnée après 3 échecs dus à son contenu ; une panne, une limite d'abonnement ou un
+                     jeton expiré ne compte pas (si Claude ne répond plus du tout : abandon après 24 h d'échecs).
   sync --confirm     Envoie exactement ce que la dernière simulation a montré (valable 24 h).
                      Options avancées : --distiller heuristic|claude-cli|claude-api, --reset (ignore les checkpoints).
   refresh-status [--dry-run]

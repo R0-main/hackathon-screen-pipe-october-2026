@@ -2,12 +2,12 @@
 // (« Please run /login ») est une panne du poste, avec un message clair, jamais un échec décompté par conversation.
 
 import { strict as assert } from "node:assert"
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import type { StatusInput } from "@brain/core"
-import { apiFailure, classifyFailure, claudeCliArgs, cliFailure } from "../src/distill"
+import { apiFailure, classifyFailure, claudeCliArgs, claudeCliEnv, cliFailure, runClaudeCli, statusFailure, unreadableFailure } from "../src/distill"
 import { cmdRefreshStatus } from "../src/refresh-status"
 import { runSync } from "../src/sync"
 import { fakeClaude, withPath } from "./fake-claude"
@@ -58,6 +58,20 @@ test("classifyFailure / cliFailure : jeton expiré ou révoqué, /login, réseau
     assert.equal(classifyFailure(t), "auth", t)
   for (const t of ["API Error: Connection error.", "spawn claude ENOENT", "API Error: 529 Overloaded", "Claude AI usage limit reached|1760000000", "API Error: 429 rate_limit_error", "getaddrinfo ENOTFOUND api.anthropic.com", "Credit balance is too low"])
     assert.equal(classifyFailure(t), "outage", t)
+  // Limites d'abonnement, telles que les écrit la CLI installée.
+  for (const t of [
+    "You've hit your session limit · resets 3pm",
+    "You've hit your weekly limit · resets Oct 20, 3pm",
+    "You've hit your Opus limit · resets Oct 20, 3pm · /upgrade to keep using Claude Code",
+    "You've hit your limit",
+    "You're out of usage credits · resets 3pm",
+    "Your org is out of usage · add funds to continue",
+    "Session limit reached",
+    "5-hour limit reached ∙ resets 3pm",
+    "API Error: Rate limit exceeded",
+    "Overloaded",
+  ])
+    assert.equal(classifyFailure(t), "outage", t)
   for (const t of ["Prompt is too long", "Erreur inattendue", "délai de 120 s dépassé", "Error: max turns reached (duration 401 ms, 529 tokens)"]) assert.equal(classifyFailure(t), "conversation", t)
 
   // Enveloppe is_error avec un code 0 : échec, classé d'après son `result` (les champs numériques ne comptent pas).
@@ -69,6 +83,25 @@ test("classifyFailure / cliFailure : jeton expiré ou révoqué, /login, réseau
   })
   // Réponse normale (même en prose) : pas un échec de la CLI.
   assert.equal(cliFailure({ stdout: JSON.stringify({ is_error: false, duration_ms: 401, result: "Désolé, je ne peux pas." }) }), null)
+
+  // Statut HTTP numérique de l'enveloppe (api_error_status) : 401/403 → connexion, 429/529/5xx → panne, quel que soit le texte.
+  const env = (status: number, result = "Erreur inattendue") => cliFailure({ stdout: JSON.stringify({ type: "result", is_error: true, api_error_status: status, duration_ms: 640, result }) })
+  assert.deepEqual(env(429, "You've hit your session limit · resets 3pm"), { error: "You've hit your session limit · resets 3pm", failure: "outage" })
+  for (const [status, kind] of [[401, "auth"], [403, "auth"], [429, "outage"], [500, "outage"], [503, "outage"], [529, "outage"]] as const) assert.equal(env(status)?.failure, kind, String(status))
+  assert.equal(env(400)?.failure, "conversation", "400 : classé d'après le texte")
+  assert.equal(env(400, "Not logged in · Please run /login")?.failure, "auth")
+  assert.equal(statusFailure("429"), null, "seul un nombre compte")
+  assert.equal(statusFailure(null), null)
+
+  // Sortie sans JSON : le modèle a répondu (échec propre à la conversation)… sauf un texte court qui se lit comme une erreur
+  // de la CLI, qui ne prouve rien (traité comme une erreur inconnue, avec signature), jamais comme une panne.
+  assert.equal(unreadableFailure(JSON.stringify({ is_error: false, result: "Désolé, je préfère ne pas traiter cette conversation." })).signature, undefined)
+  const lim = unreadableFailure(JSON.stringify({ is_error: false, result: "You've hit your session limit · resets 3pm" }))
+  assert.equal(lim.failure, "conversation")
+  assert.equal(lim.signature, "You've hit your session limit · resets 3pm")
+  assert.equal(unreadableFailure(JSON.stringify({ is_error: false, result: `Résumé : ${"on parle du rate limit de l'API. ".repeat(20)}` })).signature, undefined, "une longue réponse en prose reste une réponse")
+  assert.equal(unreadableFailure("").signature, "sortie vide")
+  assert.equal(unreadableFailure(JSON.stringify({ type: "result", is_error: false })).signature, "sortie vide")
 
   // API Anthropic (statut du dernier appel HTTP).
   assert.equal(apiFailure({ status: 401, body: '{"type":"authentication_error"}' }).failure, "auth")
@@ -222,4 +255,155 @@ test("TOKEN-EXPIRED : clé API refusée (401) par l'API Anthropic → message cl
     await brain.close()
     await anthropic.close()
   }
+})
+
+test("R-SIMPLE : CLAUDE_CODE_SIMPLE (équivalent de --bare) n'est jamais transmis à `claude -p`, qui lit donc le jeton", async () => {
+  const base = { PATH: "/usr/bin", CLAUDE_CODE_SIMPLE: "1", HOME: "/home/x" }
+  const env = claudeCliEnv({ oauthToken: CLAUDE_TOKEN }, base)
+  assert.equal(env.CLAUDE_CODE_SIMPLE, undefined)
+  assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_TOKEN)
+  assert.equal(env.COMPANY_BRAIN_INTERNAL, "1")
+  assert.equal(base.CLAUDE_CODE_SIMPLE, "1", "l'environnement du processus n'est pas modifié")
+
+  // De bout en bout : brain.mjs lancé depuis une session `claude --bare` (variable héritée).
+  const cli = fakeClaude({ help: HELP })
+  const brain = await mockBrain()
+  const prev = process.env.CLAUDE_CODE_SIMPLE
+  process.env.CLAUDE_CODE_SIMPLE = "1"
+  try {
+    const st = station(brain.url, "cb_test_token_123456", { claude_oauth_token: CLAUDE_TOKEN })
+    writeFileSync(join(st.proj, "a.jsonl"), session("a", "QZX1 On part sur quelle base ?", "On part sur Supabase.", 30))
+    const r = await withPath(cli.bin, () => runSync({}, capture().io))
+    assert.equal(r.sent, 1)
+    assert.ok(cli.calls().length > 0)
+    for (const c of cli.calls()) {
+      assert.equal(c.simple, null, "CLAUDE_CODE_SIMPLE transmis à claude -p")
+      assert.equal(c.token, CLAUDE_TOKEN)
+    }
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_CODE_SIMPLE
+    else process.env.CLAUDE_CODE_SIMPLE = prev
+    await brain.close()
+  }
+})
+
+test("R-LIMIT : limite d'abonnement (api_error_status 429), synchros répétées → rien de décompté ni d'abandonné, tout part après la remise à zéro", async () => {
+  const cli = fakeClaude({ help: HELP })
+  const brain = await mockBrain()
+  try {
+    const st = station(brain.url)
+    const f = join(st.proj, "lim.jsonl")
+    writeFileSync(f, session("lim", "QZXLIM7 On migre la base vers Supabase cette semaine ?", "Oui, décision prise : migration jeudi.", 20))
+    cli.setMode("limit")
+    for (let run = 1; run <= 5; run++) {
+      const out = capture()
+      const r = await withPath(cli.bin, () => runSync({}, out.io))
+      assert.equal(r.failed, 1)
+      assert.match(out.text(), /You've hit your session limit/)
+      assert.match(out.text(), /Panne générale \(Claude injoignable ou saturé\) : aucun essai n'est décompté/)
+      assert.doesNotMatch(out.text(), /abandonnée|Échec lié au contenu/)
+      assert.equal(st.state().distill_failures, undefined, "limite d'abonnement décomptée comme un échec de la conversation")
+      assert.equal(st.state().claude?.files?.[f], undefined, "checkpoint avancé pendant la limite")
+    }
+    // Même limite, texte seul (sans enveloppe ni statut) : reconnue aussi.
+    cli.setMode("limit-text")
+    const out = capture()
+    await withPath(cli.bin, () => runSync({}, out.io))
+    assert.match(out.text(), /You've hit your weekly limit/)
+    assert.equal(st.state().distill_failures, undefined)
+    // La limite est levée : la conversation part.
+    cli.setMode("")
+    const r = await withPath(cli.bin, () => runSync({}, capture().io))
+    assert.equal(r.sent, 1)
+    assert.ok(JSON.stringify(brain.received).includes("QZXLIM7"))
+    assert.ok(st.state().claude.files[f])
+  } finally {
+    await brain.close()
+  }
+})
+
+test("R-LIMIT : limite atteinte en cours de synchro (2 appels réussis) → les conversations suivantes ne sont pas décomptées", async () => {
+  const cli = fakeClaude({ help: HELP })
+  const brain = await mockBrain()
+  try {
+    const st = station(brain.url)
+    for (let k = 0; k < 6; k++) writeFileSync(join(st.proj, `m${k}.jsonl`), session(`m${k}`, `QZXM${k} Comment on déploie l'API ?`, "On a décidé de déployer avec Vercel.", 60 - k))
+    cli.setMode("limit")
+    cli.allow(2)
+    const out = capture()
+    const r = await withPath(cli.bin, () => runSync({}, out.io))
+    assert.equal(r.sent, 2)
+    assert.equal(r.failed, 4)
+    assert.match(out.text(), /Panne \(Claude injoignable ou saturé\) : aucun essai n'est décompté/)
+    assert.doesNotMatch(out.text(), /abandonnée|Échec lié au contenu/)
+    assert.deepEqual(Object.values(st.state().distill_failures ?? {}).filter((x) => (x as { n: number }).n > 0), [])
+    cli.setMode("")
+    const r2 = await withPath(cli.bin, () => runSync({}, capture().io))
+    assert.equal(r2.failed, 0)
+    assert.deepEqual(tagsOf(brain.ingested), ["QZXM0", "QZXM1", "QZXM2", "QZXM3", "QZXM4", "QZXM5"])
+  } finally {
+    await brain.close()
+  }
+})
+
+const tagsOf = (v: unknown) => [...new Set([...JSON.stringify(v).matchAll(/QZX[A-Z]*\d+/g)].map((m) => m[0]))].sort()
+
+test("R-LIMIT : erreur inconnue sans aucune réponse de Claude (formulation de panne inconnue) → jamais abandonnée avant 24 h et 5 essais", async () => {
+  const cli = fakeClaude({ help: HELP })
+  const brain = await mockBrain()
+  try {
+    const st = station(brain.url)
+    const f = join(st.proj, "w.jsonl")
+    writeFileSync(f, session("w", "QZXW1 On garde Qonto pour la trésorerie ?", "Oui, décision prise.", 20))
+    cli.setMode("weird")
+    for (let run = 1; run <= 6; run++) {
+      const out = capture()
+      await withPath(cli.bin, () => runSync({}, out.io))
+      assert.match(out.text(), /Panne générale \(Claude n'a répondu à aucun appel\) : aucun essai n'est décompté/)
+      assert.match(out.text(), /depuis plus de 24 h \(au moins 5 essais\) sera abandonnée/)
+      assert.doesNotMatch(out.text(), /abandonnée après|Échec lié au contenu/)
+      const e = st.state().distill_failures?.w
+      assert.equal(e?.n, 0, "essai décompté sans preuve")
+      assert.equal(e?.tries, run)
+      assert.equal(st.state().claude?.files?.[f], undefined)
+    }
+    // Même texte de limite rendu comme une réponse normale (is_error false) : ne prouve rien non plus.
+    cli.setMode("limit-ok")
+    await withPath(cli.bin, () => runSync({}, capture().io))
+    assert.equal(st.state().distill_failures?.w?.n, 0)
+
+    // Garde-fou : les échecs durent depuis plus de 24 h → abandonnée, le checkpoint avance.
+    cli.setMode("weird")
+    const state = st.state()
+    state.distill_failures.w.first_at = new Date(Date.now() - 25 * 3_600_000).toISOString()
+    writeFileSync(join(st.home, "state.json"), JSON.stringify(state))
+    const out = capture()
+    await withPath(cli.bin, () => runSync({}, out.io))
+    assert.match(out.text(), /1 conversation abandonnée après plus de 24 h d'échecs \(5 essais au moins\) : rien n'a été envoyé pour elle/)
+    assert.equal(st.state().distill_failures, undefined)
+    assert.ok(st.state().claude.files[f], "conversation bloquée : checkpoint toujours pas avancé après 24 h")
+    assert.ok(!JSON.stringify(brain.received).includes("QZXW1"))
+  } finally {
+    await brain.close()
+  }
+})
+
+test("R-LIMIT : runClaudeCli classe d'après api_error_status (code non nul) ; délai dépassé = erreur inconnue (signature)", async () => {
+  const dir = tempDir("cli-run-")
+  const script = (name: string, body: string) => {
+    const bin = join(dir, name)
+    writeFileSync(bin, `#!${process.execPath}\nif (process.argv[2] === "--help") process.exit(0)\nprocess.stdin.resume()\n${body}\n`)
+    chmodSync(bin, 0o755)
+    return bin
+  }
+  const envelope = (status: number) => `process.stdin.on("end", () => { process.stdout.write(JSON.stringify({ type: "result", is_error: true, api_error_status: ${status}, duration_ms: 401, result: "Erreur inattendue" })); process.exit(1) })`
+  for (const [status, kind] of [[529, "outage"], [429, "outage"], [401, "auth"], [400, "conversation"]] as const) {
+    const run = await runClaudeCli(script(`s${status}`, envelope(status)), "prompt", 10_000)
+    assert.equal(run.failure, kind, String(status))
+    assert.equal(Boolean(run.signature), kind === "conversation", String(status))
+  }
+  const run = await runClaudeCli(script("slow", "setTimeout(() => process.exit(0), 5000)"), "prompt", 300)
+  assert.equal(run.failure, "conversation")
+  assert.equal(run.signature, "délai dépassé")
+  assert.deepEqual(cliFailure(run), { error: run.error, failure: "conversation", signature: "délai dépassé" })
 })

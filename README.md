@@ -99,6 +99,9 @@ Variables : voir [apps/web/.env.example](apps/web/.env.example).
 - « Où en est la boîte » rédigé par Claude : un admin lance `node ~/.company-brain/brain.mjs refresh-status` sur son poste (planifiable chaque matin) ; sans cela, le serveur garde le résumé heuristique. Le serveur n'a besoin d'aucune clé (`ANTHROPIC_API_KEY` reste possible).
 - Chaque employé utilise **son propre** abonnement et son propre jeton : les conditions d'Anthropic interdisent de faire passer les requêtes de plusieurs personnes par l'abonnement d'une seule. Pour proposer l'outil à d'autres entreprises, il faut des clés API.
 - Si `ANTHROPIC_API_KEY` est définie sur le poste, c'est elle que Claude Code utilise ; `claude auth status` indique l'authentification active.
+- Pannes et limites : une limite d'abonnement atteinte (« You've hit your session limit », quota hebdomadaire…), une surcharge ou une erreur réseau n'est jamais imputée à une conversation : rien n'est perdu, la synchro suivante réessaie. Un jeton expiré ou révoqué arrête la synchro avec la marche à suivre (`claude setup-token`, puis `init --claude-token`).
+- Une conversation n'est abandonnée (rien envoyé, checkpoint avancé, avertissement affiché) qu'après 3 échecs avérés : Claude a répondu sans JSON exploitable, ou l'appel a échoué pendant une synchro où Claude a répondu aux autres. Si Claude ne répond plus du tout, il faut en plus 5 essais étalés sur 24 h, pour qu'une capture Screenpipe bloquée ne fige pas le poste.
+- `claude -p` est toujours lancé sans mode `--bare` (ni `CLAUDE_CODE_SIMPLE`), qui ignorerait le jeton.
 
 ## Vie privée et sécurité (MVP)
 

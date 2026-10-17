@@ -208,13 +208,26 @@ export function describeDrop(d: DroppedConversation): string {
 /** Une conversation écartée sur indices faibles est réexaminée tant qu'elle a bougé depuis moins de ce délai. */
 export const PERSONAL_RETRY_MS = 2 * 3_600_000
 /**
- * Panne : après ce nombre d'échecs de panne consécutifs (réseau, quotas…), ou d'échecs identiques sans que Claude ait
- * répondu une seule fois (délai, même erreur), Claude n'est plus sollicité pendant la synchro. Une connexion perdue
- * (jeton expiré ou révoqué) arrête tout de suite.
+ * Panne : après ce nombre d'échecs de panne consécutifs (réseau, limite d'abonnement…), ou d'échecs identiques sans que
+ * Claude ait répondu une seule fois (délai, même erreur), Claude n'est plus sollicité pendant la synchro. Une connexion
+ * perdue (jeton expiré ou révoqué) arrête tout de suite.
  */
 export const MAX_SYSTEMIC_FAILURES = 3
-/** Une conversation que Claude n'arrive pas à distiller (échec propre à son contenu) est abandonnée au bout de N essais. */
+/**
+ * Une conversation que Claude n'arrive pas à distiller est abandonnée (rien n'est envoyé) au bout de N essais probants :
+ * le modèle a répondu sans JSON exploitable (refus, sortie illisible), ou l'appel a échoué (délai, erreur inconnue)
+ * pendant une synchro où Claude a répondu à un autre appel. Une panne reconnue (connexion perdue, réseau, limite
+ * d'abonnement, surcharge) n'est jamais décomptée.
+ */
 export const MAX_DISTILL_ATTEMPTS = 3
+/**
+ * Garde-fou contre le blocage : un échec qui ne prouve rien (délai ou erreur inconnue, sans qu'aucun autre appel de la
+ * synchro n'ait obtenu de réponse) ne fait abandonner une conversation que si ses échecs durent depuis au moins 24 h,
+ * sur au moins 5 essais. Une limite d'abonnement (5 h) n'abandonne donc rien, et une conversation vraiment bloquée
+ * libère le checkpoint (Screenpipe compris) en un jour.
+ */
+export const STUCK_ABANDON_MS = 24 * 3_600_000
+export const STUCK_ABANDON_TRIES = 5
 const FAILURE_TTL_MS = 7 * 86_400_000
 
 const SOURCE_LABELS: Record<SourceName, string> = { claude: "Claude Code", codex: "Codex", screenpipe: "Screenpipe" }
@@ -572,34 +585,46 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   for (const id of untried) if (failedConvs.has(id)) untried.delete(id)
   const notDistilled = new Set([...failedConvs.keys(), ...untried])
 
-  // Échecs propres à une conversation (refus, sortie illisible, délai, erreur de la requête) : décomptés, et la
-  // conversation est abandonnée au bout de MAX_DISTILL_ATTEMPTS essais (rien n'est envoyé) pour ne jamais bloquer la file
-  // ni le checkpoint Screenpipe. Une panne (connexion perdue, CLI absente, réseau, quotas, ou tous les appels qui échouent
-  // de la même façon sans que Claude réponde jamais) n'est pas décomptée.
+  // Échecs propres à une conversation : décomptés (n) quand ils sont probants, c'est-à-dire quand le modèle a répondu
+  // (refus, sortie illisible) ou quand Claude a répondu à un autre appel de cette synchro ; abandon à MAX_DISTILL_ATTEMPTS,
+  // pour ne jamais bloquer la file ni le checkpoint Screenpipe. Sans aucune réponse de Claude (délai, erreur inconnue),
+  // l'échec ne prouve rien : seul le garde-fou des 24 h s'applique. Une panne reconnue (connexion perdue, CLI absente,
+  // réseau, limite d'abonnement, surcharge) n'est pas décomptée du tout.
   const failures = [...failedConvs.values()]
   const authFailure = failures.find((f) => f.failure === "auth")
-  const outage = alive === 0 && (failures.some((f) => f.failure !== "conversation") || sameWay())
+  const outageCount = failures.filter((f) => f.failure === "outage").length
+  /** Claude a répondu à au moins un appel de la synchro : la CLI, la connexion et l'abonnement fonctionnent. */
+  const witnessed = alive > 0
+  const nowIso = new Date(now).toISOString()
   const failuresNext: NonNullable<State["distill_failures"]> = {}
   for (const [id, f] of Object.entries(prevFailures)) if (now - Date.parse(f.at) < FAILURE_TTL_MS) failuresNext[id] = f
   const givenUp: string[] = []
+  const stuck: string[] = []
   const counted: { id: string; n: number }[] = []
+  let unproven = 0
   for (const [id, f] of failedConvs) {
-    if (f.failure !== "conversation") continue // panne : l'historique éventuel est gardé tel quel
-    const n = (prevFailures[id]?.n ?? 0) + (outage ? 0 : 1)
-    if (n >= MAX_DISTILL_ATTEMPTS) {
-      givenUp.push(id)
+    if (f.failure !== "conversation") continue // panne reconnue : l'historique éventuel est gardé tel quel
+    const prev = prevFailures[id]
+    const proven = !f.signature || witnessed
+    const n = (prev?.n ?? 0) + (proven ? 1 : 0)
+    const tries = (prev?.tries ?? prev?.n ?? 0) + 1
+    const firstAt = prev && Number.isFinite(Date.parse(prev.first_at ?? prev.at)) ? (prev.first_at ?? prev.at) : nowIso
+    if (n >= MAX_DISTILL_ATTEMPTS || (tries >= STUCK_ABANDON_TRIES && now - Date.parse(firstAt) >= STUCK_ABANDON_MS)) {
+      if (n >= MAX_DISTILL_ATTEMPTS) givenUp.push(id)
+      else stuck.push(id)
       delete failuresNext[id]
       continue
     }
-    // n = 0 : échec non décompté (panne), mais la conversation passera après les autres la prochaine fois.
-    failuresNext[id] = { n, at: new Date(now).toISOString(), error: truncate(f.error, 200) }
-    if (!outage) counted.push({ id, n })
+    failuresNext[id] = { n, tries, first_at: firstAt, at: nowIso, error: truncate(f.error, 200) }
+    if (proven) counted.push({ id, n })
+    else unproven++
   }
+  const abandoned = [...givenUp, ...stuck]
   for (const id of notDistilled) processed.delete(id)
-  if (!opts.dryRun) for (const id of givenUp) processed.add(id)
+  if (!opts.dryRun) for (const id of abandoned) processed.add(id)
   for (const id of processed) delete failuresNext[id]
 
-  const retried = notDistilled.size - (opts.dryRun ? 0 : givenUp.length)
+  const retried = notDistilled.size - (opts.dryRun ? 0 : abandoned.length)
   const them = (n: number, one: string, many: string) => (n > 1 ? many : one)
   if (authFailure) {
     io.warn(`  ${distiller.kind === "claude-api" ? apiAuthHelp(authFailure.error) : claudeAuthHelp(authFailure.error)}`)
@@ -610,13 +635,21 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     )
   } else if (notDistilled.size) {
     const first = (failures.find((f) => f.failure !== "conversation") ?? failures[0])?.error ?? "?"
-    const why = outage
-      ? ` Panne générale (${failures.some((f) => f.failure === "outage") ? "Claude injoignable ou saturé" : "tous les appels échouent de la même façon"}) : aucun essai n'est décompté. ` +
-        "Vérifiez que `claude -p` fonctionne (connexion, quotas ; `init --claude-token`) ou distillez sans LLM avec --distiller heuristic."
-      : counted.length
-        ? ` Échec lié au contenu de ${plural(counted.length, "conversation")} (essai ${Math.max(...counted.map((c) => c.n))}/${MAX_DISTILL_ATTEMPTS}) :` +
-          ` au bout de ${MAX_DISTILL_ATTEMPTS} essais, ${them(counted.length, "elle sera abandonnée", "elles seront abandonnées")} sans rien envoyer, pour ne pas bloquer la synchro.`
-        : ""
+    let why = ""
+    if (counted.length)
+      why +=
+        ` Échec lié au contenu de ${plural(counted.length, "conversation")} (essai ${Math.max(...counted.map((c) => c.n))}/${MAX_DISTILL_ATTEMPTS}) :` +
+        ` au bout de ${MAX_DISTILL_ATTEMPTS} essais, ${them(counted.length, "elle sera abandonnée", "elles seront abandonnées")} sans rien envoyer, pour ne pas bloquer la synchro.`
+    if (outageCount || unproven) {
+      const label = outageCount ? "Claude injoignable ou saturé" : sameWay() ? "tous les appels échouent de la même façon" : "Claude n'a répondu à aucun appel"
+      why +=
+        ` Panne${witnessed ? "" : " générale"} (${label}) : ` +
+        (counted.length ? `aucun essai décompté pour ${plural(outageCount + unproven, "autre conversation", "autres conversations")}.` : "aucun essai n'est décompté.") +
+        (unproven
+          ? ` Une conversation qui échoue ainsi depuis plus de 24 h (au moins ${STUCK_ABANDON_TRIES} essais) sera abandonnée, pour ne pas bloquer la synchro.`
+          : "") +
+        (witnessed ? "" : " Vérifiez que `claude -p` fonctionne (connexion, quotas ; `init --claude-token`) ou distillez sans LLM avec --distiller heuristic.")
+    }
     io.warn(
       `  Distillation : ${plural(notDistilled.size, "conversation non distillée", "conversations non distillées")} par ${DISTILLER_LABELS[distiller.kind]}` +
         ` (${truncate(first, 160)})${untried.size ? `, dont ${untried.size} non tentée(s) (Claude indisponible)` : ""}.` +
@@ -631,6 +664,11 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     io.warn(
       `  ${plural(givenUp.length, "conversation abandonnée", "conversations abandonnées")} après ${MAX_DISTILL_ATTEMPTS} essais infructueux : ` +
         `rien n'a été envoyé pour ${them(givenUp.length, "elle", "elles")}, la synchro continue sans ${them(givenUp.length, "elle", "elles")} (checkpoints avancés).`,
+    )
+  if (stuck.length && !opts.dryRun)
+    io.warn(
+      `  ${plural(stuck.length, "conversation abandonnée", "conversations abandonnées")} après plus de 24 h d'échecs (${STUCK_ABANDON_TRIES} essais au moins) : ` +
+        `rien n'a été envoyé pour ${them(stuck.length, "elle", "elles")}, la synchro continue sans ${them(stuck.length, "elle", "elles")} (checkpoints avancés).`,
     )
 
   // Items rangés par conversation (dans l'ordre de traitement) : une conversation est « faite » quand tous ses items sont partis.
