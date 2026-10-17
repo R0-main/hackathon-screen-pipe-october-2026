@@ -1051,6 +1051,16 @@ export class PostgresStore implements BrainStore {
     }
   }
 
+  async migrationStatus() {
+    try {
+      const [r] = await this.sql`select count(*)::int as n, max(name) as last from brain_migrations`
+      return { applied: Number(r.n), last: (r.last as string | null) ?? null }
+    } catch (err) {
+      if (missingTable(err)) return { applied: 0, last: null }
+      throw err
+    }
+  }
+
   async isEmpty() {
     const has = await this.hasSettings()
     const [r] = await this.sql`select not exists (select 1 from profiles p where ${this.notTenant("p.org_id", has)}) as empty`
