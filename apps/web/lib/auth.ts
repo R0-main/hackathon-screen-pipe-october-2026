@@ -287,6 +287,11 @@ export function isDemoMode(): boolean {
 }
 
 /** Création d'entreprise depuis la page d'accueil (/creer). `BRAIN_SIGNUP=0` la ferme : cerveau sur invitation seulement. */
+/** Page publique sur `/`. `BRAIN_LANDING=0` (cerveau lancé en local) : `/` mène à /creer, /login ou au dashboard. */
+export function landingEnabled(): boolean {
+  return process.env.BRAIN_LANDING !== "0" && process.env.BRAIN_LANDING !== "false"
+}
+
 export function signupOpen(): boolean {
   return process.env.BRAIN_SIGNUP !== "0" && process.env.BRAIN_SIGNUP !== "false"
 }
