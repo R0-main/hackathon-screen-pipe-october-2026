@@ -35,6 +35,8 @@ export type Brain3DProps = {
   selected?: string | null
   onSelect?: (zone: string) => void
   people?: BrainPerson[]
+  /** Boutons de zoom et aide « glisser pour tourner » (défaut : oui) ; non dans un aperçu (création d'entreprise). */
+  controls?: boolean
 }
 
 // Encre sur blanc. Une zone qu'on touche en direct (un agent, un clic) s'allume dans sa propre couleur, avivée.
@@ -128,7 +130,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * pas, la molette ne sert qu'au zoom. Sans WebGL, on retombe sur la vue 2D.
  */
 export function Brain3D(props: Brain3DProps) {
-  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [] } = props
+  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [], controls = true } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const labelsRef = useRef(new Map<string, HTMLButtonElement>())
@@ -263,15 +265,19 @@ export function Brain3D(props: Brain3DProps) {
         })}
       </div>
 
-      <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
-        <button type="button" className="btn btn-icon" aria-label="Zoomer" onClick={() => zoomRef.current(-ZOOM.step)}>
-          <PlusIcon />
-        </button>
-        <button type="button" className="btn btn-icon" aria-label="Dézoomer" onClick={() => zoomRef.current(ZOOM.step)}>
-          <MinusIcon />
-        </button>
-      </div>
-      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Glisser pour tourner, molette ou pincer pour zoomer.</p>
+      {controls && (
+        <>
+          <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
+            <button type="button" className="btn btn-icon" aria-label="Zoomer" onClick={() => zoomRef.current(-ZOOM.step)}>
+              <PlusIcon />
+            </button>
+            <button type="button" className="btn btn-icon" aria-label="Dézoomer" onClick={() => zoomRef.current(ZOOM.step)}>
+              <MinusIcon />
+            </button>
+          </div>
+          <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Glisser pour tourner, molette ou pincer pour zoomer.</p>
+        </>
+      )}
     </div>
   )
 }

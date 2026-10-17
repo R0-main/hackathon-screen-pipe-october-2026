@@ -3,7 +3,10 @@
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify } from "@brain/core"
+import type { ZoneView } from "@/lib/brain"
 import { AgentLogos } from "./brand-logos"
+import { Brain3D, type BrainPerson } from "./Brain3D"
+import type { ZoneActivity } from "./BrainViz"
 import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
@@ -135,6 +138,12 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   }, [created])
 
   // Zones du brouillon, ou celles réellement créées : c'est ce que montre le petit cerveau à droite.
+  // Connaissances proposées par zone : le cerveau de l'aperçu en a déjà, en billes.
+  const proposalCounts = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const i of (proposal?.items ?? []) as { zone?: string }[]) if (i.zone) out[i.zone] = (out[i.zone] ?? 0) + 1
+    return out
+  }, [proposal])
   // Pendant que Claude prépare sa proposition, pas encore de zone : le petit cerveau n'en montre aucune.
   const draftZones = useMemo<ZoneOption[]>(
     () => (created?.zones.length ? created.zones : step === "context" ? [] : draftZoneList(zones, picked, custom, proposal?.zones)),
@@ -190,8 +199,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
           token: created.token,
         },
       })
+      // La proposition reste en mémoire : l'aperçu garde ses connaissances par zone.
       setCreated({ ...created, zones: r.zones, prompt: r.prompt ?? created.prompt })
-      setProposal(null)
       setStep("install")
     } catch (e) {
       setErr(errorMessage(e))
@@ -431,7 +440,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
         <aside className="hidden lg:block" aria-label={`Aperçu du cerveau ${deNom(org)}`}>
           <div className="sticky top-10">
-            <MiniBrain org={org} zones={draftZones} people={people} />
+            <MiniBrain org={org} zones={draftZones} people={people} counts={proposalCounts} />
             {created && step !== "intro" && (
               <p className="mt-6 text-center text-[13px] text-trace">
                 <button type="button" className="hover:text-ink" onClick={restart}>
@@ -836,60 +845,44 @@ function Presence({ connected, self, compact = false }: { connected: boolean; se
  * Le cerveau en train de se construire, dans la langue du dashboard : un centre, une bille par zone reliée au centre,
  * et les personnes autour (pleines une fois leur poste branché).
  */
-function MiniBrain({ org, zones, people }: { org: string; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[] }) {
-  const C = 200
-  const zoneR = 112
-  const personR = 172
-  const pts = zones.map((z, i) => {
-    const a = -Math.PI / 2 + (i / Math.max(1, zones.length)) * Math.PI * 2
-    return { z, x: C + Math.cos(a) * zoneR, y: C + Math.sin(a) * zoneR, a }
-  })
-  const shown = people.slice(0, 10)
-  const ppl = shown.map((p, i) => {
-    const a = -Math.PI / 2 + Math.PI / Math.max(1, shown.length) + (i / Math.max(1, shown.length)) * Math.PI * 2
-    return { p, x: C + Math.cos(a) * personR, y: C + Math.sin(a) * personR }
-  })
+/**
+ * Le cerveau de l'entreprise en train de naître : le même cerveau 3D que le dashboard et la landing, sans ses
+ * commandes. Chaque zone qui apparaît s'allume un instant ; les personnes y prennent place une fois le cerveau créé.
+ */
+function MiniBrain(props: { org: string; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[]; counts: Record<string, number> }) {
+  const { org, zones, people, counts } = props
+  const views = useMemo<ZoneView[]>(
+    () => zones.map((z) => ({ ...z, keywords: [], count: counts[z.id] ?? 0, last_at: null, contributors: 0, locked: false, entities: [] })),
+    [zones, counts],
+  )
+  const [now, setNow] = useState(() => Date.now())
+  const [activity, setActivity] = useState<Record<string, ZoneActivity>>({})
+  const seen = useRef(new Set<string>())
+  useEffect(() => {
+    const t = Date.now()
+    const fresh = zones.filter((z) => !seen.current.has(z.id))
+    for (const z of fresh) seen.current.add(z.id)
+    if (fresh.length) setActivity((a) => ({ ...a, ...Object.fromEntries(fresh.map((z) => [z.id, { until: t + 1800, startedAt: t }])) }))
+  }, [zones])
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [])
+  // Un dot par personne déjà créée (pas avant : il mène à sa page), posé au bord de la première zone.
+  const dots: BrainPerson[] = people
+    .filter((p) => p.id !== "me")
+    .map((p, i) => ({ id: p.id, name: p.name, zone: zones[0]?.id ?? null, working: p.connected, me: i === 0 }))
+  const connected = people.filter((p) => p.connected).length
   return (
     <figure>
-      <svg viewBox="0 0 400 400" className="h-auto w-full max-w-[440px]" role="img" aria-label={`${zones.length} zones, ${people.length} personnes`}>
-        <circle cx={C} cy={C} r={zoneR} fill="none" stroke="var(--color-line)" strokeWidth="1" />
-        {ppl.map(({ p, x, y }) => {
-          const near = pts.reduce<(typeof pts)[number] | null>((best, q) => (!best || Math.hypot(q.x - x, q.y - y) < Math.hypot(best.x - x, best.y - y) ? q : best), null)
-          return near ? <line key={`pl-${p.id}`} x1={x} y1={y} x2={near.x} y2={near.y} stroke="var(--color-line)" strokeWidth="1" /> : null
-        })}
-        {pts.map(({ z, x, y }) => (
-          <line key={`l-${z.id}`} x1={C} y1={C} x2={x} y2={y} stroke="var(--color-line-strong)" strokeWidth="1" />
-        ))}
-        <circle cx={C} cy={C} r="11" fill="var(--color-surface)" stroke="var(--color-ink)" strokeWidth="1.5" />
-        {pts.map(({ z, x, y, a }) => {
-          const right = Math.cos(a) > 0.2
-          const left = Math.cos(a) < -0.2
-          return (
-            <g key={z.id} className="mini-pop">
-              <circle cx={x} cy={y} r="8" fill={zoneColor(z.color, z.position)} stroke="var(--color-ink)" strokeWidth="1.5" />
-              <text
-                x={x + (right ? 14 : left ? -14 : 0)}
-                y={y + (right || left ? 4.5 : Math.sin(a) > 0 ? 24 : -15)}
-                textAnchor={right ? "start" : left ? "end" : "middle"}
-                className="fill-ink text-[12.5px]"
-              >
-                {z.name}
-              </text>
-            </g>
-          )
-        })}
-        {ppl.map(({ p, x, y }) => (
-          <g key={p.id} className="mini-pop">
-            <circle cx={x} cy={y} r="5.5" fill={p.connected ? "var(--color-ink)" : "var(--color-surface)"} stroke="var(--color-ink)" strokeWidth="1.25" />
-            <title>{`${p.name} : ${p.connected ? "connecté" : "en attente"}`}</title>
-          </g>
-        ))}
-      </svg>
+      <div className="panel relative h-[min(62vh,520px)] w-full overflow-hidden">
+        <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} />
+      </div>
       <figcaption className="mt-2 text-center">
         <span className="block text-[17px] font-medium">{org.charAt(0).toUpperCase() + org.slice(1)}</span>
         <span className="text-[13px] tabular-nums text-trace">
           {zones.length} zone{zones.length > 1 ? "s" : ""}
-          {people.length > 0 && `, ${people.filter((p) => p.connected).length} poste${people.filter((p) => p.connected).length > 1 ? "s" : ""} branché${people.filter((p) => p.connected).length > 1 ? "s" : ""} sur ${people.length}`}
+          {people.length > 0 && `, ${connected} poste${connected > 1 ? "s" : ""} branché${connected > 1 ? "s" : ""} sur ${people.length}`}
         </span>
       </figcaption>
     </figure>
