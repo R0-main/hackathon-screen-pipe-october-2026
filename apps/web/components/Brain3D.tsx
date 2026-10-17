@@ -53,6 +53,18 @@ const BACK = 0.86
 const NEURON_R = 0.008
 /** Rayon des arcs entre zones : de fins tubes, un peu plus épais que les liaisons (les lignes WebGL restent à 1 px). */
 const SYNAPSE_R = 0.0045
+/** Flux le long des arcs entre zones : finesse de la gaine, vitesse (tours par seconde), opacité au cœur et largeur des lueurs. */
+const FLOW_RINGS = 96
+const FLOW_SPEED = 0.16
+/**
+ * Les deux gaines d'une lueur : un cœur net, plus épais que l'arc et à sa couleur vive, et un halo large et
+ * pâle autour. `head` / `tail` : longueur de l'avant et de la traînée (en part de l'arc) : une comète.
+ */
+type FlowLayer = { radius: number; alpha: number; head: number; tail: number }
+const FLOW_LAYERS: FlowLayer[] = [
+  { radius: 1.9, alpha: 1, head: 0.025, tail: 0.13 },
+  { radius: 4.2, alpha: 0.3, head: 0.04, tail: 0.18 },
+]
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
@@ -104,7 +116,17 @@ type ZoneGfx = {
   dismissedAt: number
 }
 
-type SynapseGfx = { a: string; b: string; mat: THREE.MeshBasicMaterial; baseOpacity: number; active: boolean }
+/** `flow` : les gaines autour de l'arc où circulent les lueurs (cœur, halo) ; une couleur RGBA par sommet, l'alpha est animé. */
+type SynapseGfx = {
+  a: string
+  b: string
+  mat: THREE.MeshBasicMaterial
+  baseOpacity: number
+  active: boolean
+  flow: { attr: THREE.BufferAttribute; layer: FlowLayer }[]
+  /** Décalage de départ des lueurs, propre à chaque arc : elles ne partent pas toutes ensemble. */
+  phase: number
+}
 /** `fade` : instant où l'onde commence à s'éteindre avant son terme (zone désélectionnée). */
 type RippleGfx = { key: string; zone: ZoneGfx; mesh: RingMesh; start: number; fade?: number }
 type View = { rx: number; ry: number; zoom: number }
@@ -523,6 +545,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     knownPos.needsUpdate = true
   }
 
+  const reducedFlow = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  /** Profil d'une lueur le long de l'arc (x > 0 : devant elle) : une tête nette, une traînée qui s'étire derrière. */
+  const flowBump = (x: number, l: FlowLayer) => Math.exp(-((x / (x > 0 ? l.head : l.tail)) ** 2))
   // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
   // l'autre, plus marqués quand elles sont actives.
   const TUBULAR = 64
@@ -545,7 +570,52 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     group.add(new T.Mesh(geo, mat))
     geometries.push(geo)
     materials.push(mat)
-    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false })
+
+    // Les gaines du flux : même arc, plus larges, transparentes sauf là où passe une lueur. Leur couleur suit le
+    // dégradé de l'arc, avivée : la lueur se voit dans la couleur des zones qu'elle relie.
+    const flow = FLOW_LAYERS.map((layer) => {
+      const flowGeo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), FLOW_RINGS, SYNAPSE_R * layer.radius, RADIAL, false)
+      const flowCols = new Float32Array(flowGeo.attributes.position.count * 4)
+      for (let v = 0; v < flowGeo.attributes.position.count; v++) {
+        tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / FLOW_RINGS).offsetHSL(0, 0.15, 0).toArray(flowCols, v * 4)
+        flowCols[v * 4 + 3] = 0
+      }
+      const attr = new T.BufferAttribute(flowCols, 4)
+      flowGeo.setAttribute("color", attr)
+      const flowMat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
+      const flowMesh = new T.Mesh(flowGeo, flowMat)
+      flowMesh.visible = !reducedFlow
+      group.add(flowMesh)
+      geometries.push(flowGeo)
+      materials.push(flowMat)
+      return { attr, layer }
+    })
+    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, flow, phase: (hashString(`${s.a}|${s.b}`) % 1000) / 1000 })
+  }
+  /**
+   * Le flux entre zones : deux lueurs par arc, l'une de A vers B, l'autre de B vers A, qui glissent en continu.
+   * Elles s'effacent près des billes, et s'avivent et accélèrent quand une des deux zones est active.
+   */
+  const flowFrame = (time: number) => {
+    if (reducedFlow) return
+    for (const s of syn) {
+      const speed = FLOW_SPEED * (s.active ? 1.8 : 1)
+      const go = (time * speed + s.phase) % 1
+      const back = 1 - ((time * speed + s.phase + 0.5) % 1)
+      for (const { attr, layer } of s.flow) {
+        const peak = Math.min(1, layer.alpha * (s.active ? 1.5 : 1))
+        const arr = attr.array as Float32Array
+        for (let ring = 0; ring <= FLOW_RINGS; ring++) {
+          const u = ring / FLOW_RINGS
+          // L'une va de A vers B (devant elle : u > go), l'autre de B vers A (devant elle : u < back).
+          const glow = Math.max(flowBump(u - go, layer), flowBump(back - u, layer))
+          const ends = Math.min(1, u / 0.08, (1 - u) / 0.08)
+          const alpha = peak * glow * ends
+          for (let k = 0; k <= RADIAL; k++) arr[(ring * (RADIAL + 1) + k) * 4 + 3] = alpha
+        }
+        attr.needsUpdate = true
+      }
+    }
   }
 
   // Dots des personnes : posés à l'écran, juste hors de la silhouette du cerveau, dans la direction de leur zone.
@@ -801,6 +871,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     }
 
     shake(t)
+    flowFrame(t / 1000)
     renderer.render(scene, camera)
 
     const centerDepth = tmp.set(0, 0, 0).project(camera).z
