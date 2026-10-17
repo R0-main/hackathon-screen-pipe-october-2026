@@ -10,15 +10,17 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { BrainApi } from "./api"
 import { cmdHello, cmdInit } from "./commands"
-import { loadPartialConfig, maskSecret, requireConfig, saveConfig, selfScript, UserError, type Config } from "./config"
+import { brainHome, loadPartialConfig, maskSecret, requireConfig, saveConfig, selfCommand, UserError, type Config } from "./config"
 import { findOnPath } from "./distill"
-import { installHooks, installSchedule, scheduleInstalled } from "./install"
+import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
 import {
   installedScreenpipeBin,
   installScreenpipeCli,
   readScreenpipeToken,
   restartScreenpipeService,
   runCommand,
+  screenpipeLoadError,
+  screenpipeSupported,
   startScreenpipe,
 } from "./screenpipe-cli"
 import { CLIENT_HEADERS, TOKEN_COMMAND, screenpipeProbe } from "./sources/screenpipe"
@@ -27,6 +29,8 @@ type Log = (s: string) => void
 
 /** Code de sortie quand tout est branché sauf l'autorisation d'enregistrer l'écran : relancer `setup` une fois cochée. */
 export const EXIT_PERMISSIONS_PENDING = 3
+/** Code de sortie quand tout est branché sauf Screenpipe (pas de binaire pour ce poste, ou il ne démarre pas) : `doctor` dit pourquoi. */
+export const EXIT_NO_SCREENPIPE = 6
 export const DEFAULT_WAIT_S = 300
 
 export const MACOS_PANES = {
@@ -133,7 +137,7 @@ export async function waitForCapture(o: PermissionOptions): Promise<CaptureState
   if (platform !== "darwin") {
     // Pas d'autorisation à demander : on laisse un peu de temps à la première capture.
     st = await waitUntil(o.url, o.token, (s) => s.screen, Math.min(deadline, Date.now() + 20_000), poll)
-    if (!st.screen) log(`Screenpipe tourne mais n'a encore rien capturé${st.detail ? ` (${st.detail})` : ""} ; sous Wayland, accepte le partage d'écran s'il est proposé.`)
+    if (!st.screen) log(`Screenpipe tourne mais n'a encore rien capturé${st.detail ? ` (${st.detail})` : ""}${platform === "linux" ? " ; sous Wayland, accepte le partage d'écran s'il est proposé" : ""}.`)
     return st
   }
 
@@ -170,21 +174,34 @@ export async function waitForCapture(o: PermissionOptions): Promise<CaptureState
   return st
 }
 
-/** MCP company-brain dans Claude Code (portée utilisateur), sauf s'il y est déjà. */
+/**
+ * MCP company-brain dans Claude Code (portée utilisateur). Déjà enregistré mais sur un autre Node.js ou un autre script
+ * (réinstallation, Node mis à jour) : remplacé, sinon Claude Code lancerait un serveur qui n'existe plus.
+ */
 export function ensureMcp(log: Log = console.log): boolean {
-  const script = selfScript()
-  const manual = `claude mcp add company-brain --scope user -- "${process.execPath}" "${script}" mcp`
+  const manual = mcpAddCommand()
   const claude = findOnPath("claude")
   if (!claude) {
     log(`MCP : CLI \`claude\` introuvable dans le PATH. À lancer à la main : ${manual}`)
     return false
   }
-  if (runCommand(claude, ["mcp", "get", "company-brain"], 30_000).ok) {
-    log("MCP company-brain : déjà branché dans Claude Code.")
+  const current = readMcpEntry()
+  if (current && mcpUpToDate(current)) {
+    log(`MCP ${MCP_NAME} : déjà branché dans Claude Code.`)
     return true
   }
-  const r = runCommand(claude, ["mcp", "add", "company-brain", "--scope", "user", "--", process.execPath, script, "mcp"], 30_000)
-  log(r.ok ? "MCP company-brain branché dans Claude Code (actif dès la prochaine session)." : `MCP : échec (${r.stderr.trim().slice(0, 200)}). À lancer à la main : ${manual}`)
+  // Fichier de Claude Code illisible : on s'en remet à la CLI pour savoir s'il est là.
+  if (current === undefined && runCommand(claude, ["mcp", "get", MCP_NAME], 30_000).ok) {
+    log(`MCP ${MCP_NAME} : déjà branché dans Claude Code.`)
+    return true
+  }
+  if (current) runCommand(claude, ["mcp", "remove", MCP_NAME, "--scope", "user"], 30_000)
+  const r = runCommand(claude, ["mcp", "add", MCP_NAME, "--scope", "user", "--", process.execPath, ...mcpArgs()], 30_000)
+  log(
+    r.ok
+      ? `MCP ${MCP_NAME} ${current ? "mis à jour (il pointait vers un ancien chemin)" : "branché dans Claude Code"} : actif dès la prochaine session.`
+      : `MCP : échec (${r.stderr.trim().slice(0, 200)}). À lancer à la main : ${manual}`,
+  )
   return r.ok
 }
 
@@ -201,7 +218,7 @@ async function openBrain(cfg: Config, noOpen: boolean, log: Log) {
   log(openUrl(target) ? `Le cerveau s'ouvre dans ton navigateur : ${cfg.url}` : `Ouvre le cerveau dans ton navigateur : ${cfg.url}`)
 }
 
-function desktopApp(): string | null {
+export function desktopApp(): string | null {
   if (process.platform !== "darwin") return null
   for (const dir of ["/Applications", join(homedir(), "Applications")]) {
     for (const name of ["screenpipe.app", "Screenpipe.app"]) if (existsSync(join(dir, name))) return join(dir, name)
@@ -246,10 +263,19 @@ async function ensureScreenpipe(cfg: Config, audio: boolean | undefined, log: Lo
       log("L'application ne répond pas : installation du CLI à la place.")
     }
   }
+  if (!bin && !screenpipeSupported()) {
+    throw new UserError(`Screenpipe ne publie pas de version pour ${process.platform}-${process.arch} (macOS, Linux x64 et Windows x64 seulement).`)
+  }
   bin = bin ?? installScreenpipeCli(log)
+  const loadError = screenpipeLoadError(bin)
+  if (loadError) {
+    throw new UserError(
+      `Screenpipe ne démarre pas sur ce poste (« ${loadError} »)${process.platform === "linux" ? " : il lui faut glibc ≥ 2.39 (Ubuntu 24.04 ou plus récent) et les bibliothèques pipewire / pulseaudio du système" : ""}.`,
+    )
+  }
   const how = startScreenpipe(bin, { audio }, log)
-  if (!(await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, 60_000))) {
-    throw new UserError(`Screenpipe ne répond pas sur ${cfg.screenpipe_url} après une minute. Diagnostic : "${bin}" doctor, puis "${bin}" status.`)
+  if (!(await waitUp(cfg.screenpipe_url, cfg.screenpipe_token, process.platform === "win32" ? 180_000 : 60_000))) {
+    throw new UserError(`Screenpipe ne répond pas sur ${cfg.screenpipe_url} (journal : ${join(brainHome(), "screenpipe.log")}, ou \`"${bin}" service status\`).`)
   }
   if (audio) log("Micro activé : les réunions seront transcrites (macOS demandera aussi l'autorisation Micro).")
   else log("Micro coupé : seul l'écran est capté (relance `setup --audio oui` pour transcrire aussi les réunions).")
@@ -267,7 +293,7 @@ async function ensureScreenpipeToken(cfg: Config, bin: string | null, log: Log):
       log(`Jeton d'API local de Screenpipe enregistré (${maskSecret(token)}).`)
       probe = await screenpipeProbe(cfg.screenpipe_url, token)
     } else {
-      log(`Jeton Screenpipe introuvable : affiche-le avec \`${TOKEN_COMMAND}\`, puis \`node "${selfScript()}" init --screenpipe-token <jeton>\`.`)
+      log(`Jeton Screenpipe introuvable : affiche-le avec \`${bin ? `"${bin}" auth token` : TOKEN_COMMAND}\`, puis \`${selfCommand()} init --screenpipe-token <jeton>\`.`)
     }
   }
   log(`Lecture des données Screenpipe : ${probe.detail}.`)
@@ -278,7 +304,7 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   const audio = yesNo(flags.audio, "audio")
   const waitS = typeof flags.wait === "string" ? Number.parseInt(flags.wait, 10) : DEFAULT_WAIT_S
   if (!(waitS >= 0)) throw new UserError("--wait : un nombre de secondes.")
-  const me = `node "${selfScript()}"`
+  const me = selfCommand()
 
   log("[1/6] Connexion au cerveau")
   if (flags.url || flags.token) {
@@ -299,24 +325,36 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   }
 
   let capture: CaptureState | null = null
+  let noScreenpipe: string | null = null
   if (flags["skip-screenpipe"]) {
     log("[2/6] Screenpipe : ignoré (--skip-screenpipe) ; brain-sync lira seulement les sessions Claude Code et Codex.")
     log("[3/6] Autorisations : rien à demander.")
   } else {
     log("[2/6] Screenpipe (capture locale de l'écran ; rien de brut ne quitte le poste)")
-    const sp = await ensureScreenpipe(cfg, audio, log)
-    cfg = await ensureScreenpipeToken(cfg, sp.bin, log)
-    log("[3/6] Autorisations")
-    capture = await waitForCapture({
-      url: cfg.screenpipe_url,
-      token: cfg.screenpipe_token,
-      waitMs: waitS * 1000,
-      // Aussi quand setup est relancé (Screenpipe « déjà lancé » par nous) : c'est le cas typique après un code 3.
-      bin: sp.how === "app" ? null : sp.bin,
-      restart: sp.bin ? restartScreenpipeService : undefined,
-      log,
-    })
-    if (capture.screen) log("Screenpipe capture l'écran.")
+    // Sans Screenpipe, le reste (MCP, hooks, synchro des sessions Claude Code et Codex) vaut quand même d'être branché.
+    let sp: ScreenpipeResult | null = null
+    try {
+      sp = await ensureScreenpipe(cfg, audio, log)
+    } catch (err) {
+      if (!(err instanceof UserError)) throw err
+      noScreenpipe = err.message
+      log(`${err.message} On branche le reste : brain-sync lira les sessions Claude Code et Codex.`)
+      log("[3/6] Autorisations : rien à demander sans Screenpipe.")
+    }
+    if (sp) {
+      cfg = await ensureScreenpipeToken(cfg, sp.bin, log)
+      log("[3/6] Autorisations")
+      capture = await waitForCapture({
+        url: cfg.screenpipe_url,
+        token: cfg.screenpipe_token,
+        waitMs: waitS * 1000,
+        // Aussi quand setup est relancé (Screenpipe « déjà lancé » par nous) : c'est le cas typique après un code 3.
+        bin: sp.how === "app" ? null : sp.bin,
+        restart: sp.bin ? restartScreenpipeService : undefined,
+        log,
+      })
+      if (capture.screen) log("Screenpipe capture l'écran.")
+    }
   }
 
   log("[4/6] Claude Code : MCP company-brain et hooks")
@@ -324,7 +362,8 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   installHooks(log)
 
   log("[5/6] Synchro automatique")
-  if (scheduleInstalled()) log("Déjà planifiée toutes les 15 min : rien à changer.")
+  // Déjà planifiée : chemins remis à jour, sans nouveau point de départ (ce qui attend d'être envoyé n'est pas sauté).
+  if (scheduleInstalled()) refreshSchedule(log)
   else installSchedule(log)
 
   log("[6/6] Ton néon et le cerveau")
@@ -337,7 +376,7 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
 
   log("")
   log("C'est branché. Continue à travailler avec Claude Code : chaque session allume ta zone, et les connaissances distillées arrivent dans le cerveau toutes les 15 minutes.")
-  log(`Voir ce qui partirait : ${me} sync --dry-run --full — état : ${me} status — tout retirer : ${me} uninstall`)
+  log(`Voir ce qui partirait : ${me} sync --dry-run --full — diagnostic : ${me} doctor — tout retirer : ${me} uninstall`)
   if (capture && !capture.up) {
     log("")
     log(`EN ATTENTE : Screenpipe ne répond plus sur ${cfg.screenpipe_url}. Relance : ${me} setup`)
@@ -347,6 +386,11 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
     log("")
     log(`EN ATTENTE : autorisation « Enregistrement de l'écran » pour screenpipe pas encore accordée. Une fois cochée, relance : ${me} setup`)
     return EXIT_PERMISSIONS_PENDING
+  }
+  if (noScreenpipe) {
+    log("")
+    log(`BRANCHÉ SANS SCREENPIPE : ${noScreenpipe} Détail et correction : ${me} doctor`)
+    return EXIT_NO_SCREENPIPE
   }
   return 0
 }

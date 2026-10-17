@@ -3,12 +3,19 @@
 Le dashboard le génère pour chaque employé (`/admin` → « Inviter quelqu'un » ou « Nouveau prompt »), avec son jeton
 personnel (affiché une seule fois) et l'URL du cerveau. Source : [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
 
-L'employé le colle dans Claude Code. Claude prévient des autorisations à venir, lance **une seule commande**, lit son
-code de sortie et dépanne si besoin. Le prompt reste court parce que le travail est dans notre CLI (pourquoi : [docs/CLI.md](../docs/CLI.md)) :
+L'employé le colle dans Claude Code. Claude prévient des autorisations à venir, lance **une seule commande** (celle de
+son système : le prompt en donne une pour macOS / Linux / Git Bash et une pour Windows PowerShell), lit son code de
+sortie et, en cas d'erreur, s'appuie sur `brain doctor --json`. Le prompt reste court parce que le travail est dans
+notre CLI (pourquoi : [docs/CLI.md](../docs/CLI.md)) :
 
-- `install.sh` (servi sur `/install.sh`, source `apps/web/public/install.sh`) trouve Node.js ≥ 20 ou en installe une copie
-  privée dans `~/.company-brain/node` (sans droits admin, empreinte SHA-256 vérifiée), télécharge `brain.mjs`, écrit le
-  raccourci `~/.company-brain/brain`, puis lance `brain setup` avec les mêmes options et rend son code de sortie ;
+- `install.sh` (servi sur `/install.sh`, source `apps/web/public/install.sh`, macOS et Linux) trouve Node.js ≥ 20 ou en
+  installe une copie privée dans `~/.company-brain/node` (sans droits admin, empreinte SHA-256 vérifiée, Apple Silicon
+  même sous Rosetta, Alpine compris), vérifie que `brain.mjs` est bien le client avant de remplacer l'ancien, écrit le
+  raccourci `~/.company-brain/brain`, puis lance `brain setup` avec les mêmes options et rend son code de sortie. Lancé
+  depuis Git Bash sous Windows, il passe la main à `install.ps1` ;
+- `install.ps1` (servi sur `/install.ps1`, Windows PowerShell 5.1 ou 7) fait la même chose sous Windows : copie privée
+  de Node.js x64 (aussi sur ARM64, que Windows émule : Screenpipe n'existe qu'en x64), raccourcis `brain.cmd`
+  (PowerShell, cmd) et `brain` (Git Bash) ;
 - `brain setup` (`apps/client/src/setup.ts`) fait le reste :
 
 1. **Cerveau** : enregistre l'URL et le jeton (`~/.company-brain/config.json`, mode 600) et teste la connexion.
@@ -25,8 +32,39 @@ code de sortie et dépanne si besoin. Le prompt reste court parce que le travail
    lien de connexion valable 2 minutes (`POST /api/session/link`, sans le jeton dans l'URL), avec un bandeau de bienvenue.
    Elle voit le cerveau s'allumer à chaque session Claude Code, et les connaissances arriver au fil des synchros.
 
-`setup` est idempotent : sans paramètres, il reprend là où il s'est arrêté. Code de sortie 3 : tout est branché sauf
-l'autorisation d'enregistrer l'écran.
+`setup` est idempotent : sans paramètres, il reprend là où il s'est arrêté, et remet sur le client actuel le MCP, les
+hooks et la synchro planifiée s'ils pointaient vers un ancien chemin (réinstallation, Node.js mis à jour), sans sauter
+ce qui attend d'être envoyé. Screenpipe installé par npm **sans** son script post-installation (qui téléchargerait
+ffmpeg depuis un site tiers, lancerait `sudo apt-get` et enverrait de la télémétrie) : Screenpipe installe ffmpeg
+lui-même au premier lancement.
+
+| Code | Sens | Ce que fait Claude |
+|---|---|---|
+| 0 | Tout est branché, le cerveau s'est ouvert | Résume |
+| 3 | EN ATTENTE : autorisation « Enregistrement de l'écran » pas encore accordée (macOS) | Redit où cocher, relance `brain setup` |
+| 5 | Téléchargement impossible (réseau, proxy, mauvaise adresse, page d'erreur au lieu du client) | Relance la même commande |
+| 6 | Tout est branché **sauf Screenpipe** (pas de version pour ce poste, ou il ne démarre pas) | `brain doctor --json`, explique |
+| 1, 2, 4 | Échec de setup, mauvais appel, système non géré | `brain doctor --json`, explique, lance les corrections « safe » |
+
+## `brain doctor` : le diagnostic
+
+`~/.company-brain/brain doctor` (Windows : `~/.company-brain/brain.cmd doctor`) vérifie tout le poste **sans rien
+modifier** et donne, pour chaque point KO, la commande qui répare :
+
+| Groupe | Ce qui est vérifié |
+|---|---|
+| Poste | Node.js (version, gestionnaire de versions qui cassera les chemins, Rosetta), raccourci (il démarre et lance ce client), dossier privé |
+| Cerveau | Config, connexion et jeton (révoqué ?), client à jour par rapport à celui que sert le cerveau (`/brain.mjs.sha256`) |
+| Screenpipe | Répond, capture l'écran (autorisation refusée, capture bloquée, économie d'énergie), Accessibilité, jeton d'API local, données « parsed » |
+| Claude Code | CLI `claude`, MCP `company-brain` (enregistré et il démarre), hooks (les trois, sans doublon, sur le client actuel, lançables sans Git Bash sous Windows), erreurs récentes des hooks |
+| Synchro | Planification (et ce qu'elle lance vraiment), dernière synchro, dernière erreur du journal, verrou orphelin, conversations en attente, simulation non confirmée |
+| Distillation | Claude Code ou clé API, `claude` trouvable par la synchro planifiée, connexion Claude perdue (jeton expiré) |
+
+`--json` donne le même rapport à Claude Code : `checks[]` (`id`, `status` ok / warn / fail / skip / info, `detail`, `fix`,
+`command`, `safe`), `next` (le premier point à régler) et `exit_code` (1 s'il reste un KO). `safe: true` marque les
+commandes qui ne font que rebrancher le poste (`setup`, `install-hooks`, réinstallation) ; jamais `sync --confirm` ni
+`init --claude-token`, qui demandent l'employé. Aucun jeton n'est affiché en entier, aucune donnée du journal n'est
+recopiée sans être masquée.
 
 ## Les autorisations : ce qu'on évite, ce qu'on ne peut pas éviter
 
@@ -37,6 +75,7 @@ l'autorisation d'enregistrer l'écran.
 | macOS, Enregistrement de l'écran | à trouver dans les Réglages | **un clic** : panneau ouvert, chemin du binaire copié si « screenpipe » n'est pas listé, reprise automatique |
 | macOS, Accessibilité | à trouver dans les Réglages | **un clic, facultatif** : améliore la lecture du texte des terminaux ; sans elle, la capture marche quand même |
 | Linux, Windows | rien | rien (sous Wayland, accepter le partage d'écran s'il est proposé) |
+| Windows, Claude Code | une autorisation par commande (winget, Node, réglages) | **une seule** : la ligne PowerShell (ou celle de Git Bash) |
 
 Ce qu'on ne peut pas sauter : macOS impose que l'employé accorde lui-même l'Enregistrement de l'écran, même sur un parc
 géré. En entreprise, un profil MDM (PPPC) peut pré-accorder l'Accessibilité au binaire `screenpipe` (signé Developer ID,
@@ -49,9 +88,10 @@ Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
-2. Lance cette commande telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
-   curl -fsSL --create-dirs https://cerveau.example.com/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url https://cerveau.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance `~/.company-brain/brain setup`. Autre erreur : explique-la simplement et relance `~/.company-brain/brain setup`, qui reprend où il s'était arrêté (`~/.company-brain/brain status` donne l'état).
+2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
+   macOS, Linux, Git Bash : curl -fsSL --create-dirs https://cerveau.example.com/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url https://cerveau.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+   Windows, PowerShell : New-Item -ItemType Directory -Force "$env:USERPROFILE\.company-brain" | Out-Null; Invoke-WebRequest -UseBasicParsing https://cerveau.example.com/install.ps1 -OutFile "$env:USERPROFILE\.company-brain\install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.company-brain\install.ps1" --url https://cerveau.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance `~/.company-brain/brain setup`. Code 5 : réseau ou adresse, relance la même commande. Autre code (6 : branché sans Screenpipe) : lance `~/.company-brain/brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe ». Sous Windows, le client est `~/.company-brain/brain.cmd`.
 4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (`~/.company-brain/brain uninstall`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord `~/.company-brain/brain sync --dry-run --full --since 24h` en entier ; rien ne part avant mon accord explicite, puis `~/.company-brain/brain sync --confirm` envoie exactement ce que j'ai relu.
 ```
 
@@ -65,5 +105,5 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 | `--no-open` | N'ouvre pas le navigateur. |
 | `--skip-screenpipe` | Sans Screenpipe : brain-sync lit seulement les sessions Claude Code et Codex. |
 
-Tout retirer : `node ~/.company-brain/brain.mjs uninstall` (hooks, MCP, synchro, service Screenpipe ; `--purge` efface aussi
+Tout retirer : `~/.company-brain/brain uninstall` (hooks, MCP, synchro, service Screenpipe ; `--purge` efface aussi
 `~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.

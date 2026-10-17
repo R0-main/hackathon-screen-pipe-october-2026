@@ -2,7 +2,7 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { delimiter, dirname, join, resolve } from "node:path"
+import { basename, delimiter, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Zone } from "@brain/core"
 
@@ -76,16 +76,22 @@ export type Cache = {
   zones?: CachedZone[]
 }
 
+// Une variable vide vaut « non définie » (sinon resolve("") donnerait le dossier courant, et la config irait dans un projet).
 export function brainHome(): string {
-  return resolve(process.env.COMPANY_BRAIN_HOME ?? join(homedir(), ".company-brain"))
+  return resolve(process.env.COMPANY_BRAIN_HOME || join(homedir(), ".company-brain"))
 }
 
 export function claudeDir(): string {
-  return resolve(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"))
+  return resolve(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"))
 }
 
 export function codexDir(): string {
-  return resolve(process.env.CODEX_HOME ?? join(homedir(), ".codex"))
+  return resolve(process.env.CODEX_HOME || join(homedir(), ".codex"))
+}
+
+/** Le dossier du client est-il personnalisé (COMPANY_BRAIN_HOME) ? Hooks, MCP et planification le transmettent alors. */
+export function customHome(): boolean {
+  return Boolean(process.env.COMPANY_BRAIN_HOME) && brainHome() !== resolve(homedir(), ".company-brain")
 }
 
 export const paths = {
@@ -102,6 +108,27 @@ export const paths = {
 export function selfScript(): string {
   if (process.env.COMPANY_BRAIN_SCRIPT) return resolve(process.env.COMPANY_BRAIN_SCRIPT)
   return fileURLToPath(import.meta.url)
+}
+
+/** Le raccourci écrit par install.sh (`brain`) ou install.ps1 (`brain.cmd`, utilisable depuis PowerShell et Git Bash). */
+export function shortcutPath(platform: NodeJS.Platform = process.platform): string {
+  return join(brainHome(), platform === "win32" ? "brain.cmd" : "brain")
+}
+
+/**
+ * La commande à citer dans les messages pour relancer le client : le raccourci s'il existe (il marche même quand Node.js
+ * est une copie privée, hors du PATH : `node …` y échouerait), sinon Node.js et le script en chemins absolus.
+ */
+export function selfCommand(platform: NodeJS.Platform = process.platform): string {
+  const shortcut = shortcutPath(platform)
+  if (existsSync(shortcut)) return customHome() ? quoteArg(shortcut, platform) : `~/.company-brain/${basename(shortcut)}`
+  return `${quoteArg(process.execPath, platform)} ${quoteArg(selfScript(), platform)}`
+}
+
+/** Un chemin prêt à coller dans un terminal : guillemets doubles sous Windows (aucun `"` possible), simples ailleurs. */
+export function quoteArg(s: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === "win32") return /[\s&()^%!;,]/.test(s) ? `"${s}"` : s
+  return /^[\w@%+=:,./~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
 }
 
 export function readJson<T>(file: string): T | null {
@@ -164,7 +191,7 @@ export function requireConfig(): Config {
   const cfg = loadConfig()
   if (!cfg) {
     throw new UserError(
-      `Client non configuré (${paths.config()} absent ou incomplet). Lancez d'abord : node ${selfScript()} init --url <url du cerveau> --token <jeton>`,
+      `Client non configuré (${paths.config()} absent ou incomplet). Lancez d'abord : ${selfCommand()} init --url <url du cerveau> --token <jeton>`,
     )
   }
   return cfg

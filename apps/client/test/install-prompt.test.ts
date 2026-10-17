@@ -7,22 +7,38 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { buildInstallPrompt } from "../../web/lib/install-prompt"
+import { buildInstallPrompt, installCommands } from "../../web/lib/install-prompt"
 import { INSTALL_PROMPT_RE } from "../src/secrets"
+import { EXIT_NO_SCREENPIPE, EXIT_PERMISSIONS_PENDING } from "../src/setup"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Fournil", zones: ["compta"] }
 const prompt = buildInstallPrompt(EXAMPLE)
 
-test("prompt d'installation : une seule commande (install.sh puis setup), une seule autorisation dans Claude Code", () => {
-  const command = `curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
-  assert.ok(prompt.includes(command), "la commande unique")
-  assert.equal(prompt.split(EXAMPLE.token).length, 2, "le jeton n'apparaît qu'une fois, dans la commande")
+test("prompt d'installation : une seule commande par système (install.sh ou install.ps1, puis setup), une seule autorisation dans Claude Code", () => {
+  const posix = `curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
+  const windows =
+    `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.company-brain" | Out-Null; Invoke-WebRequest -UseBasicParsing ${EXAMPLE.baseUrl}/install.ps1 -OutFile "$env:USERPROFILE\\.company-brain\\install.ps1"; ` +
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.company-brain\\install.ps1" --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
+  assert.ok(prompt.includes(`macOS, Linux, Git Bash : ${posix}\n`), "la commande macOS / Linux")
+  assert.ok(prompt.includes(`Windows, PowerShell : ${windows}\n`), "la commande Windows")
+  assert.deepEqual(installCommands(EXAMPLE.baseUrl, EXAMPLE.token), { posix, windows })
+  // Le jeton n'apparaît que dans ces deux commandes (une seule sera lancée).
+  assert.equal(prompt.split(EXAMPLE.token).length, 3)
   assert.match(prompt, /Code 3 \(« EN ATTENTE »\)/)
+  assert.match(prompt, /Code 5 : réseau ou adresse, relance la même commande/)
+  assert.match(prompt, /brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe »/)
   assert.match(prompt, /délai de 10 minutes/)
-  // Ni prérequis à vérifier à la main ni étapes séparées : install.sh et setup s'en chargent.
-  assert.ok(!/node -v|install-schedule|install-hooks|claude mcp add/.test(prompt))
-  assert.ok(prompt.length < 2000, `prompt court (${prompt.length} caractères)`)
+  // Ni prérequis à vérifier à la main ni étapes séparées : les scripts et setup s'en chargent.
+  assert.ok(!/node -v|winget|install-schedule|install-hooks|claude mcp add/.test(prompt))
+  assert.ok(prompt.length < 2400, `prompt court (${prompt.length} caractères)`)
+})
+
+test("prompt d'installation : les codes de sortie cités sont ceux de setup et des scripts", () => {
+  assert.equal(EXIT_PERMISSIONS_PENDING, 3)
+  assert.equal(EXIT_NO_SCREENPIPE, 6)
+  assert.match(prompt, new RegExp(`Code ${EXIT_PERMISSIONS_PENDING} \\(« EN ATTENTE »\\)`))
+  assert.match(prompt, new RegExp(`\\(${EXIT_NO_SCREENPIPE} : branché sans Screenpipe\\)`))
 })
 
 test("prompt d'installation : aucun historique ne part sans relecture complète et accord explicite", () => {

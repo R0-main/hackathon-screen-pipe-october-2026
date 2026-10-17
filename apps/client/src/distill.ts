@@ -17,7 +17,7 @@ import {
   type KnowledgeItemInput,
   type ZoneHint,
 } from "@brain/core"
-import { UserError, brainHome, type Config } from "./config"
+import { UserError, brainHome, selfCommand, type Config } from "./config"
 
 export type DistillerKind = "claude-api" | "claude-cli" | "heuristic"
 
@@ -84,7 +84,7 @@ export function statusFailure(status: unknown): FailureKind | null {
 export function claudeAuthHelp(detail?: string): string {
   return (
     `Claude Code n'est plus connecté sur ce poste : le jeton Claude a expiré ou a été révoqué${detail ? ` (« ${truncate(detail, 160)} »)` : ""}. ` +
-    "Lancez `claude setup-token`, puis `node ~/.company-brain/brain.mjs init --claude-token <jeton>` (ou `claude /login`)."
+    `Lancez \`claude setup-token\`, puis \`${selfCommand()} init --claude-token <jeton>\` (ou \`claude /login\`).`
   )
 }
 
@@ -97,6 +97,18 @@ export type Distiller = {
   kind: DistillerKind
   concurrency: number
   distill(conv: Conversation, zones: ZoneHint[], fallbackZone: string): Promise<DistillResult>
+}
+
+/**
+ * Comment lancer `cmd` : sous Windows, un .cmd / .bat (npm, npx, claude installé par npm) ne se lance que via le shell,
+ * qui ne cite rien lui-même (chemins avec espaces : « C:\Users\Jean Dupont\… ») ; un .exe se lance directement, sans
+ * shell, arguments vides compris. Ailleurs, jamais de shell.
+ */
+export function spawnTarget(cmd: string, args: string[], platform: NodeJS.Platform = process.platform): { cmd: string; args: string[]; shell: boolean } {
+  const shell = platform === "win32" && /\.(cmd|bat)$/i.test(cmd)
+  if (!shell) return { cmd, args, shell }
+  const q = (s: string) => (s === "" || /[\s"&|<>^()]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
+  return { cmd: q(cmd), args: args.map(q), shell }
 }
 
 /** Cherche un exécutable dans le PATH (gère PATHEXT sous Windows). */
@@ -220,12 +232,13 @@ let cliFlags: string[] | null = null
 /** Options facultatives selon la version de la CLI : pas de session enregistrée, aucun outil. */
 function detectCliFlags(claudePath: string): string[] {
   if (cliFlags) return cliFlags
-  const help = spawnSync(claudePath, ["--help"], { encoding: "utf8", timeout: 8000, shell: process.platform === "win32", env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" } })
+  const t = spawnTarget(claudePath, ["--help"])
+  const help = spawnSync(t.cmd, t.args, { encoding: "utf8", timeout: 8000, shell: t.shell, windowsHide: true, env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" } })
   const text = `${help.stdout ?? ""}${help.stderr ?? ""}`
   cliFlags = []
   if (text.includes("--no-session-persistence")) cliFlags.push("--no-session-persistence")
-  // `--tools ""` (aucun outil) : pas sous Windows, où le shell perdrait l'argument vide.
-  if (/--tools\b/.test(text) && process.platform !== "win32") cliFlags.push("--tools", "")
+  // `--tools ""` (aucun outil) : pas via le shell de Windows (claude.cmd), qui perdrait l'argument vide.
+  if (/--tools\b/.test(text) && !t.shell) cliFlags.push("--tools", "")
   // Jamais `--bare` : ce mode ignore CLAUDE_CODE_OAUTH_TOKEN (le jeton de `init --claude-token`), même si la CLI le propose.
   return cliFlags
 }
@@ -266,7 +279,7 @@ function hideToken(s: string, opts: ClaudeCliOptions): string {
 
 export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120_000, opts: ClaudeCliOptions = {}): Promise<ClaudeCliRun> {
   return new Promise((resolve) => {
-    const args = claudeCliArgs(claudePath)
+    const t = spawnTarget(claudePath, claudeCliArgs(claudePath))
     let stdout = ""
     let stderr = ""
     let settled = false
@@ -279,11 +292,11 @@ export function runClaudeCli(claudePath: string, prompt: string, timeoutMs = 120
     }
     let child
     try {
-      child = spawn(claudePath, args, {
+      child = spawn(t.cmd, t.args, {
         cwd: brainHome(),
         env: claudeCliEnv(opts),
         stdio: ["pipe", "pipe", "pipe"],
-        shell: process.platform === "win32",
+        shell: t.shell,
         windowsHide: true,
       })
     } catch (err) {
