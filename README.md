@@ -176,7 +176,7 @@ Puis `https://<adresse>/creer` pour créer l'entreprise. Tout le détail (certif
 
 Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgres gratuit, en veille après 5 min d'inactivité, réveil en moins d'une seconde). N'importe quel Postgres convient (Supabase compris) : le schéma est dans `supabase/migrations/`.
 
-1. **Base** : créez un projet Neon (région Francfort), puis `DATABASE_URL=… npm run db:migrate` — ou exécutez `supabase/local/auth_stub.sql` puis `supabase/migrations/*.sql` dans l'éditeur SQL de Neon.
+1. **Base** : créez un projet Neon (région Francfort). Les migrations s'appliquent toutes seules à chaque déploiement de production Vercel (au build, avant que le nouveau code ne soit servi ; si une migration échoue, le build échoue et l'ancien déploiement reste en ligne). Les previews ne migrent pas, car elles partagent souvent la base de production (`BRAIN_MIGRATE_ON_BUILD=1` si une preview a sa propre base, `=0` pour couper). À la main : `DATABASE_URL=… npm run db:migrate`. Le conteneur Docker migre à son démarrage.
 2. **Vercel** : importez le repo avec ces réglages :
    - Root Directory : `apps/web` (avec « Include source files outside of the Root Directory »)
    - Install Command : `cd ../.. && npm ci` (le monorepo s'installe depuis la racine)

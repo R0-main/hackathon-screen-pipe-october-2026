@@ -1,7 +1,8 @@
 # Améliorations v2 : supervision, connecteurs, langues, flux temps réel, qualité du cerveau
 
 Branche `feat/ameliorations-v2`. Cinq chantiers, chacun utilisable seul ; tout fonctionne sans nouvelle dépendance npm.
-En Postgres, appliquer les migrations (`npm run db:migrate`) : `20261017000004_sync_reports.sql`,
+En Postgres, les migrations s'appliquent toutes seules au déploiement de production Vercel et au démarrage du conteneur
+Docker (sinon `npm run db:migrate`) : `20261017000004_sync_reports.sql`,
 `20261017000005_connectors_tasks.sql`, `20261017000006_search_quality.sql`. Sans elles, le cerveau reste utilisable :
 supervision sans comptes rendus, connecteurs de tâches refusés avec un message clair, recherche sans vecteurs.
 
