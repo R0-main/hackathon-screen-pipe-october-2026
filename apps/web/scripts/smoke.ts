@@ -9,7 +9,7 @@ import { createHash, createHmac } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
-import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, posteHealth, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput } from "@brain/core"
+import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, posteHealth, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput, type Task } from "@brain/core"
 import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
@@ -970,10 +970,14 @@ async function main() {
   for (const id of [firstDecision.ids[0], revised.ids[0]]) assert(await store.deleteItem(id), "décision de test supprimée")
 
   console.log("\n— Connecteurs : tâches externes insérées, mises à jour, fermées")
-  const ext1 = await store.upsertExternalTasks("linear", [
-    { title: `${qtag} FOU-1`, zone: "dev", status: "open", external_id: `${run}-1`, external_url: "https://linear.app/x/1" },
-    { title: `${qtag} FOU-2`, zone: "dev", status: "open", external_id: `${run}-2` },
-  ])
+  // Ne compter que les tâches de ce passage : la boucle de fermeture renvoie aussi les tâches ouvertes d'un passage précédent.
+  const mine = (ts: Task[]) => ts.filter((t) => t.external_id?.startsWith(`${run}-`))
+  const ext1 = mine(
+    await store.upsertExternalTasks("linear", [
+      { title: `${qtag} FOU-1`, zone: "dev", status: "open", external_id: `${run}-1`, external_url: "https://linear.app/x/1" },
+      { title: `${qtag} FOU-2`, zone: "dev", status: "open", external_id: `${run}-2` },
+    ]),
+  )
   assert(ext1.length === 2 && ext1.every((t) => t.external_source === "linear"), "deux tâches importées avec leur source")
   const ext2 = await store.upsertExternalTasks("linear", [{ title: `${qtag} FOU-1 renommée`, zone: "dev", status: "open", external_id: `${run}-1`, external_url: "https://linear.app/x/1" }])
   const ext1a = ext2.find((t) => t.external_id === `${run}-1`)
@@ -981,6 +985,8 @@ async function main() {
   assert(ext1a?.title.endsWith("renommée") && ext1a.id === ext1[0].id, "la même tâche est mise à jour, sans doublon")
   assert(ext2a?.status === "done", "une tâche disparue chez l'outil passe faite ici")
   assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.id === ext1a!.id && t.external_url === "https://linear.app/x/1"), "le lien vers l'outil est conservé")
+  // Nettoyage : rien d'ouvert de ce passage ne reste pour le suivant.
+  assert((await store.updateTask(ext1a!.id, { status: "done" }))?.status === "done", "tâche de test fermée")
 
   console.log("\nTout est vert.")
   if ("end" in store) await (store as unknown as { end: () => Promise<void> }).end()
