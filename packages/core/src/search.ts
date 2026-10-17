@@ -72,6 +72,34 @@ export function expandQuery(query: string): { tokens: string[]; added: string[] 
   return { tokens, added: [...added] }
 }
 
+/** Même règle que les stockages : un token de requête vaut tel quel, ou comme préfixe à partir de 4 caractères. */
+function tokenMatches(queryToken: string, itemToken: string): boolean {
+  return itemToken === queryToken || (queryToken.length >= 4 && itemToken.startsWith(queryToken))
+}
+
+/**
+ * Force de la correspondance entre une requête (tokens déjà étendus) et une connaissance : nombre de tokens de la
+ * requête trouvés, et combien dans le titre ou les entités. Sert à écarter les résultats que seuls les synonymes
+ * ramènent sur un mot isolé du corps (« prod » qui attrape « produit »).
+ */
+export function matchStrength(queryTokens: string[], item: { title: string; body: string; entities?: { name: string }[] }): { total: number; title: number } {
+  const title = [...tokenize(item.title), ...(item.entities ?? []).flatMap((e) => tokenize(e.name))]
+  const body = tokenize(item.body)
+  let total = 0
+  let inTitle = 0
+  for (const q of new Set(queryTokens)) {
+    const t = title.some((x) => tokenMatches(q, x))
+    if (t) inTitle++
+    if (t || body.some((x) => tokenMatches(q, x))) total++
+  }
+  return { total, title: inTitle }
+}
+
+/** Un résultat obtenu seulement grâce aux synonymes n'est gardé que s'il tient à plus d'un mot isolé du corps. */
+export function strongEnough(s: { total: number; title: number }): boolean {
+  return s.title >= 1 || s.total >= 2
+}
+
 /** Similarité de Jaccard entre deux ensembles de tokens (0 à 1). */
 export function jaccard(a: Iterable<string>, b: Iterable<string>): number {
   const A = new Set(a)

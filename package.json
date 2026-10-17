@@ -10,7 +10,7 @@
     "dev": "npm run dev -w @brain/web",
     "build": "npm run build -w @brain/web",
     "start": "npm run start -w @brain/web",
-    "seed": "npm run seed -w @brain/web",
+    "seed": "npm run seed -w @brain/web --",
     "simulate": "npm run simulate -w @brain/web",
     "build:client": "npm run build -w @brain/client",
     "typecheck": "npm run typecheck --workspaces --if-present",

@@ -11,11 +11,13 @@ import {
   heuristicStatus,
   likeness,
   looksPersonal,
+  matchStrength,
   normalize,
   promptFingerprint,
   redactText,
   rrf,
   scoreZones,
+  strongEnough,
   truncate,
   type AgentEvent,
   type AgentEventInput,
@@ -250,11 +252,16 @@ export async function hybridSearch(query: string, zones: string[], limit: number
   const s = store()
   const { tokens, added } = expandQuery(query)
   const want = Math.max(limit * HYBRID_FACTOR, 20)
-  const [lexical, expanded, qvec] = await Promise.all([
+  const all = [...tokens, ...added]
+  const [lexical, expandedRaw, qvec] = await Promise.all([
     s.searchItems(query, zones, want, { authorId }),
-    added.length ? s.searchItems([...tokens, ...added].join(" "), zones, want, { authorId }) : Promise.resolve([] as ScoredItem[]),
+    added.length ? s.searchItems(all.join(" "), zones, want, { authorId }) : Promise.resolve([] as ScoredItem[]),
     embedQuery(query),
   ])
+  // Un résultat que seuls les synonymes ramènent doit tenir à plus d'un mot isolé du corps (« prod » ≠ « produit ») :
+  // la compta ne doit rien voir remonter sur « déployer en production ».
+  const lexicalIds = new Set(lexical.map((r) => r.id))
+  const expanded = expandedRaw.filter((r) => lexicalIds.has(r.id) || strongEnough(matchStrength(all, r)))
   const byId = new Map<string, ScoredItem>()
   for (const r of [...lexical, ...expanded]) if (!byId.has(r.id)) byId.set(r.id, r)
   const lists: string[][] = [lexical.map((r) => r.id)]
