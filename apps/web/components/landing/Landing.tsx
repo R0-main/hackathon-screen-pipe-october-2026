@@ -343,15 +343,19 @@ function Connectors() {
             <span className="panel-title">Connectors</span>
             <span className="text-[12px] text-trace">{MCP_CATALOG.length} official MCP servers</span>
           </div>
-          <ul data-rows className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4" aria-label="Some of the tools you can connect">
+          {/* Rules on the tiles, not a coloured grid background: while the rows reveal, the empty cells stay white. */}
+          <ul data-rows className="grid grid-cols-2 sm:grid-cols-4" aria-label="Some of the tools you can connect">
             {tools.map((e) => (
-              <li key={e.id} className="flex min-w-0 items-center gap-2.5 bg-surface px-3.5 py-3">
+              <li
+                key={e.id}
+                className="flex min-w-0 items-center gap-2.5 border-b border-r border-line px-3.5 py-3 [&:nth-child(2n)]:border-r-0 sm:[&:nth-child(2n)]:border-r sm:[&:nth-child(4n)]:border-r-0"
+              >
                 <McpLogo logo={e.logo} name={e.name} color={e.color} size={30} />
                 <span className="truncate text-[13px]">{e.name}</span>
               </li>
             ))}
           </ul>
-          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">
+          <figcaption className="px-5 py-3 text-[12px] text-trace">
             And {MCP_CATALOG.length - tools.length} more, or any remote MCP server.
           </figcaption>
         </figure>
