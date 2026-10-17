@@ -4,9 +4,11 @@ import {
   DEFAULT_ZONES,
   MAX_PROMPT_VERBATIM,
   chunkConversation,
+  clipVerbatim,
   distillHeuristic,
   extractEntities,
   renderConversation,
+  verbatimWindows,
   type Conversation,
   type ConversationMessage,
 } from "./index"
@@ -375,4 +377,218 @@ test("heuristique (3e passe) : capture d'écran (OCR) — aucun champ ne recopie
   // Les journaux Claude Code gardent des extraits de réponse plus longs (200 caractères) : l'assistant n'y recopie pas la demande.
   const cc = distillHeuristic(conv([{ role: "user", text: "Point litige Martin" }, { role: "assistant", text: ocr.split("\n").slice(2).join("\n") }]), DEFAULT_ZONES)
   assert.ok(cc.some((i) => i.kind === "decision" && i.body.length > MAX_PROMPT_VERBATIM + 20), JSON.stringify(cc.map((i) => i.body)))
+})
+
+// --- Quatrième passe de revue ------------------------------------------------------------------------------------------
+
+test("outils (4e passe) : une puce « - Qonto : … » ne fait pas de la liste une liste d'outils ; « Vue mensuelle » est un nom commun", () => {
+  const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
+  // [texte, outils attendus] — sondes r3-verify-core/ent3.ts et ent4.ts
+  const cases: [string, string[]][] = [
+    ["Synthèse de trésorerie :\n- Vue globale : trésorerie saine\n- Qonto : 12 300 € disponibles\n- Pennylane : 3 factures à rapprocher", ["Pennylane", "Qonto"]],
+    ["Voici le point :\n- Vue mensuelle : CA en hausse de 8 %\n- Stripe : 4 200 € encaissés", ["Stripe"]],
+    ["Récap :\n- Notion de marge brute : CA - achats\n- Pennylane : export prêt", ["Pennylane"]],
+    ["Plan :\n- Make un point avec Léo\n- Zapier pour l'automatisation", ["Zapier"]],
+    ["Résumé :\n- Vue mensuelle : +3 %\n- Vue annuelle : +12 %\n- Stripe : 4 200 €", ["Stripe"]],
+    ["Tableau de bord Vue mensuelle des ventes", []],
+    ["Ouvre l'onglet Vue mensuelle du fichier", []],
+    ["Synthèse Vue globale", []],
+    ["Section Vue client", []],
+    ["Bouton Vue liste / Vue grille", []],
+    ["Demande à Alan de vérifier la mutuelle de Léo", []],
+    ["Claude a validé la facture de Martin", []],
+    // vraies mentions : en-tête d'outils, chaque puce est un outil (dont un sans ambiguïté), verbe, version, énumération, complément
+    ["Outils recommandés :\n- Notion pour la doc\n- Slack pour les alertes\n- Linear pour les tickets", ["Linear", "Notion", "Slack"]],
+    ["- **Stripe** : les paiements\n- **Notion** : la doc\n- **Slack** : les alertes", ["Stripe", "Notion", "Slack"]],
+    ["Pour la doc :\n- Stripe pour les paiements\n- Notion pour la doc", ["Stripe", "Notion"]],
+    ["Sentry est déployé en prod", ["Sentry"]],
+    ["Notion est notre wiki interne.", ["Notion"]],
+    ["on migre de vue 2 à Vue 3", ["Vue"]],
+    ["On utilise Notion et Slack", ["Notion", "Slack"]],
+    ["Poste le récap sur le Slack de l'équipe", ["Slack"]],
+    ["Le scénario Make relance les factures", ["Make"]],
+    ["The module may import Node built-ins", ["Node"]],
+  ]
+  const wrong = cases.map(([t, want]) => [t, tools(t), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
+  assert.deepEqual(wrong, [])
+})
+
+test("heuristique (4e passe) : un champ sur plusieurs lignes ne recopie pas non plus plus de 80 caractères de la source", () => {
+  // Le garde-fou compare espaces normalisés : des étapes jointes par « \n » sont vues comme dans la source.
+  const source = "Voici la procédure :\n1. Ouvre Pennylane et va dans Banque.\n2. Sélectionne le compte Qonto de la boulangerie.\n3. Filtre les transactions de septembre."
+  const field = "1. Ouvre Pennylane et va dans Banque.\n2. Sélectionne le compte Qonto de la boulangerie.\n3. Filtre les transactions de septembre."
+  const clipped = clipVerbatim(field, verbatimWindows([source], MAX_PROMPT_VERBATIM), MAX_PROMPT_VERBATIM)
+  assert.ok(longestCommon(source.replace(/\s+/g, " "), clipped.replace(/\s+/g, " ")) <= MAX_PROMPT_VERBATIM, clipped)
+  assert.ok(clipped.startsWith("1. Ouvre Pennylane et va dans Banque.\n2. "), clipped)
+
+  // Bout en bout : capture Screenpipe d'une réponse en 8 étapes (sonde r3-verify-core/ocr3.ts), et procédure tapée par
+  // l'employé puis reprise par l'assistant (ocr4.ts). La procédure garde ses étapes, sans recopier le bloc de la source.
+  const steps = [
+    "1. Ouvre Pennylane et va dans Banque.", "2. Sélectionne le compte Qonto de la boulangerie.", "3. Filtre les transactions de septembre.",
+    "4. Associe chaque transaction à sa facture.", "5. Crée les justificatifs manquants.", "6. Vérifie le solde avec le relevé Qonto.",
+    "7. Marque le mois comme rapproché.", "8. Envoie le récapitulatif au comptable.",
+  ].join("\n")
+  const prompt = "Explique-moi comment faire le rapprochement bancaire Qonto dans Pennylane pour la clôture de septembre, étape par étape."
+  const base = { started_at: "2026-10-16T09:00:00Z", ended_at: "2026-10-16T09:05:00Z" }
+  const variants: [Conversation, string][] = [
+    [
+      {
+        ...base, id: "screenpipe:1", tool: "claude", app: "Google Chrome", title: "Rapprochement Qonto - Claude", screenpipe_ref: "1",
+        messages: [{ role: "user", text: "Session capturée à l'écran" }, { role: "assistant", text: `Nouvelle conversation\n${prompt}\nVoici la procédure :\n${steps}` }],
+      },
+      `Nouvelle conversation\n${prompt}\nVoici la procédure :\n${steps}`,
+    ],
+    [conv([{ role: "user", text: `Voici ma procédure de clôture, reformule-la :\n${steps}` }, { role: "assistant", text: `Voici ta procédure :\n${steps}` }]), steps],
+  ]
+  for (const [c, captured] of variants) {
+    const items = distillHeuristic(c, DEFAULT_ZONES)
+    const procedure = items.find((i) => i.kind === "procedure")
+    assert.ok(procedure && procedure.body.split("\n").length === 8, JSON.stringify(procedure))
+    for (const i of items) {
+      for (const text of [i.title, i.body]) {
+        const n = longestCommon(captured.replace(/\s+/g, " "), text.replace(/\s+/g, " "))
+        assert.ok(n <= MAX_PROMPT_VERBATIM, `${c.id} ${i.kind} recopie ${n} caractères : ${text}`)
+      }
+    }
+  }
+})
+
+// --- Cinquième passe de revue ------------------------------------------------------------------------------------------
+
+test("outils (5e passe) : une liste de noms seulement ambigus n'est pas une liste d'outils ; « le Notion de Fournil », « Le Sentry est déployé »", () => {
+  const tools = (t: string) => extractEntities(t).filter((e) => e.type === "tool").map((e) => e.name)
+  // [texte, outils attendus] — sondes r4-verify-core/ent.mts et ent2.mts
+  const cases: [string, string[]][] = [
+    // chaque puce commence par un nom d'outil ambigu, aucune par un outil sans ambiguïté : des personnes ou des mots
+    ["Équipe :\n- Claude : gérant, valide les devis\n- Alan : comptable, suit la mutuelle", []],
+    ["Topologie :\n- Node A : 3 connexions\n- Node B : 2 connexions", []],
+    ["Je te recommande :\n- Notion pour la doc\n- Slack pour les alertes\n- Linear pour les tickets", []],
+    // avec un outil sans ambiguïté, la liste reste une liste d'outils
+    ["Je te recommande :\n- Stripe pour les paiements\n- Notion pour la doc\n- Slack pour les alertes", ["Stripe", "Notion", "Slack"]],
+    // « de » + nom propre : un complément, pas un nom commun (« Notion de marge »)
+    ["Dans le Notion de Fournil, page Process, ajoute la procédure", ["Notion"]],
+    ["Ajoute-le dans l'espace Notion de Fournil", ["Notion"]],
+    ["Récap :\n- Notion de marge brute : CA - achats\n- Pennylane : export prêt", ["Pennylane"]],
+    // déterminant + outil + verbe ; « et » + outil + verbe
+    ["Le Sentry est déployé en prod depuis lundi", ["Sentry"]],
+    ["Notre Notion est notre wiki", ["Notion"]],
+    ["Ce Slack sert aux alertes", ["Slack"]],
+    ["Sentry remonte les erreurs et Slack envoie les alertes", ["Slack", "Sentry"]],
+    ["Qonto synchronise les paiements et Notion stocke la doc", ["Notion", "Qonto"]],
+    // Vue, Make, Linear restent des mots ordinaires derrière un déterminant ; « Alan de vérifier », « Claude a validé » des personnes
+    ["Dans le tableau, la Vue est claire", []],
+    ["Demande à Alan de vérifier la mutuelle de Léo", []],
+    ["Claude a validé la facture de Martin", []],
+  ]
+  const wrong = cases.map(([t, want]) => [t, tools(t), want] as const).filter(([, got, want]) => JSON.stringify(got) !== JSON.stringify(want))
+  assert.deepEqual(wrong, [])
+})
+
+/** Meilleur de trois mesures (le ramasse-miettes peut ralentir une mesure isolée). */
+function bestMs(f: () => unknown): number {
+  f()
+  return Math.min(...[0, 1, 2].map(() => {
+    const t0 = performance.now()
+    f()
+    return performance.now() - t0
+  }))
+}
+const repeatTo = (unit: string, n: number) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n)
+
+test("outils (5e passe) : linéaire sur une longue ligne de « Vue mensuelle » / « Notion de marge » et une longue liste de « - Notion »", () => {
+  // Sondes r4-redos/ent-big.mts et ent-lines.mts : chaque occurrence relisait sa ligne jusqu'au « \n » suivant (988 ms à 1 Mo),
+  // et une liste de noms ambigus relisait ses 60 puces à chaque occurrence.
+  const slow: string[] = []
+  for (const [unit, n, limit] of [["Vue mensuelle ", 1_000_000, 400], ["Notion de marge ", 1_000_000, 400], ["- Notion\n", 320_000, 400], ["- la Notion\n", 320_000, 400]] as const) {
+    const ms = bestMs(() => extractEntities(repeatTo(unit, n)))
+    if (ms > limit) slow.push(`${JSON.stringify(unit)} × ${n} : ${ms.toFixed(0)} ms`)
+  }
+  assert.deepEqual(slow, [])
+})
+
+test("heuristique (5e passe) : 320 Ko distillés en moins de 400 ms (tâches, capture d'écran, étapes numérotées)", () => {
+  // Sondes r4-redos/final.mts (F7) et distuniq.mts : 856 ms (tâches) et 1 035 ms (capture d'écran) avant le correctif.
+  const unique = (f: (i: number) => string) => {
+    let s = ""
+    for (let i = 1; s.length < 320_000; i++) s += f(i)
+    return s
+  }
+  const tasks = unique((i) => `- [ ] relancer le client numéro ${i} pour la facture\n`)
+  const stepsText = unique((i) => `${i}. Ouvrir Pennylane et exporter le journal ${i}\n`)
+  const runs: [string, Conversation][] = [
+    ["tâches", conv([{ role: "user", text: "Peux-tu m'aider sur la compta ?" }, { role: "assistant", text: tasks }])],
+    ["tâches (écran)", conv([{ role: "user", text: "Session capturée" }, { role: "assistant", text: tasks }], { id: "screenpipe:1", tool: "chatgpt", app: "Google Chrome" })],
+    ["étapes (écran)", conv([{ role: "user", text: "Session capturée" }, { role: "assistant", text: stepsText }], { id: "screenpipe:2", tool: "chatgpt", app: "Google Chrome" })],
+  ]
+  const slow: string[] = []
+  for (const [name, c] of runs) {
+    const ms = bestMs(() => distillHeuristic(c, DEFAULT_ZONES))
+    if (ms > 400) slow.push(`${name} : ${ms.toFixed(0)} ms`)
+  }
+  assert.deepEqual(slow, [])
+  // Le résultat est le même qu'avant l'arrêt anticipé : six items au plus, les premiers trouvés.
+  const items = distillHeuristic(runs[0][1], DEFAULT_ZONES)
+  assert.equal(items.length, 6)
+  assert.deepEqual(items.map((i) => i.kind), ["fact", "task", "task", "task", "task", "task"])
+})
+
+test("verbatimWindows (5e passe) : l'index par empreinte répond comme un Set des fenêtres", () => {
+  let seed = 11
+  const rnd = (n: number) => (seed = (seed * 1103515245 + 12345) % 2147483648) % n
+  const alphabet = ["a", "b", " ", "\n", "é", "ab", "  "]
+  for (let trial = 0; trial < 60; trial++) {
+    const max = [3, 6, 20][trial % 3]
+    const texts = Array.from({ length: 1 + rnd(3) }, () => Array.from({ length: rnd(120) }, () => alphabet[rnd(alphabet.length)]).join(""))
+    const expected = new Set<string>()
+    for (const t of texts) {
+      const s = t.replace(/\s+/g, " ").trim()
+      for (let i = 0; i + max < s.length; i++) expected.add(s.slice(i, i + max + 1))
+    }
+    const index = verbatimWindows(texts, max)
+    assert.equal(index.size === 0, expected.size === 0)
+    for (const w of expected) assert.ok(index.has(w), JSON.stringify(w))
+    // Fenêtres absentes, dont celles qui enjambent deux textes.
+    const joined = texts.map((t) => t.replace(/\s+/g, " ").trim()).join(" ")
+    for (let i = 0; i + max < joined.length; i++) {
+      const w = joined.slice(i, i + max + 1)
+      assert.equal(index.has(w), expected.has(w), JSON.stringify(w))
+    }
+  }
+})
+
+test("procédure (5e passe) : « Étape N/M : », une étape par ligne, sans reprendre le format tapé par l'employé", () => {
+  // Sonde r4-verify-core/ocr.mts, cas B : l'employé tape « Étape N : … », l'assistant reprend « N. … ». Réécrites
+  // « Étape N : … », les étapes recopiaient la demande et le garde-fou coupait la procédure après 1,5 étape.
+  const steps = ["Ouvre Pennylane et va dans Banque.", "Sélectionne le compte Qonto pro.", "Filtre les transactions de septembre.", "Associe chaque transaction à sa facture.", "Vérifie le solde avec le relevé."]
+  const typed = `Voici ma procédure, reformule-la :\n${steps.map((s, i) => `Étape ${i + 1} : ${s}`).join("\n")}`
+  const echoed = `Voici ta procédure :\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+  const b = distillHeuristic(conv([{ role: "user", text: typed }, { role: "assistant", text: echoed }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
+  assert.equal(
+    b?.body,
+    "Étape 1/5 : Ouvre Pennylane et va dans Banque.\nÉtape 2/5 : Sélectionne le compte Qonto pro.\nÉtape 3/5 : Filtre les transactions de septembre.\nÉtape 4/5 : Associe chaque transaction à sa facture.\nÉtape 5/5 : Vérifie le solde avec le relevé.",
+  )
+
+  // Cas C : de longues étapes tapées puis reprises. Chaque étape est raccourcie, et reste sur sa ligne.
+  const long = [
+    "1. Ouvre Pennylane, va dans le menu Banque puis sélectionne le compte Qonto de la boulangerie pour le mois de septembre.",
+    "2. Filtre les transactions non rapprochées, puis associe chacune à sa facture fournisseur ou client correspondante.",
+    "3. Pour chaque transaction sans justificatif, crée une demande de pièce et relance le fournisseur par mail le jour même.",
+    "4. Vérifie que le solde affiché dans Pennylane correspond exactement au relevé Qonto de fin de mois, sinon note l'écart.",
+  ].join("\n")
+  const expected =
+    "Étape 1/4 : Ouvre Pennylane, va dans le menu Banque puis sélectionne le compte Qonto de la…\n" +
+    "Étape 2/4 : Filtre les transactions non rapprochées, puis associe chacune à sa facture fou…\n" +
+    "Étape 3/4 : Pour chaque transaction sans justificatif, crée une demande de pièce et relanc…\n" +
+    "Étape 4/4 : Vérifie que le solde affiché dans Pennylane correspond exactement au relevé Qo…"
+  const c = distillHeuristic(conv([{ role: "user", text: `Reformule ma procédure :\n${long}` }, { role: "assistant", text: `D'accord :\n${long}` }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
+  assert.equal(c?.body, expected)
+  assert.ok(longestCommon(long.replace(/\s+/g, " "), (c?.body ?? "").replace(/\s+/g, " ")) <= MAX_PROMPT_VERBATIM)
+  // Directement : une coupe qui enjambe la fin d'une étape garde le retour à la ligne (avant : « …de la… Étape 2/4 : … »).
+  const field = long.split("\n").map((l, i) => `Étape ${i + 1}/4 : ${l.replace(/^\d+\. /, "")}`).join("\n")
+  assert.equal(clipVerbatim(field, verbatimWindows([long], MAX_PROMPT_VERBATIM), MAX_PROMPT_VERBATIM), expected)
+
+  // Une étape qui se nomme déjà n'est pas renumérotée (avant : « Étape 1 : Étape 1 du runbook »).
+  const runbook = "Voici :\n1. Étape 1 du runbook : vérifier les logs\n2. Étape 2 du runbook : redémarrer le service\n3. Étape 3 du runbook : prévenir l'équipe"
+  const r = distillHeuristic(conv([{ role: "user", text: "Rappelle-moi le runbook de redémarrage" }, { role: "assistant", text: runbook }]), DEFAULT_ZONES).find((i) => i.kind === "procedure")
+  assert.equal(r?.body, "Étape 1 du runbook : vérifier les logs\nÉtape 2 du runbook : redémarrer le service\nÉtape 3 du runbook : prévenir l'équipe")
 })

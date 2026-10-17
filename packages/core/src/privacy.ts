@@ -82,8 +82,8 @@ const SENSITIVE: RegExp[] = [
   /\b(?:arret maladie|arret de travail|burn-?out|depression|maladie|malade|hospitalise|hospitalisee|hospitalisation|cancer|diabete|fievre|grossesse|mes regles)\b/g,
   // juridique perso
   /\b(?:mon avocat|mon avocate|ma contravention|mon amende|retrait de points|mon permis de conduire)\b/g,
-  // finances perso (« mon compte bancaire pro » est de la compta)
-  new RegExp(String.raw`\b(?:mon compte (?:courant|cheques?|epargne|${BANKS.map(escapeRe).join("|")})|mon compte bancaire(?! (?:pro|professionnel|d'entreprise|de l'entreprise|de la societe))|ma banque|mon conseiller (?:bancaire|clientele)|ma carte (?:bancaire|bleue)|mon code d'acces|mon numero client|mon espace client|mon releve|mes releves|mon loyer|mon proprio|mon proprietaire|mon bail(?! (?:commercial|professionnel))|ma mutuelle|mes lunettes)\b`, "g"),
+  // finances perso (« mon compte bancaire pro », « mon compte BNP pro », « mon compte courant d'associé » sont de la compta)
+  new RegExp(String.raw`\b(?:mon compte (?:courant(?! d'associe)|cheques?|epargne|bancaire|${BANKS.map(escapeRe).join("|")})(?! (?:pro|professionnel|d'entreprise|de l'entreprise|de la societe)\b)|ma banque|mon conseiller (?:bancaire|clientele)|ma carte (?:bancaire|bleue)|mon code d'acces|mon numero client|mon espace client|mon releve|mes releves|mon loyer|mon proprio|mon proprietaire|mon bail(?! (?:commercial|professionnel))|ma mutuelle|mes lunettes)\b`, "g"),
 ]
 
 /** Vocabulaire de travail : il faut au moins deux points (un de plus par signal faible au-delà du premier). */
@@ -93,29 +93,41 @@ const WORK_HINTS = [
   "repo", "commit", "branche", "merge", "migration", "sql", "database", "base de donnees", "ticket", "tickets", "sprint",
   "roadmap", "spec", "specs", "maquette", "backend", "frontend", "script", "fonction", "function", "typescript", "javascript",
   "python", "react", "docker", "integration", "integrer", "bot", "prospect", "prospects", "crm", "tresorerie", "compta", "tva",
-  "urssaf", "paie", "recrutement", "composant", "component", "business", "entreprise", "equipe", "reunion",
+  "recrutement", "composant", "component", "business", "equipe", "reunion",
   // RH et paie
-  "salarie", "salaries", "salariee", "salariees", "employe", "employes", "collaborateur", "collaborateurs", "collaboratrice",
+  "employe", "employes", "collaborateur", "collaborateurs", "collaboratrice",
   "rh", "dsn", "ijss", "subrogation", "payfit", "silae", "prevoyance", "process", "procedure", "handbook", "planning",
   // compta et société
-  "pennylane", "qonto", "rapprochement", "comptable", "comptabilite", "bilan", "previsionnel", "cloture", "ecart", "ecarts", "fournisseur",
-  "fournisseurs", "associe", "associes", "fondateur", "fondatrice", "statuts", "gerant", "gerante", "societe", "commande",
-  "commandes", "stock", "marge", "livraison", "livraisons",
+  "comptable", "comptabilite", "bilan", "previsionnel", "cloture", "ecart", "ecarts", "fondateur", "fondatrice", "statuts",
+  "gerant", "gerante", "commande", "commandes", "stock", "marge", "livraison", "livraisons",
   // marketing et ventes
   "campagne", "campagnes", "ads", "marketing", "audience", "abonnes", "lookalike", "visuels", "carrousel", "seo", "analytics",
   "pixel", "lancement", "produit", "produits", "vente", "ventes", "site", "newsletter", "statistiques", "kpi",
 ]
 const WORK_HINTS_RE = wordsRe(WORK_HINTS)
-/** Tournures nettement professionnelles : deux points chacune. */
+/**
+ * Mots de la gestion d'entreprise qu'une conversation privée emploie aussi (« mon fournisseur d'électricité », « un stage en
+ * entreprise », « rapprochement familial ») : un point chacun, comme WORK_HINTS. Pas le verbe (« je paie », « il ne paie
+ * plus »), pas la Société Générale, ni son propre emploi ou sa propre paie (« mon entreprise », « ma paie », « ma société »).
+ */
+const WORK_GENERIC_RE =
+  /\b(?:(?<!\b(?:je|tu|il|elle|on|ils|elles|qui|ne|ma|ta) )paie|entreprise|societe(?! generale)|salariee?s?|fournisseurs?|associes?|rapprochement)\b/g
+/**
+ * Signaux nettement professionnels : deux points chacun. Des tournures (« notre boutique », « bulletin de paie », « paie
+ * fournisseur », « retenue sur sa paie », « compte BNP pro », « compte courant d'associé », « rapprochement bancaire ») et les
+ * outils de gestion d'entreprise (Pennylane, Qonto, URSSAF). « paie fournisseur », « virement fournisseur » et
+ * « rapprochement bancaire » ne consomment que leur premier mot : « fournisseur » compte en plus comme mot de travail.
+ */
 const WORK_STRONG_RE =
-  /\b(?:notre (?:chaine|page|compte|site|boutique|marque|equipe|entreprise|societe|boite|app|application|produit|offre|catalogue|newsletter|client|cliente|clientele)|nos (?:clients|clientes|abonnes|ventes|produits|equipes|salaries|commandes|fournisseurs|boutiques|magasins)|canal de vente|pacte d'associes|retenue a la source|(?:fiches?|bulletins?) de paie|contrat de travail|convention collective|saisie sur salaire|medecin du travail|visite (?:medicale|d'embauche)|(?:facebook|google|meta|instagram|linkedin|tiktok) ads|chiffre d'affaires|compte pro)\b/g
+  /\b(?:notre (?:chaine|page|compte|site|boutique|marque|equipe|entreprise|societe|boite|app|application|produit|offre|catalogue|newsletter|client|cliente|clientele)|nos (?:clients|clientes|abonnes|ventes|produits|equipes|salaries|commandes|fournisseurs|boutiques|magasins)|canal de vente|pacte d'associes|retenue a la source|(?:fiches?|bulletins?) de paie|contrat de travail|convention collective|(?:retenue|saisie)s? sur (?:la |le |sa |son )?(?:paie|salaire)|medecin du travail|visite (?:medicale|d'embauche)|(?:facebook|google|meta|instagram|linkedin|tiktok) ads|chiffre d'affaires|pennylane|qonto|urssaf|(?:paie|virement)s?(?= fournisseurs?\b)|rapprochements?(?= bancaires?\b)|compte courant d'associe|compte (?:(?:bancaire|courant|boursorama|boursobank|fortuneo|banque populaire|credit agricole|credit mutuel|caisse d'epargne|societe generale|bnp paribas|bnp|lcl|banque postale|hello bank|revolut|n26|qonto|shine) )?(?:pro|professionnel))\b/g
 /** Tournures bancaires (« code client », « numéro client ») : ce ne sont pas des mots de travail. */
 const BANK_IDIOMS_RE = /\b(?:code (?:d'acces|client|confidentiel|pin|secret)|(?:numero|espace|identifiant) client)\b/g
 
 function workScore(t: string): number {
   const s = t.replace(BANK_IDIOMS_RE, " ")
   const strong = new Set(matchesAll(WORK_STRONG_RE, s)).size
-  return strong * 2 + new Set(matchesAll(WORK_HINTS_RE, s.replace(WORK_STRONG_RE, " "))).size
+  const rest = s.replace(WORK_STRONG_RE, " ")
+  return strong * 2 + new Set([...matchesAll(WORK_HINTS_RE, rest), ...matchesAll(WORK_GENERIC_RE, rest)]).size
 }
 
 /** Pages web qui ne sont pas des sessions IA, même si leur titre cite Claude ou Gemini. */
@@ -153,6 +165,8 @@ function hostOf(url: string): string {
   }
 }
 
+const TITLE_MAX = 300
+
 /** Onglet de navigateur : accepté seulement s'il s'agit visiblement d'un assistant IA (domaine, ou titre « … - Claude »). */
 export function isAiBrowserWindow(windowName: string | undefined, browserUrl?: string): boolean {
   if (browserUrl) {
@@ -161,8 +175,11 @@ export function isAiBrowserWindow(windowName: string | undefined, browserUrl?: s
   }
   const w = normalize(windowName ?? "").trim()
   if (!w || NON_AI_PAGE_RE.test(w)) return false
+  // Un vrai titre d'onglet est court : on ne découpe que ses 300 premiers caractères (la découpe sur « \s+ - \s+ » relit
+  // une longue suite d'espaces depuis chacune de ses positions).
   const segments = w
     .replace(BROWSER_SUFFIX_RE, "")
+    .slice(0, TITLE_MAX)
     .split(/\s+[-–—|·:]\s+/)
     .map((s) => s.trim())
     .filter(Boolean)
@@ -344,8 +361,19 @@ function strongish(v: string): boolean {
  * ni « _ » ou « - » (« created_at », « back-office »).
  */
 function secretLike(v: string): boolean {
-  const s = v.replace(/[!?.,;:]+$/, "")
+  const s = v.slice(0, trailingRunStart(v, "!?.,;:"))
   return s.length >= 6 && /[A-Za-z]/.test(s) && /[\d!@#$%^&*+=?~]/.test(s)
+}
+
+/**
+ * Début de la suite de caractères de `chars` qui termine `v` (v.length s'il n'y en a pas). Une boucle depuis la fin, pas une
+ * regex ancrée sur « $ » : sur une longue suite de « . » ou de « ! » qui ne termine pas la valeur, la regex la reparcourait
+ * depuis chaque position (coût quadratique).
+ */
+function trailingRunStart(v: string, chars: string): number {
+  let i = v.length
+  while (i > 0 && chars.includes(v[i - 1])) i--
+  return i
 }
 
 /** « incorrect! », « oublié? » : le « ! » ou le « ? » final d'un mot en minuscules ponctue la phrase. */
@@ -401,8 +429,8 @@ const URL_SECRET_PARAMS = new Set([
 
 /** Sépare la ponctuation finale d'une valeur non entre guillemets (« mdp: azerty12, puis… »). */
 function splitTrailing(v: string): [string, string] {
-  const m = v.match(/^(.*?)([,;:.)\]}]+)$/)
-  return m && m[1].length >= 3 ? [m[1], m[2]] : [v, ""]
+  const i = trailingRunStart(v, ",;:.)]}")
+  return i < v.length && i >= 3 && !/[\n\r\u2028\u2029]/.test(v) ? [v.slice(0, i), v.slice(i)] : [v, ""]
 }
 
 const SECRET_CONTEXT_RE = /(?:aws|secret|secr[eè]te?|access[ _-]?key|cl[ée]|credential|password|mot de passe)/i
@@ -428,22 +456,45 @@ const NEXT_PAIR_RE = /[&,;}](?=\s*["']?[A-Za-z_][\w.\-]*["']?\s*[:=])/
 
 type KvValue = { raw: string; inner: string; open: string; close: string }
 
-function readValue(input: string, at: number): KvValue | null {
+/** Longueur maximale d'une valeur (entre guillemets ou nue) : un jeton de session AWS en fait ~1 000. */
+const KV_VALUE_MAX = 2000
+
+/**
+ * Dernière recherche de guillemet fermant restée vaine, par caractère fermant : jusqu'où elle a lu (`next`, la position
+ * qu'elle aurait examinée ensuite) et pourquoi elle s'est arrêtée. Une recherche qui part plus loin, avant `next`, examine
+ * exactement les mêmes positions (le guillemet ouvrant n'est pas une barre oblique inverse, donc les échappements restent
+ * alignés) : elle reprend à `next` au lieu de relire. Sans cela, « password: « » répété relit 2 000 caractères par clé.
+ */
+type QuoteMiss = { from: number; next: number; limited: boolean }
+
+function readValue(input: string, at: number, misses: Map<string, QuoteMiss> = new Map()): KvValue | null {
   const open = input[at] ?? ""
   const close = QUOTES[open]
   if (close) {
-    for (let i = at + 1; i < input.length && i < at + 2000; i++) {
+    const limit = Math.min(input.length, at + KV_VALUE_MAX)
+    let i = at + 1
+    const miss = misses.get(close)
+    if (miss && miss.from < at && at < miss.next) {
+      // Même lecture que la recherche précédente jusqu'à `next` : rien à y trouver.
+      if (!miss.limited) return null
+      i = miss.next
+    }
+    for (; i < limit; i++) {
       const c = input[i]
-      if (c === "\n") break
+      if (c === "\n") {
+        misses.set(close, { from: at, next: i, limited: false })
+        return null
+      }
       if (c === "\\") {
         i++
         continue
       }
       if (c === close) return { raw: input.slice(at, i + 1), inner: input.slice(at + 1, i), open, close }
     }
+    misses.set(close, { from: at, next: i, limited: i < input.length })
     return null
   }
-  const m = /^[^\s"'`<>]+/.exec(input.slice(at, at + 2000))
+  const m = /^[^\s"'`<>]+/.exec(input.slice(at, at + KV_VALUE_MAX))
   if (!m) return null
   let raw = m[0]
   const cut = NEXT_PAIR_RE.exec(raw)
@@ -466,12 +517,13 @@ function scanKeyValues(input: string): { text: string; count: number } {
   let out = ""
   let last = 0
   let count = 0
+  const misses = new Map<string, QuoteMiss>()
   KV_RE.lastIndex = 0
   for (let m = KV_RE.exec(input); m; m = KV_RE.exec(input)) {
     // Clé non secrète : on reprend juste après le séparateur, sans consommer la valeur (qui peut contenir la paire suivante).
     if (!isSecretKey(m[2])) continue
     const at = m.index + m[0].length
-    const v = readValue(input, at)
+    const v = readValue(input, at, misses)
     if (!v) continue
     const masked = maskKvValue(input, at, v)
     if (masked === null) continue
@@ -539,6 +591,82 @@ const CLI_PASSWORD_RES = [
   cliRe("sqlcmd", String.raw`-P[ \t]*`),
 ]
 
+// --- Secrets en toutes lettres (« le mot de passe est : … ») ---------------------------------------------------------
+// Toutes les répétitions sont bornées, deux répétitions qui acceptent le même caractère ne se suivent jamais (un mot ou un
+// caractère obligatoire les sépare), et les branches d'une même répétition sont exclusives : le coût reste linéaire, même
+// sur 32 Ko d'espaces, de retours à la ligne, d'espaces insécables ou d'abréviations (« cf.cf.cf. ») après le mot-clé.
+
+/** Espace horizontale : toute espace sauf la fin de ligne (tabulation, espace insécable, espace fine avant « : »…). */
+const H = String.raw`[^\S\r\n]`
+/** Blancs, fins de ligne comprises (« mot de passe\n: … », « est :␣␣␣…␣X ») : une seule répétition par intervalle. */
+const WS = String.raw`\s{0,64}`
+/**
+ * Un point entre le mot-clé et le séparateur : à l'intérieur d'un nom de domaine ou d'une version (« pennylane.com »,
+ * « v2.1 »), ou après une abréviation (« cf. doc »). Une seule branche (l'assertion ne crée pas de choix) : pas de retour
+ * arrière exponentiel sur « cf.cf.cf.… ».
+ */
+const GAP_DOT = String.raw`\.(?=[^\s.!?:=]|(?<=\b(?:cf|ex|env|resp|r[ée]f|etc|vs)\.))`
+/**
+ * Entre le mot-clé et le séparateur (`n` caractères au plus, le plus court d'abord) : ni fin de ligne ni ponctuation de
+ * phrase, et il se termine sur un caractère visible, si bien que les blancs qui suivent (WS) ne recouvrent jamais les siens.
+ */
+const kwGap = (n: number) => String.raw`(?:(?:[^\n.!?:=]|${GAP_DOT}){0,${n - 1}}?(?:[^\s.!?:=]|${GAP_DOT}))??`
+/** « : » (pas celui d'une URL, « https:// »), « = », « => », une flèche. */
+const SEP_SYM = String.raw`(?:=>|:(?!\/\/)|=|[-—–]{1,3}>|→)`
+const SEP_VERB = String.raw`\b(?:est|c['’]est|sera|vaut|is|was)\b`
+/** Fin de mot (lettres accentuées, apostrophe et trait d'union compris) : « donc » mais pas « Donc2026 » ni « donc-là ». */
+const WORD_END = String.raw`(?![\wà-ÿ'’\-])`
+/** Adverbes entre le verbe et la valeur, sans « : » (« est donc Fournil2026 », « is still … »). */
+const ADVERBS = String.raw`donc|bien|maintenant|d[ée]sormais|toujours|encore|actuellement|alors|aussi|now|still|currently|also`
+/**
+ * Mots de remplissage entre le verbe et « : » : une liste fermée de mots outils, d'adverbes et de mots qu'un mot de passe
+ * n'est pas (« est donc : », « est le suivant : », « est celui-ci : », « est toujours le même : », « is as follows: »).
+ * Pas n'importe quel mot : « est SoleilVert : ne le partage pas » a pour valeur SoleilVert, pas « ne ».
+ */
+const FILLER = String.raw`(?:${ADVERBS}|[àa]${H}{1,3}pr[ée]sent|l[ae]|les|suivante?s?|m[êe]mes?|celui-ci|celle-ci|ceux-ci|celles-ci|celui-l[àa]|celle-l[àa]|ceci|cela|[çc]a|simple|[a-zà-ÿ]{2,20}ment|tout|juste|enfin|comme|suit|en|fait|effet|par|ailleurs|pour|l['’]instant|priori|entendu|bon|bonne|nouveau|nouvelle|celui|celle|the|same|following|as|follows|below|here|just|simply|this|one|set|to|new)${WORD_END}`
+/**
+ * Séparateur entre le mot-clé et la valeur (un groupe, plus un groupe interne pour les adverbes), précédé de blancs :
+ * - « : », « = », « => » ou une flèche ;
+ * - un verbe, puis 0 à 4 mots de remplissage et « : » (« est : », « est donc : », « est le suivant : ») ;
+ * - un verbe, éventuellement suivi d'un ou deux adverbes, puis la valeur (« est Fournil2026 », « est donc Fournil2026 »).
+ * Chaque mot est suivi de ses propres blancs : deux répétitions de blancs ne se touchent jamais.
+ */
+const SEP = String.raw`(${WS}(?:${SEP_SYM}${WS}|${SEP_VERB}(?:\s{0,16}(?:${FILLER}\s{0,16}){0,4}${SEP_SYM}${WS}|\s{1,64}((?:(?:${ADVERBS})${WORD_END}\s{1,64}){1,2})?)))`
+const PASSWORD_KW = String.raw`mots? de passe|mdp|password|passwd|passwort|pass ?phrase|code (?:secret|d'acc[eè]s|wi-?fi)`
+const SECRET_KW = String.raw`cl[ée]s? (?:d['’]?)?api|cl[ée] secr[èe]te|api[ -]?key|secret key|access key|jeton|token|secret`
+/** Valeur entre guillemets (ouvrant, contenu, fermant : le contenu garde ses espaces, cf. quotedParts) ou valeur nue. */
+const QUOTED_OR_BARE = String.raw`(?:([«“"'\`])((?:${H}{0,3}\r?\n)?[^«»“”"'\`\n]{1,86}(?:\r?\n${H}{0,3})?)([»”"'\`])|([^\s"'»”\`]{1,200}))`
+
+/** Sépare d'un contenu entre guillemets ses blancs de bord (5 au plus de chaque côté, retour à la ligne compris) : « «  Fournil 2026  » ». */
+function quotedParts(inner: string): [string, string, string] {
+  let a = 0
+  while (a < 5 && a < inner.length - 1 && /\s/.test(inner[a])) a++
+  let b = inner.length
+  while (inner.length - b < 5 && b - 1 > a && /\s/.test(inner[b - 1])) b--
+  return [inner.slice(0, a), inner.slice(a, b), inner.slice(b)]
+}
+
+/** « est obligatoire », « est incorrect » : un mot courant n'est pas un mot de passe ; « soleilvert » ou « Azerty123! » si. */
+function looksPassword(value: string): boolean {
+  return strongish(value) || /^\d{4,8}$/.test(value) || (/^[a-z]{10,}$/.test(value) && !WORD_SUFFIX_RE.test(value))
+}
+
+/** Numéro de version (« v2.3.1-beta4 », « 1.2.0 ») : pas un secret, même annoncé (« le token est maintenant v2.3.1-beta4 »). */
+const VERSION_RE = /^v?\d{1,4}(?:\.\d{1,4}){1,3}(?:-[0-9A-Za-z.]{1,20})?$/i
+
+/**
+ * Où trouver le secret, pas le secret : une URL (« est ici : https://vault… », les identifiants dans une URL ont leur règle)
+ * ou un chemin (« est toujours : config/db-prod.env », « is here: projects/fournil/secrets/db »).
+ */
+function looksLocator(value: string): boolean {
+  if (/^[a-z][a-z0-9+.\-]{1,15}:\/\//i.test(value)) return true
+  // Un chemin : des segments courts, sans « + » ni « = », dont au moins un mot en minuscules (« config », « secrets »).
+  // Un jeton base64 a aussi des « / », mais ses segments sont longs et mélangés (« iNzzXQ…/4Wneq… »).
+  const parts = value.split("/")
+  if (parts.length < 2 || parts.some((p) => !/^[\w.\-]{1,40}$/.test(p))) return false
+  return (parts.length > 2 || /\.[a-z]{1,5}$/i.test(value)) && parts.some((p) => /^[a-z][a-z_.\-]{2,}$/.test(p))
+}
+
 const RULES: (Rule | ScanRule)[] = [
   { name: "private_key", scan: scanPrivateKeys },
   {
@@ -567,8 +695,10 @@ const RULES: (Rule | ScanRule)[] = [
   { name: "saas_token", re: /\bpat-(?:na|eu)\d-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, replace: SECRET },
   { name: "telegram_token", re: /\b\d{8,10}:AA[A-Za-z0-9_\-]{33}\b/g, replace: SECRET },
   {
+    // En-tête « eyJ… », charge utile, signature. Seulement au début d'une suite de caractères base64url (pas à chaque
+    // « -eyJ » d'une longue suite sans point : linéaire), segments bornés.
     name: "jwt",
-    re: /\beyJ[A-Za-z0-9_\-]{10,}\.(?:eyJ[A-Za-z0-9_\-]{5,}\.?[A-Za-z0-9_\-]*|[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,})/g,
+    re: /(?<![A-Za-z0-9_\-])eyJ[A-Za-z0-9_\-]{10,4096}\.(?:eyJ[A-Za-z0-9_\-]{5,16384}(?:\.[A-Za-z0-9_\-]{0,4096})?|[A-Za-z0-9_\-]{10,16384}\.[A-Za-z0-9_\-]{10,4096})/g,
     replace: "[jeton masqué]",
   },
   // Jeton personnel du cerveau (cb_ + 32 caractères base64url) ; « cb_on_message_handler » est un identifiant.
@@ -650,7 +780,7 @@ const RULES: (Rule | ScanRule)[] = [
   {
     // « identifiants : admin / Fournil2026! », « login admin / S3cret! »
     name: "credentials_pair",
-    re: /\b(identifiants?|credentials|logins?|acc[eè]s|user\s*\/\s*pass(?:word)?)\b(\s*[:=]\s*|\s+)([^\s/:,;]{1,64})(\s*\/\s*)([^\s"',;]+)/gi,
+    re: /\b(identifiants?|credentials|logins?|acc[eè]s|user\s{0,8}\/\s{0,8}pass(?:word)?)\b(\s{0,64}[:=]\s{0,64}|\s{1,64})([^\s/:,;]{1,64})(\s{0,64}\/\s{0,64})([^\s"',;]{1,200})/gi,
     replace: (m, g) => {
       const [value, tail] = splitTrailing(g[4] ?? "")
       // un chemin (« acces/admin/index.js ») n'est pas une paire identifiant / mot de passe
@@ -660,18 +790,34 @@ const RULES: (Rule | ScanRule)[] = [
     },
   },
   {
-    // En toutes lettres : « le mot de passe ssh root est Azerty123! », « mdp : … », « the password is … », « code PIN : 4589 ».
+    // En toutes lettres : « le mot de passe ssh root est Azerty123! », « mdp : … », « the password is … »,
+    // « le mot de passe est donc : … », « le mot de passe de pennylane.com : … », « est le suivant : … ».
     name: "password_text",
-    // Séparateur : « : », « = », une flèche, ou un verbe (« est », « c'est », « is »), éventuellement suivi de « : » (« est : »).
-    re: /\b(mots? de passe|mdp|password|passwd|passwort|pass ?phrase|(?:code )?pin|code (?:secret|d'acc[eè]s|wi-?fi))\b([^\n.!?:=]{0,60}?)(\s*(?:\b(?:est|c['’]est|sera|vaut|is|was)\b\s*(?:=>|[:=]|[-—–]+>|→)?|=>|[:=]|[-—–]+>|→)\s*)(?:([«“"'`]\s*)([^«»“”"'`\n]{1,80}?)(\s*[»”"'`])|([^\s"'»”`]+))/gi,
+    re: new RegExp(String.raw`\b(${PASSWORD_KW})\b(${kwGap(60)})${SEP}${QUOTED_OR_BARE}`, "gi"),
     replace: (m, g) => {
-      const [kw, mid, sep, open, quoted, close, bare] = g
-      if (quoted !== undefined) return plausibleSecret(quoted, true) ? `${kw}${mid}${sep}${open}${MASK}${close}` : null
+      const [kw, mid, sep, adverbs, open, inner, close, bare] = g
+      if (inner !== undefined) {
+        const [lead, quoted, trail] = quotedParts(inner)
+        return plausibleSecret(quoted, true) ? `${kw}${mid}${sep}${open}${lead}${MASK}${trail}${close}` : null
+      }
       const [value, tail] = sentencePunct(...splitTrailing(bare ?? ""))
-      // « est obligatoire », « est incorrect » : un mot courant n'est pas un mot de passe ; « soleilvert » ou « Azerty123! » si.
-      const looksPassword = strongish(value) || /^\d{4,8}$/.test(value) || (/^[a-z]{10,}$/.test(value) && !WORD_SUFFIX_RE.test(value))
-      return plausibleSecret(value, false) && looksPassword ? `${kw}${mid}${sep}${MASK}${tail}` : null
+      // Après un adverbe sans « : » (« est donc … »), la valeur doit ressembler à un secret (« est donc obligatoire » reste lisible).
+      const shaped = adverbs ? secretLike(value) : looksPassword(value)
+      return plausibleSecret(value, false) && shaped && !VERSION_RE.test(value) && !looksLocator(value) ? `${kw}${mid}${sep}${MASK}${tail}` : null
     },
+  },
+  {
+    // Code PIN : « code PIN : 4589 », « PIN = "4589" », « Mon code PIN est « 4589 » », « mon pin c'est 4589 », « Pin : 4589 ».
+    // « PIN » en capitales, « code pin », un déterminant + « pin », ou « Pin » / « pin » collé au séparateur, puis 4 à 8
+    // chiffres : « Pin the react version: react@18.3.1 », « We pin dependencies: … » restent lisibles, comme une date
+    // (« PIN: 2024-10-17 »).
+    name: "password_text",
+    re: new RegExp(
+      String.raw`\b((?:[Cc]ode|CODE)\s{1,3}(?:[Pp]in|PIN)|PIN|(?:[Mm][oa]n|[Tt][oa]n|[Ss][oa]n|[Ll]e|[Vv]otre|[Nn]otre)${H}{1,3}[Pp]in|[Pp]in(?=${H}{0,3}[:=]))\b(${kwGap(30)})${SEP}` +
+        String.raw`(?:([«“"'\`]${H}{0,3})(\d{4,8})(${H}{0,3}[»”"'\`])|(\d{4,8})(?!\w|[-/.:]\d))`,
+      "g",
+    ),
+    replace: (m, g) => (g[4] !== undefined ? `${g[0]}${g[1]}${g[2]}${g[4]}${MASK}${g[6]}` : `${g[0]}${g[1]}${g[2]}${MASK}`),
   },
   {
     // Sans séparateur : « avec le mot de passe Fournil2026! », « MDP Fournil2026 », « mot de passe root S3cret!42 ».
@@ -679,7 +825,7 @@ const RULES: (Rule | ScanRule)[] = [
     // qualificatifs (« root », « wifi », « provisoire ») ; « du compte Office365 », « sur Windows11 », « est stocké dans
     // 1Password », « oublié ? », « modifié ! » restent de la prose.
     name: "password_text",
-    re: /\b(mots? de passe|mdp|password|passwd|passwort)((?:[ \t]+[a-zà-ÿ'’\-]{1,15}){0,2}?[ \t]+)(?!(?:sha|md|bcrypt|argon|scrypt|pbkdf|aes|rsa|hs|rs|es|utf|iso|rfc|tls|ssl|wpa|wep|v)[-_]?\d)(?=[^\s"'»”]*(?:\d|[!@#$%^&*+=?~][^\s"'»”,.;:!?)\]]))(?=[^\s"'»”]*[A-Za-z])([^\s"'»”]{6,})/gi,
+    re: /\b(mots? de passe|mdp|password|passwd|passwort)([ \t]{1,64}(?:[a-zà-ÿ'’\-]{1,15}[ \t]{1,64}){0,2}?)(?!(?:sha|md|bcrypt|argon|scrypt|pbkdf|aes|rsa|hs|rs|es|utf|iso|rfc|tls|ssl|wpa|wep|v)[-_]?\d)(?=[^\s"'»”]{0,200}(?:\d|[!@#$%^&*+=?~][^\s"'»”,.;:!?)\]]))(?=[^\s"'»”]{0,200}[A-Za-z])([^\s"'»”]{6,200})/gi,
     replace: (m, g) => {
       const [kw, mid, raw] = g
       const words = (mid ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean)
@@ -689,12 +835,14 @@ const RULES: (Rule | ScanRule)[] = [
     },
   },
   {
+    // « La clé API est : … », « le token est le suivant : … », « the secret is … » : une valeur longue, lettres et chiffres.
     name: "secret_text",
-    re: /\b(cl[ée]s? (?:d'?)?api|cl[ée] secr[èe]te|api[ -]?key|secret key|access key|jeton|token|secret)\b([^\n.!?:=]{0,30}?)(\s*(?:\b(?:est|c['’]est|vaut|is)\b\s*(?:=>|[:=]|[-—–]+>|→)?|=>|[:=]|[-—–]+>|→)\s*)(["'«“`]?\s*)([^\s"'»”`]+)/gi,
+    re: new RegExp(String.raw`\b(${SECRET_KW})\b(${kwGap(30)})${SEP}(["'«“\`]\s{0,3})?([^\s"'»”\`]{1,200})`, "gi"),
     replace: (m, g) => {
-      const [value, tail] = splitTrailing(g[4] ?? "")
-      return value.length >= 12 && /\d/.test(value) && /[A-Za-z]/.test(value) && plausibleSecret(value, false)
-        ? `${g[0]}${g[1]}${g[2]}${g[3]}${MASK}${tail}`
+      const [kw, mid, sep, , open = "", raw = ""] = g
+      const [value, tail] = splitTrailing(raw)
+      return value.length >= 12 && /\d/.test(value) && /[A-Za-z]/.test(value) && plausibleSecret(value, false) && !VERSION_RE.test(value) && !looksLocator(value)
+        ? `${kw}${mid}${sep}${open}${MASK}${tail}`
         : null
     },
   },
@@ -739,6 +887,12 @@ export type RedactOptions = {
 }
 
 /** Masque secrets et données personnelles. Idempotent. */
+/**
+ * Suite d'une valeur plus longue que la borne d'une règle (200 caractères, segments d'un JWT) : collée au masque, elle est
+ * masquée avec lui (« [masqué]M8gaf0Wa… » → « [masqué] »). Un point n'est absorbé qu'à l'intérieur d'un jeton.
+ */
+const MASK_TAIL_RE = /(\[(?:masqué|secret masqué|jeton masqué)\])(?:[A-Za-z0-9+/=_\-]|\.(?=[A-Za-z0-9_\-]))+/g
+
 export function redact(text: string, opts: RedactOptions = {}): RedactionReport {
   const redactions: Record<string, number> = {}
   let out = text
@@ -771,6 +925,7 @@ export function redact(text: string, opts: RedactOptions = {}): RedactionReport 
       return replaced
     })
   }
+  out = out.replace(MASK_TAIL_RE, "$1")
   return { text: out, redactions }
 }
 

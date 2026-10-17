@@ -582,3 +582,337 @@ test("contenu personnel (3e passe) : compte courant et banque perso écartés ; 
   // « chez le médecin » (le sien) reste un sujet de vie privée.
   assert.ok(looksPersonal("J'ai rendez-vous chez le médecin demain, décale ma réunion client"))
 })
+
+// --- Quatrième passe de revue ------------------------------------------------------------------------------------------
+
+test("redact (4e passe) : linéaire sur 32 Ko d'espaces, de retours à la ligne ou d'espaces insécables après chaque mot-clé", () => {
+  // Sondes r3-verify-core/ws.ts et ws2.ts : « le token est » + 2 000 espaces + « » » prenait 5,6 s (trois \s* à la suite).
+  const keywords = [
+    "mot de passe", "Le mot de passe est", "Le mot de passe est donc", "mdp :", "mdp", "password", "the password is", "token",
+    "le token est", "secret", "the secret is", "clé API", "La clé API est :", "jeton", "PIN", "code PIN est", "code pin :",
+  ]
+  const runs = [" ", "\n", "\t", " ", " ", " \n"]
+  const ends = ["", "»", "”", '"', "'", "`"]
+  redact("échauffement : le mot de passe est : x, le token est : y ".repeat(50))
+  const time = (s: string) => {
+    const t0 = performance.now()
+    redact(s)
+    return performance.now() - t0
+  }
+  const slow: string[] = []
+  for (const k of keywords) {
+    for (const w of runs) {
+      for (const e of ends) {
+        const s = k + w.repeat(Math.ceil((32 * 1024 - k.length) / w.length)) + e
+        // Une mesure isolée peut être ralentie par le ramasse-miettes : on ne retient que le meilleur de trois essais.
+        let ms = time(s)
+        for (let i = 0; i < 2 && ms > 50; i++) ms = Math.min(ms, time(s))
+        if (ms > 50) slow.push(`${JSON.stringify(k)} + ${JSON.stringify(w)} × ${s.length} + ${JSON.stringify(e)} : ${ms.toFixed(0)} ms`)
+      }
+    }
+  }
+  assert.deepEqual(slow, [])
+})
+
+// « Pin the react version: react@18.3.1 » : le verbe anglais « pin » n'est pas un code PIN (sondes r3-verify-core/fp4.ts, corpus2.ts).
+const PIN_KEEP = [
+  "Pin the react version: react@18.3.1",
+  "We pin dependencies: lodash@4.17.21",
+  "Pin le message dans Slack : https://fournil.slack.com/archives/C0123",
+  "* **internal:** pin the pnpm version with an integrity hash ([f804366](https://github.com/a/b/commit/f804366))",
+  "pin: true",
+  "Pin it: top of channel",
+  "Le code PIN de la carte Qonto est envoyé par SMS",
+  "Le code PIN est obligatoire",
+  "PIN : GPIO 13",
+]
+const PIN_MASK: [string, string][] = [
+  ["PIN : 4589", "PIN : [masqué]"],
+  ["PIN: 4589", "PIN: [masqué]"],
+  ["Code PIN : 4589", "Code PIN : [masqué]"],
+  ["Mon code PIN est 4589", "Mon code PIN est [masqué]"],
+  ["Le code PIN de la carte est : 4589.", "Le code PIN de la carte est : [masqué]."],
+  ["le code pin = 123456", "le code pin = [masqué]"],
+]
+
+test("redact (4e passe) : « PIN » en capitales ou « code pin », suivi de 4 à 8 chiffres ; le verbe « pin » reste lisible", () => {
+  assert.deepEqual(PIN_KEEP.map((s) => [s, redactText(s)]).filter(([a, b]) => a !== b), [])
+  assert.deepEqual(PIN_MASK.map(([s]) => [s, redactText(s)]).filter(([s, out]) => out !== PIN_MASK.find(([x]) => x === s)?.[1]), [])
+})
+
+// Un ou quelques mots entre le verbe et la valeur, et des points dans un domaine ou une abréviation (sonde r3-verify-core/pwdsep2.ts).
+const PW = j("Fournil", "2026")
+const KEY = j("S3cr3t", "Pass99xyz")
+const MUST_MASK_R4: string[] = [
+  `Le mot de passe est donc : ${PW}`,
+  `Le mot de passe est bien : ${PW}`,
+  `Le mot de passe est maintenant : ${PW}`,
+  `Le nouveau mot de passe est désormais : ${PW}`,
+  `Le mot de passe est le suivant : ${PW}`,
+  `Le mot de passe est la suivante : ${PW}`,
+  `Le mot de passe c'est toujours : ${PW}`,
+  `the password is now: ${PW}`,
+  `The password is still: ${PW}`,
+  `La clé API est la suivante : ${KEY}`,
+  `Le token est le suivant : ${KEY}`,
+  `Le mot de passe est donc ${PW}`,
+  `Le mot de passe est toujours ${PW}`,
+  `the password is still ${PW}`,
+  `Le mot de passe est donc :\n${PW}`,
+  `Bonjour, le mot de passe est donc : « ${PW} »`,
+  `Le mot de passe de pennylane.com : ${PW}`,
+  `mot de passe pour fournil.fr : ${PW}`,
+  `Le mot de passe de app.qonto.com est : ${PW}`,
+  `Le mot de passe (cf. doc) est : ${PW}`,
+  `Le mot de passe v2.1 est : ${PW}`,
+  `Le mot de passe actuel est toujours : ${PW}`,
+  `Le mot de passe est : ${PW}`,
+]
+const MUST_KEEP_R4 = [
+  "Le mot de passe est donc obligatoire",
+  "Le mot de passe est bien stocké dans 1Password",
+  "Le mot de passe est toujours valable 24h",
+  "Le mot de passe est le même que celui de Qonto",
+  "Le mot de passe est trop court : 8 caractères minimum",
+  "Le mot de passe de la doc : voir le coffre",
+  "Mot de passe oublié : https://app.fournil.fr/reset",
+  "Mot de passe changé. Version : v2.3.1",
+  "La clé API est générée côté serveur : voir auth.ts",
+  "Le secret est simple : communiquer tôt avec le client",
+  "- _password_: password string according to the [openApi 3.0.0 specification](https://spec.openapis.org/oas/v3.0.0#data-types)",
+  "le mot de passe est-il correct ?",
+]
+
+test("redact (4e passe) : « est donc : », « est le suivant : », « is still », un domaine ou « cf. » avant le séparateur ; idempotent", () => {
+  const failures: string[] = []
+  for (const input of MUST_MASK_R4) {
+    const r = redact(input)
+    if (r.text.includes(PW) || r.text.includes(KEY)) failures.push(`fuite : ${input} → ${r.text}`)
+    const again = redact(r.text)
+    if (again.text !== r.text || Object.keys(again.redactions).length) failures.push(`non idempotent : ${again.text}`)
+  }
+  assert.deepEqual(failures, [])
+  // La valeur masquée est le secret, pas le mot qui précède « : ».
+  assert.equal(redactText(`Le mot de passe est celui-ci : ${PW}`), "Le mot de passe est celui-ci : [masqué]")
+  assert.equal(redactText(`Le mot de passe est donc : ${PW}`), "Le mot de passe est donc : [masqué]")
+  assert.equal(redactText(`La clé API est la suivante : ${KEY}`), "La clé API est la suivante : [masqué]")
+  assert.equal(redactText(`Le mot de passe de pennylane.com : ${PW}`), "Le mot de passe de pennylane.com : [masqué]")
+  // La prose reste lisible, comme les cas des passes précédentes.
+  assert.deepEqual([...MUST_KEEP_R4, ...MUST_KEEP_R3, ...MUST_KEEP_R2].map((s) => [s, redactText(s)]).filter(([a, b]) => a !== b), [])
+})
+
+// Banque d'entreprise dans une banque traditionnelle (sonde r3-verify-core/pers4.ts) : de la compta, pas de la vie privée.
+const MUST_KEEP_WORK_R4 = [
+  "Fais le rapprochement de mon compte BNP avec Pennylane pour septembre",
+  "Fais le rapprochement de mon compte Crédit Agricole avec Pennylane pour septembre",
+  "Fais le rapprochement de mon compte BNP pro avec Pennylane pour septembre",
+  "Rapproche mon compte LCL professionnel avec les factures dans Pennylane",
+  "Exporte les relevés de mon compte Crédit Agricole pro vers Pennylane",
+  "Le prélèvement URSSAF a été rejeté sur le compte BNP de la boulangerie",
+  "Paie fournisseur : le virement depuis mon compte Crédit Agricole vers la minoterie a été rejeté",
+  "Comment rembourser mon compte courant d'associé ?",
+  "Mon compte courant d'associé est créditeur de 20 000 €, comment le rembourser ?",
+  "Léo a une pension alimentaire à verser : comment faire la retenue sur sa paie ?",
+  "Pension alimentaire : comment appliquer la saisie sur le salaire de Léo ?",
+]
+const MUST_DROP_R4 = [
+  "Comment contester un prélèvement sur mon compte courant à la BNP ?",
+  "J'ai un découvert sur mon compte Crédit Agricole, combien de frais ?",
+  "Revolut a bloqué mon virement, que faire ?",
+  "Ma carte BNP a été refusée au supermarché, comment débloquer le paiement ?",
+  "Je paie mon loyer en retard, comment négocier avec mon proprio ?",
+  "Ma paie n'est pas arrivée sur mon compte Boursorama, que faire ?",
+  "Mon fils est malade, comment prévenir mon entreprise ?",
+]
+
+test("contenu personnel (4e passe) : la banque de l'entreprise reste de la compta ; la banque perso sans contexte pro est écartée", () => {
+  const dropped = [...MUST_KEEP_WORK_R4, ...MUST_KEEP_WORK_R3, ...MUST_KEEP_WORK].filter((t) => looksPersonal(t)).map((t) => `${t} ${JSON.stringify(personalSignals(t))}`)
+  const kept = [...MUST_DROP_R4, ...MUST_DROP_R3, ...MUST_DROP].filter((t) => !looksPersonal(t)).map((t) => `${t} ${JSON.stringify(personalSignals(t))}`)
+  assert.deepEqual({ dropped, kept }, { dropped: [], kept: [] })
+  // « je paie » est un verbe, « la paie » un signal de travail ; « Société Générale » est une banque, pas une société.
+  assert.equal(personalSignals("je paie le loyer").work, 0)
+  assert.equal(personalSignals("Ma carte a été bloquée par la Société Générale").work, 0)
+})
+
+// --- Cinquième passe de revue ------------------------------------------------------------------------------------------
+
+/** Meilleur de trois mesures (le ramasse-miettes peut ralentir une mesure isolée). */
+function bestMs(f: () => unknown): number {
+  f()
+  return Math.min(...[0, 1, 2].map(() => {
+    const t0 = performance.now()
+    f()
+    return performance.now() - t0
+  }))
+}
+const repeatTo = (unit: string, n: number) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n)
+
+// Mot-clé et verbe ou séparateur sur deux lignes (retour à la ligne de l'OCR, liste de définitions Markdown) : sondes
+// r4-verify-core/nl.mts et nl2.mts. La 3e passe les masquait ; la 4e n'acceptait que des espaces horizontales.
+const NL_MASK_R5: [string, string][] = [
+  [`le mot de passe\nest ${PW}`, "le mot de passe\nest [masqué]"],
+  [`Ton nouveau mot de passe Wi-Fi\nest ${PW}`, "Ton nouveau mot de passe Wi-Fi\nest [masqué]"],
+  [`Le mot de passe de la boutique\nest : ${PW}`, "Le mot de passe de la boutique\nest : [masqué]"],
+  [`La clé API\nest : ${KEY}`, "La clé API\nest : [masqué]"],
+  [`Mot de passe\n: ${PW}`, "Mot de passe\n: [masqué]"],
+  [`Mot de passe\r\n: ${PW}`, "Mot de passe\r\n: [masqué]"],
+  [`mot de passe\n= ${PW}`, "mot de passe\n= [masqué]"],
+  ["PIN\n: 4589", "PIN\n: [masqué]"],
+  [`Le mot de passe est\n: ${PW}`, "Le mot de passe est\n: [masqué]"],
+  [`Pour te connecter au back-office, le mot de passe\nest ${PW}, l'identifiant est admin.`, "Pour te connecter au back-office, le mot de passe\nest [masqué], l'identifiant est admin."],
+  // jusqu'à 64 blancs entre le séparateur et la valeur
+  [`Mot de passe :${" ".repeat(40)}${PW}`, `Mot de passe :${" ".repeat(40)}[masqué]`],
+  [`Mot de passe :${" ".repeat(64)}${PW}`, `Mot de passe :${" ".repeat(64)}[masqué]`],
+  [`Le mot de passe est :${" ".repeat(64)}${PW}`, `Le mot de passe est :${" ".repeat(64)}[masqué]`],
+  [`Le mot de passe est donc${" ".repeat(40)}${PW}`, `Le mot de passe est donc${" ".repeat(40)}[masqué]`],
+]
+const NL_KEEP_R5 = ["Réinitialiser le mot de passe\nest une tâche simple", "Changer le mot de passe\n: voir la procédure", "Le mot de passe\nest obligatoire"]
+
+test("redact (5e passe) : mot-clé et « est » / « : » séparés par un retour à la ligne, jusqu'à 64 blancs avant la valeur", () => {
+  assert.deepEqual(NL_MASK_R5.map(([s, want]) => [s, redactText(s), want]).filter(([, got, want]) => got !== want), [])
+  assert.deepEqual(NL_KEEP_R5.map((s) => [s, redactText(s)]).filter(([a, b]) => a !== b), [])
+})
+
+// Le mot de passe en lettres seules suivi plus loin d'un « : » (sonde r4-verify-core/filler.mts) : n'importe quel mot était un
+// mot de remplissage avant « : », si bien que le mot de passe était pris pour du remplissage (et parfois le mot d'après masqué).
+const SOLEIL = j("Soleil", "Vert")
+const FILLER_MASK_R5: [string, string][] = [
+  [`Le mot de passe est ${SOLEIL} : ne le partage pas`, "Le mot de passe est [masqué] : ne le partage pas"],
+  [`The password is ${j("Hunter", "Two")}: don't share it`, "The password is [masqué]: don't share it"],
+  [`Le mot de passe est ${j("boulan", "gerie")} : c'est simple`, "Le mot de passe est [masqué] : c'est simple"],
+  [`Le mot de passe est ${SOLEIL} et l'identifiant : admin`, "Le mot de passe est [masqué] et l'identifiant : admin"],
+  [`mdp est ${SOLEIL} : ok`, "mdp est [masqué] : ok"],
+  [`Le mot de passe est ${j("MotDePasse", "Fort")} : garde-le pour toi`, "Le mot de passe est [masqué] : garde-le pour toi"],
+  [`Le mot de passe du wifi est ${j("fournil", "wifi")} : donne-le aux clients`, "Le mot de passe du wifi est [masqué] : donne-le aux clients"],
+  // les mots de remplissage d'une liste fermée restent reconnus (sonde r3-verify-core/pwdsep2.ts)
+  [`Le mot de passe est simple : ${PW}`, "Le mot de passe est simple : [masqué]"],
+  [`Le mot de passe est à présent : ${PW}`, "Le mot de passe est à présent : [masqué]"],
+  [`Le mot de passe est toujours le même : ${PW}`, "Le mot de passe est toujours le même : [masqué]"],
+  [`The password is as follows: ${PW}`, "The password is as follows: [masqué]"],
+  [`The token is the following: ${KEY}`, "The token is the following: [masqué]"],
+  [`Voici le mot de passe : ${PW}`, "Voici le mot de passe : [masqué]"],
+]
+// Ce qui suit « est dans / géré par / disponible sur / généré depuis : » est un lieu, pas la valeur ; ni une version, ni une date
+// (faux positifs de la 4e passe, privacy.ts:740 ; la 3e passe gardait ces lignes).
+const FILLER_KEEP_R5 = [
+  "Le mot de passe est dans le coffre : 1Password",
+  "Le mot de passe est géré par : 1Password",
+  "Le mot de passe est dans le fichier : config/db-prod.env",
+  "La clé API est disponible sur : https://app.fournil.fr/settings/api-2026",
+  "Le jeton est généré depuis : https://github.com/settings/tokens/new?scopes=repo2",
+  "The secret is stored in: projects/fournil-2026/secrets/db-password",
+  "Le token est maintenant v2.3.1-beta4",
+  "the password is also used for: SSH2 access",
+  "PIN: 2024-10-17",
+  "PIN : 2024/10/17",
+]
+
+test("redact (5e passe) : le mot de passe en lettres seules est masqué, pas pris pour un mot de remplissage ; un lieu ou une version reste lisible", () => {
+  const failures: string[] = []
+  for (const [s, want] of FILLER_MASK_R5) {
+    const r = redact(s)
+    if (r.text !== want) failures.push(`${s} → ${r.text}`)
+    const again = redact(r.text)
+    if (again.text !== r.text || Object.keys(again.redactions).length) failures.push(`non idempotent : ${again.text}`)
+  }
+  assert.deepEqual(failures, [])
+  assert.deepEqual(FILLER_KEEP_R5.map((s) => [s, redactText(s)]).filter(([a, b]) => a !== b), [])
+  // Les gains de la 4e passe tiennent, comme les lignes gardées des passes précédentes.
+  assert.deepEqual(MUST_MASK_R4.filter((s) => redactText(s).includes(PW) || redactText(s).includes(KEY)), [])
+  assert.deepEqual([...MUST_KEEP_R4, ...MUST_KEEP_R3, ...MUST_KEEP_R2, ...PIN_KEEP].map((s) => [s, redactText(s)]).filter(([a, b]) => a !== b), [])
+  assert.equal(redactText("PIN : 4589."), "PIN : [masqué].")
+})
+
+test("redact (5e passe) : linéaire sur les abréviations (« cf.cf.cf. »), les paires identifiant / mot de passe, les JWT et les guillemets ouverts", () => {
+  // Chaque cas, répété sur 32 Ko puis 320 Ko. Avant le correctif (sondes r4-verify-core/expo*.ts, r4-redos/final.mts) :
+  // « mdp cf.×20 » 21,5 s à 32 Ko ; « identifiants : admin / » + points 1,6 s à 32 Ko (quadratique) ; « eyJ- » 0,6 s à 32 Ko
+  // et ~60 s à 320 Ko ; « password: « » 534 ms à 320 Ko ; une valeur de 2 000 points 962 ms à 320 Ko.
+  const cases: [string, (n: number) => string][] = [
+    ["mdp + cf.×20", (n) => repeatTo("mdp " + "cf.".repeat(20) + "\n", n)],
+    ["password + ex.×20", (n) => repeatTo("password " + "ex.".repeat(20) + " ", n)],
+    ["mdp + cf.ex.vs.×6", (n) => repeatTo("mdp " + "cf.ex.vs.".repeat(6) + "\n", n)],
+    ["token + ex.×10", (n) => repeatTo("token " + "ex.".repeat(10) + "\n", n)],
+    ["PIN + vs.×10", (n) => repeatTo("PIN " + "vs.".repeat(10) + "\n", n)],
+    ["identifiants : admin / + points", (n) => "identifiants : admin / " + ".".repeat(n) + "x"],
+    ["acces = admin / + !", (n) => "acces = admin / " + "!".repeat(n) + "x"],
+    ["identifiants répété + 2 001 :", (n) => repeatTo("identifiants : admin / " + ":".repeat(2001), n)],
+    ["eyJ- répété", (n) => repeatTo("eyJ-", n)],
+    ["eyJa1- répété", (n) => repeatTo("eyJa1-", n)],
+    ["token=«x", (n) => repeatTo("token=«x", n)],
+    ["token : «", (n) => repeatTo("token : « ", n)],
+    ["password: “?", (n) => repeatTo("password: “?", n)],
+    ["password: «", (n) => repeatTo("password: « ", n)],
+    ["valeur de 2 000 points", (n) => repeatTo("token=" + ".".repeat(1990) + "x ", n)],
+  ]
+  const slow: string[] = []
+  for (const [name, make] of cases) {
+    for (const [n, limit] of [[32_000, 50], [320_000, 250]] as const) {
+      const s = make(n)
+      const ms = bestMs(() => redact(s))
+      if (ms > limit) slow.push(`${name} × ${n} : ${ms.toFixed(0)} ms`)
+    }
+  }
+  // Titre de fenêtre fait d'une longue suite d'espaces (découpe « \s+ - \s+ ») : 1,3 s à 32 Ko avant.
+  for (const [n, limit] of [[32_000, 50], [320_000, 250]] as const) {
+    const title = "a" + " ".repeat(n) + "x"
+    const ms = bestMs(() => isAllowedApp("Google Chrome", title))
+    if (ms > limit) slow.push(`titre de ${n} espaces : ${ms.toFixed(0)} ms`)
+  }
+  assert.deepEqual(slow, [])
+})
+
+test("redact (5e passe) : les vrais cas restent masqués (domaine et « cf. » avant le séparateur, JWT, paire, jeton entre guillemets de 1 200 caractères)", () => {
+  assert.equal(redactText(`Le mot de passe (cf. doc) est : ${PW}`), "Le mot de passe (cf. doc) est : [masqué]")
+  assert.equal(redactText(`Le mot de passe de app.qonto.com est : ${PW}`), "Le mot de passe de app.qonto.com est : [masqué]")
+  assert.equal(redactText(`Mdp pennylane.com : ${PW}`), "Mdp pennylane.com : [masqué]")
+  const jwt = j("eyJhbGciOiJIUzI1NiJ9", ".", "eyJzdWIiOiIxMjM0In0", ".", "c2lnbmF0dXJlLXRlc3Q")
+  assert.equal(redactText(`token: ${jwt}`), "token: [jeton masqué]")
+  assert.equal(redactText(`Authorization: Bearer ${jwt}`), "Authorization: Bearer [jeton masqué]")
+  assert.equal(redactText(`id_token=${jwt}&state=1`), "id_token=[jeton masqué]&state=1")
+  assert.equal(redactText(`identifiants : admin / ${PW}.`), "identifiants : admin / [masqué].")
+  // La recherche du guillemet fermant garde sa portée de 2 000 caractères (un jeton de session AWS en fait ~1 000).
+  const session = j("IQoJb3JpZ2luX2Vj", "A1b2C3d4".repeat(150))
+  assert.equal(redactText(`AWS_SESSION_TOKEN="${session}"`), 'AWS_SESSION_TOKEN="[masqué]"')
+  // Après des milliers de guillemets jamais refermés, une vraie valeur entre guillemets est toujours lue.
+  assert.ok(redactText("password: « ".repeat(3000) + `\npassword: «${PW}»`).endsWith("password: «[masqué]»"))
+  // Un titre d'onglet ordinaire reste reconnu.
+  assert.ok(isAllowedApp("Google Chrome", "Clôture de septembre - Claude - Google Chrome"))
+})
+
+// Personnel : les mots génériques de la gestion d'entreprise ne valent qu'un point (sonde r4-verify-core/pers.mts). En 4e passe,
+// un seul « entreprise », « fournisseur », « salariée » ou « rapprochement » excusait un sujet personnel.
+const MUST_DROP_R5 = [
+  "Je suis salariée et mon loyer a augmenté de 10 %, est-ce légal ? Aide-moi à écrire à mon proprio.",
+  "Je suis salarié, mon proprio refuse de me rendre ma caution, que faire ?",
+  "Ma paie a baissé ce mois-ci et ma banque m'a facturé des agios, comment contester ?",
+  "Mon fournisseur d'électricité m'a prélevé deux fois, ma banque refuse de rembourser",
+  "Ma banque a rejeté le prélèvement de mon fournisseur internet, que faire ?",
+  "Mon fils fait un stage en entreprise, aide-moi à relire son rapport",
+  "Ma fille cherche une alternance en entreprise, relis sa lettre de motivation",
+  "Ma fille est malade, je dois prévenir mon entreprise et mon équipe",
+  "Mon enfant est malade, je dois prévenir l'entreprise et annuler la réunion",
+  "Ma mère cherche une entreprise de déménagement pour samedi",
+  "Mon proprio dit que la société de gestion va augmenter le loyer, mon loyer passe à 900 €",
+  "Ma mère a besoin d'un rapprochement familial, quels papiers ?",
+  "Mon frère est associé dans une SCI avec moi, comment partager le loyer de mon appartement ?",
+  "Mon conseiller bancaire me demande une attestation de mon entreprise pour mon prêt",
+  "Mes parents veulent que je change d'entreprise, aide-moi à leur répondre",
+]
+
+test("contenu personnel (5e passe) : « entreprise », « fournisseur », « salarié », « paie » comptent un point ; seules les tournures de gestion en comptent deux", () => {
+  const kept = MUST_DROP_R5.filter((t) => !looksPersonal(t)).map((t) => `${t} ${JSON.stringify(personalSignals(t))}`)
+  const dropped = [...MUST_KEEP_WORK_R4, ...MUST_KEEP_WORK_R3, ...MUST_KEEP_WORK].filter((t) => looksPersonal(t)).map((t) => `${t} ${JSON.stringify(personalSignals(t))}`)
+  const keptBefore = [...MUST_DROP_R4, ...MUST_DROP_R3, ...MUST_DROP].filter((t) => !looksPersonal(t))
+  assert.deepEqual({ kept, dropped, keptBefore }, { kept: [], dropped: [], keptBefore: [] })
+  // Son propre emploi ou sa propre paie ne sont pas du vocabulaire de travail ; la paie de l'entreprise si.
+  assert.equal(personalSignals("ma paie").work, 0)
+  // « ma société », « mon entreprise » : pour un gérant, c'est l'entreprise elle-même (« Mon entreprise vend sur Instagram »).
+  // Résidu accepté : « Ma carte bancaire a été refusée, mon entreprise ne m'a pas encore versé la paie » est gardé.
+  assert.equal(personalSignals("ma société").work, 1)
+  assert.equal(personalSignals("mon entreprise").work, 1)
+  assert.equal(personalSignals("la paie de Léo").work, 1)
+  assert.equal(personalSignals("un rapprochement familial").work, 1)
+  // « rapprochement bancaire », « paie fournisseur », « virement fournisseur » : deux points (plus « fournisseur »).
+  assert.equal(personalSignals("le rapprochement bancaire").work, 2)
+  assert.equal(personalSignals("Virement fournisseur rejeté").work, 3)
+})

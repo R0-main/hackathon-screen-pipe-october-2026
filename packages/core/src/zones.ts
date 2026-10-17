@@ -115,26 +115,34 @@ export function classifyZones(text: string, zones: Pick<Zone, "id" | "name" | "k
 }
 
 export function scoreZones(text: string, zones: Pick<Zone, "id" | "name" | "keywords">[], opts: ClassifyOptions = {}): { zone: string; score: number }[] {
-  const tokens = tokenize(text)
-  if (tokens.length === 0) return []
-  const out: { zone: string; score: number }[] = []
-  for (const z of zones) {
+  return zoneScorer(zones)(text, opts)
+}
+
+export type ZoneScorer = (text: string, opts?: ClassifyOptions) => { zone: string; score: number }[]
+
+/**
+ * scoreZones avec les mots-clés des zones normalisés une seule fois : pour classer beaucoup de textes avec les mêmes zones
+ * (chaque item d'une distillation) sans renormaliser chaque mot-clé à chaque appel.
+ */
+export function zoneScorer(zones: Pick<Zone, "id" | "name" | "keywords">[]): ZoneScorer {
+  const prepared = zones.map((z) => {
     const kws = new Set([...z.keywords.map(normalize), normalize(z.id), normalize(z.name)])
-    let score = 0
-    for (const t of tokens) {
-      if (kws.has(t)) score += 1
-      else if (t.length >= 5) {
-        for (const k of kws) {
-          if (k.length >= 5 && (t.startsWith(k) || k.startsWith(t))) {
-            score += 0.5
-            break
-          }
-        }
+    return { id: z.id, kws, long: [...kws].filter((k) => k.length >= 5) }
+  })
+  return (text, opts = {}) => {
+    const tokens = tokenize(text)
+    if (tokens.length === 0) return []
+    const out: { zone: string; score: number }[] = []
+    for (const z of prepared) {
+      let score = 0
+      for (const t of tokens) {
+        if (z.kws.has(t)) score += 1
+        else if (t.length >= 5 && z.long.some((k) => t.startsWith(k) || k.startsWith(t))) score += 0.5
       }
+      if (score > 0) out.push({ zone: z.id, score })
     }
-    if (score > 0) out.push({ zone: z.id, score })
+    const prefer = (opts.prefer ?? []).filter((z): z is string => Boolean(z))
+    const rank = (id: string) => (prefer.includes(id) ? prefer.indexOf(id) : prefer.length)
+    return out.sort((a, b) => b.score - a.score || rank(a.zone) - rank(b.zone))
   }
-  const prefer = (opts.prefer ?? []).filter((z): z is string => Boolean(z))
-  const rank = (id: string) => (prefer.includes(id) ? prefer.indexOf(id) : prefer.length)
-  return out.sort((a, b) => b.score - a.score || rank(a.zone) - rank(b.zone))
 }
