@@ -11,7 +11,7 @@ dist/
 apps/web/.brain/
 # Built client bundle served by the dashboard
 apps/web/public/brain.mjs
-# Cerveau auto-hébergé (deploy/local) : certificats fournis, certificat racine exporté, sauvegardes
+# Self-hosted brain (deploy/local): provided certificates, exported root certificate, backups
 deploy/local/certs/*
 !deploy/local/certs/.gitkeep
 deploy/local/ca.crt
@@ -20,8 +20,8 @@ apps/web/public/brain.mjs.sha256
 .DS_Store
 .next-build/
 
-# Captures de relecture Impeccable (régénérées à chaque passe)
+# Impeccable review screenshots (regenerated on every pass)
 apps/web/.impeccable/review/
 
-# Worktrees des agents Claude Code (temporaires)
+# Claude Code agent worktrees (temporary)
 .claude/worktrees/

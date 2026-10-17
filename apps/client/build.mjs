@@ -33,6 +33,6 @@ copyFileSync(out, publicOut)
 chmodSync(publicOut, 0o755)
 const sha256 = createHash("sha256").update(readFileSync(publicOut)).digest("hex")
 writeFileSync(shaOut, `${sha256}  brain.mjs\n`)
-const kb = (f) => `${(statSync(f).size / 1024).toFixed(0)} Ko`
+const kb = (f) => `${(statSync(f).size / 1024).toFixed(0)} KB`
 console.log(`brain.mjs built: ${out} (${kb(out)}) → copied to ${publicOut}`)
-console.log(`SHA-256 : ${sha256} → ${shaOut}`)
+console.log(`SHA-256: ${sha256} → ${shaOut}`)
