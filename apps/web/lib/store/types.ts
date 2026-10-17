@@ -57,6 +57,8 @@ export type NewJoinRequest = { name?: string; title?: string; email?: string; ho
 export type NewSkill = { name: string; description: string; zone: string | null; files: SkillFile[]; publisher_id: string }
 
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
+/** Volume de connaissances d'un auteur dans une zone : situe chaque personne dans le cerveau. */
+export type AuthorZoneStat = { author_id: string; zone: string; count: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
 
 /** Contrat de stockage du cerveau : implémenté en fichier JSON (démo) et en Postgres (Supabase). */
@@ -114,6 +116,7 @@ export interface BrainStore {
   getItem(id: string): Promise<KnowledgeItem | null>
   deleteItem(id: string): Promise<boolean>
   zoneStats(): Promise<ZoneStat[]>
+  authorZoneStats(): Promise<AuthorZoneStat[]>
   topEntities(f: { zones?: string[]; authorId?: string; limit: number }): Promise<EntityStat[]>
 
   insertEvents(events: NewEvent[]): Promise<AgentEvent[]>
