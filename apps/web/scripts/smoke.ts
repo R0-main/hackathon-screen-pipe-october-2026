@@ -47,6 +47,7 @@ import {
 } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
+import * as zoneRoute from "../app/api/zones/[id]/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
@@ -740,6 +741,39 @@ async function main() {
     }
     assert((await viewerFromCookies(oldCookie, undefined))?.real.id === hugo.profile.id, "table rétablie : la session redevient valide")
 
+    console.log("\n— Postgres : migration « qualité » absente, l'ingestion d'une décision revue ne plante pas")
+    {
+      const ddlQ = pgClient(url, 1)
+      const legacy = new PostgresStore(url)
+      const gq = globalThis as unknown as { __brainStore?: BrainStore }
+      const currentQ = gq.__brainStore
+      const qtagM = `Smoke ${run} sans migration`
+      const dec = (body: string, at: number): KnowledgeItemInput => ({
+        zone: "dev",
+        kind: "decision",
+        title: `${qtagM} : les exports comptables passent par un bucket S3 chiffré`,
+        body,
+        entities: [],
+        source: { app: "Terminal", tool: "claude-code", at: new Date(at).toISOString() },
+        confidence: 0.8,
+      })
+      await ddlQ`alter table knowledge_items rename column superseded_by to superseded_by_smoke`
+      gq.__brainStore = legacy
+      let ids: string[] = []
+      try {
+        const a = await ingestItems(hugo, [dec(`Les exports partent dans un bucket S3 chiffré (${run}).`, Date.now() - 60_000)])
+        const b = await ingestItems(hugo, [dec(`Finalement les exports restent sur le serveur de fichiers, le bucket S3 est abandonné (${run}).`, Date.now() + 5_000)])
+        ids = [...a.ids, ...b.ids]
+        assert(a.inserted === 1 && b.inserted === 1 && b.replaced === 0, "décision revue insérée, rien de marqué, aucune erreur (pas de 503 pour le poste)")
+      } finally {
+        gq.__brainStore = currentQ
+        await legacy.end()
+        await ddlQ`alter table knowledge_items rename column superseded_by_smoke to superseded_by`
+        await ddlQ.end({ timeout: 5 })
+      }
+      for (const id of ids) await store.deleteItem(id)
+    }
+
     console.log("\n— Postgres : reset atomique, jamais d'organisation parasite (E3)")
     await orgRaceTest(url, run)
   }
@@ -1170,6 +1204,14 @@ async function main() {
   const redis = await getEntityContext(hugo, "tool", "redis")
   assert(redis !== null && redis.items.some((i) => i.id === revised.ids[0]) && !redis.items.some((i) => i.id === firstDecision.ids[0]), "la page d'une entité ne cite que les connaissances à jour")
   assert(redis !== null && redis.name === "Redis", "le nom affiché garde sa casse d'origine")
+  const zoneRes = await zoneRoute.GET(new Request("http://smoke.test/api/zones/dev", { headers: { cookie: `brain_session=${hugoSession}` } }), {
+    params: Promise.resolve({ id: "dev" }),
+  })
+  const zoneItems = ((await zoneRes.json()) as { items: { id: string }[] }).items
+  assert(
+    zoneRes.status === 200 && zoneItems.some((i) => i.id === revised.ids[0]) && !zoneItems.some((i) => i.id === firstDecision.ids[0]),
+    "résumé de zone (MCP get_zone_summary, volet de zone) : seulement la version à jour",
+  )
   // Nettoyage : un passage suivant sur le même stockage ne doit pas retrouver ces décisions comme quasi-doublons.
   for (const id of [firstDecision.ids[0], revised.ids[0]]) assert(await store.deleteItem(id), "décision de test supprimée")
 

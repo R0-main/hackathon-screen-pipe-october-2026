@@ -58,8 +58,9 @@ export async function getRememberedAccounts(): Promise<RememberedAccount[]> {
  * `res` : réponse de redirection qui porte les cookies ; sans elle (routes JSON), le magasin de cookies de la requête.
  */
 export async function openSession(userId: string, res?: NextResponse): Promise<void> {
-  const jar = await cookies()
+  // La session d'abord : base pas migrée (secret introuvable) → erreur de configuration claire, avant de toucher aux cookies.
   const session = await createSessionValue(userId)
+  const jar = await cookies()
   const accounts = await rememberAccounts(session, jar.get(SESSION_COOKIE)?.value, jar.get(ACCOUNTS_COOKIE)?.value)
   const out = res?.cookies ?? jar
   out.set(SESSION_COOKIE, session, sessionCookieOptions)

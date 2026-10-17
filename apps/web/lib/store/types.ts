@@ -128,8 +128,11 @@ export interface BrainStore {
   deleteItem(id: string): Promise<boolean>
   /** Range ces connaissances dans `zone`, avec les tâches qui en sont issues ; renvoie le nombre de connaissances déplacées. */
   moveItems(ids: string[], zone: string): Promise<number>
-  /** Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). */
-  markSuperseded(oldId: string, newId: string): Promise<void>
+  /**
+   * Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). Faux si rien n'a été
+   * marqué, notamment en Postgres tant que la migration « qualité » n'est pas appliquée : l'ingestion n'échoue jamais pour ça.
+   */
+  markSuperseded(oldId: string, newId: string): Promise<boolean>
   /** Connaissances (non remplacées) qui citent une entité, dans les zones données (ou de cet auteur). */
   listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }): Promise<KnowledgeItem[]>
   /** Vecteurs sémantiques des connaissances non remplacées des zones données (les plus récentes d'abord), pour le classement. */

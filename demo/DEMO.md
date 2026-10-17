@@ -12,7 +12,7 @@ npm run simulate -- --speed 1.5  # 2e terminal, à lancer au moment voulu (Ctrl-
 
 Onglets à préparer : le dashboard (`/dashboard`, entrée par `/demo`) connecté en **Claire (CEO, admin)**, `/admin`, et un terminal avec Claude Code sur un vrai projet si un poste est branché.
 
-Version en ligne : https://cerveau-entreprise.vercel.app (mode démo, données fictives, amorcées automatiquement sur une base vide).
+Version en ligne : https://www.nos-brainer.tech (mode démo, données fictives, amorcées automatiquement sur une base vide). Toujours avec `www` : l'adresse sans `www` redirige, et le client du poste perdrait son jeton dans la redirection.
 
 ## Déroulé
 

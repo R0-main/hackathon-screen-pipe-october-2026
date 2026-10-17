@@ -437,9 +437,11 @@ export class FileStore implements BrainStore {
   }
 
   async markSuperseded(oldId: string, newId: string) {
-    this.mutate((d) => {
+    return this.mutate((d) => {
       const old = d.items.find((i) => i.id === oldId)
-      if (old && d.items.some((i) => i.id === newId)) old.superseded_by = newId
+      if (!old || !d.items.some((i) => i.id === newId)) return false
+      old.superseded_by = newId
+      return true
     })
   }
 
