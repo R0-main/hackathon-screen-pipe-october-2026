@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { AgentLogos } from "./brand-logos"
 import { copyText } from "./PromptActions"
 import { api, errorMessage, initials } from "./format"
 import { RelTime } from "./RelTime"
@@ -21,7 +22,7 @@ export type Accepted = { id: string; name: string; title?: string; zones: string
 const POLL_MS = 4000
 
 /**
- * Le deuxième moyen d'ajouter quelqu'un : un seul message pour toute l'équipe. Chacun le colle dans Claude Code, qui
+ * Le deuxième moyen d'ajouter quelqu'un : un seul message pour toute l'équipe. Chacun le colle dans Claude Code ou Codex, qui
  * envoie une demande préremplie ; un admin la complète (rôle, zones, rattachement) et l'accepte, et le poste termine
  * son installation tout seul. Les demandes en attente sont relues régulièrement.
  */
@@ -78,7 +79,7 @@ export function TeamJoin(props: { zones: ZoneLite[]; people?: Person[]; defaultM
       <div className={props.compact ? "" : "panel px-5 py-5"}>
         {!props.compact && <h2 className="panel-title">Un message pour toute l'équipe</h2>}
         <p className={`${props.compact ? "" : "mt-1.5"} max-w-[40em] text-[14px] leading-relaxed text-trace`}>
-          Le même message pour tout le monde : chacun le colle dans Claude Code, qui envoie une demande avec ce qu'il sait déjà (nom, poste, email). Vous la complétez
+          Le même message pour tout le monde : chacun le colle dans Claude Code ou Codex, qui envoie une demande avec ce qu'il sait déjà (nom, poste, email). Vous la complétez
           et l'acceptez ici, et son poste s'installe tout seul.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -88,7 +89,9 @@ export function TeamJoin(props: { zones: ZoneLite[]; people?: Person[]; defaultM
                 <CheckIcon size={14} /> Message copié
               </>
             ) : (
-              "Copier le message d'équipe"
+              <>
+                <AgentLogos /> Copier le message d'équipe
+              </>
             )}
           </button>
           <button type="button" className="text-[13px] text-trace hover:text-ink" onClick={rotate} disabled={busy}>
@@ -183,7 +186,7 @@ function RequestCard(props: { request: JoinRequest; zones: ZoneLite[]; people?: 
         <input className="input" value={title} maxLength={80} aria-label="Poste" placeholder="Poste (à compléter)" onChange={(e) => setTitle(e.target.value)} />
         <input className="input" value={email} maxLength={200} aria-label="Email" placeholder="Email (facultatif)" onChange={(e) => setEmail(e.target.value)} />
       </div>
-      {missing.length > 0 && <p className="mt-1.5 text-[12px] text-trace">Son Claude ne connaissait pas : {missing.join(", ")}.</p>}
+      {missing.length > 0 && <p className="mt-1.5 text-[12px] text-trace">Son agent ne connaissait pas : {missing.join(", ")}.</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select className="input w-auto" aria-label="Rôle" value={role} onChange={(e) => setRole(e.target.value as "member" | "admin")}>

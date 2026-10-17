@@ -85,28 +85,24 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
   }
 
   const busy = status.kind === "busy"
+  const logo = size === "lg" ? 20 : 18
   return (
     <div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
-        <button
-          type="button"
-          className={`btn logo-btn ${btn}`}
-          onClick={() => onOpen("terminal")}
-          disabled={busy}
-          aria-label="Ouvrir dans Claude Code"
-          title="Ouvrir dans Claude Code, sur ce poste"
-        >
-          <ClaudeLogo size={size === "lg" ? 24 : 20} />
+        <button type="button" className={`btn ${btn}`} onClick={() => onOpen("terminal")} disabled={busy} title="Ouvre un terminal avec claude, sur ce poste">
+          <ClaudeLogo size={logo} />
+          Ouvrir dans Claude Code
         </button>
-        <button type="button" className={`btn logo-btn ${btn}`} onClick={() => onCopy(true)} disabled={busy} aria-label="Utiliser avec Codex" title="Utiliser avec Codex">
-          <CodexLogo size={size === "lg" ? 24 : 20} />
+        <button type="button" className={`btn ${btn}`} onClick={() => onCopy(true)} disabled={busy} title="Copie le prompt et donne la commande codex à lancer">
+          <CodexLogo size={logo} />
+          Utiliser avec Codex
         </button>
         <button type="button" className={`btn btn-ghost ${btn}`} onClick={() => onCopy()} disabled={busy}>
           Copier le prompt
         </button>
       </div>
       <p className="mt-3 text-[13px] leading-relaxed text-trace">
-        Claude Code s&apos;ouvre dans un terminal, sur ce poste : il y a tout votre contexte. Codex : le prompt est copié. Claude Code peut aussi s&apos;ouvrir dans{" "}
+        Claude Code s&apos;ouvre dans un terminal, sur ce poste : il y a tout votre contexte. Avec Codex, le prompt est copié et la commande à lancer s&apos;affiche. Claude Code peut aussi s&apos;ouvrir dans{" "}
         <button type="button" className="landing-link text-ink" onClick={() => onOpen("vscode")} disabled={busy}>
           VS Code
         </button>{" "}
@@ -129,7 +125,7 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
         {status.kind === "busy" && <p className="text-trace">Préparation de votre prompt…</p>}
         {status.kind === "copied" && (
           <p className="flex items-center gap-1.5">
-            <CheckIcon /> Prompt copié. Collez-le dans Claude Code, sur ce poste (pas dans une session cloud).
+            <CheckIcon /> Prompt copié. Collez-le dans Claude Code ou Codex, sur ce poste (pas dans une session cloud).
           </p>
         )}
         {status.kind === "codex" && (
