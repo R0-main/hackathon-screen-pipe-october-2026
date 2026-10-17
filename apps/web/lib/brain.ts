@@ -129,7 +129,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
       const vectors = await embedDocuments(prepared.map(embeddingText))
       if (vectors) prepared.forEach((p, n) => Object.assign(p, { embedding: vectors[n], embedding_model: provider.model }))
     } catch (err) {
-      console.error("[embeddings] ingestion sans vecteurs :", err instanceof Error ? err.message : err)
+      console.error("[embeddings] ingestion without vectors:", err instanceof Error ? err.message : err)
     }
   }
   const inserted = prepared.length ? await store().insertItems(prepared) : []

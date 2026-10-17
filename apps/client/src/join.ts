@@ -104,7 +104,7 @@ export async function cmdJoin(flags: Record<string, string | boolean>, log: Log 
       return EXIT_JOIN_REJECTED
     }
     if (Date.now() >= deadline) {
-      log(`WAITING FOR ACCEPTANCE: an admin of ${state.org} must accept the request (Team and access, then Requests). Then run \`join\` again: it resumes the same request.`)
+      log(`WAITING FOR APPROVAL: an admin of ${state.org} must accept the request (Team and access, then Requests). Then run \`join\` again: it resumes the same request.`)
       return EXIT_JOIN_PENDING
     }
     if (Date.now() - lastNote >= 60_000) {

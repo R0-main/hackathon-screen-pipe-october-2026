@@ -1,150 +1,147 @@
-# Le prompt d'installation de NOS Brainer
+# The NOS Brainer install prompt
 
-Le dashboard le génère pour chaque employé (`/admin` → « Inviter quelqu'un » ou « Nouveau prompt »), avec son jeton
-personnel (affiché une seule fois) et l'URL du cerveau. Source : [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
+The dashboard generates it for each employee (`/admin` → "Invite someone" or "New prompt"), with their personal token
+(shown only once) and the brain's URL. Source: [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
 
-L'employé le colle dans Claude Code. Claude prévient des autorisations à venir, lance **une seule commande** (celle de
-son système : le prompt en donne une pour macOS / Linux / Git Bash et une pour Windows PowerShell), lit son code de
-sortie et, en cas d'erreur, s'appuie sur `brain doctor --json`. Le prompt reste court parce que le travail est dans
-notre CLI (pourquoi : [docs/CLI.md](../docs/CLI.md)) :
+The employee pastes it into Claude Code. Claude warns about the permissions to come, runs **a single command** (the one
+for their system: the prompt gives one for macOS / Linux / Git Bash and one for Windows PowerShell), reads its exit code
+and, on an error, relies on `brain doctor --json`. The prompt stays short because the work is in our CLI (why:
+[docs/CLI.md](../docs/CLI.md)):
 
-- `install.sh` (servi sur `/install.sh`, source `apps/web/public/install.sh`, macOS et Linux) trouve Node.js ≥ 20 ou en
-  installe une copie privée dans `~/.company-brain/node` (sans droits admin, empreinte SHA-256 vérifiée, Apple Silicon
-  même sous Rosetta, Alpine compris), vérifie que `brain.mjs` est bien le client avant de remplacer l'ancien, écrit le
-  raccourci `~/.company-brain/brain`, puis lance `brain setup` avec les mêmes options et rend son code de sortie. Lancé
-  depuis Git Bash sous Windows, il passe la main à `install.ps1` ;
-- `install.ps1` (servi sur `/install.ps1`, Windows PowerShell 5.1 ou 7) fait la même chose sous Windows : copie privée
-  de Node.js x64 (aussi sur ARM64, que Windows émule : Screenpipe n'existe qu'en x64), raccourcis `brain.cmd`
-  (PowerShell, cmd) et `brain` (Git Bash) ;
-- `brain setup` (`apps/client/src/setup.ts`) fait le reste :
+- `install.sh` (served at `/install.sh`, source `apps/web/public/install.sh`, macOS and Linux) finds Node.js ≥ 20 or
+  installs a private copy in `~/.company-brain/node` (without admin rights, SHA-256 fingerprint checked, Apple Silicon
+  even under Rosetta, Alpine included), checks that `brain.mjs` really is the client before replacing the old one, writes
+  the `~/.company-brain/brain` shortcut, then runs `brain setup` with the same options and returns its exit code. Run
+  from Git Bash on Windows, it hands over to `install.ps1`;
+- `install.ps1` (served at `/install.ps1`, Windows PowerShell 5.1 or 7) does the same on Windows: private copy of
+  Node.js x64 (also on ARM64, which Windows emulates: Screenpipe only exists for x64), `brain.cmd` (PowerShell, cmd) and
+  `brain` (Git Bash) shortcuts;
+- `brain setup` (`apps/client/src/setup.ts`) does the rest:
 
-1. **Cerveau** : enregistre l'URL et le jeton (`~/.company-brain/config.json`, mode 600) et teste la connexion.
-2. **Screenpipe** : s'il tourne déjà (application ou CLI), on le garde. Sinon l'application si elle est installée, sinon le
-   CLI officiel (paquet npm `screenpipe`, version figée dans `SCREENPIPE_VERSION`) installé dans `~/.company-brain/screenpipe`
-   et lancé en service (`screenpipe service install` : launchd sur macOS, systemd sous Linux ; en arrière-plan à défaut).
-   Options d'enregistrement : micro coupé, contexte d'app « memory » (les données `parsed` que lit brain-sync), vidéos et
-   captures effacées après 14 jours (le texte reste). Le jeton d'API local est lu et enregistré tout seul.
-3. **Autorisations** (macOS) : ouvre le bon panneau des Réglages, puis surveille `GET /health` et continue dès que la
-   capture démarre. Personne n'a à revenir dans le terminal pour dire « c'est fait ».
-4. **Claude Code** : MCP `company-brain` (portée utilisateur) et hooks `SessionStart` / `UserPromptSubmit` / `Stop`.
-5. **Synchro** toutes les 15 minutes, à partir de maintenant : seule l'activité à venir part, jamais l'historique.
-6. **Néon et navigateur** : `hello` allume les zones de la personne, puis le cerveau s'ouvre **déjà connecté** grâce à un
-   lien de connexion valable 2 minutes (`POST /api/session/link`, sans le jeton dans l'URL), avec un bandeau de bienvenue.
-   Elle voit le cerveau s'allumer à chaque session Claude Code, et les connaissances arriver au fil des synchros.
+1. **Brain**: saves the URL and the token (`~/.company-brain/config.json`, mode 600) and tests the connection.
+2. **Screenpipe**: if it is already running (app or CLI), we keep it. Otherwise the app if it is installed, otherwise the
+   official CLI (npm package `screenpipe`, version pinned in `SCREENPIPE_VERSION`) installed in `~/.company-brain/screenpipe`
+   and run as a service (`screenpipe service install`: launchd on macOS, systemd on Linux; in the background otherwise).
+   Recording options: microphone off, "memory" app context (the `parsed` data brain-sync reads), videos and screenshots
+   deleted after 14 days (the text stays). The local API token is read and saved on its own.
+3. **Permissions** (macOS): opens the right Settings pane, then watches `GET /health` and carries on as soon as capture
+   starts. Nobody has to come back to the terminal to say "done".
+4. **Claude Code**: `company-brain` MCP (user scope) and `SessionStart` / `UserPromptSubmit` / `Stop` hooks.
+5. **Sync** every 15 minutes, starting now: only the activity to come is sent, never the history.
+6. **Neon and browser**: `hello` lights up the person's zones, then the brain opens **already signed in** thanks to a
+   sign-in link valid for 2 minutes (`POST /api/session/link`, without the token in the URL), with a welcome banner.
+   They see the brain light up on every Claude Code session, and the knowledge arrive as the syncs go by.
 
-`setup` est idempotent : sans paramètres, il reprend là où il s'est arrêté, et remet sur le client actuel le MCP, les
-hooks et la synchro planifiée s'ils pointaient vers un ancien chemin (réinstallation, Node.js mis à jour), sans sauter
-ce qui attend d'être envoyé. Screenpipe installé par npm **sans** son script post-installation (qui téléchargerait
-ffmpeg depuis un site tiers, lancerait `sudo apt-get` et enverrait de la télémétrie) : Screenpipe installe ffmpeg
-lui-même au premier lancement.
+`setup` is idempotent: without parameters, it resumes where it stopped, and points the MCP, the hooks and the scheduled
+sync back to the current client if they pointed to an old path (reinstall, Node.js updated), without skipping what is
+waiting to be sent. Screenpipe is installed by npm **without** its post-install script (which would download ffmpeg
+from a third-party site, run `sudo apt-get` and send telemetry): Screenpipe installs ffmpeg itself on its first run.
 
-| Code | Sens | Ce que fait Claude |
+| Code | Meaning | What Claude does |
 |---|---|---|
-| 0 | Tout est branché, le cerveau s'est ouvert | Résume |
-| 3 | EN ATTENTE : autorisation « Enregistrement de l'écran » pas encore accordée (macOS) | Redit où cocher, relance `brain setup` |
-| 5 | Téléchargement impossible (réseau, proxy, mauvaise adresse, page d'erreur au lieu du client) | Relance la même commande |
-| 6 | Tout est branché **sauf Screenpipe** (pas de version pour ce poste, ou il ne démarre pas) | `brain doctor --json`, explique |
-| 7 | Message d'équipe : demande pas encore acceptée par un admin | Propose de relancer `brain join` (même demande) |
-| 8 | Message d'équipe : demande refusée, rien n'est installé | Le dit |
-| 1, 2, 4 | Échec de setup, mauvais appel, système non géré | `brain doctor --json`, explique, lance les corrections « safe » |
+| 0 | Everything is connected, the brain has opened | Sums up |
+| 3 | WAITING: "Screen Recording" permission not granted yet (macOS) | Says again where to tick, reruns `brain setup` |
+| 5 | Download impossible (network, proxy, wrong address, error page instead of the client) | Reruns the same command |
+| 6 | Everything is connected **except Screenpipe** (no build for this computer, or it does not start) | `brain doctor --json`, explains |
+| 7 | Team message: request not accepted by an admin yet | Offers to rerun `brain join` (same request) |
+| 8 | Team message: request declined, nothing is installed | Says so |
+| 1, 2, 4 | Setup failure, bad call, unsupported system | `brain doctor --json`, explains, runs the "safe" fixes |
 
-## `brain doctor` : le diagnostic
+## `brain doctor`: the diagnosis
 
-`~/.company-brain/brain doctor` (Windows : `~/.company-brain/brain.cmd doctor`) vérifie tout le poste **sans rien
-modifier** et donne, pour chaque point KO, la commande qui répare :
+`~/.company-brain/brain doctor` (Windows: `~/.company-brain/brain.cmd doctor`) checks the whole computer **without
+changing anything** and gives, for each KO item, the command that repairs it:
 
-| Groupe | Ce qui est vérifié |
+| Group | What is checked |
 |---|---|
-| Poste | Node.js (version, gestionnaire de versions qui cassera les chemins, Rosetta), raccourci (il démarre et lance ce client), dossier privé |
-| Cerveau | Config, connexion et jeton (révoqué ?), client à jour par rapport à celui que sert le cerveau (`/brain.mjs.sha256`) |
-| Screenpipe | Répond, capture l'écran (autorisation refusée, capture bloquée, économie d'énergie), Accessibilité, jeton d'API local, données « parsed » |
-| Claude Code | CLI `claude`, MCP `company-brain` (enregistré et il démarre), hooks (les trois, sans doublon, sur le client actuel, lançables sans Git Bash sous Windows), erreurs récentes des hooks |
-| Synchro | Planification (et ce qu'elle lance vraiment), dernière synchro, dernière erreur du journal, verrou orphelin, conversations en attente, simulation non confirmée |
-| Distillation | Claude Code ou clé API, `claude` trouvable par la synchro planifiée, connexion Claude perdue (jeton expiré) |
+| Computer | Node.js (version, version manager that will break the paths, Rosetta), shortcut (it starts and runs this client), private folder |
+| Brain | Config, connection and token (revoked?), client up to date with the one the brain serves (`/brain.mjs.sha256`) |
+| Screenpipe | Answers, captures the screen (permission refused, capture stalled, power saving), Accessibility, local API token, "parsed" data |
+| Claude Code | `claude` CLI, `company-brain` MCP (registered and it starts), hooks (all three, without duplicates, on the current client, startable without Git Bash on Windows), recent hook errors |
+| Sync | Schedule (and what it really runs), last sync, last error of the log, orphaned lock, pending conversations, unconfirmed dry run |
+| Distillation | Claude Code or API key, `claude` found by the scheduled sync, Claude sign-in lost (expired token) |
 
-`--json` donne le même rapport à Claude Code : `checks[]` (`id`, `status` ok / warn / fail / skip / info, `detail`, `fix`,
-`command`, `safe`), `next` (le premier point à régler) et `exit_code` (1 s'il reste un KO). `safe: true` marque les
-commandes qui ne font que rebrancher le poste (`setup`, `install-hooks`, réinstallation) ; jamais `sync --confirm` ni
-`init --claude-token`, qui demandent l'employé. Aucun jeton n'est affiché en entier, aucune donnée du journal n'est
-recopiée sans être masquée.
+`--json` gives the same report to Claude Code: `checks[]` (`id`, `status` ok / warn / fail / skip / info, `detail`, `fix`,
+`command`, `safe`), `next` (the first item to fix) and `exit_code` (1 if a KO is left). `safe: true` marks the commands
+that only reconnect the computer (`setup`, `install-hooks`, reinstall); never `sync --confirm` or `init --claude-token`,
+which need the employee. No token is ever shown in full, no data from the log is copied without being redacted.
 
-## Les autorisations : ce qu'on évite, ce qu'on ne peut pas éviter
+## Permissions: what we avoid, what we cannot avoid
 
-| Où | Avant | Maintenant |
+| Where | Before | Now |
 |---|---|---|
-| Claude Code | une autorisation par étape (une dizaine de commandes) | **une seule** : la commande unique. Zéro en la collant directement dans un terminal. |
-| macOS, Micro | demandé | **supprimé** : micro coupé par défaut (`setup --audio oui` pour transcrire les réunions) |
-| macOS, Enregistrement de l'écran | à trouver dans les Réglages | **un clic** : panneau ouvert, chemin du binaire copié si « screenpipe » n'est pas listé, reprise automatique |
-| macOS, Accessibilité | à trouver dans les Réglages | **un clic, facultatif** : améliore la lecture du texte des terminaux ; sans elle, la capture marche quand même |
-| Linux, Windows | rien | rien (sous Wayland, accepter le partage d'écran s'il est proposé) |
-| Windows, Claude Code | une autorisation par commande (winget, Node, réglages) | **une seule** : la ligne PowerShell (ou celle de Git Bash) |
+| Claude Code | one permission per step (about ten commands) | **a single one**: the single command. Zero when pasting it straight into a terminal. |
+| macOS, Microphone | asked | **removed**: microphone off by default (`setup --audio yes` to transcribe meetings) |
+| macOS, Screen Recording | to find in Settings | **one click**: pane opened, binary path copied if "screenpipe" is not listed, automatic resume |
+| macOS, Accessibility | to find in Settings | **one click, optional**: improves reading terminal text; without it, capture still works |
+| Linux, Windows | nothing | nothing (on Wayland, accept screen sharing if offered) |
+| Windows, Claude Code | one permission per command (winget, Node, settings) | **a single one**: the PowerShell line (or the Git Bash one) |
 
-Ce qu'on ne peut pas sauter : macOS impose que l'employé accorde lui-même l'Enregistrement de l'écran, même sur un parc
-géré. En entreprise, un profil MDM (PPPC) peut pré-accorder l'Accessibilité au binaire `screenpipe` (signé Developer ID,
-équipe `URFF7QHPUR`) et autoriser un utilisateur standard à cocher l'Enregistrement de l'écran sans mot de passe admin.
+What cannot be skipped: macOS requires the employee to grant Screen Recording themselves, even on a managed fleet. In a
+company, an MDM profile (PPPC) can pre-grant Accessibility to the `screenpipe` binary (signed with Developer ID, team
+`URFF7QHPUR`) and allow a standard user to tick Screen Recording without an admin password.
 
-## Exemple (jeton fictif)
+## Example (fake token)
 
 ```text
-Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois, zones : compta.
-Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`).
+You are going to connect this computer to NOS Brainer, Fournil's company brain. I am Jean-Marc Dubois, zones: finance.
+This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal).
 
-1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
-2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
-   macOS, Linux, Git Bash : (curl -fsSL --create-dirs https://cerveau.example.com/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://cerveau.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-   Windows, PowerShell : New-Item -ItemType Directory -Force "$env:USERPROFILE\.company-brain" | Out-Null; try { Invoke-WebRequest -UseBasicParsing https://cerveau.example.com/install.ps1 -OutFile "$env:USERPROFILE\.company-brain\install.ps1" -ErrorAction Stop } catch { exit 5 }; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.company-brain\install.ps1" --url https://cerveau.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX; exit $LASTEXITCODE
-3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance `~/.company-brain/brain setup` (même délai). Code 5 : réseau ou adresse, relance la même commande. Autre code (6 : branché sans Screenpipe) : lance `~/.company-brain/brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe » (même délai). Sous Windows, le client est `~/.company-brain/brain.cmd`.
-4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (`~/.company-brain/brain uninstall`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord `~/.company-brain/brain sync --dry-run --full --since 24h` en entier ; rien ne part avant mon accord explicite, puis `~/.company-brain/brain sync --confirm` envoie exactement ce que j'ai relu.
+1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
+2. Run the command for my system as is, in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there):
+   macOS, Linux, Git Bash: (curl -fsSL --create-dirs https://brain.example.com/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://brain.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+   Windows, PowerShell: New-Item -ItemType Directory -Force "$env:USERPROFILE\.company-brain" | Out-Null; try { Invoke-WebRequest -UseBasicParsing https://brain.example.com/install.ps1 -OutFile "$env:USERPROFILE\.company-brain\install.ps1" -ErrorAction Stop } catch { exit 5 }; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.company-brain\install.ps1" --url https://brain.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX; exit $LASTEXITCODE
+3. Code 0: it's done, the brain has opened in my browser. Code 3 ("WAITING"): tell me again where to tick, then rerun `~/.company-brain/brain setup` (same timeout). Code 5: network or address, rerun the same command. Any other code (6: connected without Screenpipe): run `~/.company-brain/brain doctor --json`, explain each failing check simply and run the fixes marked "safe" (same timeout). On Windows, the client is `~/.company-brain/brain.cmd`.
+4. Finish in three lines: what is running, what gets sent (distilled knowledge, never the raw screen; no history is sent) and how to remove everything (`~/.company-brain/brain uninstall`). Finally, offer to have the brain learn my last 24 h: first show me `~/.company-brain/brain sync --dry-run --full --since 24h` in full; nothing is sent before my explicit approval, then `~/.company-brain/brain sync --confirm` sends exactly what I reviewed.
 ```
 
-## Options de `setup`
+## `setup` options
 
-| Option | Effet |
+| Option | Effect |
 |---|---|
-| `--url <url> --token <jeton>` | Première installation (ensuite inutiles). |
-| `--audio oui\|non` | Micro et transcription des réunions (non par défaut ; macOS demande alors aussi le Micro). |
-| `--wait <secondes>` | Attente des autorisations macOS (300 par défaut). |
-| `--no-open` | N'ouvre pas le navigateur. |
-| `--skip-screenpipe` | Sans Screenpipe : brain-sync lit seulement les sessions Claude Code et Codex. |
-| `--ca <pem>` | Cerveau auto-hébergé en HTTPS local : certificat de son autorité privée, auquel le client fait confiance (voir ci-dessous). |
+| `--url <url> --token <token>` | First install (not needed afterwards). |
+| `--audio yes\|no` | Microphone and meeting transcription (no by default; macOS then also asks for the Microphone). |
+| `--wait <seconds>` | Wait for the macOS permissions (300 by default). |
+| `--no-open` | Does not open the browser. |
+| `--skip-screenpipe` | Without Screenpipe: brain-sync only reads the Claude Code and Codex sessions. |
+| `--ca <pem>` | Self-hosted brain over local HTTPS: certificate of its private authority, which the client trusts (see below). |
 
-Tout retirer : `~/.company-brain/brain uninstall` (hooks, MCP, skills de l'entreprise, synchro, service Screenpipe ; `--purge` efface aussi
-`~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
+Remove everything: `~/.company-brain/brain uninstall` (hooks, MCP, company skills, sync, Screenpipe service; `--purge`
+also deletes `~/.company-brain`). Screenpipe's recordings stay in `~/.screenpipe`.
 
-## Cerveau auto-hébergé (HTTPS sur le réseau local)
+## Self-hosted brain (HTTPS on the local network)
 
-Quand le cerveau tourne sur une machine de l'entreprise ([docs/LOCAL.md](../docs/LOCAL.md)), il est servi en HTTPS par une
-autorité privée que les postes ne connaissent pas encore. Le prompt change alors d'une seule ligne : la commande récupère
-d'abord le certificat (`/ca.crt`), vérifie son empreinte SHA-256 (épinglée dans le prompt, calculée par le serveur depuis
-`BRAIN_CA_FILE`), et ne continue que si elle correspond ; `install.sh` télécharge ensuite `brain.mjs` avec ce certificat
-et `setup --ca` l'enregistre pour le client (synchro, MCP, hooks) et l'installe pour les navigateurs du poste.
-Un certificat public (cloud) : rien de tout cela n'apparaît.
+When the brain runs on a company machine ([docs/LOCAL.md](../docs/LOCAL.md)), it is served over HTTPS by a private
+authority the computers do not know yet. The prompt then changes by a single line: the command first fetches the
+certificate (`/ca.crt`), checks its SHA-256 fingerprint (pinned in the prompt, computed by the server from
+`BRAIN_CA_FILE`), and only carries on if it matches; `install.sh` then downloads `brain.mjs` with this certificate and
+`setup --ca` saves it for the client (sync, MCP, hooks) and installs it for the computer's browsers.
+With a public certificate (cloud), none of this appears.
 
 ```text
-Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois, zones : compta.
-Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`).
+You are going to connect this computer to NOS Brainer, Fournil's company brain. I am Jean-Marc Dubois, zones: finance.
+This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal).
 
-1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
-2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
-   macOS, Linux, Git Bash : mkdir -p ~/.company-brain && (curl -ksSL https://192.168.1.20/ca.crt -o ~/.company-brain/ca.crt || exit 5) && ([ "$(openssl x509 -in ~/.company-brain/ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49" ] || exit 9) && (curl -fsSL --cacert ~/.company-brain/ca.crt https://192.168.1.20/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://192.168.1.20 --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX --ca ~/.company-brain/ca.crt
-   Windows, PowerShell : New-Item -ItemType Directory -Force "$env:USERPROFILE\.company-brain" | Out-Null; $ca = "$env:USERPROFILE\.company-brain\ca.crt"; $skip = @{}; if ($PSVersionTable.PSVersion.Major -ge 6) { $skip = @{ SkipCertificateCheck = $true } } else { [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true } }; try { Invoke-WebRequest -UseBasicParsing https://192.168.1.20/ca.crt -OutFile $ca -ErrorAction Stop @skip } catch { exit 5 }; [Net.ServicePointManager]::ServerCertificateValidationCallback = $null; $c = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $ca; if (([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData)) -replace '-') -ne '57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49') { exit 9 }; if (-not (Get-ChildItem Cert:\CurrentUser\Root | Where-Object Thumbprint -eq $c.Thumbprint)) { certutil -user -addstore Root $ca | Out-Null }; try { Invoke-WebRequest -UseBasicParsing https://192.168.1.20/install.ps1 -OutFile "$env:USERPROFILE\.company-brain\install.ps1" -ErrorAction Stop } catch { exit 5 }; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.company-brain\install.ps1" --url https://192.168.1.20 --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX --ca $ca; exit $LASTEXITCODE
-   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; code 9 = empreinte différente, arrête-toi et préviens-moi. Sous Windows, une boîte de dialogue demande de confirmer l'ajout du certificat : accepter.)
-3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance `~/.company-brain/brain setup` (même délai). Code 5 : réseau ou adresse, relance la même commande. Autre code (6 : branché sans Screenpipe) : lance `~/.company-brain/brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe » (même délai). Sous Windows, le client est `~/.company-brain/brain.cmd`.
-4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (`~/.company-brain/brain uninstall`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord `~/.company-brain/brain sync --dry-run --full --since 24h` en entier ; rien ne part avant mon accord explicite, puis `~/.company-brain/brain sync --confirm` envoie exactement ce que j'ai relu.
+1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
+2. Run the command for my system as is, in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there):
+   macOS, Linux, Git Bash: mkdir -p ~/.company-brain && (curl -ksSL https://192.168.1.20/ca.crt -o ~/.company-brain/ca.crt || exit 5) && ([ "$(openssl x509 -in ~/.company-brain/ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "33483DC29874755818A10E941E52452421D5FF791FCF37578DB0E4EC570DF8F5" ] || exit 9) && (curl -fsSL --cacert ~/.company-brain/ca.crt https://192.168.1.20/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://192.168.1.20 --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX --ca ~/.company-brain/ca.crt
+   Windows, PowerShell: New-Item -ItemType Directory -Force "$env:USERPROFILE\.company-brain" | Out-Null; $ca = "$env:USERPROFILE\.company-brain\ca.crt"; $skip = @{}; if ($PSVersionTable.PSVersion.Major -ge 6) { $skip = @{ SkipCertificateCheck = $true } } else { [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true } }; try { Invoke-WebRequest -UseBasicParsing https://192.168.1.20/ca.crt -OutFile $ca -ErrorAction Stop @skip } catch { exit 5 }; [Net.ServicePointManager]::ServerCertificateValidationCallback = $null; $c = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $ca; if (([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData)) -replace '-') -ne '33483DC29874755818A10E941E52452421D5FF791FCF37578DB0E4EC570DF8F5') { exit 9 }; if (-not (Get-ChildItem Cert:\CurrentUser\Root | Where-Object Thumbprint -eq $c.Thumbprint)) { certutil -user -addstore Root $ca | Out-Null }; try { Invoke-WebRequest -UseBasicParsing https://192.168.1.20/install.ps1 -OutFile "$env:USERPROFILE\.company-brain\install.ps1" -ErrorAction Stop } catch { exit 5 }; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.company-brain\install.ps1" --url https://192.168.1.20 --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX --ca $ca; exit $LASTEXITCODE
+   (self-hosted brain over local HTTPS: the command fetches its certificate and checks its fingerprint before using it; code 9 = different fingerprint, stop and tell me. On Windows, a dialog asks to confirm adding the certificate: accept.)
+3. Code 0: it's done, the brain has opened in my browser. Code 3 ("WAITING"): tell me again where to tick, then rerun `~/.company-brain/brain setup` (same timeout). Code 5: network or address, rerun the same command. Any other code (6: connected without Screenpipe): run `~/.company-brain/brain doctor --json`, explain each failing check simply and run the fixes marked "safe" (same timeout). On Windows, the client is `~/.company-brain/brain.cmd`.
+4. Finish in three lines: what is running, what gets sent (distilled knowledge, never the raw screen; no history is sent) and how to remove everything (`~/.company-brain/brain uninstall`). Finally, offer to have the brain learn my last 24 h: first show me `~/.company-brain/brain sync --dry-run --full --since 24h` in full; nothing is sent before my explicit approval, then `~/.company-brain/brain sync --confirm` sends exactly what I reviewed.
 ```
 
-## Le message d'équipe (rejoindre sur demande)
+## The team message (join on request)
 
-Second moyen d'ajouter quelqu'un, à côté du prompt personnel : un message unique par entreprise (`/admin` → Demandes,
-ou la dernière étape de `/creer`), source `buildJoinPrompt` dans [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
-Il contient un code d'équipe (`cj_…`), pas de jeton : à envoyer aux collègues seulement, il ne permet que de demander.
+Second way to add someone, next to the personal prompt: a single message per company (`/admin` → Requests, or the last
+step of `/create`), source `buildJoinPrompt` in [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
+It contains a team code (`cj_…`), no token: to send to colleagues only, it only allows asking.
 
-1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà (git config, mémoire, CLAUDE.md),
-   sans poser de question ni rien inventer : une valeur inconnue est omise, l'admin la complétera.
-2. La commande de son système (`install.sh --join` sur macOS / Linux / Git Bash, `install.ps1 --join` sous Windows) lance
-   `brain join` (`apps/client/src/join.ts`) : le jeton du poste est créé localement, la demande part avec son empreinte
-   seulement, puis la commande attend l'acceptation (8 min).
-3. Un admin complète et accepte la demande : le compte est créé avec cette empreinte, et `join` enchaîne sur `setup`
-   (mêmes codes : 0, 3, 5, 6, ou `doctor` en cas d'erreur). Code 7 : toujours en attente (`brain join` reprend la même
-   demande, état dans `~/.company-brain/join.json`) ; 8 : refusée, rien n'est installé.
-
+1. The requester's Claude fills in `--name`, `--title`, `--email` with what it already knows (git config, memory,
+   CLAUDE.md), without asking any question or making anything up: an unknown value is left out, the admin will fill it in.
+2. The command for their system (`install.sh --join` on macOS / Linux / Git Bash, `install.ps1 --join` on Windows) runs
+   `brain join` (`apps/client/src/join.ts`): the computer's token is created locally, the request goes with its
+   fingerprint only, then the command waits for approval (8 min).
+3. An admin completes and accepts the request: the account is created with this fingerprint, and `join` moves on to
+   `setup` (same codes: 0, 3, 5, 6, or `doctor` on an error). Code 7: still waiting (`brain join` resumes the same
+   request, state in `~/.company-brain/join.json`); 8: declined, nothing is installed.

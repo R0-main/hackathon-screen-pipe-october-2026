@@ -9,7 +9,7 @@ export function tempDir(prefix = "brain-test-"): string {
 
 export type Recorded = { method: string; url: string; headers: IncomingMessage["headers"]; body: unknown }
 
-/** Petit serveur HTTP de test : enregistre les requêtes et répond via `handler`. */
+/** Small test HTTP server: records the requests and answers through `handler`. */
 export async function mockServer(
   handler: (req: Recorded) => { status?: number; body?: unknown } | undefined,
 ): Promise<{ url: string; requests: Recorded[]; close: () => Promise<void>; server: Server }> {
@@ -22,7 +22,7 @@ export async function mockServer(
       try {
         body = raw ? JSON.parse(raw) : undefined
       } catch {
-        // texte brut
+        // plain text
       }
       const rec: Recorded = { method: req.method ?? "GET", url: req.url ?? "/", headers: req.headers, body }
       requests.push(rec)
@@ -44,5 +44,5 @@ export async function mockServer(
 
 export const TEST_ZONES = [
   { id: "dev", name: "Dev", description: "Code", color: "#000", position: 0, readable: true, keywords: ["code", "deploy", "deployer", "production", "migration", "supabase", "api", "bug"] },
-  { id: "compta", name: "Compta", description: "Factures", color: "#000", position: 1, readable: false, keywords: ["facture", "tva", "cloture", "compta"] },
+  { id: "finance", name: "Finance", description: "Invoices", color: "#000", position: 1, readable: false, keywords: ["invoice", "vat", "closing", "finance"] },
 ]

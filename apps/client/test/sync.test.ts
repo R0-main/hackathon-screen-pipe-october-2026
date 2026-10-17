@@ -22,13 +22,13 @@ before(async () => {
   const s = "11111111-2222-3333-4444-555555555555"
   writeFileSync(
     join(proj, `${s}.jsonl`),
-    line({ type: "user", sessionId: s, cwd: "/home/hugo/fournil", timestamp: ts(20), message: { role: "user", content: "Comment on déploie l'API en production ? Mon token est sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA et mon mail hugo@fournil.fr" } }) +
+    line({ type: "user", sessionId: s, cwd: "/home/hugo/fournil", timestamp: ts(20), message: { role: "user", content: "How do we deploy the API to production? My token is sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA and my email hugo@fournil.fr" } }) +
       line({
         type: "assistant",
         sessionId: s,
         cwd: "/home/hugo/fournil",
         timestamp: ts(19),
-        message: { role: "assistant", content: [{ type: "text", text: "On a décidé de déployer via les tags Git.\n1. Merger sur main\n2. Créer le tag\n3. Surveiller les logs\nTODO: écrire le runbook de rollback" }] },
+        message: { role: "assistant", content: [{ type: "text", text: "We decided to deploy through Git tags.\n1. Merge into main\n2. Create the tag\n3. Watch the logs\nTODO: write the rollback runbook" }] },
       }),
   )
   writeFileSync(join(home, "config.json"), JSON.stringify({ url: brain.url, token: "cb_test_token_123456", screenpipe_url: "http://127.0.0.1:9", use_claude_cli: false, sources: ["claude", "codex", "screenpipe"] }))
@@ -45,24 +45,24 @@ test("parseSince", () => {
   assert.equal(parseSince("24h", now).toISOString(), "2026-10-15T12:00:00.000Z")
   assert.equal(parseSince("7d", now).toISOString(), "2026-10-09T12:00:00.000Z")
   assert.equal(parseSince("2026-10-01T00:00:00Z", now).toISOString(), "2026-10-01T00:00:00.000Z")
-  assert.throws(() => parseSince("hier", now))
+  assert.throws(() => parseSince("yesterday", now))
 })
 
-test("sync --dry-run : rien n'est envoyé, secrets masqués, checkpoints inchangés", async () => {
+test("sync --dry-run: nothing is sent, secrets redacted, checkpoints unchanged", async () => {
   const logs: string[] = []
   const r = await runSync({ dryRun: true, source: "claude", distiller: "heuristic" }, { log: (s) => logs.push(s), warn: (s) => logs.push(s) })
-  assert.ok(r.items.length >= 3, `items : ${r.items.length}`)
+  assert.ok(r.items.length >= 3, `items: ${r.items.length}`)
   assert.equal(brain.ingested.length, 0)
   const out = logs.join("\n")
-  assert.match(out, /simulation/)
-  assert.ok(!out.includes("sk-ant-api03"), "secret visible")
-  assert.ok(!out.includes("hugo@fournil.fr"), "email visible")
+  assert.match(out, /dry run/)
+  assert.ok(!out.includes("sk-ant-api03"), "secret shown")
+  assert.ok(!out.includes("hugo@fournil.fr"), "email shown")
   assert.ok(!existsSync(join(home, "state.json")))
   const kinds = new Set(r.items.map((i) => i.kind))
   assert.ok(kinds.has("decision") && kinds.has("procedure") && kinds.has("task"))
 })
 
-test("sync : envoie, sauvegarde les checkpoints, puis ne renvoie rien", async () => {
+test("sync: sends, saves the checkpoints, then sends nothing again", async () => {
   const r = await runSync({ source: "claude", distiller: "heuristic" }, quiet)
   assert.equal(r.sent, brain.ingested.length)
   assert.ok(r.sent >= 3)
@@ -75,14 +75,14 @@ test("sync : envoie, sauvegarde les checkpoints, puis ne renvoie rien", async ()
   assert.equal(r2.conversations.claude, 0)
 })
 
-test("sync --source all : Screenpipe arrêté → avertissement, on continue", async () => {
+test("sync --source all: Screenpipe stopped → warning, carry on", async () => {
   const warns: string[] = []
   const r = await runSync({ source: "all", distiller: "heuristic" }, { log: () => {}, warn: (s) => warns.push(s) })
   assert.equal(r.sent, 0)
-  assert.ok(warns.some((w) => /Screenpipe injoignable/.test(w)))
+  assert.ok(warns.some((w) => /Screenpipe unreachable/.test(w)))
 })
 
-test("verrou : une seconde synchro est refusée, un verrou orphelin est repris", () => {
+test("lock: a second sync is refused, an orphaned lock is taken over", () => {
   const lock = acquireLock(join(home, "test.lock"))
   assert.ok("release" in lock)
   const second = acquireLock(join(home, "test.lock"))

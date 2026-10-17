@@ -89,7 +89,7 @@ export async function sendAlert(key: string, text: string): Promise<boolean> {
     if (!res.ok) console.error(`[alert] webhook ${res.status}`)
     return res.ok
   } catch (err) {
-    console.error("[alert] webhook injoignable :", err instanceof Error ? err.message : err)
+    console.error("[alert] webhook unreachable:", err instanceof Error ? err.message : err)
     return false
   }
 }

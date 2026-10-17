@@ -9,7 +9,7 @@ import { tempDir } from "./helpers"
 import { mockBrain } from "./mock-brain"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
-// Jeton Screenpipe local du poste, assemblé à l'exécution (aucune forme de secret reconnaissable en clair).
+// Local Screenpipe token of the computer, assembled at run time (no recognizable secret form in clear).
 const SP_TOKEN = ["sp", "-local-", "Kd83hQpz2Lm"].join("")
 let brain: Awaited<ReturnType<typeof mockBrain>>
 let client: Client
@@ -38,48 +38,48 @@ after(async () => {
   await brain.close()
 })
 
-test("MCP : liste des outils", async () => {
+test("MCP: list of tools", async () => {
   const { tools } = await client.listTools()
   assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "get_zone_summary", "list_zones", "remember", "search_brain", "whoami_context"])
   const search = tools.find((t) => t.name === "search_brain")!
-  assert.match(search.description ?? "", /décisions, procédures/)
+  assert.match(search.description ?? "", /decisions, procedures/)
   assert.deepEqual(search.inputSchema.required, ["query"])
 })
 
-test("MCP search_brain : résultats en markdown, puis « rien trouvé » + zones restreintes", async () => {
-  const r = await client.callTool({ name: "search_brain", arguments: { query: "déployer en production" } })
+test("MCP search_brain: results in markdown, then \"nothing found\" + restricted zones", async () => {
+  const r = await client.callTool({ name: "search_brain", arguments: { query: "deploy to production" } })
   const t = text(r)
-  assert.match(t, /### 1\. Déployer Fournil en production/)
-  assert.match(t, /Zone : Dev · Type : procédure · Par : Hugo Bernard · Date : 08\/10\/2026/)
+  assert.match(t, /### 1\. Deploy Fournil to production/)
+  assert.match(t, /Zone: Dev · Type: procedure · By: Hugo Bernard · Date: 08 Oct 2026/)
   const q = brain.requests.find((x) => x.url === "/api/query")!
   assert.equal((q.body as { agent: string }).agent, "mcp")
 
-  const empty = text(await client.callTool({ name: "search_brain", arguments: { query: "clôture TVA facture" } }))
-  assert.match(empty, /Aucune connaissance trouvée/)
-  assert.match(empty, /des zones auxquelles vous n'avez pas accès pourraient en savoir plus/)
-  assert.ok(!empty.includes("compta"), "ne doit pas nommer la zone restreinte")
+  const empty = text(await client.callTool({ name: "search_brain", arguments: { query: "VAT closing invoice" } }))
+  assert.match(empty, /No knowledge found/)
+  assert.match(empty, /zones you do not have access to might know more/)
+  assert.ok(!empty.includes("finance"), "must not name the restricted zone")
 })
 
 test("MCP get_zone_summary / list_zones / whoami_context / company_status", async () => {
-  assert.match(text(await client.callTool({ name: "get_zone_summary", arguments: { zone: "Dev" } })), /Tâches ouvertes\n- Écrire le runbook \(Hugo\)/)
-  const denied = (await client.callTool({ name: "get_zone_summary", arguments: { zone: "compta" } })) as TextResult
+  assert.match(text(await client.callTool({ name: "get_zone_summary", arguments: { zone: "Dev" } })), /Open tasks\n- Write the runbook \(Hugo\)/)
+  const denied = (await client.callTool({ name: "get_zone_summary", arguments: { zone: "finance" } })) as TextResult
   assert.equal(denied.isError, true)
-  assert.match(text(denied), /pas accès/)
-  assert.match(text(await client.callTool({ name: "list_zones", arguments: {} })), /\*\*Compta\*\* \(`compta`\) : Factures — non accessible/)
+  assert.match(text(denied), /access/)
+  assert.match(text(await client.callTool({ name: "list_zones", arguments: {} })), /\*\*Finance\*\* \(`finance`\): Invoices — not accessible/)
   const who = text(await client.callTool({ name: "whoami_context", arguments: {} }))
   assert.match(who, /Hugo Bernard — Lead dev \(Fournil\)/)
-  assert.equal(who.match(/Prépare la migration Supabase/g)?.length, 1)
-  assert.match(text(await client.callTool({ name: "company_status", arguments: {} })), /pas encore été généré/)
+  assert.equal(who.match(/Prepare the Supabase migration/g)?.length, 1)
+  assert.match(text(await client.callTool({ name: "company_status", arguments: {} })), /has not been generated yet/)
 })
 
-test("MCP remember : POST /api/ingest avec agent mcp, source agent, secret masqué", async () => {
+test("MCP remember: POST /api/ingest with agent mcp, agent source, secret redacted", async () => {
   const r = text(
     await client.callTool({
       name: "remember",
-      arguments: { title: "On déploie le vendredi avant 16h", body: "Décision d'équipe pour la migration de l'API ; clé sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZ", kind: "decision" },
+      arguments: { title: "We deploy on Friday before 4pm", body: "Team decision for the API migration; key sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZ", kind: "decision" },
     }),
   )
-  assert.match(r, /Connaissance enregistrée dans la zone Dev/)
+  assert.match(r, /Knowledge saved in the Dev \(`dev`\) zone/)
   const req = brain.requests.filter((x) => x.url === "/api/ingest").at(-1)!
   const body = req.body as { agent: string; items: { zone: string; source: { tool: string; app: string }; confidence: number; body: string }[] }
   assert.equal(body.agent, "mcp")
@@ -90,36 +90,36 @@ test("MCP remember : POST /api/ingest avec agent mcp, source agent, secret masqu
   assert.ok(!body.items[0].body.includes("sk-ant"))
 })
 
-test("MCP remember : la réponse nomme la zone retenue, signale une zone hors lecture, et un doublon", async () => {
-  // Classée automatiquement en Compta, que l'utilisateur (Hugo) ne peut pas lire.
-  const auto = text(await client.callTool({ name: "remember", arguments: { title: "Clôture TVA du mois", body: "La facture de TVA se clôture le 5.", kind: "procedure" } }))
-  assert.match(auto, /Connaissance enregistrée dans la zone Compta \(`compta`\) — zone choisie automatiquement d'après le contenu/)
-  assert.match(auto, /ne fait pas partie de vos zones en lecture/)
-  assert.match(auto, /vos propres recherches et dans « Mon contexte »/)
-  assert.match(auto, /vos zones : Dev/)
+test("MCP remember: the answer names the zone chosen, flags a zone outside reading, and a duplicate", async () => {
+  // Classified automatically in Finance, which the user (Hugo) cannot read.
+  const auto = text(await client.callTool({ name: "remember", arguments: { title: "Monthly VAT closing", body: "The VAT invoice closes on the 5th.", kind: "procedure" } }))
+  assert.match(auto, /Knowledge saved in the Finance \(`finance`\) zone — zone chosen automatically from the content/)
+  assert.match(auto, /is not one of your readable zones/)
+  assert.match(auto, /your own searches and in "My context"/)
+  assert.match(auto, /your zones: Dev/)
   const req = brain.requests.filter((x) => x.url === "/api/ingest").at(-1)!
-  assert.equal((req.body as { items: { zone: string }[] }).items[0].zone, "compta")
+  assert.equal((req.body as { items: { zone: string }[] }).items[0].zone, "finance")
 
-  // Zone demandée explicitement (par son nom).
-  const asked = text(await client.callTool({ name: "remember", arguments: { title: "Runbook de rollback", body: "On utilise Promote sur Vercel.", kind: "procedure", zone: "Dev" } }))
-  assert.match(asked, /zone Dev \(`dev`\) — zone demandée/)
-  assert.match(asked, /trouvable par search_brain/)
+  // Zone asked for explicitly (by its name).
+  const asked = text(await client.callTool({ name: "remember", arguments: { title: "Rollback runbook", body: "We use Promote on Vercel.", kind: "procedure", zone: "Dev" } }))
+  assert.match(asked, /Dev \(`dev`\) zone — zone requested/)
+  assert.match(asked, /found by search_brain/)
 
-  // Déjà connue : le cerveau l'ignore et la réponse le dit.
-  const dup = text(await client.callTool({ name: "remember", arguments: { title: "Runbook de rollback", body: "On utilise Promote sur Vercel.", kind: "procedure", zone: "dev" } }))
-  assert.match(dup, /Déjà dans le cerveau : une connaissance avec le même titre et le même contenu existe déjà dans la zone Dev \(`dev`\)/)
-  // Même titre, contenu différent : le cerveau l'enregistre (dédoublonnage sur titre ET contenu), la réponse aussi.
-  const sameTitle = text(await client.callTool({ name: "remember", arguments: { title: "Runbook de rollback", body: "Désormais on revient en arrière avec git revert.", kind: "procedure", zone: "dev" } }))
-  assert.match(sameTitle, /Connaissance enregistrée dans la zone Dev/)
+  // Already known: the brain skips it and the answer says so.
+  const dup = text(await client.callTool({ name: "remember", arguments: { title: "Rollback runbook", body: "We use Promote on Vercel.", kind: "procedure", zone: "dev" } }))
+  assert.match(dup, /Already in the brain: a knowledge item with the same title and the same content already exists in the Dev \(`dev`\) zone/)
+  // Same title, different content: the brain saves it (deduplication on title AND content), and so does the answer.
+  const sameTitle = text(await client.callTool({ name: "remember", arguments: { title: "Rollback runbook", body: "From now on we roll back with git revert.", kind: "procedure", zone: "dev" } }))
+  assert.match(sameTitle, /Knowledge saved in the Dev \(`dev`\) zone/)
 })
 
-test("MCP remember : un secret configuré du poste (jeton Screenpipe) est masqué tel quel", async () => {
+test("MCP remember: a configured secret of the computer (Screenpipe token) is redacted as is", async () => {
   await client.callTool({
     name: "remember",
-    arguments: { title: "Accès Screenpipe du poste de démo", body: `Pour l'API locale, le jeton est ${SP_TOKEN} (à ne pas partager).`, kind: "fact", zone: "dev" },
+    arguments: { title: "Screenpipe access of the demo computer", body: `For the local API, the token is ${SP_TOKEN} (do not share).`, kind: "fact", zone: "dev" },
   })
   const req = brain.requests.filter((x) => x.url === "/api/ingest").at(-1)!
   const body = JSON.stringify(req.body)
   assert.ok(!body.includes(SP_TOKEN), body)
-  assert.match(body, /masqué/)
+  assert.match(body, /redacted/)
 })

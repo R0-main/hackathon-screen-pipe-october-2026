@@ -482,7 +482,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     }
   }
 
-  io.log("Sources :")
+  io.log("Sources:")
   for (const r of results) {
     const label = SOURCE_LABELS[r.source]
     if (!r.available) io.log(`  - ${label}: ${r.source === "screenpipe" ? "unavailable, skipped" : "no log found"}`)
@@ -509,7 +509,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   const retry = new Set(personalDrops.filter((d) => d.weakOnly && d.ended_at && now - Date.parse(d.ended_at) < PERSONAL_RETRY_MS).map((d) => d.id))
   io.log(
     `Privacy: ${plural(totalRedactions, "item redacted", "items redacted")}` +
-      (verbose && totalRedactions ? ` (${Object.entries(privacy.redactions).map(([k, v]) => `${k} : ${v}`).join(", ")})` : "") +
+      (verbose && totalRedactions ? ` (${Object.entries(privacy.redactions).map(([k, v]) => `${k}: ${v}`).join(", ")})` : "") +
       `, ${plural(personalDrops.length, "personal conversation dropped", "personal conversations dropped")}`,
   )
   const shownDrops = verbose ? privacy.dropped : opts.dryRun ? personalDrops.slice(0, 20) : []

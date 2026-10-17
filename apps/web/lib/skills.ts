@@ -94,7 +94,7 @@ export async function publishSkill(viewer: Viewer, input: PublishInput): Promise
     throw new SkillError(
       400,
       "Skill refused: it contains a secret. Read it from an environment variable rather than writing it in the file.",
-      secrets.map((s) => `${s.path} : ${s.kinds.join(", ")}`),
+      secrets.map((s) => `${s.path}: ${s.kinds.join(", ")}`),
     )
 
   const store = getStore()
