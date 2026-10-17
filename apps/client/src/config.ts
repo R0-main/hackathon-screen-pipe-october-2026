@@ -12,9 +12,20 @@ export type SourceName = (typeof SOURCE_NAMES)[number]
 export const DEFAULT_SCREENPIPE_URL = "http://localhost:3030"
 export const DEFAULT_SCREENPIPE_CONTENT_TYPES = ["parsed", "accessibility", "ocr"]
 
+/**
+ * Une entreprise branchée sur ce poste : son cerveau et le jeton personnel qu'on y a. Nom et description (relevés par
+ * `init`) disent aux agents laquelle interroger.
+ */
+export type Company = { url: string; token: string; id?: string; name?: string; description?: string }
+
 export type Config = {
+  /** Cerveau et jeton de la première entreprise : celle par défaut (outils MCP), et celle de la synchro, des hooks et des skills. */
   url: string
   token: string
+  /** Qui est la première entreprise (relevé par `init`). */
+  org?: { id?: string; name: string; description?: string }
+  /** Les autres entreprises du poste, dans l'ordre : les outils MCP les interrogent quand on le leur demande. */
+  companies?: Company[]
   screenpipe_url: string
   screenpipe_token?: string
   anthropic_api_key?: string
@@ -203,6 +214,21 @@ export function applyScheduleEnv(cfg: Partial<Config>, env: NodeJS.ProcessEnv = 
 export function saveConfig(cfg: Partial<Config>) {
   ensureHome()
   writeJson(paths.config(), cfg, 0o600)
+}
+
+/** Toutes les entreprises du poste, la première (celle par défaut) en tête. */
+export function companiesOf(cfg: Pick<Config, "url" | "token" | "org" | "companies">): Company[] {
+  return [{ url: cfg.url, token: cfg.token, ...cfg.org }, ...(cfg.companies ?? [])]
+}
+
+/** La config avec ces entreprises, dans cet ordre (la première devient celle par défaut). */
+export function withCompanies<T extends Partial<Config>>(cfg: T, list: Company[]): T {
+  const [first, ...rest] = list
+  const { url, token, ...org } = first
+  const next: T = { ...cfg, url, token, org: org.name ? org : undefined, companies: rest.length ? rest : undefined }
+  if (!next.org) delete next.org
+  if (!next.companies) delete next.companies
+  return next
 }
 
 export function requireConfig(): Config {

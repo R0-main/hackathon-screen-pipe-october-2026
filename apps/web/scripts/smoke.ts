@@ -29,7 +29,21 @@ import {
   statusForViewer,
   streamStartId,
 } from "../lib/brain"
-import { createLoginCode, createOnboardingCode, createSessionValue, hashToken, newToken, profileFromToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
+import {
+  createLoginCode,
+  createOnboardingCode,
+  createSessionValue,
+  forgetAccount,
+  hashToken,
+  isRemembered,
+  listRememberedAccounts,
+  newToken,
+  profileFromToken,
+  rememberAccounts,
+  verifyLoginCode,
+  viewerFromCookies,
+  type Viewer,
+} from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -752,6 +766,27 @@ async function main() {
 
       const st = await call(stateRoute.GET, "/api/state", { session: cookie })
       assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "son dashboard ne montre que son entreprise")
+
+      console.log("\n— Entreprises retenues par le navigateur : revenir à l'une, passer de l'une à l'autre")
+      const fournilSession = await createSessionValue(claire.profile.id)
+      const both = await rememberAccounts(cookie, fournilSession)
+      const listed = await listRememberedAccounts(both)
+      assert(
+        listed.map((a) => a.org.id).join() === `${acme.id},${fournil.id}` && listed[0].org.name === `Acme ${run}` && listed[0].org.description === "Test de fumée",
+        "deux entreprises retenues, la plus récente d'abord, avec leur nom et leur description",
+      )
+      const sameOrg = await listRememberedAccounts(await rememberAccounts(await createSessionValue(hugo.profile.id), both))
+      assert(
+        sameOrg.length === 2 && sameOrg[0].userId === hugo.profile.id && !sameOrg.some((a) => a.userId === claire.profile.id),
+        "un autre compte de la même entreprise remplace le précédent (une ligne par entreprise)",
+      )
+      assert((await isRemembered(both, boss.id)) && !(await isRemembered(both, hugo.profile.id)), "seuls les comptes retenus se rouvrent sans jeton")
+      const stretched = `${boss.id}.${Date.now() + 86400_000}.${cookie.split(".")[2]}`
+      assert(
+        (await listRememberedAccounts(`${stretched}~pas-une-session~${fournilSession}`)).map((a) => a.userId).join() === claire.profile.id,
+        "une session retenue modifiée ou illisible est écartée",
+      )
+      assert((await listRememberedAccounts(await forgetAccount(both, boss.id))).map((a) => a.org.id).join() === fournil.id, "oublier une entreprise la retire de la liste")
       const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
       assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviter un collègue : prompt à son nom, zones de l'entreprise seulement")
       assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "le collègue rejoint l'entreprise, pas Fournil")

@@ -54,7 +54,8 @@ demo/                 Script de démo
 | **État par Claude** | `brain.mjs refresh-status` | Admins : rédige « où en est la boîte » sur le poste avec Claude (abonnement) et l'envoie au dashboard. |
 | **Nouvelles zones** | `brain.mjs refresh-zones` | Admins : passage « nouvelles zones » fait par Claude Code (abonnement), sur un poste ou dans la CI de l'entreprise (GitHub Actions). |
 | **Diagnostic** | `brain.mjs doctor` | Passe le poste en revue sans rien modifier (Node, raccourci, cerveau, Screenpipe, MCP, hooks, synchro, distillation) et donne la commande qui répare chaque point KO ; `--json` pour Claude Code. |
-| **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
+| **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. Poste branché sur plusieurs entreprises : chaque outil prend `company` (par défaut la première), guidé par le nom et la description de chacune. |
+| **Plusieurs entreprises** | `brain.mjs companies`, `/login` | Le prompt d'installation d'une deuxième entreprise l'ajoute à côté de la première au lieu de la remplacer (la synchro, les hooks et les skills restent sur la première ; `companies --default` en change). Le navigateur retient chaque entreprise ouverte : la connexion propose de revenir dans l'une d'elles en un clic, et l'en-tête de la barre latérale passe de l'une à l'autre. |
 | **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
 
 ## Supervision, connecteurs, langues
@@ -79,7 +80,7 @@ demo/                 Script de démo
 
 ## API du cerveau
 
-Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SHA-256 côté serveur) pour les agents ; cookie de session signé pour le dashboard.
+Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SHA-256 côté serveur) pour les agents ; cookie de session signé pour le dashboard. Le cookie `brain_accounts` garde une session signée par entreprise ouverte sur ce navigateur (`POST /api/session/accounts {userId}` y revient, `DELETE` l'oublie) ; la déconnexion ne ferme que la session en cours.
 
 | Méthode | Route | Usage |
 |---|---|---|
