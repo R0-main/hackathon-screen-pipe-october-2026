@@ -7,11 +7,13 @@ import { Brain3D } from "./Brain3D"
 import { AskBrain } from "./AskBrain"
 import { ZoneDrawer } from "./ZoneDrawer"
 import { WelcomeBanner } from "./WelcomeBanner"
+import { LiveFeed } from "./LiveFeed"
 
 /** Page d'accueil : le cerveau occupe tout l'espace à droite de la barre latérale. Rien ne défile, on zoome. */
 export function BrainView({ welcome }: { welcome?: boolean }) {
   const { state, feed, activity, ripples, now } = useBrainLive()
   const [selected, setSelected] = useState<string | null>(null)
+  const [feedOpen, setFeedOpen] = useState<boolean | null>(null)
   const selectedZone = state.zones.find((z) => z.id === selected) ?? null
   const isAdmin = state.real.role === "admin"
   // Un dot par personne : il respire si son agent a travaillé ces 15 dernières minutes, sautille s'il touche le cerveau à l'instant.
@@ -33,16 +35,19 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
           </div>
         </div>
       ) : (
-        <Brain3D
-          zones={state.zones}
-          synapses={state.synapses}
-          activity={activity}
-          ripples={ripples}
-          now={now}
-          selected={selected}
-          onSelect={(z) => setSelected((s) => (s === z ? null : z))}
-          people={people}
-        />
+        // Grand écran, fil ouvert : le cerveau se centre dans la place laissée à gauche de la colonne du fil.
+        <div className={`absolute inset-0 ${feedOpen === false ? "" : "xl:right-[372px]"}`}>
+          <Brain3D
+            zones={state.zones}
+            synapses={state.synapses}
+            activity={activity}
+            ripples={ripples}
+            now={now}
+            selected={selected}
+            onSelect={(z) => setSelected((s) => (s === z ? null : z))}
+            people={people}
+          />
+        </div>
       )}
 
       <div className="pointer-events-none absolute inset-x-4 top-4 z-10 flex flex-col gap-2 sm:right-auto sm:w-[min(560px,calc(100%-2rem))]">
@@ -72,6 +77,10 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
         <span className="chip tabular-nums">{state.zones.length} zones</span>
         <span className="chip tabular-nums">{state.people.length} personnes</span>
       </div>
+
+      {state.zones.length > 0 && (
+        <LiveFeed events={feed} names={state.names} zones={state.zones} now={now} onZone={setSelected} open={feedOpen} onOpenChange={setFeedOpen} />
+      )}
 
       {selectedZone && <ZoneDrawer zone={selectedZone} onClose={() => setSelected(null)} />}
     </div>

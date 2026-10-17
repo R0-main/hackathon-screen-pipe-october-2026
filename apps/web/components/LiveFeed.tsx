@@ -18,15 +18,65 @@ function hiddenReason(e: FeedEvent): "zone" | "private" | null {
   return reason
 }
 
-export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; names: Record<string, string>; zones: ZoneView[]; now: number }) {
+/**
+ * Fil des agents, posé sur le cerveau : on lit l'événement pendant que sa zone s'allume. Une zone du fil ouvre son
+ * tiroir. Grand écran : colonne à droite, ouverte. Plus petit : bandeau en bas, replié jusqu'au premier clic.
+ * `open` à null : ouvert sur grand écran, replié sinon (décidé en CSS, donc identique au rendu serveur).
+ */
+export function LiveFeed({
+  events,
+  names,
+  zones,
+  now,
+  onZone,
+  open,
+  onOpenChange,
+}: {
+  events: FeedEvent[]
+  names: Record<string, string>
+  zones: ZoneView[]
+  now: number
+  onZone: (id: string) => void
+  open: boolean | null
+  onOpenChange: (open: boolean) => void
+}) {
   const zone = (id: string) => zones.find((x) => x.id === id)
+  const recent = events.filter((e) => Date.parse(e.at) > now - 15 * 60_000).length
+  const listCls = open === null ? "hidden xl:block" : open ? "block" : "hidden"
+  const toggle = () => onOpenChange(!(open ?? window.matchMedia("(min-width: 1280px)").matches))
+
   return (
-    <aside className="panel flex max-h-[760px] min-h-[420px] flex-col">
-      <div className="flex items-baseline justify-between gap-3 border-b border-line px-4 py-3">
-        <h2 className="panel-title">Agents en direct</h2>
-        <span className="text-[12px] text-trace">hooks, MCP, brain-sync</span>
-      </div>
-      <ol className="scroll-thin flex-1 overflow-y-auto p-2">
+    <aside
+      className={`panel pointer-events-auto absolute bottom-4 left-4 right-16 z-10 flex max-h-[45%] flex-col xl:left-auto xl:right-4 xl:top-14 xl:w-[340px] ${
+        open === false ? "xl:bottom-auto" : "xl:bottom-28 xl:max-h-none"
+      }`}
+      aria-label="Agents en direct"
+    >
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open ?? undefined}
+        aria-controls="live-feed-list"
+        className="flex items-baseline gap-3 whitespace-nowrap px-4 py-3 text-left"
+      >
+        <span className="panel-title">Agents en direct</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] tabular-nums text-trace" title="Événements des 15 dernières minutes">
+          {recent} récent{recent > 1 ? "s" : ""}
+        </span>
+        <span className="text-[12px]">
+          {open === null ? (
+            <>
+              <span className="xl:hidden">Afficher</span>
+              <span className="hidden xl:inline">Masquer</span>
+            </>
+          ) : open ? (
+            "Masquer"
+          ) : (
+            "Afficher"
+          )}
+        </span>
+      </button>
+      <ol id="live-feed-list" className={`scroll-thin min-h-0 flex-1 overflow-y-auto border-t border-line p-2 ${listCls}`}>
         {events.length === 0 && (
           <li className="p-6 text-center text-[13px] text-trace">
             Aucune activité pour l&apos;instant. Lancez une session Claude Code sur un poste équipé : elle apparaîtra ici.
@@ -58,7 +108,17 @@ export function LiveFeed({ events, names, zones, now }: { events: FeedEvent[]; n
                     <span>{AGENT_LABEL[e.agent]}</span>
                     {zoneIds.map((z, i) => {
                       const zv = zone(z)
-                      return <ZoneTag key={z} name={zv?.name ?? z} color={zoneColor(zv?.color, i)} className="text-ink" />
+                      return (
+                        <button
+                          key={z}
+                          type="button"
+                          onClick={() => onZone(z)}
+                          className="rounded-[4px] text-ink underline-offset-2 hover:underline"
+                          title={`Ouvrir la zone ${zv?.name ?? z}`}
+                        >
+                          <ZoneTag name={zv?.name ?? z} color={zoneColor(zv?.color, i)} />
+                        </button>
+                      )
                     })}
                     <RelTime iso={e.at} now={now} className="ml-auto tabular-nums" />
                   </div>
