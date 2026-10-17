@@ -27,7 +27,7 @@ import {
   statusForViewer,
   streamStartId,
 } from "../lib/brain"
-import { createLoginCode, createSessionValue, hashToken, newToken, profileFromToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
+import { createLoginCode, createOnboardingCode, createSessionValue, hashToken, newToken, profileFromToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -39,6 +39,9 @@ import * as adminUsersRoute from "../app/api/admin/users/route"
 import * as adminTeamRoute from "../app/api/admin/team/route"
 import * as itemRoute from "../app/api/items/[id]/route"
 import * as joinRoute from "../app/api/join/route"
+import * as onboardingAgentRoute from "../app/api/onboarding/agent/route"
+import * as onboardingImportRoute from "../app/api/onboarding/import/route"
+import * as onboardingApplyRoute from "../app/api/onboarding/apply/route"
 import * as joinStatusRoute from "../app/api/join/status/route"
 import * as adminJoinRoute from "../app/api/admin/join/route"
 import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
@@ -805,6 +808,34 @@ async function main() {
       const stale = await call(joinRoute.POST, "/api/join", { method: "POST", body: { code: team.data.code, token_hash: hashToken(newToken()) } })
       assert(stale.status === 404, "l'ancien message ne marche plus")
 
+      console.log("\n— Onboarding préparé par Claude Code ou Codex")
+      const agent = await call(onboardingAgentRoute.POST, "/api/onboarding/agent", { method: "POST", session: cookie })
+      const sendCode = agent.data.prompt.match(/Bearer (co_[A-Za-z0-9_-]+)/)?.[1] as string
+      assert(agent.status === 200 && sendCode && agent.data.prompt.includes("~/.codex/sessions"), "prompt d'onboarding avec un code d'envoi")
+      const upload = (code: string, body: unknown) =>
+        onboardingImportRoute.POST(new Request("http://smoke.test/api/onboarding/import", { method: "POST", headers: { authorization: `Bearer ${code}`, "content-type": "application/json" }, body: JSON.stringify(body) }))
+      const proposal = {
+        source: "codex",
+        company_name: `Acme ${run}`,
+        description: "Studio de design. Contact : alice@acme.example",
+        zones: [{ id: "ops", name: "Ops", description: "Exploitation", keywords: ["astreinte"] }, { id: "design", name: "Design", description: "Maquettes", keywords: ["figma"] }],
+        items: [{ zone: "design", kind: "procedure", title: `Livrer une maquette (${run})`, body: "Export Figma puis revue. Clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz", entities: [{ type: "tool", name: "Figma" }], source: { app: "onboarding", tool: "onboarding" }, confidence: 0.8 }],
+      }
+      assert((await upload(`co_${"A".repeat(40)}`, proposal)).status === 401, "un code inventé est refusé")
+      assert((await upload(await createOnboardingCode(bob.id), proposal)).status === 401, "le code d'un membre (non admin) est refusé")
+      assert((await upload(sendCode, { ...proposal, items: [{ zone: "x" }] })).status === 400, "une proposition mal formée est refusée")
+      const sent = await upload(sendCode, proposal)
+      assert(sent.status === 201, "l'agent dépose sa proposition")
+      const pendingDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft
+      assert(pendingDraft?.source === "codex" && pendingDraft.items.length === 1, "la page Onboarding la retrouve (elle se remplit toute seule)")
+      assert(!JSON.stringify(pendingDraft).includes("sk-ant") && !JSON.stringify(pendingDraft).includes("alice@"), "secrets et emails masqués dès la réception")
+      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: fournilAdmin })).data.draft === null, "Fournil ne la voit pas")
+      assert((await acmeStore.listZones()).every((z) => z.id !== "design"), "rien n'est appliqué avant validation")
+      const { source: _src, ...validated } = pendingDraft
+      const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
+      assert(applied.status === 200 && (await acmeStore.listZones()).some((z) => z.id === "design"), "validée : zones et connaissances appliquées")
+      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft === null, "et la proposition est écartée")
+
       const demoList = await call(demoSessionRoute.GET, "/api/session/demo")
       assert(demoList.status === 404 || !demoList.data.users.some((u: { id: string }) => u.id === boss.id), "les comptes de l'entreprise ne sont pas proposés dans la démo")
     } finally {
@@ -812,7 +843,7 @@ async function main() {
       else {
         const sql = pgClient(process.env.DATABASE_URL!)
         await sql`delete from orgs where id = ${acme.id}`
-        await sql`delete from brain_settings where key in (${`tenant:${acme.id}`}, ${`join:${acme.id}`})`
+        await sql`delete from brain_settings where key in (${`tenant:${acme.id}`}, ${`join:${acme.id}`}) or key like ${`org:%:${acme.id}`}`
         await sql.end()
       }
     }
