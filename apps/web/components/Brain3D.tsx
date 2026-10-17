@@ -6,7 +6,7 @@ import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
 import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
-import { LOOKS, dotKit, dotLook, type DotLook } from "./dot-model"
+import { assignLooks, dotKit, type DotLook } from "./dot-model"
 import { firstName } from "./format"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
@@ -123,14 +123,7 @@ export function Brain3D(props: Brain3DProps) {
     .map((s) => `${s.a}-${s.b}:${s.weight}`)
     .join("|")}#${people.map((p) => `${p.id}:${p.zone ?? ""}`).join("|")}`
   const placed = people.filter((p) => p.zone && zones.some((z) => z.id === p.zone))
-  // Deux voisins de zone ne portent pas la même tenue (tant qu'il en reste une libre).
-  const looks = new Map<string, DotLook>()
-  for (const p of [...placed].sort((a, b) => a.id.localeCompare(b.id))) {
-    const taken = new Set(placed.filter((q) => q.zone === p.zone && looks.has(q.id)).map((q) => looks.get(q.id)))
-    const start = LOOKS.indexOf(dotLook(p.id))
-    const free = LOOKS.map((_, k) => LOOKS[(start + k) % LOOKS.length]).find((l) => !taken.has(l))
-    looks.set(p.id, free ?? dotLook(p.id))
-  }
+  const looks = assignLooks(placed)
   peopleRef.current = new Map(placed.map((p) => [p.id, p]))
 
   useEffect(() => {
