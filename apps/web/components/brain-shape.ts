@@ -82,11 +82,12 @@ function stemPoint(rand: () => number): { p: V3; n: V3 } {
 }
 
 const COUNTS = { cortex: 1350, cereb: 330, stem: 170 }
-const K = 3
-const MAX_EDGE = 0.2
 
-export function buildBrainShape(seed = 42): BrainShape {
+/** density : multiplie le nombre de neurones ; k : liaisons par neurone vers ses plus proches voisins. */
+export function buildBrainShape(seed = 42, density = 1, K = 3): BrainShape {
   const rand = seeded(seed)
+  const MAX_EDGE = 0.2 / Math.sqrt(Math.min(1, density))
+  const C = { cortex: Math.round(COUNTS.cortex * density), cereb: Math.round(COUNTS.cereb * density), stem: Math.round(COUNTS.stem * density) }
   const pts: V3[] = []
   const nrm: V3[] = []
   const part: BrainPart[] = []
@@ -96,15 +97,15 @@ export function buildBrainShape(seed = 42): BrainShape {
     part.push(pp)
   }
   for (const s of [-1, 1]) {
-    for (let i = 0; i < COUNTS.cortex; i++) push(cortexPoint(s, unitDir(rand)), s < 0 ? "cortex-l" : "cortex-r")
-    for (let i = 0; i < COUNTS.cereb; i++) {
+    for (let i = 0; i < C.cortex; i++) push(cortexPoint(s, unitDir(rand)), s < 0 ? "cortex-l" : "cortex-r")
+    for (let i = 0; i < C.cereb; i++) {
       const u = unitDir(rand)
       // Le cervelet est caché en haut par le cortex : on n'y met pas de neurones.
       if (u[1] > 0.55) continue
       push(cerebPoint(s, u), s < 0 ? "cereb-l" : "cereb-r")
     }
   }
-  for (let i = 0; i < COUNTS.stem; i++) push(stemPoint(rand), "stem")
+  for (let i = 0; i < C.stem; i++) push(stemPoint(rand), "stem")
 
   // Liaisons : chaque neurone vers ses K plus proches voisins de la même structure.
   const n = pts.length

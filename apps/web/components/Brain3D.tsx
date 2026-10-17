@@ -26,6 +26,7 @@ const TRACE = 0x78786f
 const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
 const PALE = 0xe4e4dd
+const GREY = 0xcfcfc8
 const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
 
@@ -33,7 +34,6 @@ const CENTER_R = 0.06
 const ZOOM = { min: 2.8, max: 9, start: 5, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
-const PULSES = 90
 const PULSE_SPEED = 0.55
 
 type ThreeModule = typeof import("three")
@@ -66,8 +66,31 @@ const smooth = (lo: number, hi: number, v: number) => {
 }
 
 /** La forme ne dépend de rien : on la calcule une fois pour toute la session. */
-let shapeCache: BrainShape | null = null
-const getBrainShape = () => (shapeCache ??= buildBrainShape())
+const shapeCache = new Map<string, BrainShape>()
+const getBrainShape = (density: number, k: number) => {
+  const key = `${density}:${k}`
+  if (!shapeCache.has(key)) shapeCache.set(key, buildBrainShape(42, density, k))
+  return shapeCache.get(key)!
+}
+
+/**
+ * Variantes de rendu, choisies par ?cerveau=… dans l'URL (comparaison en cours, à trancher).
+ * - reseau : le réseau complet, coloré par zone.
+ * - silhouette : réseau clairsemé et gris, la couleur seulement en halo autour de chaque zone.
+ * - points : pas de liaisons, un pointillé coloré, les régions séparées par un liseré vide.
+ * - regions : réseau clairsemé coloré, régions séparées par un liseré vide, sans billes.
+ */
+type Style = { density: number; k: number; lines: boolean; halo: number; gap: number; billes: boolean; pulses: number; pointSize: number; lineOpacity: number }
+const STYLES: Record<string, Style> = {
+  reseau: { density: 1, k: 3, lines: true, halo: 0, gap: 0, billes: true, pulses: 90, pointSize: 0.03, lineOpacity: 0.8 },
+  silhouette: { density: 0.5, k: 2, lines: true, halo: 0.55, gap: 0, billes: false, pulses: 30, pointSize: 0.028, lineOpacity: 0.9 },
+  points: { density: 1.3, k: 0, lines: false, halo: 0, gap: 0.09, billes: false, pulses: 0, pointSize: 0.034, lineOpacity: 0 },
+  regions: { density: 0.55, k: 2, lines: true, halo: 0, gap: 0.12, billes: false, pulses: 40, pointSize: 0.03, lineOpacity: 0.9 },
+}
+function currentStyle(): Style {
+  if (typeof window === "undefined") return STYLES.reseau
+  return STYLES[new URLSearchParams(window.location.search).get("cerveau") ?? ""] ?? STYLES.reseau
+}
 
 /** Pastille ronde pour dessiner les neurones (les points WebGL sont carrés sinon). */
 function dotTexture(T: ThreeModule): THREE.CanvasTexture {
@@ -242,7 +265,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const materials: THREE.Material[] = [outlineMat]
 
   // Le réseau de neurones qui dessine le cerveau (hémisphères, cervelet, tronc).
-  const shape = getBrainShape()
+  const style = currentStyle()
+  const shape = getBrainShape(style.density, Math.max(1, style.k))
   const P = shape.positions
   const NRM = shape.normals
   const nPts = P.length / 3
@@ -265,25 +289,33 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const anchorPos: V3[] = anchors.map((k) => [P[k * 3], P[k * 3 + 1], P[k * 3 + 2]])
   const owner = new Int32Array(nPts)
   const ownerDist = new Float32Array(nPts)
+  const hidden = new Uint8Array(nPts)
   for (let k = 0; k < nPts; k++) {
     let bz = 0
     let bd = Infinity
+    let second = Infinity
     anchorPos.forEach((a, zi) => {
       const d = dist2(k, a)
-      if (d < bd) [bd, bz] = [d, zi]
+      if (d < bd) {
+        second = bd
+        ;[bd, bz] = [d, zi]
+      } else if (d < second) second = d
     })
     owner[k] = bz
     ownerDist[k] = Math.sqrt(bd)
+    // Liseré vide entre deux régions : on retire les neurones presque à égale distance de deux zones.
+    if (style.gap && Math.sqrt(second) - Math.sqrt(bd) < style.gap) hidden[k] = 1
   }
 
   const zoneHex = zones.map((z) => (z.locked ? NEUTRAL : new T.Color(zoneColor(z.color, z.position)).getHex()))
   const pale = new T.Color(PALE)
+  const grey = new T.Color(GREY)
   const baseColors = new Float32Array(nPts * 3)
   const c = new T.Color()
   for (let k = 0; k < nPts; k++) {
     // Couleur pleine près du centre de la zone, qui pâlit vers ses frontières.
-    const f = 0.04 + 0.3 * smooth(0.3, 1.3, ownerDist[k])
-    c.setHex(zoneHex[owner[k]]).lerp(pale, f)
+    const f = style.halo ? smooth(style.halo * 0.5, style.halo, ownerDist[k]) : 0.04 + 0.3 * smooth(0.3, 1.3, ownerDist[k])
+    c.setHex(zoneHex[owner[k]]).lerp(style.halo ? grey : pale, f)
     baseColors.set([c.r, c.g, c.b], k * 3)
   }
   const liveColors = baseColors.slice()
@@ -292,10 +324,15 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   neuronGeo.setAttribute("position", new T.BufferAttribute(P, 3))
   const neuronColor = new T.BufferAttribute(liveColors, 3)
   neuronGeo.setAttribute("color", neuronColor)
-  const neuronMat = new T.PointsMaterial({ size: 0.03, vertexColors: true, map: dotTex, alphaTest: 0.4, transparent: true, sizeAttenuation: true })
+  if (style.gap) {
+    const keep: number[] = []
+    for (let k = 0; k < nPts; k++) if (!hidden[k]) keep.push(k)
+    neuronGeo.setIndex(keep)
+  }
+  const neuronMat = new T.PointsMaterial({ size: style.pointSize, vertexColors: true, map: dotTex, alphaTest: 0.4, transparent: true, sizeAttenuation: true })
   group.add(new T.Points(neuronGeo, neuronMat))
 
-  const E = shape.edges
+  const E = style.lines ? shape.edges.filter((_, i, arr) => !hidden[arr[i - (i % 2)]] && !hidden[arr[i - (i % 2) + 1]]) : new Uint32Array(0)
   const nEdges = E.length / 2
   const edgePos = new Float32Array(nEdges * 6)
   const edgeCol = new Float32Array(nEdges * 6)
@@ -307,8 +344,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   edgeGeo.setAttribute("position", new T.BufferAttribute(edgePos, 3))
   const edgeColor = new T.BufferAttribute(edgeCol, 3)
   edgeGeo.setAttribute("color", edgeColor)
-  const edgeMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false })
-  group.add(new T.LineSegments(edgeGeo, edgeMat))
+  const edgeMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: style.lineOpacity, depthWrite: false })
+  if (nEdges) group.add(new T.LineSegments(edgeGeo, edgeMat))
   geometries.push(neuronGeo, edgeGeo)
   materials.push(neuronMat, edgeMat)
 
@@ -359,8 +396,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     pickables.push(center)
 
     // Les connaissances sont des neurones de la zone, pris autour de son ancrage.
-    const count = z.locked ? 5 : 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
-    const pool = regions[zi].slice().sort((p, q) => dist2(p, anchorPos[zi]) - dist2(q, anchorPos[zi]))
+    const count = !style.billes ? 0 : z.locked ? 5 : 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
+    const pool = regions[zi].filter((k) => !hidden[k]).sort((p, q) => dist2(p, anchorPos[zi]) - dist2(q, anchorPos[zi]))
     const picked = pool.slice(0, count * 4).filter(() => rand() < 0.35).slice(0, count)
     const nodeMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : INK })
     const nodes: SphereMesh[] = []
@@ -407,6 +444,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
   // Influx : de petites impulsions qui courent de neurone en neurone le long des liaisons.
   const adj = shape.adjacency
+  const PULSES = style.pulses
   const pulses = Array.from({ length: PULSES }, () => ({ from: 0, to: 0, t: 0, len: 1 }))
   const pulsePos = new Float32Array(PULSES * 3)
   const pulseGeo = new T.BufferGeometry()
