@@ -4,9 +4,9 @@
  */
 export const MOTION_VARIANTS = [
   { id: "actuelle", label: "Actuelle", hint: "La page sans ajout : seule la scène du cerveau bouge." },
-  { id: "epure", label: "1. Épure", hint: "Révélations sobres, jouées une fois : les titres montent ligne par ligne." },
-  { id: "recit", label: "2. Récit", hint: "Tout suit le scroll : un fil de billes relie les sections, le brut converge vers le filtre." },
-  { id: "cinetique", label: "3. Cinétique", hint: "Plus expressif : titres croisés, inclinaison à la vitesse, boutons magnétiques." },
+  { id: "epure", label: "1. Épure", hint: "Révélations sobres au rythme du scroll : les titres montent ligne par ligne." },
+  { id: "recit", label: "2. Récit", hint: "Un fil de billes relie les sections ; le panneau et le schéma se jouent pendant l'arrêt." },
+  { id: "cinetique", label: "3. Cinétique", hint: "Plus expressif : titres croisés, prompt décodé, boutons magnétiques." },
 ] as const
 
 export type MotionVariant = (typeof MOTION_VARIANTS)[number]["id"]

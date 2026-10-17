@@ -20,9 +20,11 @@ gsap.registerPlugin(ScrollTrigger, SplitText, DrawSVGPlugin, ScrambleTextPlugin)
   - data-parallax, data-magnetic         cerveau et boutons (version Cinétique).
 
   Rythme commun aux trois versions : chaque section occupe un écran (CSS) et s'arrête alignée sur lui pendant une
-  partie du scroll ; quand on lâche le scroll près d'un chapitre de la scène ou d'une section, la page s'y cale.
-  Les animations jouées une fois (Épure, Cinétique) partent quand leur section arrive vraiment à l'écran, dans
-  l'ordre de lecture : on les voit, au lieu qu'elles se jouent pendant que l'élément entre par le bas.
+  partie du scroll ; quand on lâche le scroll tout près d'un chapitre ou d'une section, la page s'y cale.
+
+  Toutes les animations des sections suivent le scroll (scrub) : elles avancent quand on descend, s'arrêtent
+  quand on s'arrête et se rejouent à l'envers quand on remonte. On ne peut donc pas les rater. Seule l'entrée du
+  premier écran se joue au chargement.
 
   Tout est créé dans le contexte useGSAP de Landing : animations, SplitText et ScrollTrigger sont annulés au
   démontage. Les écouteurs (pointeur, Lenis) sont rendus par la fonction de nettoyage.
@@ -50,8 +52,6 @@ const at = (trigger: Element, vars: ScrollTrigger.Vars = {}): ScrollTrigger.Vars
 const FILTER = { x: 330, y: 110 }
 /** Durée de l'arrêt de chaque section, en fraction de la hauteur d'écran. */
 const HOLD = 0.6
-/** Une section joue ses entrées quand son haut atteint ce point de l'écran : elle est déjà largement visible. */
-const ARRIVE = "top 45%"
 
 /**
  * Masques de ligne avec de la marge : sans elle, le masque coupe les jambages (g, p, q, y) et les accents des
@@ -64,9 +64,9 @@ export function setupLandingMotion(variant: MotionVariant, root: HTMLElement, ct
   // Les arrêts d'abord : les déclencheurs créés ensuite à l'intérieur des sections en tiennent compte.
   const holds = holdSections(root)
   const cleanups = [settle(root, ctx, holds)]
-  if (variant === "epure") epure(root)
+  if (variant === "epure") epure(root, holds)
   if (variant === "recit") recit(root, holds)
-  if (variant === "cinetique") cleanups.push(cinetique(root))
+  if (variant === "cinetique") cleanups.push(cinetique(root, holds))
   return () => cleanups.forEach((fn) => fn())
 }
 
@@ -95,8 +95,9 @@ function holdSections(root: HTMLElement): Holds {
 }
 
 /**
- * Quand on lâche le scroll près d'un chapitre de la scène ou d'une section, la page glisse jusqu'à lui : la
- * section se retrouve exactement alignée sur l'écran. Déjà dans un arrêt ou loin de tout, rien ne bouge.
+ * Quand on lâche le scroll tout près d'un chapitre de la scène ou d'une section, la page glisse jusqu'à lui : la
+ * section se retrouve exactement alignée sur l'écran. La portée reste courte, pour que le calage ne fasse pas
+ * avancer à notre place une animation liée au scroll. Déjà dans un arrêt ou loin de tout, rien ne bouge.
  */
 function settle(root: HTMLElement, { lenis, scene, stops }: Ctx, holds: Holds): () => void {
   const targets = () => {
@@ -105,9 +106,9 @@ function settle(root: HTMLElement, { lenis, scene, stops }: Ctx, holds: Holds): 
     const max = ScrollTrigger.maxScroll(window)
     const close = root.querySelector<HTMLElement>("[data-close]")
     return [
-      ...stops.map((s) => ({ from: scene.start + s * range, to: scene.start + s * range, reach: range * 0.07 })),
-      ...[...holds.values()].map((h) => ({ from: h.start, to: h.end, reach: vh * 0.4 })),
-      ...(close ? [{ from: Math.min(max, close.getBoundingClientRect().top + window.scrollY), to: max, reach: vh * 0.4 }] : []),
+      ...stops.map((s) => ({ from: scene.start + s * range, to: scene.start + s * range, reach: range * 0.05 })),
+      ...[...holds.values()].map((h) => ({ from: h.start, to: h.end, reach: vh * 0.18 })),
+      ...(close ? [{ from: Math.min(max, close.getBoundingClientRect().top + window.scrollY), to: max, reach: vh * 0.18 }] : []),
     ]
   }
   let timer = 0
@@ -120,11 +121,11 @@ function settle(root: HTMLElement, { lenis, scene, stops }: Ctx, holds: Holds): 
       const d = Math.abs(goal - y)
       if (d > 2 && d < t.reach && (best === null || d < Math.abs(best - y))) best = goal
     }
-    if (best !== null) lenis.scrollTo(best, { duration: 0.9, easing: (t) => 1 - (1 - t) ** 3 })
+    if (best !== null) lenis.scrollTo(best, { duration: 0.7, easing: (t) => 1 - (1 - t) ** 3 })
   }
   const schedule = () => {
     window.clearTimeout(timer)
-    timer = window.setTimeout(check, 180)
+    timer = window.setTimeout(check, 220)
   }
   lenis.on("scroll", schedule)
   return () => {
@@ -134,25 +135,62 @@ function settle(root: HTMLElement, { lenis, scene, stops }: Ctx, holds: Holds): 
 }
 
 /**
- * Entrées d'une section, jouées ensemble quand elle arrive à l'écran ; chacune a son délai, dans l'ordre de
- * lecture. `add` reçoit une fonction qui rejoue l'animation (au moment où la section arrive).
+ * Une timeline par section, liée au scroll, d'une durée de 1 : 0 quand le haut de la section entre en bas de
+ * l'écran (85 %), 1 à la fin de son arrêt (ou, pour la dernière, quand elle est en place). La section se cale sur
+ * l'écran vers 0,6 : ce qui est placé après se joue pendant l'arrêt, sous les yeux.
  */
-function sequencer() {
-  const queues = new Map<Element, (() => void)[]>()
-  return {
-    add(el: Element, play: () => void) {
-      const sec = section(el)
-      if (!sec) return play()
-      queues.set(sec, [...(queues.get(sec) ?? []), play])
-    },
-    arm() {
-      for (const [sec, plays] of queues) ScrollTrigger.create({ trigger: sec, start: ARRIVE, once: true, onEnter: () => plays.forEach((p) => p()) })
-    },
+function sectionTimelines(holds: Holds) {
+  const timelines = new Map<Element, gsap.core.Timeline>()
+  const timeline = (el: Element) => {
+    const sec = section(el) ?? el
+    let tl = timelines.get(sec)
+    if (!tl) {
+      const hold = holds.get(sec)
+      tl = gsap.timeline({
+        defaults: { ease: "none" },
+        scrollTrigger: { trigger: sec, start: "top 85%", end: hold ? () => hold.end : "top 5%", scrub: true, invalidateOnRefresh: true },
+      })
+      tl.set({}, {}, 1)
+      timelines.set(sec, tl)
+    }
+    return tl
   }
+  return timeline
 }
 
-/** Animation en attente : visible dans son état de départ, jouée (avec son délai) quand la section arrive. */
-const later = (vars: gsap.TweenVars) => ({ ...vars, paused: true })
+/** Valeur d'arrivée de chaque propriété de départ : l'élément revient à sa place, visible. */
+const NEUTRAL: Record<string, string | number> = { autoAlpha: 1, opacity: 1, x: 0, y: 0, xPercent: 0, yPercent: 0, rotation: 0, rotate: 0, scale: 1, scaleX: 1, scaleY: 1, drawSVG: "100%" }
+
+/**
+ * Animation d'entrée : l'état de départ est posé tout de suite (sinon un élément décalé dans une animation en
+ * cascade reste visible jusqu'à ce que le scroll atteigne son tour), puis on anime vers sa place.
+ */
+function enterTween(targets: gsap.TweenTarget, from: gsap.TweenVars, vars: gsap.TweenVars) {
+  gsap.set(targets, from)
+  const to: gsap.TweenVars = { ...vars }
+  for (const key of Object.keys(from)) if (key in NEUTRAL) to[key] = NEUTRAL[key]
+  return gsap.to(targets, to)
+}
+/** `enterTween` placé dans une timeline (à la suite si `pos` est omis). */
+const enter = (tl: gsap.core.Timeline, targets: gsap.TweenTarget, from: gsap.TweenVars, vars: gsap.TweenVars, pos?: gsap.Position) => tl.add(enterTween(targets, from, vars), pos)
+
+/**
+ * Titre découpé en lignes (ou en mots) et animé dans la timeline de sa section. Au redécoupage (polices chargées,
+ * redimensionnement), SplitText retire l'ancienne animation et on remet la nouvelle à la même place.
+ */
+function splitInto(tl: gsap.core.Timeline, el: HTMLElement, type: "lines" | "words", mask: boolean, make: (targets: Element[]) => gsap.core.Tween, at: number) {
+  SplitText.create(el, {
+    type,
+    mask: mask ? type : undefined,
+    autoSplit: true,
+    onSplit: (self) => {
+      if (mask) roomy(self)
+      const tween = make(type === "lines" ? self.lines : self.words)
+      tl.add(tween, at)
+      return tween
+    },
+  })
+}
 
 /* ---------- Premier écran ---------- */
 
@@ -187,60 +225,39 @@ function heroIn(root: HTMLElement, style: HeroStyle) {
 
 /* ---------- Version 1 : Épure ---------- */
 
-/** Révélations sobres, jouées une fois quand la section arrive : titre, texte, panneau, détails. */
-function epure(root: HTMLElement) {
+/** Révélations sobres, dans l'ordre de lecture, au rythme du scroll : titre, texte, panneau, détails. */
+function epure(root: HTMLElement, holds: Holds) {
   heroIn(root, "lines")
-  const seq = sequencer()
+  const timeline = sectionTimelines(holds)
 
   for (const el of all(root, '[data-reveal="title"]')) {
-    let tween: gsap.core.Tween | null = null
-    SplitText.create(el, {
-      type: "lines",
-      mask: "lines",
-      autoSplit: true,
-      onSplit: (self) => {
-        roomy(self)
-        tween = gsap.from(self.lines, later({ yPercent: 125, duration: 1.1, ease: "expo.out", stagger: 0.1 }))
-        return tween
-      },
-    })
-    seq.add(el, () => tween?.play())
+    splitInto(timeline(el), el, "lines", true, (lines) => enterTween(lines, { yPercent: 125 }, { duration: 0.24, ease: "power2.out", stagger: 0.05 }), 0)
   }
   for (const el of all(root, '[data-reveal="text"]')) {
-    const tw = gsap.from(el, later({ autoAlpha: 0, y: 20, duration: 0.9, ease: "power3.out", delay: 0.3 }))
-    seq.add(el, () => tw.restart(true))
+    enter(timeline(el), el, { autoAlpha: 0, y: 20 }, { duration: 0.2, ease: "power1.out" }, 0.16)
   }
   for (const panel of all(root, '[data-reveal="panel"]')) {
-    const tl = gsap.timeline({ paused: true, delay: 0.45 })
-    tl.from(panel, { autoAlpha: 0, y: 28, duration: 0.9, ease: "power3.out" })
+    const tl = timeline(panel)
+    enter(tl, panel, { autoAlpha: 0, y: 28 }, { duration: 0.22, ease: "power1.out" }, 0.26)
     const rows = all(panel, "[data-rows] > li")
-    if (rows.length) tl.from(rows, { autoAlpha: 0, y: 10, duration: 0.6, ease: "power3.out", stagger: 0.1 }, 0.3)
+    if (rows.length) enter(tl, rows, { autoAlpha: 0, y: 10 }, { duration: 0.1, stagger: 0.05 }, 0.42)
     const typed = panel.querySelector("[data-type]")
-    if (typed) tl.from(typed, { autoAlpha: 0, duration: 0.8, ease: "power2.out" }, "-=0.1")
-    seq.add(panel, () => tl.restart(true))
+    if (typed) enter(tl, typed, { autoAlpha: 0 }, { duration: 0.12 }, 0.66)
   }
 
   const svg = root.querySelector("[data-privacy]")
   if (svg) {
-    const tl = gsap.timeline({ paused: true, delay: 0.45 })
-    tl.from(all(svg, "[data-raw]"), { opacity: 0, duration: 0.5, ease: "power2.out", stagger: { amount: 0.6, from: "random" } })
-      .from(all(svg, "[data-filter]"), { opacity: 0, duration: 0.5, ease: "power2.out" }, "-=0.3")
-      .from(all(svg, "[data-link]"), { drawSVG: "0%", duration: 0.7, ease: "power3.out", stagger: 0.06 }, "-=0.1")
-      .from(all(svg, "[data-kept], [data-hub]"), { opacity: 0, scale: 0.6, transformOrigin: "50% 50%", duration: 0.5, ease: "power3.out", stagger: 0.06 }, "-=0.5")
-      .from(all(svg, "[data-label]"), { opacity: 0, duration: 0.6, ease: "power2.out" }, "-=0.3")
-    seq.add(svg, () => tl.restart(true))
+    const tl = timeline(svg)
+    enter(tl, all(svg, "[data-raw]"), { opacity: 0 }, { duration: 0.14, stagger: { amount: 0.12, from: "random" } }, 0.3)
+    enter(tl, all(svg, "[data-filter]"), { opacity: 0 }, { duration: 0.08 }, 0.48)
+    enter(tl, all(svg, "[data-label]"), { opacity: 0 }, { duration: 0.1 }, 0.5)
+    enter(tl, all(svg, "[data-link]"), { drawSVG: "0%" }, { duration: 0.12, stagger: 0.02 }, 0.56)
+    enter(tl, all(svg, "[data-kept], [data-hub]"), { opacity: 0, scale: 0.6, transformOrigin: "50% 50%" }, { duration: 0.1, stagger: 0.02 }, 0.6)
   }
 
-  for (const el of all(root, "[data-rule]")) {
-    const tw = gsap.fromTo(el, { scaleX: 0 }, later({ scaleX: 1, duration: 1.3, ease: "expo.out", transformOrigin: "0% 50%", delay: 1.2 }))
-    seq.add(el, () => tw.restart(true))
-  }
+  for (const el of all(root, "[data-rule]")) enter(timeline(el), el, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.14 }, 0.72)
   const facts = root.querySelector("[data-facts]")
-  if (facts) {
-    const tw = gsap.from(facts.children, later({ autoAlpha: 0, y: 16, duration: 0.8, ease: "power3.out", stagger: 0.12, delay: 1.4 }))
-    seq.add(facts, () => tw.restart(true))
-  }
-  seq.arm()
+  if (facts) enter(timeline(facts), facts.children, { autoAlpha: 0, y: 16 }, { duration: 0.1, stagger: 0.04 }, 0.78)
 }
 
 /* ---------- Version 2 : Récit ---------- */
@@ -261,7 +278,7 @@ function recit(root: HTMLElement, holds: Holds) {
   }
   for (const bead of all(root, "[data-bead]")) {
     const fill = bead.querySelector("[data-bead-fill]")
-    if (fill) gsap.fromTo(fill, { scale: 0 }, { scale: 1, duration: 0.45, ease: "power3.out", scrollTrigger: at(bead, { start: "top 55%", toggleActions: "play none none reverse" }) })
+    if (fill) gsap.fromTo(fill, { scale: 0 }, { scale: 1, ease: "none", scrollTrigger: at(bead, { start: "top 75%", end: "top 45%", scrub: true }) })
   }
 
   // Titres : les mots passent de pâle à encre au rythme du scroll, en finissant quand la section est en place.
@@ -286,13 +303,13 @@ function recit(root: HTMLElement, holds: Holds) {
   // Le panneau se remplit ligne par ligne, puis le prompt de Jean-Marc s'écrit caractère par caractère.
   for (const panel of all(root, '[data-reveal="panel"]')) {
     const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(panel) })
-    tl.from(panel, { autoAlpha: 0, y: 40, duration: 0.2 })
+    enter(tl, panel, { autoAlpha: 0, y: 40 }, { duration: 0.2, ease: "none" })
     const rows = all(panel, "[data-rows] > li")
-    if (rows.length) tl.from(rows, { autoAlpha: 0, x: -16, duration: 0.12, stagger: 0.08 })
+    if (rows.length) enter(tl, rows, { autoAlpha: 0, x: -16 }, { duration: 0.12, stagger: 0.08, ease: "none" })
     const typed = panel.querySelector<HTMLElement>("[data-type]")
     if (typed) {
       const chars = SplitText.create(typed, { type: "chars" }).chars
-      tl.from(chars, { opacity: 0, duration: 0.01, stagger: 0.4 / chars.length })
+      enter(tl, chars, { opacity: 0 }, { duration: 0.01, stagger: 0.4 / chars.length, ease: "none" })
     }
     tl.to({}, { duration: 0.15 })
   }
@@ -303,9 +320,9 @@ function recit(root: HTMLElement, holds: Holds) {
     const raw = all(svg, "[data-raw]")
     const kept = all(svg, "[data-kept]")
     const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(svg) })
-    tl.from(all(svg, "[data-label]"), { opacity: 0, duration: 0.1, stagger: 0.1 }, 0)
-    tl.from(raw, { opacity: 0, duration: 0.15, stagger: { amount: 0.15, from: "center" } }, 0)
-    tl.from(all(svg, "[data-filter]"), { opacity: 0, duration: 0.1 }, 0.15)
+    enter(tl, all(svg, "[data-label]"), { opacity: 0 }, { duration: 0.1, stagger: 0.1, ease: "none" }, 0)
+    enter(tl, raw, { opacity: 0 }, { duration: 0.15, stagger: { amount: 0.15, from: "center" }, ease: "none" }, 0)
+    enter(tl, all(svg, "[data-filter]"), { opacity: 0 }, { duration: 0.1, ease: "none" }, 0.15)
     kept.forEach((el, i) => {
       // Chaque connaissance naît d'une bille brute, traverse le filtre puis se pose côté cerveau.
       const src = raw[Math.round(((i + 0.5) / kept.length) * (raw.length - 1))]
@@ -325,22 +342,25 @@ function recit(root: HTMLElement, holds: Holds) {
       )
     })
     tl.to(raw, { opacity: 0.55, duration: 0.3 }, 0.35)
-    tl.from(all(svg, "[data-hub]"), { opacity: 0, scale: 0.6, transformOrigin: "50% 50%", duration: 0.1 }, 0.62)
-    tl.from(all(svg, "[data-link]"), { drawSVG: "0%", duration: 0.2, stagger: 0.03 }, 0.72)
+    enter(tl, all(svg, "[data-hub]"), { opacity: 0, scale: 0.6, transformOrigin: "50% 50%" }, { duration: 0.1, ease: "none" }, 0.62)
+    enter(tl, all(svg, "[data-link]"), { drawSVG: "0%" }, { duration: 0.2, stagger: 0.03, ease: "none" }, 0.72)
     // Le trait encre et les engagements, à la suite, toujours pendant l'arrêt.
-    for (const rule of all(root, "[data-rule]")) tl.fromTo(rule, { scaleX: 0 }, { scaleX: 1, transformOrigin: "0% 50%", duration: 0.2 }, 0.8)
+    for (const rule of all(root, "[data-rule]")) enter(tl, rule, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.2, ease: "none" }, 0.8)
     const facts = root.querySelector("[data-facts]")
-    if (facts) tl.from(facts.children, { autoAlpha: 0, y: 20, duration: 0.12, stagger: 0.06 }, 0.9)
+    if (facts) enter(tl, facts.children, { autoAlpha: 0, y: 20 }, { duration: 0.12, stagger: 0.06, ease: "none" }, 0.9)
     tl.to({}, { duration: 0.1 })
   }
 }
 
 /* ---------- Version 3 : Cinétique ---------- */
 
-/** Plus expressive : titres croisés, inclinaison à la vitesse du scroll, boutons magnétiques, cerveau en parallaxe. */
-function cinetique(root: HTMLElement): () => void {
+/**
+ * Plus expressive : titres croisés, panneaux qui s'ouvrent, prompt décodé, le tout au rythme du scroll ;
+ * en plus, inclinaison à la vitesse du scroll, boutons magnétiques et cerveau en parallaxe.
+ */
+function cinetique(root: HTMLElement, holds: Holds): () => void {
   heroIn(root, "kinetic")
-  const seq = sequencer()
+  const timeline = sectionTimelines(holds)
   const cleanups: (() => void)[] = []
   const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches
 
@@ -377,21 +397,20 @@ function cinetique(root: HTMLElement): () => void {
     }
   }
 
-  // Titres : chaque ligne arrive d'un côté opposé, au rythme du scroll, et finit en place avec la section.
+  // Titres : chaque ligne arrive d'un côté opposé. Le dernier titre grandit en plus jusqu'à sa taille.
   const titles = all(root, '[data-reveal="title"]')
   for (const el of titles) {
-    SplitText.create(el, {
-      type: "lines",
-      autoSplit: true,
-      onSplit: (self) =>
-        gsap.from(self.lines, {
-          x: (i: number) => (i % 2 ? -1 : 1) * window.innerWidth * 0.1,
-          autoAlpha: 0,
-          ease: "power2.out",
-          stagger: 0.08,
-          scrollTrigger: at(el, { start: "top 92%", end: "top 35%", scrub: 0.8, invalidateOnRefresh: true }),
-        }),
-    })
+    const tl = timeline(el)
+    const last = Boolean(el.closest("[data-close]"))
+    splitInto(
+      tl,
+      el,
+      "lines",
+      false,
+      (lines) => enterTween(lines, { x: (i: number) => (i % 2 ? -1 : 1) * window.innerWidth * 0.1, autoAlpha: 0 }, { duration: last ? 0.5 : 0.3, ease: "power2.out", stagger: 0.04 }),
+      0,
+    )
+    if (last) enter(tl, el, { scale: 0.82, transformOrigin: "0% 100%" }, { duration: 0.7, ease: "power1.out" }, 0)
   }
   // Inclinaison des titres selon la vitesse du scroll, qui retombe à zéro à l'arrêt.
   if (titles.length) {
@@ -406,60 +425,42 @@ function cinetique(root: HTMLElement): () => void {
     })
   }
   for (const el of all(root, '[data-reveal="text"]')) {
-    const tw = gsap.from(el, later({ autoAlpha: 0, y: 40, duration: 1, ease: "expo.out", delay: 0.2 }))
-    seq.add(el, () => tw.restart(true))
+    enter(timeline(el), el, { autoAlpha: 0, y: 40 }, { duration: 0.2, ease: "power2.out" }, el.closest("[data-close]") ? 0.4 : 0.18)
   }
 
-  // Panneaux : ils s'ouvrent depuis leur centre au scroll, puis les lignes arrivent et le prompt se décode.
+  // Panneaux : ils s'ouvrent depuis leur centre, puis les lignes arrivent et le prompt se décode.
   for (const panel of all(root, '[data-reveal="panel"]')) {
-    gsap.fromTo(
-      panel,
-      { clipPath: "inset(16% 12% 16% 12% round 8px)", scale: 0.94 },
-      { clipPath: "inset(0% 0% 0% 0% round 8px)", scale: 1, ease: "none", scrollTrigger: at(panel, { start: "top 95%", end: "top 40%", scrub: 0.6 }) },
-    )
+    const tl = timeline(panel)
+    enter(tl, panel, { clipPath: "inset(16% 12% 16% 12% round 8px)", scale: 0.94 }, { clipPath: "inset(0% 0% 0% 0% round 8px)", duration: 0.3, ease: "power1.out" }, 0.2)
     const rows = all(panel, "[data-rows] > li")
-    if (rows.length) {
-      const tw = gsap.from(rows, later({ autoAlpha: 0, x: 48, duration: 0.9, ease: "expo.out", stagger: 0.1, delay: 0.4 }))
-      seq.add(panel, () => tw.restart(true))
-    }
+    if (rows.length) enter(tl, rows, { autoAlpha: 0, x: 48 }, { duration: 0.12, ease: "power2.out", stagger: 0.05 }, 0.42)
     const typed = panel.querySelector<HTMLElement>("[data-type]")
     if (typed) {
       const text = typed.textContent ?? ""
       typed.setAttribute("aria-label", text)
+      // Au départ, des points à la place des lettres ; en remontant, le décodage repart vers les points.
       gsap.set(typed, { textContent: text.replace(/\S/g, "·") })
-      const tw = gsap.to(typed, later({ duration: 1.8, scrambleText: { text, chars: "lowerCase", speed: 0.5, revealDelay: 0.2 }, ease: "none", delay: 1 }))
-      seq.add(typed, () => tw.restart(true))
+      // revealDelay est en unités de la timeline (durée totale 1) : il doit rester petit devant la durée du décodage.
+      tl.to(typed, { scrambleText: { text, chars: "lowerCase", revealDelay: 0.04, tweenLength: false }, duration: 0.2 }, 0.64)
     }
   }
 
-  // Le brut tourbillonne sur le poste au scroll ; à l'arrivée, les connaissances ressortent du filtre d'un coup.
+  // Le brut tourbillonne sur le poste, puis les connaissances ressortent du filtre.
   const svg = root.querySelector("[data-privacy]")
   if (svg) {
+    const tl = timeline(svg)
     const group = svg.querySelector("[data-raw-group]")
-    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: at(svg, { start: "top 90%", end: "center 40%", scrub: 0.6 }) })
-    if (group) tl.to(group, { rotation: -120, svgOrigin: "120 110", duration: 0.6 }, 0)
-    tl.to(all(svg, "[data-raw]"), { opacity: 0.15, duration: 0.6, stagger: { amount: 0.3, from: "random" } }, 0)
-    tl.from(all(svg, "[data-filter]"), { opacity: 0, scaleY: 0.2, transformOrigin: "50% 50%", duration: 0.2 }, 0.1)
-    const out = gsap.timeline({ paused: true, delay: 0.5 })
-    out.from(all(svg, "[data-kept], [data-hub]"), { opacity: 0, scale: 0.3, transformOrigin: "50% 50%", duration: 0.7, ease: "back.out(2.2)", stagger: 0.08 })
-    out.from(all(svg, "[data-link]"), { drawSVG: "0%", duration: 0.6, ease: "expo.out", stagger: 0.06 }, 0.15)
-    seq.add(svg, () => out.restart(true))
+    if (group) tl.to(group, { rotation: -120, svgOrigin: "120 110", duration: 0.35 }, 0.3)
+    tl.to(all(svg, "[data-raw]"), { opacity: 0.15, duration: 0.3, stagger: { amount: 0.1, from: "random" } }, 0.3)
+    enter(tl, all(svg, "[data-filter]"), { opacity: 0, scaleY: 0.2, transformOrigin: "50% 50%" }, { duration: 0.1 }, 0.4)
+    enter(tl, all(svg, "[data-label]"), { opacity: 0 }, { duration: 0.1 }, 0.45)
+    enter(tl, all(svg, "[data-kept], [data-hub]"), { opacity: 0, scale: 0.3, transformOrigin: "50% 50%" }, { duration: 0.1, ease: "back.out(2.2)", stagger: 0.02 }, 0.58)
+    enter(tl, all(svg, "[data-link]"), { drawSVG: "0%" }, { duration: 0.12, ease: "power2.out", stagger: 0.02 }, 0.62)
   }
 
-  for (const el of all(root, "[data-rule]")) {
-    const tw = gsap.fromTo(el, { scaleX: 0 }, later({ scaleX: 1, duration: 1.2, ease: "expo.out", transformOrigin: "0% 50%", delay: 1.1 }))
-    seq.add(el, () => tw.restart(true))
-  }
+  for (const el of all(root, "[data-rule]")) enter(timeline(el), el, { scaleX: 0, transformOrigin: "0% 50%" }, { duration: 0.14, ease: "power2.out" }, 0.72)
   const facts = root.querySelector("[data-facts]")
-  if (facts) {
-    const tw = gsap.from(facts.children, later({ autoAlpha: 0, x: 60, duration: 1, ease: "expo.out", stagger: 0.14, delay: 1.3 }))
-    seq.add(facts, () => tw.restart(true))
-  }
+  if (facts) enter(timeline(facts), facts.children, { autoAlpha: 0, x: 60 }, { duration: 0.12, ease: "power2.out", stagger: 0.04 }, 0.78)
 
-  // Dernier écran : le titre grandit jusqu'à sa taille en approchant.
-  const close = root.querySelector('[data-close] [data-reveal="title"]')
-  if (close) gsap.from(close, { scale: 0.82, transformOrigin: "0% 100%", ease: "none", scrollTrigger: { trigger: close, start: "top 100%", end: "top 45%", scrub: 0.6 } })
-
-  seq.arm()
   return () => cleanups.forEach((fn) => fn())
 }
