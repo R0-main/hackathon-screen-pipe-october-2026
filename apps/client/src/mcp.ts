@@ -7,7 +7,7 @@ import { z } from "zod"
 import { KNOWLEDGE_KINDS, classifyZones, extractEntities, normalize, redactText, truncate, type KnowledgeItemInput } from "@brain/core"
 import { BrainApi } from "./api"
 import { zoneHints, zoneName } from "./cache"
-import { loadCache, loadConfig, selfScript, type Cache } from "./config"
+import { loadCache, loadConfig, selfCommand, type Cache } from "./config"
 import { formatQuery, formatStatus, formatWhoami, formatZoneSummary, formatZones } from "./format"
 import { maskOwnSecrets, ownSecrets } from "./secrets"
 
@@ -22,7 +22,7 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
 
   const api = (): BrainApi => {
     const cfg = loadConfig()
-    if (!cfg) throw new Error(`Client du cerveau non configuré : lancez \`node ${selfScript()} init --url <url> --token <jeton>\`.`)
+    if (!cfg) throw new Error(`Client du cerveau non configuré : lancez \`${selfCommand()} init --url <url> --token <jeton>\`.`)
     return new BrainApi(cfg.url, cfg.token, 20000)
   }
   const name = (id: string) => zoneName(cache, id)

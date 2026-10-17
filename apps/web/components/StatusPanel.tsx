@@ -8,7 +8,7 @@ import { RelTime } from "./RelTime"
 import { ErrorText, ZoneTag, zoneColor } from "./ui"
 
 /** Commande du client installé (voir lib/install-prompt.ts) qui fait rédiger l'état par Claude sur le poste, puis l'envoie. */
-const REFRESH_COMMAND = "node ~/.company-brain/brain.mjs refresh-status"
+const REFRESH_COMMAND = "~/.company-brain/brain refresh-status"
 
 export function StatusPanel({
   status,

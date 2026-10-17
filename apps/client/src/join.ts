@@ -1,7 +1,7 @@
 // `brain.mjs join` : rejoindre une entreprise avec le message d'équipe (un code par entreprise, pas de jeton personnel).
 // Le jeton du poste est généré ici et seule son empreinte part avec la demande ; le poste attend qu'un admin l'accepte
-// (POST /api/join/status), puis enchaîne sur `setup` avec ce jeton. Sans réponse à temps : code 5, et `join` sans
-// paramètres reprend la même demande (état dans ~/.company-brain/join.json, mode 600).
+// (POST /api/join/status), puis enchaîne sur `setup` avec ce jeton (et rend son code). Sans réponse à temps : code 7, et
+// `join` sans paramètres reprend la même demande (état dans ~/.company-brain/join.json, mode 600).
 
 import { createHash, randomBytes } from "node:crypto"
 import { rmSync } from "node:fs"
@@ -11,8 +11,10 @@ import { brainHome, ensureHome, readJson, UserError, writeJson } from "./config"
 
 type Log = (s: string) => void
 
-export const EXIT_JOIN_PENDING = 5
-export const EXIT_JOIN_REJECTED = 6
+// Après ceux des scripts d'installation et de setup (5 : téléchargement raté, 6 : branché sans Screenpipe) : un code,
+// un sens, quelle que soit la commande qui l'a rendu.
+export const EXIT_JOIN_PENDING = 7
+export const EXIT_JOIN_REJECTED = 8
 export const DEFAULT_ACCEPT_WAIT_S = 480
 
 type JoinState = { url: string; id: string; token: string; org: string; name?: string }

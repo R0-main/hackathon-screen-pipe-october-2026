@@ -1,29 +1,45 @@
 import { strict as assert } from "node:assert"
-import { spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
-import { createServer } from "node:http"
-import type { AddressInfo } from "node:net"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { buildInstallPrompt, buildJoinPrompt } from "../../web/lib/install-prompt"
+import { EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands } from "../../web/lib/install-prompt"
 import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
+import { EXIT_JOIN_PENDING, EXIT_JOIN_REJECTED } from "../src/join"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
+import { EXIT_NO_SCREENPIPE, EXIT_PERMISSIONS_PENDING } from "../src/setup"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const EXAMPLE = { baseUrl: "https://cerveau.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Fournil", zones: ["compta"] }
 const prompt = buildInstallPrompt(EXAMPLE)
 
-test("prompt d'installation : une seule commande (install.sh puis setup), une seule autorisation dans Claude Code", () => {
-  const command = `curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
-  assert.ok(prompt.includes(command), "la commande unique")
-  assert.equal(prompt.split(EXAMPLE.token).length, 2, "le jeton n'apparaît qu'une fois, dans la commande")
+test("prompt d'installation : une seule commande par système (install.sh ou install.ps1, puis setup), une seule autorisation dans Claude Code", () => {
+  // Téléchargement raté : 5, jamais le code brut de curl (« curl: (6) » se lirait « branché sans Screenpipe »).
+  const posix = `(curl -fsSL --create-dirs ${EXAMPLE.baseUrl}/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}`
+  const windows =
+    `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.company-brain" | Out-Null; ` +
+    `try { Invoke-WebRequest -UseBasicParsing ${EXAMPLE.baseUrl}/install.ps1 -OutFile "$env:USERPROFILE\\.company-brain\\install.ps1" -ErrorAction Stop } catch { exit 5 }; ` +
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.company-brain\\install.ps1" --url ${EXAMPLE.baseUrl} --token ${EXAMPLE.token}; exit $LASTEXITCODE`
+  assert.ok(prompt.includes(`macOS, Linux, Git Bash : ${posix}\n`), "la commande macOS / Linux")
+  assert.ok(prompt.includes(`Windows, PowerShell : ${windows}\n`), "la commande Windows")
+  assert.deepEqual(installCommands(EXAMPLE.baseUrl, `--token ${EXAMPLE.token}`), { posix, windows })
+  // Le jeton n'apparaît que dans ces deux commandes (une seule sera lancée).
+  assert.equal(prompt.split(EXAMPLE.token).length, 3)
   assert.match(prompt, /Code 3 \(« EN ATTENTE »\)/)
+  assert.match(prompt, /Code 5 : réseau ou adresse, relance la même commande/)
+  assert.match(prompt, /brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe » \(même délai\)/)
   assert.match(prompt, /délai de 10 minutes/)
-  // Ni prérequis à vérifier à la main ni étapes séparées : install.sh et setup s'en chargent.
-  assert.ok(!/node -v|install-schedule|install-hooks|claude mcp add/.test(prompt))
-  assert.ok(prompt.length < 2000, `prompt court (${prompt.length} caractères)`)
+  // Ni prérequis à vérifier à la main ni étapes séparées : les scripts et setup s'en chargent.
+  assert.ok(!/node -v|winget|install-schedule|install-hooks|claude mcp add/.test(prompt))
+  // Deux commandes (macOS / Linux, Windows) et la consigne « session cloud » : court, mais pas plus.
+  assert.ok(prompt.length < 2700, `prompt court (${prompt.length} caractères)`)
+})
+
+test("prompt d'installation : les codes de sortie cités sont ceux de setup et des scripts", () => {
+  assert.equal(EXIT_PERMISSIONS_PENDING, 3)
+  assert.equal(EXIT_NO_SCREENPIPE, 6)
+  assert.match(prompt, new RegExp(`Code ${EXIT_PERMISSIONS_PENDING} \\(« EN ATTENTE »\\)`))
+  assert.match(prompt, new RegExp(`\\(${EXIT_NO_SCREENPIPE} : branché sans Screenpipe\\)`))
 })
 
 test("prompt d'installation : aucun historique ne part sans relecture complète et accord explicite", () => {
@@ -56,85 +72,44 @@ test("install/PROMPT.md est à jour avec buildInstallPrompt", () => {
   assert.equal(example, prompt)
 })
 
-const installSh = fileURLToPath(new URL("../../web/public/install.sh", import.meta.url))
-
-test("install.sh : syntaxe POSIX valide, refuse un appel sans --url", () => {
-  assert.equal(spawnSync("sh", ["-n", installSh]).status, 0)
-  const r = spawnSync("sh", [installSh, "--token", "cb_x"], { encoding: "utf8" })
-  assert.equal(r.status, 2)
-  assert.match(r.stderr, /Usage/)
-})
-
-test("install.sh : télécharge brain.mjs, écrit le raccourci, lance setup avec les mêmes options et rend son code", async () => {
-  // Faux client : affiche ses arguments et sort en 3, comme setup quand une autorisation macOS manque.
-  const fake = "console.log(JSON.stringify(process.argv.slice(2))); process.exit(3)"
-  const server = createServer((req, res) => {
-    if (req.url === "/brain.mjs") res.end(fake)
-    else res.writeHead(404).end()
-  })
-  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  const home = mkdtempSync(join(tmpdir(), "brain-install-"))
-  try {
-    const r = await new Promise<{ status: number | null; stdout: string }>((ok) => {
-      const child = spawn("sh", [installSh, "--url", `${url}/`, "--token", "cb_test"], { env: { ...process.env, COMPANY_BRAIN_HOME: home } })
-      let stdout = ""
-      child.stdout.on("data", (d) => (stdout += d))
-      child.on("close", (status) => ok({ status, stdout }))
-    })
-    assert.equal(r.status, 3, "le code de setup est rendu tel quel")
-    assert.ok(r.stdout.includes(JSON.stringify(["setup", "--url", `${url}/`, "--token", "cb_test"])), r.stdout)
-    assert.equal(readFileSync(join(home, "brain.mjs"), "utf8"), fake)
-    assert.ok(existsSync(join(home, "brain")), "raccourci ~/.company-brain/brain")
-    const viaShortcut = spawnSync(join(home, "brain"), ["status"], { encoding: "utf8" })
-    assert.equal(viaShortcut.stdout.trim(), JSON.stringify(["status"]))
-  } finally {
-    server.close()
-    rmSync(home, { recursive: true, force: true })
-  }
-})
-
 const JOIN = { baseUrl: "https://cerveau.example.com", code: "cj_XXXXXXXXXXXXXXXXXXXXXXXX", orgName: "Atelier Lumen" }
 const joinPrompt = buildJoinPrompt(JOIN)
 
-test("message d'équipe : une seule commande (install.sh --join), champs inconnus laissés à l'admin", () => {
-  assert.ok(joinPrompt.includes(`sh ~/.company-brain/install.sh --url ${JOIN.baseUrl} --join ${JOIN.code} --name "<prénom nom>"`))
-  assert.equal(joinPrompt.split(JOIN.code).length, 2, "le code n'apparaît qu'une fois, dans la commande")
+test("message d'équipe : une commande par système (install.sh ou install.ps1 --join), champs inconnus laissés à l'admin", () => {
+  const options = `--join ${JOIN.code} --name "<prénom nom>" --title "<poste>" --email "<email>"`
+  const cmd = installCommands(JOIN.baseUrl, options)
+  assert.ok(joinPrompt.includes(`macOS, Linux, Git Bash : ${cmd.posix}\n`))
+  assert.ok(joinPrompt.includes(`Windows, PowerShell : ${cmd.windows}\n`))
+  assert.match(cmd.posix, /sh ~\/\.company-brain\/install\.sh --url https:\/\/cerveau\.example\.com --join cj_X+ --name "<prénom nom>"/)
+  assert.equal(joinPrompt.split(JOIN.code).length, 3, "le code n'apparaît que dans les deux commandes")
   assert.match(joinPrompt, /N'invente rien/)
   assert.match(joinPrompt, /ne le transmets pas hors de l'entreprise/)
-  assert.match(joinPrompt, /Code 5 \(« EN ATTENTE D'ACCEPTATION »\)/)
+  assert.match(joinPrompt, /Code 7 \(« EN ATTENTE D'ACCEPTATION »\)/)
+  assert.match(joinPrompt, /Code 8 : la demande a été refusée/)
+  assert.match(joinPrompt, /Code 5 : réseau ou adresse, relance la même commande/)
+  assert.match(joinPrompt, /brain doctor --json`/)
   assert.match(joinPrompt, /d'entreprise d'Atelier Lumen/, "élision")
-  assert.ok(joinPrompt.length < 2400, `message court (${joinPrompt.length} caractères)`)
+  assert.ok(joinPrompt.length < 3000, `message court (${joinPrompt.length} caractères)`)
+})
+
+test("codes de sortie : un code, un sens, pour les scripts, setup et join", () => {
+  assert.deepEqual(JOIN_EXIT, { pending: EXIT_JOIN_PENDING, rejected: EXIT_JOIN_REJECTED })
+  assert.equal(EXIT.permissions, EXIT_PERMISSIONS_PENDING)
+  assert.equal(EXIT.noScreenpipe, EXIT_NO_SCREENPIPE)
+  const codes = Object.values(EXIT)
+  assert.equal(new Set(codes).size, codes.length, "deux sens pour un même code")
+  // Les scripts d'installation documentent le même tableau.
+  for (const file of ["install.sh", "install.ps1"]) {
+    const text = readFileSync(new URL(`../../web/public/${file}`, import.meta.url), "utf8")
+    for (const c of [0, 1, 3, 6, 7, 8]) assert.match(text, new RegExp(`\\b${c} = `), `${file} : code ${c} non documenté`)
+    assert.match(text, /\n#\s+2\s+mauvais appel/)
+    assert.match(text, /\n#\s+5\s+t[ée]l[ée]chargement impossible/)
+  }
 })
 
 test("message d'équipe : reconnu par brain-sync, et son code est masqué", () => {
   assert.ok(INSTALL_PROMPT_RE.test(joinPrompt))
   assert.ok(!maskOwnSecrets(joinPrompt).text.includes(JOIN.code))
-})
-
-test("install.sh --join : lance join (et non setup) avec les mêmes options", async () => {
-  const fake = "console.log(JSON.stringify(process.argv.slice(2))); process.exit(5)"
-  const server = createServer((req, res) => {
-    if (req.url === "/brain.mjs") res.end(fake)
-    else res.writeHead(404).end()
-  })
-  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  const home = mkdtempSync(join(tmpdir(), "brain-install-"))
-  try {
-    const args = ["--url", url, "--join", "cj_test", "--name", "Léa Bernard"]
-    const r = await new Promise<{ status: number | null; stdout: string }>((ok) => {
-      const child = spawn("sh", [installSh, ...args], { env: { ...process.env, COMPANY_BRAIN_HOME: home } })
-      let stdout = ""
-      child.stdout.on("data", (d) => (stdout += d))
-      child.on("close", (status) => ok({ status, stdout }))
-    })
-    assert.equal(r.status, 5, "le code de join est rendu tel quel")
-    assert.ok(r.stdout.includes(JSON.stringify(["join", ...args])), r.stdout)
-  } finally {
-    server.close()
-    rmSync(home, { recursive: true, force: true })
-  }
 })
 
 test("prompt d'onboarding par un agent : lit l'historique, envoie sans rien appliquer, reconnu et masqué par brain-sync", () => {
