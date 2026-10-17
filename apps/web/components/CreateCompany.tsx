@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify, type McpConnectorPublic } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { AgentLogos } from "./brand-logos"
+import { AgentRun, AgentToasts, useAgentOnboarding, type AgentEvent, type RunState } from "./AgentProgress"
 import { Brain3D, type BrainPerson } from "./Brain3D"
 import type { ZoneActivity } from "./BrainViz"
 import { McpConnectors } from "./McpConnectors"
@@ -24,8 +25,8 @@ type Created = { orgName: string; meId: string; prompt: string; zones: ZoneOptio
 type TeamUser = { id: string; last_at: string | null }
 /** Zone proposée par Claude Code ou Codex (étape « context »). */
 type ProposedZone = { id: string; name: string; description: string; keywords: string[] }
-/** Proposition de Claude Code ou Codex : zones, premières connaissances, description de l'entreprise. */
-type Proposal = { zones: ProposedZone[]; items: unknown[]; description: string }
+/** Proposition de Claude Code ou Codex : zones, premières connaissances, description de l'entreprise. `received_at` : sa version. */
+type Proposal = { zones: ProposedZone[]; items: unknown[]; description: string; received_at?: string }
 
 type Saved = {
   step: Step
@@ -112,6 +113,10 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const [team, setTeam] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Claude Code ou Codex travaille en arrière-plan une fois le cerveau créé : on peut passer à la suite, ses
+  // signaux arrivent en notifications et sa proposition rejoint l'étape des zones dès qu'il l'envoie.
+  const agent = useAgentOnboarding<Proposal>(Boolean(created) && step !== "intro", step !== "context")
+  const incoming = agent.draft
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -157,6 +162,18 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
       clearInterval(id)
     }
   }, [created])
+
+  // Une proposition (ou sa version complétée) arrive pendant l'étape des zones : elle s'y ajoute, sans retirer ce
+  // que la personne a déjà coché ou décoché. Le choix par défaut, s'il n'a pas été touché, lui cède la place.
+  useEffect(() => {
+    if (step !== "zones" || !incoming || incoming.received_at === proposal?.received_at) return
+    const before = new Set((proposal?.zones ?? []).map((z) => z.id))
+    const ids = incoming.zones.map((z) => z.id)
+    setProposal(incoming)
+    setPicked((p) =>
+      !proposal && p.join() === DEFAULT_PICK.join() ? ids : [...p, ...ids.filter((id) => !before.has(id) && !p.includes(id))],
+    )
+  }, [step, incoming, proposal])
 
   // Zones du brouillon, ou celles réellement créées : c'est ce que montre le petit cerveau à droite.
   // Connaissances proposées par zone : le cerveau de l'aperçu en a déjà, en billes.
@@ -396,13 +413,14 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 </Question>
               )}
 
-              {step === "context" && created && <ContextStep orgName={created.orgName} onNext={toZones} />}
+              {step === "context" && created && <ContextStep orgName={created.orgName} run={agent.run} state={agent.state} received={incoming} onNext={toZones} />}
 
               {step === "zones" && created && (
                 <ZonesStep
                   org={org}
                   zones={zones}
                   proposal={proposal}
+                  agentBusy={agent.state === "running"}
                   preview={draftZones}
                   picked={picked}
                   setPicked={setPicked}
@@ -476,6 +494,20 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
           </div>
         </aside>
       </div>
+      {/* À l'étape « context », le fil est déjà dans la page. Après les zones, la proposition se relit dans Onboarding. */}
+      {step !== "context" && (
+        <AgentToasts
+          toasts={agent.toasts}
+          dismiss={agent.dismiss}
+          draftAction={
+            step === "install" || step === "team" ? (
+              <Link href="/onboarding" className="landing-link">
+                La relire dans Onboarding
+              </Link>
+            ) : undefined
+          }
+        />
+      )}
     </main>
   )
 }
@@ -485,9 +517,9 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
  * nom et sa description, et rien d'autre), puis propose zones et premières connaissances (POST /api/onboarding/import).
  * La page la reçoit en direct ; l'étape des zones part de cette proposition. On peut passer et choisir soi-même.
  */
-function ContextStep({ orgName, onNext }: { orgName: string; onNext: (p: Proposal | null) => void }) {
+function ContextStep(props: { orgName: string; run: AgentEvent[]; state: RunState; received: Proposal | null; onNext: (p: Proposal | null) => void }) {
+  const { orgName, run, state, received, onNext } = props
   const prompt = useRef<Promise<string> | null>(null)
-  const [received, setReceived] = useState<Proposal | null>(null)
 
   const getPrompt = () => {
     prompt.current ??= api<{ prompt: string }>("/api/onboarding/agent", { method: "POST" }).then((r) => r.prompt)
@@ -495,23 +527,7 @@ function ContextStep({ orgName, onNext }: { orgName: string; onNext: (p: Proposa
     return prompt.current
   }
 
-  useEffect(() => {
-    if (received) return
-    let stop = false
-    const tick = async () => {
-      try {
-        const r = await api<{ draft: Proposal | null }>("/api/onboarding/import")
-        if (!stop && r.draft) setReceived({ zones: r.draft.zones, items: r.draft.items, description: r.draft.description ?? "" })
-      } catch {}
-    }
-    void tick()
-    const id = setInterval(tick, POLL_MS)
-    return () => {
-      stop = true
-      clearInterval(id)
-    }
-  }, [received])
-
+  const started = state !== "idle"
   return (
     <>
       <h1 className="create-title">Laissez Claude proposer les zones.</h1>
@@ -529,21 +545,33 @@ function ContextStep({ orgName, onNext }: { orgName: string; onNext: (p: Proposa
         <p className="mt-6 flex items-center gap-2 text-[14px]" aria-live="polite">
           <span className="live-dot is-live" aria-hidden />
           Proposition reçue : {received.zones.length} zone{received.zones.length > 1 ? "s" : ""}, {received.items.length} connaissance
-          {received.items.length > 1 ? "s" : ""}.
+          {received.items.length > 1 ? "s" : ""}.{state === "running" && " Claude continue de la compléter : l'étape suivante suivra."}
+        </p>
+      ) : started ? (
+        <p className="mt-6 text-[14px]" aria-live="polite">
+          {state === "error"
+            ? "Claude s'est arrêté avant d'envoyer sa proposition. Relancez le message, ou choisissez les zones vous-même."
+            : "C'est lancé. Vous pouvez passer à la suite : Claude continue en arrière-plan, ses zones s'ajouteront à l'étape suivante dès qu'il les envoie, et chaque trouvaille s'affiche en notification."}
         </p>
       ) : (
         <p className="mt-6 flex items-center gap-2 text-[14px]" aria-live="polite">
-          <span className="live-dot" aria-hidden /> En attente de la proposition. Cette page se met à jour toute seule.
+          <span className="live-dot" aria-hidden /> En attente de Claude. Cette page se met à jour toute seule.
         </p>
       )}
+      <AgentRun run={run} className="mt-4" />
       <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
         {received && (
           <button type="button" className="btn btn-primary btn-lg" onClick={() => onNext(received)}>
             Voir les zones proposées
           </button>
         )}
-        <button type="button" className={received ? "landing-link text-[15px]" : "btn btn-lg"} onClick={() => onNext(null)}>
-          {received ? "Ignorer et choisir moi-même" : "Passer : je choisis les zones moi-même"}
+        {!received && started && state !== "error" && (
+          <button type="button" className="btn btn-primary btn-lg" onClick={() => onNext(null)}>
+            Continuer pendant que Claude travaille
+          </button>
+        )}
+        <button type="button" className={received || (started && state !== "error") ? "landing-link text-[15px]" : "btn btn-lg"} onClick={() => onNext(null)}>
+          {received ? "Ignorer et choisir moi-même" : started && state !== "error" ? "Choisir les zones sans attendre Claude" : "Passer : je choisis les zones moi-même"}
         </button>
       </div>
     </>
@@ -582,6 +610,8 @@ function ZonesStep(props: {
   org: string
   zones: ZoneOption[]
   proposal: Proposal | null
+  /** Claude travaille encore : sa proposition (ou sa version complétée) s'ajoutera à cette étape. */
+  agentBusy: boolean
   preview: ZoneOption[]
   picked: string[]
   setPicked: (f: (p: string[]) => string[]) => void
@@ -628,6 +658,12 @@ function ZonesStep(props: {
           ? "Claude les a proposées à partir de vos conversations : gardez, retirez, ajoutez. Vous réglerez ensuite qui lit quelle zone."
           : "Une zone par métier. Vous réglerez ensuite qui lit quelle zone : la compta n'a pas besoin du code."}
       </p>
+      {props.agentBusy && (
+        <p className="mt-4 flex items-center gap-2 text-[13px] text-trace" aria-live="polite">
+          <span className="live-dot is-live" aria-hidden />
+          {proposed.length ? "Claude complète encore sa proposition : ses nouvelles zones s'ajouteront ici." : "Claude prépare encore ses zones : elles s'ajouteront ici dès qu'il les envoie."}
+        </p>
+      )}
       {proposed.length > 0 && (
         <>
           <h2 className="mt-9 text-[13px] font-medium text-trace">Proposées par Claude</h2>
