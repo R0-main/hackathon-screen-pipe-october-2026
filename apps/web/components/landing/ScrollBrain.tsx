@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz } from "../BrainViz"
-import { hashString, scatter, seeded, zoneDirection } from "../brain-geometry"
+import { backFade, brainNetwork, brainSurface, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
 import { Dot, zoneColor } from "../ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -28,19 +28,18 @@ const RAW = 0xc6c6bf
 const WHITE = 0xffffff
 const PHOSPHOR = 0xc7ff3e
 
-const RADIUS = 1.25
-const AXES = { x: 1.3, y: 1, z: 0.95 }
 const CENTER_R = 0.045
-/** Demi-encombrement du cerveau à l'écran (coque + billes), pour cadrer la caméra. */
-const EXTENT = { w: 1.65, h: 1.3 }
+/** Demi-encombrement du cerveau à l'écran (surface + billes), pour cadrer la caméra. */
+const EXTENT = { w: 1.65, h: 1.45 }
 // Focale longue : peu de perspective, les billes gardent la même taille d'un bord à l'autre.
 const FOV = 26
 const DUST = 160
 const BONE = 0xf6f6f3
-/** Coque : anneaux de contour par hémisphère, ondulés comme des circonvolutions. */
-const RINGS = 9
-const RING_SEGMENTS = 160
-const FISSURE = 0.05
+/** Au repos, la couleur d'une zone est adoucie vers le blanc dans le réseau. */
+const SOFTEN = 0.5
+/** Part de bone sur la face cachée du réseau : il n'en reste qu'un souffle, qui garde la silhouette. */
+const BACK = 0.86
+const NEURON_R = 0.007
 /** Avancement de l'assemblage sur la page d'accueil : un quart des connaissances est déjà en place. */
 const HERO_ASSEMBLY = 0.32
 /** Le dernier tiers des billes arrive plus tard : décalage maximal d'une bille dans l'assemblage. */
@@ -187,49 +186,40 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const geoRing = new T.RingGeometry(0.93, 1, 48)
   const geometries: THREE.BufferGeometry[] = [geoSphere, geoRing]
   const materials: THREE.Material[] = []
-  const onShell = (d: [number, number, number], k: number) => new T.Vector3(d[0] * RADIUS * AXES.x * k, d[1] * RADIUS * AXES.y * k, d[2] * RADIUS * AXES.z * k)
-
-  // Coque : deux hémisphères séparés par la scissure, chacun fait d'anneaux de contour ondulés.
-  const shellPts: number[] = []
-  const shellRand = seeded(11)
-  for (const side of [-1, 1]) {
-    for (let i = 0; i < RINGS; i++) {
-      const phi = 0.2 + (i / (RINGS - 1)) * 1.26
-      const k = 6 + Math.round(shellRand() * 6)
-      const ph = shellRand() * Math.PI * 2
-      const ph2 = shellRand() * Math.PI * 2
-      let prev: THREE.Vector3 | null = null
-      for (let j = 0; j <= RING_SEGMENTS; j++) {
-        const t = (j / RING_SEGMENTS) * Math.PI * 2
-        const wrinkle = 1 + 0.034 * Math.sin(k * t + ph) + 0.014 * Math.sin(2.3 * k * t + ph2)
-        const x = RADIUS * AXES.x * 0.97 * Math.sin(phi) * Math.cos(t) * wrinkle
-        let y = RADIUS * AXES.y * 0.97 * Math.sin(phi) * Math.sin(t) * wrinkle
-        if (y < 0) y *= 0.82
-        const z = side * (FISSURE + RADIUS * AXES.z * 0.97 * Math.cos(phi))
-        const p = new T.Vector3(x, y, z)
-        if (prev) shellPts.push(prev.x, prev.y, prev.z, p.x, p.y, p.z)
-        prev = p
-      }
-    }
+  const surface = brainSurface()
+  const anchors = zoneAnchors(zones.length)
+  const owner = territories(anchors)
+  /** Point de surface i, décalé de k le long de sa normale (k < 0 : sous la surface). */
+  const onSurface = (i: number, k: number) => {
+    const { p, n } = surface[i]
+    return new T.Vector3(p[0] + n[0] * k, p[1] + n[1] * k, p[2] + n[2] * k)
   }
-  const shellGeo = new T.BufferGeometry()
-  shellGeo.setAttribute("position", new T.Float32BufferAttribute(shellPts, 3))
-  const shellMat = new T.LineBasicMaterial({ color: RAW, transparent: true, opacity: 0 })
-  group.add(new T.LineSegments(shellGeo, shellMat))
-  geometries.push(shellGeo)
-  materials.push(shellMat)
+
+  // Le réseau qui dessine le cerveau : gris brut au départ, chaque territoire prend la couleur de sa zone quand elle est nommée.
+  const net = brainNetwork(owner)
+  const netPos = new Float32Array(net.edges.length * 6)
+  const netCol = new Float32Array(net.edges.length * 6)
+  net.edges.forEach(([a, b], e) => netPos.set([...net.points[a], ...net.points[b]], e * 6))
+  const netGeo = new T.BufferGeometry()
+  netGeo.setAttribute("position", new T.BufferAttribute(netPos, 3))
+  netGeo.setAttribute("color", new T.BufferAttribute(netCol, 3))
+  const shellMat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 })
+  const neuronMat = new T.MeshBasicMaterial({ color: WHITE, transparent: true, opacity: 0 })
+  const neurons = new T.InstancedMesh(new T.SphereGeometry(1, 8, 6), neuronMat, net.points.length)
+  net.points.forEach((p, i) => neurons.setMatrixAt(i, new T.Matrix4().makeScale(NEURON_R, NEURON_R, NEURON_R).setPosition(p[0], p[1], p[2])))
+  group.add(new T.LineSegments(netGeo, shellMat), neurons)
+  geometries.push(netGeo, neurons.geometry)
+  materials.push(shellMat, neuronMat)
 
   // Zones : un centre coloré cerclé d'encre, et ses connaissances autour.
-  const n = zones.length
-  const spread = Math.min(1.1, 2.2 / Math.sqrt(Math.max(1, n)))
   const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
   materials.push(outlineMat)
   const gfx: ZoneGfx[] = []
   const nodes: Node[] = []
   zones.forEach((z, i) => {
     const rand = seeded(hashString(z.id))
-    const dir = zoneDirection(i, n)
-    const pos = onShell(dir, 0.86)
+    const pos = onSurface(anchors[i], -0.08)
+    const dir = pos.clone().normalize().toArray()
     const centerMat = new T.MeshBasicMaterial({ color: WHITE })
     const center: SphereMesh = new T.Mesh(geoSphere, centerMat)
     const outline: SphereMesh = new T.Mesh(geoSphere, outlineMat)
@@ -240,8 +230,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
 
     const first = nodes.length
     const count = 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
-    for (let k = 0; k < count; k++) {
-      const end = onShell(scatter(dir, rand, spread), 0.95 + rand() * 0.1)
+    for (const idx of zoneNodes(anchors, owner, i, count)) {
+      const end = onSurface(idx, 0.012 + rand() * 0.02)
       // Avant de se poser, la connaissance flotte loin de la coque, dans sa direction : elle vient d'un poste.
       const away = scatter(dir, rand, 1.2)
       const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(2 + rand())
@@ -354,6 +344,42 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const phosC = new T.Color(PHOSPHOR)
   const whiteC = new T.Color(WHITE)
 
+  const boneC = new T.Color(BONE)
+  const linkBase = net.points.map(() => new T.Color())
+  const dotBase = net.points.map(() => new T.Color())
+  const fade = new Float32Array(net.points.length)
+  const camLocal = new T.Vector3()
+  let painted = -1
+  /** Couleur du réseau : brut → couleur adoucie de chaque territoire, à mesure que les zones sont nommées. */
+  const paintNetwork = (named: number) => {
+    if (Math.abs(named - painted) < 0.004) return
+    painted = named
+    net.points.forEach((_, i) => {
+      const zone = net.zone[i]
+      if (zone < 0) {
+        linkBase[i].copy(rawC)
+        dotBase[i].copy(rawC)
+        return
+      }
+      linkBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN), named)
+      dotBase[i].copy(rawC).lerp(col.copy(gfx[zone].color).lerp(whiteC, SOFTEN * 0.4), named)
+    })
+  }
+  /** La face cachée pâlit vers le fond : seule la face visible du réseau se lit. */
+  const shadeNetwork = () => {
+    group.updateMatrixWorld()
+    camLocal.copy(camera.position)
+    group.worldToLocal(camLocal)
+    backFade(net, camLocal.toArray(), fade)
+    net.edges.forEach(([a, b], e) => {
+      col.copy(linkBase[a]).lerp(boneC, fade[a] * BACK).toArray(netCol, e * 6)
+      col.copy(linkBase[b]).lerp(boneC, fade[b] * BACK).toArray(netCol, e * 6 + 3)
+    })
+    net.points.forEach((_, i) => neurons.setColorAt(i, col.copy(dotBase[i]).lerp(boneC, fade[i] * BACK)))
+    netGeo.attributes.color.needsUpdate = true
+    if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
+  }
+
   const born = performance.now()
   let s = still ? 0.5 : progress.current ?? 0
   let spin = 0
@@ -389,6 +415,9 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     // Assemblage : chaque connaissance quitte la poussière et se pose sur la coque, à son tour.
     const assembly = still ? 1.06 : HERO_ASSEMBLY * intro + (1.06 - HERO_ASSEMBLY) * smooth(0.1, 0.4, s)
     const named = still ? 1 : smooth(0.39, 0.5, s)
+    paintNetwork(named)
+    shadeNetwork()
+    neuronMat.opacity = shellMat.opacity
     const lit = new Set(agents.filter((a) => s > a.from && s < a.to).map((a) => a.zone))
 
     for (let i = 0; i < nodes.length; i++) {
@@ -527,6 +556,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     nodeMesh.dispose()
     ringMesh.dispose()
     dustMesh.dispose()
+    neurons.dispose()
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
     renderer.dispose()
