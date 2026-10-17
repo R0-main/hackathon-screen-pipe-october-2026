@@ -128,9 +128,9 @@ test("cerveau en HTTPS privé : le client lui fait confiance au démarrage grâc
   })
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
   const url = `https://127.0.0.1:${(server.address() as AddressInfo).port}`
-  const run = (home: string) =>
+  const run = (home: string, args: string[] = ["status"]) =>
     new Promise<string>((resolve) => {
-      const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "status"], { cwd: clientDir, env: { ...process.env, COMPANY_BRAIN_HOME: home } })
+      const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], { cwd: clientDir, env: { ...process.env, COMPANY_BRAIN_HOME: home } })
       let out = ""
       child.stdout.on("data", (d) => (out += d))
       child.stderr.on("data", (d) => (out += d))
@@ -147,6 +147,12 @@ test("cerveau en HTTPS privé : le client lui fait confiance au démarrage grâc
     writeFileSync(join(naive, "config.json"), JSON.stringify({ url, token: TOKEN }))
     const ko = await run(naive)
     assert.match(ko, /Connexion {5}: KO/, ko)
+    // Première installation : le certificat donné sur la ligne de commande compte dès le test de connexion d'init.
+    const fresh = tempDir()
+    const init = await run(fresh, ["init", "--url", url, "--token", TOKEN, "--ca", cert])
+    assert.match(init, /Certificat du cerveau enregistré/, init)
+    assert.match(init, /Connexion au cerveau OK : Jean-Marc Dubois/, init)
+    assert.equal(JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")).ca_file, cert)
   } finally {
     server.close()
   }

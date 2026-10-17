@@ -94,8 +94,9 @@ async function main(argv: string[]): Promise<number> {
   const { cmd, flags, positional } = parseArgs(argv)
   // --home : dossier du client (utilisé par la tâche planifiée Windows, qui n'hérite pas des variables du terminal).
   if (typeof flags.home === "string" && flags.home.trim()) process.env.COMPANY_BRAIN_HOME = resolve(flags.home.trim())
-  // Cerveau auto-hébergé : confiance à son certificat avant tout appel (hook et MCP compris).
-  const reexec = trustConfiguredCa(loadPartialConfig().ca_file)
+  // Cerveau auto-hébergé : confiance à son certificat avant tout appel (hook et MCP compris). Celui de la commande
+  // (setup/init/join --ca) compte dès maintenant : sur un Node ancien, c'est ici que le processus est relancé.
+  const reexec = trustConfiguredCa(typeof flags.ca === "string" && flags.ca.trim() ? resolve(flags.ca.trim()) : loadPartialConfig().ca_file)
   if (reexec !== null) return reexec
   // Le hook passe en premier : aucune sortie parasite, toujours code 0.
   if (cmd === "hook") {
