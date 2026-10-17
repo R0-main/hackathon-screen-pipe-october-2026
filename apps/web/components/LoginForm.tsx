@@ -7,7 +7,7 @@ import { fmt } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
 import { LanguageSwitch, useT } from "./I18n"
 import { PersonAvatar } from "./PersonDot"
-import { CloseIcon, ErrorText, Logo, PlusIcon } from "./ui"
+import { BrainIcon, CloseIcon, ErrorText, PlusIcon } from "./ui"
 
 /**
  * Connexion : d'abord les entreprises retenues par ce navigateur (un clic pour revenir dans l'une d'elles), puis le jeton
@@ -86,12 +86,11 @@ export function LoginForm({
     <main className="grid min-h-dvh place-items-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <h1>
-            <Link href="/" className="block rounded-[6px]">
-              <Logo stacked height={106} />
-            </Link>
-          </h1>
-          <p className="mt-3 text-[13px] text-trace">{t.login.tagline}</p>
+          <Link href="/" className="rounded-[6px]" aria-label={t.login.home}>
+            <BrainIcon size={56} />
+          </Link>
+          <h1 className="mt-3 text-[24px] font-medium leading-tight">NOS Brainer</h1>
+          <p className="mt-1 text-[13px] text-trace">{t.login.tagline}</p>
         </div>
 
         {hasList && (

@@ -254,11 +254,25 @@ export function LogoutIcon(props: IconProps) {
   )
 }
 
-/**
- * Pictogramme NOS Brainer (même dessin que public/brand/logo-mark.svg) : six billes d'encre reliées, la bille
- * centrale en phosphore. L'encre suit la couleur du texte.
- */
+/** Pictogramme du cerveau : un trait d'encre, deux points. Jamais de couleur. */
 export function BrainIcon({ size = 30, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className={className}>
+      <path
+        d="M15 5c-2.2-1.6-5.6-.8-6.4 1.9C6 7.3 4.6 9.7 5.4 12c-2 1.4-2 4.5 0 6-.8 2.4.7 4.8 3.2 5.1.9 2.7 4.2 3.5 6.4 1.9V5zM17 5c2.2-1.6 5.6-.8 6.4 1.9 2.6.4 4 2.8 3.2 5.1 2 1.4 2 4.5 0 6 .8 2.4-.7 4.8-3.2 5.1-.9 2.7-4.2 3.5-6.4 1.9V5z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="10.5" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="21.5" cy="18" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** Logo NOS Brainer (même dessin que le favicon) : six billes d'encre reliées, la bille centrale en phosphore. */
+export function LogoMark({ size = 26, className = "" }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 97 97" aria-hidden className={className}>
       <path
@@ -278,13 +292,6 @@ export function BrainIcon({ size = 30, className = "" }: { size?: number; classN
       <circle cx="48.35" cy="49.5" r="9" fill="var(--color-phosphor)" />
     </svg>
   )
-}
-
-/** Logo complet (pictogramme et « NOS Brainer ») : horizontal pour les en-têtes, empilé pour les pages centrées. */
-export function Logo({ stacked = false, height, className = "" }: { stacked?: boolean; height: number; className?: string }) {
-  const [src, ratio] = stacked ? ["/brand/logo-stacked.svg", 342.375 / 260.25] : ["/brand/logo.svg", 404.31 / 88.25]
-  // eslint-disable-next-line @next/next/no-img-element -- SVG statique, rien à optimiser
-  return <img src={src} alt="NOS Brainer" width={Math.round(height * ratio)} height={height} className={className} />
 }
 
 /** Message d'erreur affiché à côté de l'action, annoncé aux lecteurs d'écran. */

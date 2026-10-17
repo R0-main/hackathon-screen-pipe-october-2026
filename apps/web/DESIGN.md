@@ -34,11 +34,9 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 
 ## Logo
 
-- Fichiers dans `public/brand/` : `logo.svg` (horizontal), `logo-stacked.svg` (empilé), `logo-mark.svg`
-  (pictogramme seul). Favicon `app/icon.svg`, `app/apple-icon.png` et `app/opengraph-image.png` en dérivent.
-- Le pictogramme est `<BrainIcon>`, le logo complet `<Logo>` (`components/ui.tsx`) : horizontal dans les en-têtes
-  (28 px de haut), empilé sur les pages centrées (connexion).
-- Sa bille centrale est en phosphore : c'est la seule exception à la règle du phosphore, elle fait partie de la marque.
+- `<LogoMark>` (`components/ui.tsx`) et le favicon `app/icon.svg`, seulement : en haut à gauche (accueil, `/creer`,
+  barre latérale) et dans l'onglet. Partout ailleurs, l'icône du cerveau reste `<BrainIcon>`.
+- Sa bille centrale est en phosphore : seule exception à la règle du phosphore, elle fait partie de la marque.
 
 ## Formes
 
