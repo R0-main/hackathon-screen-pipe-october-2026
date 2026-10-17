@@ -1,6 +1,6 @@
 import { cookies } from "next/headers"
 import { z } from "zod"
-import { ACCOUNTS_COOKIE, forgetAccount, isRemembered, SESSION_COOKIE, sessionCookieOptions, sessionUserId, VIEW_AS_COOKIE } from "@/lib/auth"
+import { accountsCookieOptions, ACCOUNTS_COOKIE, forgetAccount, isRemembered, SESSION_COOKIE, sessionUserId, VIEW_AS_COOKIE } from "@/lib/auth"
 import { error, internalError, json, parseBody } from "@/lib/http"
 import { openSession } from "@/lib/session"
 
@@ -32,7 +32,7 @@ export async function DELETE(req: Request) {
   try {
     const jar = await cookies()
     const accounts = await forgetAccount(jar.get(ACCOUNTS_COOKIE)?.value, body.data.userId)
-    if (accounts) jar.set(ACCOUNTS_COOKIE, accounts, sessionCookieOptions)
+    if (accounts) jar.set(ACCOUNTS_COOKIE, accounts, accountsCookieOptions)
     else jar.delete(ACCOUNTS_COOKIE)
     const signedOut = (await sessionUserId(jar.get(SESSION_COOKIE)?.value)) === body.data.userId
     if (signedOut) {
