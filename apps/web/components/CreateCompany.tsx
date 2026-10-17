@@ -8,7 +8,7 @@ import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage } from "./format"
-import { BrainIcon, CheckIcon, CloseIcon, Dot, ErrorText, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
+import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
 import { deNom } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
@@ -191,7 +191,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     <main className="create flex min-h-dvh flex-col">
       <header className="create-wrap flex items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
-          <BrainIcon size={26} />
+          <LogoMark size={26} />
           <span className="whitespace-nowrap text-[15px] font-medium">NOS Brainer</span>
         </Link>
         <div className="flex items-center gap-3 text-[13px] text-trace">
