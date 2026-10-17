@@ -13,6 +13,8 @@
     "simulate": "tsx scripts/simulate.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "tsx scripts/smoke.ts",
+    "eval": "tsx scripts/eval-search.ts",
+    "embed": "tsx scripts/embed-backfill.ts",
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {

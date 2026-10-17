@@ -7,11 +7,14 @@ import {
   buildStatusInput,
   classifyZones,
   detectAutomations,
+  expandQuery,
   heuristicStatus,
+  likeness,
   looksPersonal,
   normalize,
   promptFingerprint,
   redactText,
+  rrf,
   scoreZones,
   truncate,
   type AgentEvent,
@@ -20,6 +23,7 @@ import {
   type CompanyStatus,
   type KnowledgeItem,
   type KnowledgeItemInput,
+  type ScoredItem,
   type StatusInput,
   type Zone,
   type ZoneStatus,
@@ -30,6 +34,7 @@ import type { NewItem } from "./store/types"
 import { canRead, canSeeEventContent, redactEvent } from "./access"
 import type { Viewer } from "./auth"
 import { getClaude } from "./ai"
+import { embedDocuments, embedQuery, embeddingText, getEmbeddings, rankBySimilarity } from "./embeddings"
 import { canPublishSkills, canSeeSkill } from "./skills"
 
 const store = () => getStore()
@@ -48,6 +53,9 @@ function resolveZone(zone: string, text: string, zones: Zone[]): string {
 
 /** Fenêtre de déduplication à l'ingestion (même auteur, même zone, même titre et même contenu normalisés). */
 const DEDUPE_DAYS = 30
+/** Fenêtre de rapprochement avec les connaissances déjà en place (quasi-doublons, remplacements), toutes personnes confondues. */
+const LIKENESS_DAYS = 90
+const LIKENESS_MAX_ITEMS = 400
 
 const dedupeText = (s: string) => normalize(s).replace(/\s+/g, " ").trim()
 
@@ -73,8 +81,13 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
   const authorId = viewer.real.id
   const since = new Date(Date.now() - DEDUPE_DAYS * 86400_000).toISOString()
   const seen = new Set((await store().listItems({ authorId, sinceIso: since, limit: 100_000 })).map((i) => dedupeKey(i.zone, i.title, i.body)))
+  // Connaissances récentes de la zone (toutes personnes) : un quasi-doublon est écarté, une version plus récente du
+  // même sujet (décision revue, procédure mise à jour) remplace l'ancienne.
+  const recent = await store().listItems({ sinceIso: new Date(Date.now() - LIKENESS_DAYS * 86400_000).toISOString(), limit: LIKENESS_MAX_ITEMS, excludeSuperseded: true })
   const prepared: NewItem[] = []
+  const supersedes: { index: number; oldId: string }[] = []
   let skipped = 0
+  let replaced = 0
   for (const i of items) {
     // Défense en profondeur : on re-masque côté serveur même si le poste l'a déjà fait.
     const title = redactText(i.title)
@@ -85,10 +98,43 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
       skipped++
       continue
     }
+    const candidate = { kind: i.kind, title, body, entities: i.entities }
+    let old: string | null = null
+    let duplicate = false
+    for (const r of recent) {
+      if (r.zone !== zone) continue
+      const rel = likeness(candidate, r)
+      if (rel === "duplicate") {
+        duplicate = true
+        break
+      }
+      if (rel === "supersedes" && !old && r.created_at < clampDate(i.source.at)) old = r.id
+    }
+    if (duplicate) {
+      skipped++
+      continue
+    }
     seen.add(key)
+    if (old) supersedes.push({ index: prepared.length, oldId: old })
     prepared.push({ ...i, title, body, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
   }
+  // Vecteurs sémantiques (si un fournisseur est configuré) : une panne du fournisseur n'empêche jamais l'ingestion.
+  const provider = getEmbeddings()
+  if (provider && prepared.length) {
+    try {
+      const vectors = await embedDocuments(prepared.map(embeddingText))
+      if (vectors) prepared.forEach((p, n) => Object.assign(p, { embedding: vectors[n], embedding_model: provider.model }))
+    } catch (err) {
+      console.error("[embeddings] ingestion sans vecteurs :", err instanceof Error ? err.message : err)
+    }
+  }
   const inserted = prepared.length ? await store().insertItems(prepared) : []
+  for (const s of supersedes) {
+    const next = inserted[s.index]
+    if (!next) continue
+    await store().markSuperseded(s.oldId, next.id)
+    replaced++
+  }
   const tasks = inserted
     .filter((i) => i.kind === "task")
     .map((i) => ({ title: i.title, zone: i.zone, status: "open" as const, assignee_id: authorId, source_item_id: i.id }))
@@ -110,7 +156,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
         }
       }),
     )
-  return { inserted: inserted.length, skipped, ids: inserted.map((i) => i.id), zones: touched }
+  return { inserted: inserted.length, skipped, replaced, ids: inserted.map((i) => i.id), zones: touched }
 }
 
 /** Agents qui envoient les prompts saisis par l'employé (hooks UserPromptSubmit). */
@@ -157,9 +203,7 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
   const filter = input.zones?.length ? input.zones : null
   const searched = filter ? filter.filter((z) => readable.includes(z)) : readable
   // Zones lisibles + les propres items de l'utilisateur, même rangés dans une zone qu'il ne lit pas (droit de regard).
-  const results = (await store().searchItems(input.query, searched, input.limit ?? 8, { authorId: viewer.profile.id })).filter(
-    (r) => !filter || filter.includes(r.zone),
-  )
+  const results = (await hybridSearch(input.query, searched, input.limit ?? 8, viewer.profile.id)).filter((r) => !filter || filter.includes(r.zone))
   // Seules les zones lisibles s'allument : une recherche n'est jamais diffusée dans une zone que l'on ne lit pas.
   let hit = [...new Set(results.filter((r) => readable.includes(r.zone)).slice(0, 3).map((r) => r.zone))]
   if (hit.length === 0) hit = classifyZones(input.query, allZones, 2).filter((z) => readable.includes(z))
@@ -194,6 +238,78 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
   }
 }
 
+/** Candidats lexicaux et sémantiques relus avant fusion, par rapport à la limite demandée. */
+const HYBRID_FACTOR = 4
+
+/**
+ * Recherche hybride : la requête est étendue à ses synonymes (lexical), puis, si un fournisseur d'embeddings est
+ * configuré, les connaissances les plus proches sémantiquement sont ajoutées ; les deux classements sont fusionnés
+ * (RRF). Sans fournisseur : lexical avec synonymes. Le score renvoyé est celui de la fusion (ou lexical seul).
+ */
+export async function hybridSearch(query: string, zones: string[], limit: number, authorId?: string): Promise<ScoredItem[]> {
+  const s = store()
+  const { tokens, added } = expandQuery(query)
+  const want = Math.max(limit * HYBRID_FACTOR, 20)
+  const [lexical, expanded, qvec] = await Promise.all([
+    s.searchItems(query, zones, want, { authorId }),
+    added.length ? s.searchItems([...tokens, ...added].join(" "), zones, want, { authorId }) : Promise.resolve([] as ScoredItem[]),
+    embedQuery(query),
+  ])
+  const byId = new Map<string, ScoredItem>()
+  for (const r of [...lexical, ...expanded]) if (!byId.has(r.id)) byId.set(r.id, r)
+  const lists: string[][] = [lexical.map((r) => r.id)]
+  if (expanded.length) lists.push(expanded.map((r) => r.id))
+  if (qvec) {
+    const close = rankBySimilarity(qvec, await s.listEmbeddings({ zones, authorId }), { limit: want })
+    if (close.length) {
+      lists.push(close.map((c) => c.id))
+      const missing = close.filter((c) => !byId.has(c.id))
+      const fetched = await Promise.all(missing.map((c) => s.getItem(c.id)))
+      for (const it of fetched) if (it && !it.superseded_by) byId.set(it.id, { ...it, score: 0 })
+    }
+  }
+  if (lists.length === 1) return lexical.slice(0, limit)
+  return rrf(lists)
+    .map(({ id, score }) => {
+      const it = byId.get(id)
+      return it ? { ...it, score: Math.round(score * 1000) / 10 } : null
+    })
+    .filter((x): x is ScoredItem => x !== null)
+    .slice(0, limit)
+}
+
+/** Entités (clients, projets, outils…) les plus citées dans les zones lisibles du spectateur. */
+export async function listEntitiesFor(viewer: Viewer, limit = 200) {
+  return store().topEntities({ zones: viewer.access.readable, limit })
+}
+
+/** Tout ce qui concerne une entité : les connaissances lisibles qui la citent, et les entités citées avec elle. */
+export async function getEntityContext(viewer: Viewer, type: string, name: string) {
+  const s = store()
+  const normName = normalize(name)
+  const items = await s.listItemsByEntity({ type, normName, zones: viewer.access.readable, authorId: viewer.profile.id, limit: 100 })
+  if (items.length === 0) return null
+  const related = new Map<string, { type: string; name: string; count: number }>()
+  for (const it of items)
+    for (const e of it.entities) {
+      if (e.type === type && normalize(e.name) === normName) continue
+      const key = `${e.type}:${normalize(e.name)}`
+      const r = related.get(key) ?? { type: e.type, name: e.name, count: 0 }
+      r.count++
+      related.set(key, r)
+    }
+  const names = new Map((await s.listProfiles()).map((p) => [p.id, p.name]))
+  const display = items.flatMap((i) => i.entities).find((e) => e.type === type && normalize(e.name) === normName)?.name ?? name
+  return {
+    type,
+    name: display,
+    items,
+    zones: [...new Set(items.map((i) => i.zone))],
+    related: [...related.values()].sort((a, b) => b.count - a.count).slice(0, 20),
+    names: Object.fromEntries(items.map((i) => [i.author_id, names.get(i.author_id) ?? "?"])),
+  }
+}
+
 export type ZoneView = Zone & {
   count: number
   last_at: string | null
@@ -223,7 +339,7 @@ export async function getState(viewer: Viewer) {
   ])
   const { access, profile } = viewer
   const readable = access.readable
-  const [tasks, recentItems] = await Promise.all([s.listTasks({ zones: readable }), s.listItems({ zones: readable, limit: 30 })])
+  const [tasks, recentItems] = await Promise.all([s.listTasks({ zones: readable }), s.listItems({ zones: readable, limit: 30, excludeSuperseded: true })])
   const statsBy = new Map(stats.map((x) => [x.zone, x]))
 
   const zoneViews: ZoneView[] = zones.map((z) => {
@@ -287,6 +403,7 @@ export async function getState(viewer: Viewer) {
       active_24h: activeUsers.size,
     },
     claude: Boolean(getClaude()),
+    embeddings: getEmbeddings()?.model ?? null,
   }
 }
 
@@ -313,7 +430,7 @@ async function scopedHeadline(zones: Zone[]): Promise<string> {
   const s = store()
   const ids = zones.map((z) => z.id)
   const since = new Date(Date.now() - 30 * 86400_000).toISOString()
-  const [items, tasks, profiles] = await Promise.all([s.listItems({ zones: ids, sinceIso: since, limit: 600 }), s.listTasks({ zones: ids }), s.listProfiles()])
+  const [items, tasks, profiles] = await Promise.all([s.listItems({ zones: ids, sinceIso: since, limit: 600, excludeSuperseded: true }), s.listTasks({ zones: ids }), s.listProfiles()])
   let headline = heuristicStatus({ zones, items, tasks, profiles }).headline
   if (zones.length === 1) headline = headline.replace(/\s*Zone la plus active : [^.]*\.$/, "")
   return `${zones.length > 1 ? "Dans vos zones" : "Dans votre zone"} (${zones.map((z) => z.name).join(", ")}) : ${headline}`
@@ -339,7 +456,7 @@ export async function refreshStatus(viewer: Viewer) {
   const since = new Date(Date.now() - 30 * 86400_000).toISOString()
   const [zones, items, tasks, profiles, org] = await Promise.all([
     s.listZones(),
-    s.listItems({ sinceIso: since, limit: 600 }),
+    s.listItems({ sinceIso: since, limit: 600, excludeSuperseded: true }),
     s.listTasks({}),
     s.listProfiles(),
     s.getOrg(),
@@ -368,7 +485,7 @@ export async function getStatusInput(): Promise<StatusInput> {
   const [org, zones, items, tasks, profiles] = await Promise.all([
     s.getOrg(),
     s.listZones(),
-    s.listItems({ sinceIso: since, limit: STATUS_MAX_ITEMS }),
+    s.listItems({ sinceIso: since, limit: STATUS_MAX_ITEMS, excludeSuperseded: true }),
     s.listTasks({}),
     s.listProfiles(),
   ])

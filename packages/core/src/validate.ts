@@ -46,6 +46,23 @@ export const QueryPayloadSchema = z.object({
   agent: z.enum(AGENTS).optional(),
 })
 
+/** Compte rendu de synchronisation d'un poste (POST /api/sync/report). */
+export const SyncReportSchema = z.object({
+  at: z.string().max(40),
+  ok: z.boolean(),
+  duration_ms: z.number().int().min(0).max(86_400_000),
+  items_sent: z.number().int().min(0).max(100_000),
+  duplicates: z.number().int().min(0).max(100_000).default(0),
+  conversations: z.record(z.string().max(32), z.number().int().min(0).max(100_000)).default({}),
+  distiller: z.string().max(40).default("heuristic"),
+  failed: z.number().int().min(0).max(100_000).default(0),
+  deferred: z.number().int().min(0).max(100_000).default(0),
+  error: z.string().max(1000).optional(),
+  client_version: z.string().max(40).optional(),
+  platform: z.string().max(40).optional(),
+  screenpipe: z.boolean().optional(),
+})
+
 /** Un résumé de zone produit hors du serveur (poste d'un admin, `claude -p`). */
 export const ZoneStatusSchema = z.object({
   zone: z.string().min(1).max(64),

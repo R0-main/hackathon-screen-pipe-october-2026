@@ -1,6 +1,8 @@
 import type { AgentName, AgentEventType, KnowledgeKind } from "@brain/core"
+import { getDict, intlLocale, type Locale } from "@/lib/i18n"
 
-const rtf = new Intl.RelativeTimeFormat("fr", { numeric: "auto" })
+const rtfs: Partial<Record<Locale, Intl.RelativeTimeFormat>> = {}
+const rtfFor = (locale: Locale) => (rtfs[locale] ??= new Intl.RelativeTimeFormat(intlLocale(locale), { numeric: "auto" }))
 
 // Fuseau fixe (celui de l'entreprise, comme DEFAULT_TIMEZONE côté cerveau) : le serveur (UTC) et le navigateur
 // affichent la même date, sinon l'hydratation échoue autour de minuit.
@@ -10,23 +12,30 @@ export const DISPLAY_TIMEZONE = "Europe/Paris"
  * « il y a 5 minutes ». Pour un rendu serveur hydraté, passer `now` venu du serveur (jamais Date.now() pendant le
  * rendu) : voir <RelTime>.
  */
-export function relativeTime(iso: string | null | undefined, now = Date.now()): string {
+export function relativeTime(iso: string | null | undefined, now = Date.now(), locale: Locale = "fr"): string {
   if (!iso) return "—"
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return "—"
   const diff = (t - now) / 1000
   const abs = Math.abs(diff)
-  if (abs < 45) return "à l'instant"
+  if (abs < 45) return getDict(locale).common.now
+  const rtf = rtfFor(locale)
   if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute")
   if (abs < 86400) return rtf.format(Math.round(diff / 3600), "hour")
   if (abs < 86400 * 30) return rtf.format(Math.round(diff / 86400), "day")
-  return new Date(t).toLocaleDateString("fr-FR", { day: "numeric", month: "short", timeZone: DISPLAY_TIMEZONE })
+  return new Date(t).toLocaleDateString(intlLocale(locale), { day: "numeric", month: "short", timeZone: DISPLAY_TIMEZONE })
 }
 
-export function absoluteTime(iso: string | null | undefined): string {
+export function absoluteTime(iso: string | null | undefined, locale: Locale = "fr"): string {
   const t = iso ? Date.parse(iso) : NaN
   if (Number.isNaN(t)) return ""
-  return new Date(t).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short", timeZone: DISPLAY_TIMEZONE })
+  return new Date(t).toLocaleString(intlLocale(locale), { dateStyle: "medium", timeStyle: "short", timeZone: DISPLAY_TIMEZONE })
+}
+
+/** Libellés (types de connaissance, verbes d'événement, agents) dans la langue de l'interface. */
+export function labels(locale: Locale): { kind: Record<KnowledgeKind, string>; event: Record<AgentEventType, string>; agent: Record<AgentName, string> } {
+  const d = getDict(locale)
+  return { kind: d.kinds, event: d.events, agent: d.agents }
 }
 
 /** Zones sans doublon (un client tiers peut envoyer ["dev", "dev"] : clés React en double sinon). */

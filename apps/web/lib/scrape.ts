@@ -222,12 +222,13 @@ function requestOnce(url: URL, deps: ScrapeDeps, deadline: number): Promise<Hop>
   })
 }
 
-const TEXT_TYPES = /html|text\/|xml|json/i
+const TEXT_TYPES = /html|text\/|xml|json|calendar/i
 
 export type ScrapedPage = { url: string; title: string; text: string; truncated: boolean; error?: string }
 
 /** Comme scrapeUrl, avec une résolution DNS et une liste d'adresses refusées injectables (tests). */
-export async function scrapeUrlWith(raw: string, deps: ScrapeDeps): Promise<ScrapedPage> {
+export async function scrapeUrlWith(raw: string, deps: ScrapeDeps, opts: { maxChars?: number } = {}): Promise<ScrapedPage> {
+  const maxChars = opts.maxChars ?? MAX_PAGE_CHARS
   try {
     const deadline = Date.now() + TOTAL_TIMEOUT_MS
     // Redirections suivies à la main pour revérifier chaque destination.
@@ -242,14 +243,14 @@ export async function scrapeUrlWith(raw: string, deps: ScrapeDeps): Promise<Scra
     if (hop.contentType && !TEXT_TYPES.test(hop.contentType)) return { url: raw, title: "", text: "", truncated: false, error: `type de contenu non pris en charge (${hop.contentType.split(";")[0]})` }
     const parsed = /html/i.test(hop.contentType) ? htmlToText(hop.body) : { title: url.hostname, description: "", text: hop.body }
     const full = [parsed.description, parsed.text].filter(Boolean).join("\n")
-    return { url: raw, title: parsed.title || url.hostname, text: full.slice(0, MAX_PAGE_CHARS), truncated: hop.truncated || full.length > MAX_PAGE_CHARS }
+    return { url: raw, title: parsed.title || url.hostname, text: full.slice(0, maxChars), truncated: hop.truncated || full.length > maxChars }
   } catch (err) {
     return { url: raw, title: "", text: "", truncated: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
-export async function scrapeUrl(raw: string): Promise<ScrapedPage> {
-  return scrapeUrlWith(raw, DEFAULT_DEPS)
+export async function scrapeUrl(raw: string, opts: { maxChars?: number } = {}): Promise<ScrapedPage> {
+  return scrapeUrlWith(raw, DEFAULT_DEPS, opts)
 }
 
 function decodeEntities(s: string): string {

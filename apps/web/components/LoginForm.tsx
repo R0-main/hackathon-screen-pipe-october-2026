@@ -4,10 +4,12 @@ import Link from "next/link"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { api } from "./format"
+import { LanguageSwitch, useT } from "./I18n"
 import { BrainIcon, ErrorText } from "./ui"
 
 export function LoginForm({ demo }: { demo: boolean }) {
   const router = useRouter()
+  const { t } = useT()
   const [token, setToken] = useState("")
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -30,15 +32,15 @@ export function LoginForm({ demo }: { demo: boolean }) {
     <main className="grid min-h-dvh place-items-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <Link href="/" className="rounded-[6px]" aria-label="Page d'accueil">
+          <Link href="/" className="rounded-[6px]" aria-label={t.login.home}>
             <BrainIcon size={56} />
           </Link>
           <h1 className="mt-3 text-[24px] font-medium leading-tight">NOS Brainer</h1>
-          <p className="mt-1 text-[13px] text-trace">Le contexte de toute l&apos;équipe, capté par Screenpipe, distillé, partagé.</p>
+          <p className="mt-1 text-[13px] text-trace">{t.login.tagline}</p>
         </div>
         <form onSubmit={login} className="panel space-y-3 p-5" aria-busy={busy}>
           <label className="block text-[13px] font-medium" htmlFor="token">
-            Votre jeton personnel
+            {t.login.tokenLabel}
           </label>
           <input
             id="token"
@@ -51,21 +53,24 @@ export function LoginForm({ demo }: { demo: boolean }) {
             aria-invalid={err ? true : undefined}
           />
           <p id="token-help" className="text-[12px] text-trace">
-            Le même jeton que celui de votre prompt d&apos;installation, fourni par l&apos;admin.
+            {t.login.tokenHelp}
           </p>
           {err && <ErrorText>{err}</ErrorText>}
           <button type="submit" className="btn btn-primary w-full" disabled={busy || token.length < 8}>
-            Se connecter
+            {t.login.submit}
           </button>
         </form>
-        {demo && (
-          <p className="mt-4 text-center text-[13px] text-trace">
-            Pas de jeton ?{" "}
-            <Link href="/demo" className="underline underline-offset-2 hover:text-ink">
-              Essayer la démo
-            </Link>
-          </p>
-        )}
+        <div className="mt-4 flex items-center justify-center gap-3 text-[13px] text-trace">
+          {demo && (
+            <p>
+              {t.login.noToken}{" "}
+              <Link href="/demo" className="underline underline-offset-2 hover:text-ink">
+                {t.login.tryDemo}
+              </Link>
+            </p>
+          )}
+          <LanguageSwitch />
+        </div>
       </div>
     </main>
   )

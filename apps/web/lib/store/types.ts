@@ -14,6 +14,8 @@ import type {
   ScoredItem,
   Skill,
   SkillFile,
+  SyncReport,
+  SyncReportRow,
   Task,
   TaskStatus,
   Zone,
@@ -30,7 +32,7 @@ export type NewProfile = {
   token_hash: string
 }
 export type ProfilePatch = Partial<NewProfile>
-export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: string }
+export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: string; embedding?: number[]; embedding_model?: string }
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">
 export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created_at?: string }
 
@@ -55,6 +57,9 @@ export type NewJoinRequest = { name?: string; title?: string; email?: string; ho
 
 /** Publication d'un skill : nouveau nom → version 1, nom existant → version suivante (l'auteur d'origine est gardé). */
 export type NewSkill = { name: string; description: string; zone: string | null; files: SkillFile[]; publisher_id: string }
+
+/** Comptes rendus de synchro conservés par poste. */
+export const SYNC_REPORTS_KEEP = 30
 
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
@@ -108,21 +113,54 @@ export interface BrainStore {
   setZoneAccess(userId: string, access: { zone_id: string; can_write: boolean }[]): Promise<void>
 
   insertItems(items: NewItem[]): Promise<KnowledgeItem[]>
-  /** `authorId` : inclut aussi les items de cet auteur, quelle que soit leur zone (droit de regard). */
+  /**
+   * `authorId` : inclut aussi les items de cet auteur, quelle que soit leur zone (droit de regard).
+   * Les connaissances remplacées (superseded_by) ne sont jamais renvoyées.
+   */
   searchItems(query: string, zones: string[], limit: number, opts?: { authorId?: string }): Promise<ScoredItem[]>
-  listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string }): Promise<KnowledgeItem[]>
+  /** `excludeSuperseded` : sans les connaissances remplacées (listes du dashboard, résumé d'état). */
+  listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
   deleteItem(id: string): Promise<boolean>
+  /** Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). */
+  markSuperseded(oldId: string, newId: string): Promise<void>
+  /** Connaissances (non remplacées) qui citent une entité, dans les zones données (ou de cet auteur). */
+  listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }): Promise<KnowledgeItem[]>
+  /** Vecteurs sémantiques des connaissances non remplacées des zones données (les plus récentes d'abord), pour le classement. */
+  listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }): Promise<{ id: string; embedding: number[] }[]>
+  setEmbeddings(rows: { id: string; embedding: number[]; model: string }[]): Promise<void>
+  /** Connaissances sans vecteur (ou d'un autre modèle), pour le rattrapage (scripts/embed-backfill.ts). */
+  listItemsWithoutEmbedding(model: string, limit: number): Promise<KnowledgeItem[]>
   zoneStats(): Promise<ZoneStat[]>
   topEntities(f: { zones?: string[]; authorId?: string; limit: number }): Promise<EntityStat[]>
 
   insertEvents(events: NewEvent[]): Promise<AgentEvent[]>
   /** `afterId` : ordre croissant (flux temps réel). Sinon : les plus récents d'abord. */
   listEvents(f: { afterId?: number; sinceIso?: string; limit?: number; type?: AgentEventType; userId?: string }): Promise<AgentEvent[]>
+  /**
+   * Flux temps réel : `listener` est appelé dès que des événements sont insérés pour l'entreprise `orgId` (par cette
+   * instance, ou par une autre en Postgres via LISTEN/NOTIFY). Renvoie la fonction de désabonnement. Le flux garde
+   * une relecture périodique de sécurité : une notification perdue retarde un événement, elle ne le fait jamais disparaître.
+   */
+  onEvents(orgId: string, listener: () => void): () => void
+  /** Comment le flux est prévenu : `local` (même processus), `notify` (Postgres LISTEN), `poll` (relecture seule). */
+  eventNotifyMode(): "local" | "notify" | "poll"
+
+  /** Compte rendu de synchro d'un poste (supervision) ; l'historique est borné à SYNC_REPORTS_KEEP par poste. */
+  saveSyncReport(userId: string, report: SyncReport): Promise<SyncReportRow>
+  /** Le dernier compte rendu de chaque poste (les plus récents d'abord). */
+  latestSyncReports(): Promise<SyncReportRow[]>
+  listSyncReports(f: { userId?: string; limit?: number }): Promise<SyncReportRow[]>
 
   listTasks(f: { zones?: string[]; assigneeId?: string }): Promise<Task[]>
   createTasks(tasks: NewTask[]): Promise<Task[]>
   updateTask(id: string, patch: { status?: TaskStatus; assignee_id?: string }): Promise<Task | null>
+  /**
+   * Tâches d'un connecteur : insérées ou mises à jour par (source, identifiant externe) ; titre, zone, statut et lien
+   * suivent l'outil. Une tâche de cette source absente de `tasks` (fermée ou supprimée chez l'outil) passe « done ».
+   * Renvoie les tâches touchées.
+   */
+  upsertExternalTasks(source: string, tasks: NewTask[]): Promise<Task[]>
 
   listAutomations(): Promise<AutomationSuggestion[]>
   /** Insère ou met à jour par `key`, en conservant le statut (accepté / écarté) déjà choisi. */

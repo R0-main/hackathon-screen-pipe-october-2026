@@ -7,7 +7,7 @@ export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number]
 export const ENTITY_TYPES = ["person", "project", "client", "tool", "doc"] as const
 export type EntityType = (typeof ENTITY_TYPES)[number]
 
-export const SOURCE_TOOLS = ["claude-code", "codex", "chatgpt", "claude", "meeting", "onboarding", "agent"] as const
+export const SOURCE_TOOLS = ["claude-code", "codex", "chatgpt", "claude", "meeting", "onboarding", "agent", "connector"] as const
 export type SourceTool = (typeof SOURCE_TOOLS)[number]
 
 export const AGENTS = ["claude-code", "codex", "brain-sync", "job", "dashboard", "mcp"] as const
@@ -43,6 +43,8 @@ export type KnowledgeItem = KnowledgeItemInput & {
   org_id: string
   author_id: string
   created_at: string
+  /** Identifiant d'une connaissance plus récente qui remplace celle-ci (décision revue, procédure mise à jour). */
+  superseded_by?: string | null
 }
 
 /** Ce que les hooks / le MCP / brain-sync envoient (POST /api/events). */
@@ -108,6 +110,10 @@ export type Task = {
   assignee_id?: string
   status: TaskStatus
   source_item_id?: string
+  /** Tâche importée par un connecteur (linear, todoist) : son identifiant chez l'outil et le lien pour l'ouvrir. */
+  external_source?: string
+  external_id?: string
+  external_url?: string
   created_at: string
   updated_at: string
 }
@@ -146,6 +152,36 @@ export type CompanyStatus = {
 }
 
 export type ScoredItem = KnowledgeItem & { score: number }
+
+/**
+ * Compte rendu d'une synchronisation envoyé par le poste (POST /api/sync/report) à la fin de chaque `brain sync`,
+ * réussie ou non : c'est ce que la page Supervision montre par poste. Jamais de contenu, seulement des compteurs.
+ */
+export type SyncReport = {
+  /** Fin de la synchronisation (ISO). */
+  at: string
+  ok: boolean
+  duration_ms: number
+  items_sent: number
+  duplicates: number
+  /** Conversations lues par source (claude, codex, screenpipe). */
+  conversations: Record<string, number>
+  distiller: string
+  /** Conversations que Claude n'a pas su distiller (retentées plus tard). */
+  failed: number
+  deferred: number
+  /** Message d'erreur (masqué sur le poste) si `ok` est faux. */
+  error?: string
+  client_version?: string
+  platform?: string
+  /** Screenpipe joignable sur le poste au moment de la synchro (absent si la source n'est pas lue). */
+  screenpipe?: boolean
+}
+
+export type SyncReportRow = SyncReport & { id: string; org_id: string; user_id: string }
+
+/** État d'un poste vu par la supervision. */
+export type PosteHealth = "never" | "ok" | "late" | "error"
 
 /** Un fichier d'un skill : SKILL.md à la racine, ou un script qu'il utilise (`scripts/export.py`…). Texte seulement. */
 export type SkillFile = { path: string; content: string }
