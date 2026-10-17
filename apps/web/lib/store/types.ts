@@ -125,6 +125,7 @@ export interface BrainStore {
   /** `excludeSuperseded` : sans les connaissances remplacées (listes du dashboard, résumé d'état). */
   listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
+  /** Supprime la connaissance et les tâches qui en sont issues (pas celles importées d'un outil externe). Faux si elle n'existait pas. */
   deleteItem(id: string): Promise<boolean>
   /** Range ces connaissances dans `zone`, avec les tâches qui en sont issues ; renvoie le nombre de connaissances déplacées. */
   moveItems(ids: string[], zone: string): Promise<number>
