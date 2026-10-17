@@ -82,6 +82,13 @@ export type CompanyStatusResult = {
 export type IngestResult = { inserted: number; skipped?: number; ids: string[]; zones: string[]; per_zone?: Record<string, number> }
 
 /** Ce dont les outils ont besoin : les routes de l'API du cerveau, avec les droits du jeton de la personne. */
+/** Outils des connecteurs MCP de l'entreprise ouverts aux agents (GET /api/connected-tools). */
+export type ConnectedTools = {
+  connectors: { id: string; name: string; mode: "read" | "all" | "off"; tools: { name: string; title?: string; description?: string; input_schema: Record<string, unknown>; read_only: boolean }[] }[]
+}
+
+export type ConnectedCall = { text: string; is_error: boolean }
+
 export interface BrainToolsApi {
   whoami(): Promise<WhoAmI>
   zones(): Promise<ApiZone[]>
@@ -89,6 +96,29 @@ export interface BrainToolsApi {
   status(): Promise<CompanyStatusResult>
   query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }): Promise<QueryResult>
   ingest(items: KnowledgeItemInput[], agent?: AgentName): Promise<IngestResult>
+  /** Outils des connecteurs (Notion, Linear, GitHub…) que l'admin a ouverts aux agents. */
+  connectedTools?(input: { connector?: string; query?: string }): Promise<ConnectedTools>
+  callConnectedTool?(input: { connector: string; tool: string; arguments: Record<string, unknown> }): Promise<ConnectedCall>
+}
+
+/** Liste lisible par le modèle : un connecteur par section, un outil par ligne, schéma d'entrée en JSON compact. */
+export function formatConnectedTools(r: ConnectedTools, withSchemas: boolean): string {
+  const usable = r.connectors.filter((c) => c.tools.length)
+  if (!usable.length)
+    return r.connectors.length
+      ? "Aucun outil ne correspond : essayez sans `query`, ou un autre connecteur."
+      : "Aucun connecteur n'est ouvert aux agents dans cette entreprise (un admin les branche dans Connecteurs)."
+  return usable
+    .map((c) => {
+      const head = `## ${c.name} (\`connector: "${c.id}"\`) — ${c.mode === "all" ? "lecture et écriture" : "lecture seule"}`
+      const lines = c.tools.map((t) => {
+        const desc = truncate((t.description ?? t.title ?? "").replace(/\s+/g, " "), withSchemas ? 400 : 160)
+        const schema = withSchemas ? `\n  arguments : ${truncate(JSON.stringify(t.input_schema), 1500)}` : ""
+        return `- \`${t.name}\`${t.read_only ? "" : " (modifie des données)"} : ${desc}${schema}`
+      })
+      return [head, ...lines].join("\n")
+    })
+    .join("\n\n")
 }
 
 // --- Mise en forme (markdown, en français) ---------------------------------------------------------------------------
@@ -442,6 +472,58 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
             : "Elle est maintenant trouvable par search_brain pour les personnes ayant accès à cette zone."
         return `Connaissance enregistrée dans la zone ${label} — ${how}${where !== chosen ? ` ; le cerveau l'a rangée ici plutôt que dans « ${name(chosen)} »` : ""}.\n« ${cleanTitle} » (${kind}). ${visibility}`
       }),
+  )
+
+  server.registerTool(
+    "connected_tools",
+    {
+      title: "Outils des connecteurs de l'entreprise",
+      description:
+        "Liste les outils des outils de l'entreprise branchés au cerveau (Notion, Linear, GitHub, Jira, Slack, Stripe…) que vous " +
+        "pouvez utiliser : chercher une page ou un ticket, lire un document, et, si l'admin l'a permis, créer ou modifier. " +
+        "À appeler quand une demande porte sur le contenu de ces outils, puis use_connected_tool. Filtrez par `connector` ou `query` ; " +
+        "les schémas d'arguments sont donnés quand la liste est filtrée.",
+      inputSchema: {
+        connector: z.string().max(80).optional().describe("Optionnel : identifiant ou nom du connecteur (ex. \"notion\", \"linear\")."),
+        query: z.string().max(200).optional().describe("Optionnel : mot-clé dans le nom ou la description de l'outil (ex. « search », « issue »)."),
+        ...companyParam,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ connector, query, company }) =>
+      guard(company, async (c) => {
+        if (!c.api.connectedTools) return "Ce cerveau ne propose pas encore les outils des connecteurs."
+        const r = await c.api.connectedTools({ connector, query })
+        return formatConnectedTools(r, Boolean(connector || query) || r.connectors.reduce((n, x) => n + x.tools.length, 0) <= 15)
+      }),
+  )
+
+  server.registerTool(
+    "use_connected_tool",
+    {
+      title: "Utiliser un outil d'un connecteur",
+      description:
+        "Appelle un outil d'un connecteur de l'entreprise (listé par connected_tools) avec le compte branché par l'admin, et renvoie " +
+        "sa réponse. Les outils qui modifient des données ne passent que si l'admin les a ouverts aux agents.",
+      inputSchema: {
+        connector: z.string().min(1).max(80).describe("Identifiant du connecteur, tel que donné par connected_tools (ex. \"notion\")."),
+        tool: z.string().min(1).max(200).describe("Nom exact de l'outil (ex. \"search\")."),
+        arguments: z.record(z.string(), z.unknown()).optional().describe("Arguments de l'outil, selon son schéma (objet JSON)."),
+        ...companyParam,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    },
+    async ({ connector, tool, arguments: args, company }) => {
+      try {
+        const c = open(company)
+        if (!c.api.callConnectedTool) return fail("Ce cerveau ne propose pas encore les outils des connecteurs.")
+        const r = await c.api.callConnectedTool({ connector, tool, arguments: args ?? {} })
+        const text = c.header + (opts.clean ?? ((x: string) => x))(r.text)
+        return r.is_error ? fail(text) : ok(text)
+      } catch (err) {
+        return fail(`Erreur du cerveau d'entreprise : ${(err as Error).message}`)
+      }
+    },
   )
 
   return server

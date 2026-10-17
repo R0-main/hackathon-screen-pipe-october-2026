@@ -85,6 +85,14 @@ demo/                 Script de démo
   demandent un client OAuth déclaré à la main : l'adresse de retour à déclarer est affichée. Jetons rafraîchis
   automatiquement, test de connexion (liste des outils), protection SSRF sur toutes les requêtes. Les jetons, secrets et
   vérificateurs PKCE restent côté serveur.
+- **Outils des connecteurs pour les agents** : chaque serveur MCP branché peut être ouvert aux agents de l'équipe
+  (aucun outil, lecture seule par défaut, ou tous les outils) et rattaché à une zone (seuls ceux qui la lisent le voient).
+  Le MCP du cerveau ajoute `connected_tools` (liste, schémas d'arguments) et `use_connected_tool` (appel avec le compte
+  branché par l'admin) : « trouve la page Notion sur le déploiement » ou « liste mes tickets Linear » depuis Claude Code.
+- **Import du contenu** : « Importer maintenant », ou automatiquement toutes les 6 heures. Claude (clé de l'entreprise
+  ou `ANTHROPIC_API_KEY`) explore l'outil avec ses seuls outils en lecture seule, en commençant par ce qui a changé
+  depuis le dernier import, et rend des connaissances durables (décisions, procédures, faits) qui entrent dans le
+  cerveau comme une synchro : secrets masqués, doublons écartés, zone du connecteur ou classement automatique.
 - **Langues** : l'interface existe en français et en anglais (sélecteur dans la barre latérale et sur la connexion, cookie
   `brain_lang`, sinon la langue du navigateur). Les pages les plus anciennes restent en français pour l'instant.
 - **Flux temps réel** : le stockage prévient le flux SSE dès qu'un événement est inséré (émetteur local, ou
@@ -126,6 +134,8 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin : connecteurs Notion, Linear, Todoist, calendrier ICS (réglages sans le jeton, synchro à la demande). |
 | GET/POST | `/api/connectors/mcp` | Admin : serveurs MCP ajoutés (sans jeton) et adresse de retour OAuth ; ajout depuis le catalogue ou d'un serveur personnalisé. |
 | PUT/DELETE/POST | `/api/connectors/mcp/:id`, `/api/connectors/mcp/:id/authorize`, `/api/connectors/mcp/:id/test` | Admin : client OAuth manuel ou jeton, retrait ; adresse de la page de connexion du fournisseur ; test (liste des outils). |
+| GET/POST | `/api/connected-tools`, `/api/connected-tools/call` | Membres (via le MCP du cerveau) : outils des connecteurs ouverts aux agents, et appel d'un outil (lecture seule sauf si l'admin a tout ouvert). |
+| POST | `/api/connectors/mcp/:id/import` | Admin : importe maintenant le contenu du connecteur (Claude, lecture seule). |
 | GET | `/api/connectors/mcp/callback` | Retour OAuth du fournisseur (session de l'admin, état anti-CSRF lié au compte, 15 min). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
 

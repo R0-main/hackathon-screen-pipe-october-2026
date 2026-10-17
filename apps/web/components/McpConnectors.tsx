@@ -1,7 +1,18 @@
 "use client"
 
 import { Fragment, createContext, useContext, useEffect, useState } from "react"
-import { MCP_CATALOG, MCP_CATEGORIES, catalogEntry, type McpCatalogEntry, type McpCategory, type McpConnectorPublic, type McpReturn } from "@brain/core"
+import {
+  MCP_AGENTS_MODES,
+  MCP_CATALOG,
+  MCP_CATEGORIES,
+  catalogEntry,
+  type McpAgentsMode,
+  type McpCatalogEntry,
+  type McpCategory,
+  type McpConnectorPublic,
+  type McpImportRun,
+  type McpReturn,
+} from "@brain/core"
 import { fmt } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
@@ -16,9 +27,12 @@ type Props = {
   returnTo?: McpReturn
   /** Sans titre ni introduction (la page qui l'accueille a les siens : étape 8 de /creer). */
   bare?: boolean
+  /** Zones proposées pour rattacher un connecteur (absentes : pas de choix de zone). */
+  zones?: { id: string; name: string }[]
 }
 
 const ReturnTo = createContext<McpReturn>("connecteurs")
+const Zones = createContext<{ id: string; name: string }[]>([])
 
 const CUSTOM_COLOR = "#52525B"
 /** Serveurs du catalogue montrés avant « Voir les … autres » : 3 rangées pleines, en 3 colonnes ou en 2 (étape 8 de /creer). */
@@ -26,7 +40,7 @@ const PREVIEW = 9
 const PREVIEW_BARE = 8
 
 /** Serveurs MCP : ceux déjà branchés, puis le catalogue (recherche, catégories) et l'ajout d'un serveur quelconque. */
-export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", bare = false }: Props) {
+export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", bare = false, zones = [] }: Props) {
   const { t } = useT()
   const k = t.connectors.mcp
   const [items, setItems] = useState(initial)
@@ -69,68 +83,70 @@ export function McpConnectors({ initial, redirectUri, returnTo = "connecteurs", 
 
   return (
     <ReturnTo.Provider value={returnTo}>
-      <div className="space-y-4">
-        {!bare && (
-          <div>
-            <h2 className="text-[18px] font-medium leading-tight">{k.title}</h2>
-            <p className="mt-1 max-w-3xl text-[13px] text-trace">{k.lead}</p>
-          </div>
-        )}
-        {notice && (
-          <div role="status" className={`panel flex items-start justify-between gap-3 px-4 py-3 text-[13px] ${notice.ok ? "" : "text-danger"}`}>
-            <span>{notice.text}</span>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNotice(null)} aria-label="OK">
-              ×
-            </button>
-          </div>
-        )}
-
-        {items.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
-            <div className="grid items-start gap-3 md:grid-cols-2">
-              {items.map((c) => (
-                <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
-              ))}
+      <Zones.Provider value={zones}>
+        <div className="space-y-4">
+          {!bare && (
+            <div>
+              <h2 className="text-[18px] font-medium leading-tight">{k.title}</h2>
+              <p className="mt-1 max-w-3xl text-[13px] text-trace">{k.lead}</p>
             </div>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <h3 className="text-[13px] font-medium text-trace">{k.catalog}</h3>
-          <div className="flex flex-wrap items-center gap-2">
-            <input className="input input-sm !w-64 max-w-full" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={k.search} aria-label={k.search} autoComplete="off" />
-            <div className="flex flex-wrap gap-1" role="group">
-              <button type="button" className={`chip ${category === null ? "chip-on" : ""}`} aria-pressed={category === null} onClick={() => setCategory(null)}>
-                {k.allCategories}
+          )}
+          {notice && (
+            <div role="status" className={`panel flex items-start justify-between gap-3 px-4 py-3 text-[13px] ${notice.ok ? "" : "text-danger"}`}>
+              <span>{notice.text}</span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNotice(null)} aria-label="OK">
+                ×
               </button>
-              {MCP_CATEGORIES.map((cat) => (
-                <button key={cat} type="button" className={`chip ${category === cat ? "chip-on" : ""}`} aria-pressed={category === cat} onClick={() => setCategory(category === cat ? null : cat)}>
-                  {k.categories[cat]}
-                </button>
-              ))}
             </div>
-          </div>
-          {catalog.length === 0 ? (
-            <p className="text-[13px] text-trace">{k.noResult}</p>
-          ) : (
-            <>
-              <div className={`grid items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
-                {(collapsed ? catalog.slice(0, preview) : catalog).map((e) => (
-                  <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
+          )}
+
+          {items.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
+              <div className="grid items-start gap-3 md:grid-cols-2">
+                {items.map((c) => (
+                  <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
                 ))}
               </div>
-              {collapsed && (
-                <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
-                  {fmt(k.showAll, { n: catalog.length - preview })}
-                </button>
-              )}
-            </>
+            </div>
           )}
-        </div>
 
-        <CustomServer onAdded={upsert} />
-      </div>
+          <div className="space-y-3">
+            <h3 className="text-[13px] font-medium text-trace">{k.catalog}</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <input className="input input-sm !w-64 max-w-full" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={k.search} aria-label={k.search} autoComplete="off" />
+              <div className="flex flex-wrap gap-1" role="group">
+                <button type="button" className={`chip ${category === null ? "chip-on" : ""}`} aria-pressed={category === null} onClick={() => setCategory(null)}>
+                  {k.allCategories}
+                </button>
+                {MCP_CATEGORIES.map((cat) => (
+                  <button key={cat} type="button" className={`chip ${category === cat ? "chip-on" : ""}`} aria-pressed={category === cat} onClick={() => setCategory(category === cat ? null : cat)}>
+                    {k.categories[cat]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {catalog.length === 0 ? (
+              <p className="text-[13px] text-trace">{k.noResult}</p>
+            ) : (
+              <>
+                <div className={`grid items-start gap-3 sm:grid-cols-2 ${bare ? "" : "xl:grid-cols-3"}`}>
+                  {(collapsed ? catalog.slice(0, preview) : catalog).map((e) => (
+                    <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
+                  ))}
+                </div>
+                {collapsed && (
+                  <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
+                    {fmt(k.showAll, { n: catalog.length - preview })}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          <CustomServer onAdded={upsert} />
+        </div>
+      </Zones.Provider>
     </ReturnTo.Provider>
   )
 }
@@ -248,6 +264,7 @@ function AddedCard({ connector: c, redirectUri, onChange, onRemoved }: { connect
       {check && !check.ok && <ErrorText>{check.error}</ErrorText>}
       {err && <ErrorText>{err}</ErrorText>}
       {open && c.auth === "manual" && <ManualSetup id={c.id} entry={entry} redirectUri={redirectUri} hasClient={c.has_client} onSaved={onChange} />}
+      {c.status !== "needs_auth" && <Usage connector={c} onChange={onChange} />}
       <div className="mt-auto flex flex-wrap items-center gap-2">
         {oauth && (
           <button type="button" className={`btn btn-sm ${c.status === "needs_auth" ? "btn-primary" : ""}`} onClick={() => run("auth")} disabled={busy !== null}>
@@ -419,5 +436,93 @@ function CustomServer({ onAdded }: { onAdded: (c: McpConnectorPublic) => void })
         </button>
       </div>
     </details>
+  )
+}
+
+/** Ce que fait le cerveau d'un connecteur branché : outils ouverts aux agents, zone, import du contenu. */
+function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onChange: (c: McpConnectorPublic) => void }) {
+  const { t } = useT()
+  const k = t.connectors.mcp
+  const zones = useContext(Zones)
+  const [busy, setBusy] = useState<"save" | "import" | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const path = `/api/connectors/mcp/${encodeURIComponent(c.id)}`
+
+  async function save(patch: { agents?: McpAgentsMode; zone?: string | null; import_enabled?: boolean }) {
+    setBusy("save")
+    setErr(null)
+    setMsg(null)
+    try {
+      onChange(await api<McpConnectorPublic>(path, { method: "PUT", json: patch }))
+    } catch (e) {
+      setErr(fmt(k.actionError, { error: errorMessage(e) }))
+    }
+    setBusy(null)
+  }
+
+  async function importNow() {
+    setBusy("import")
+    setErr(null)
+    setMsg(null)
+    try {
+      const run = await api<McpImportRun>(`${path}/import`, { method: "POST" })
+      onChange({ ...c, last_import: run })
+      if (run.ok) setMsg(fmt(k.importDone, { n: run.imported }))
+      else setErr(fmt(k.importFailed, { error: run.error ?? "?" }))
+    } catch (e) {
+      setErr(fmt(k.importFailed, { error: errorMessage(e) }))
+    }
+    setBusy(null)
+  }
+
+  const last = c.last_import
+  return (
+    <div className="space-y-2 border-t border-line pt-3 text-[12px]">
+      <label className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{k.agentsLabel}</span>
+        <select className="input input-sm !w-auto" value={c.agents} disabled={busy !== null} onChange={(e) => save({ agents: e.target.value as McpAgentsMode })}>
+          {MCP_AGENTS_MODES.map((m) => (
+            <option key={m} value={m}>
+              {k.agentsModes[m]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-trace">{k.agentsHelp}</p>
+      {zones.length > 0 && (
+        <label className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">{k.zoneLabel}</span>
+          <select className="input input-sm !w-auto" value={c.zone ?? ""} disabled={busy !== null} onChange={(e) => save({ zone: e.target.value || null })}>
+            <option value="">{k.zoneAll}</option>
+            {zones.map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" className="size-4" checked={c.import_enabled} disabled={busy !== null} onChange={(e) => save({ import_enabled: e.target.checked })} />
+          {k.importAuto}
+        </label>
+        <button type="button" className="btn btn-sm" onClick={importNow} disabled={busy !== null || !c.enabled}>
+          {busy === "import" ? k.importing : k.importNow}
+        </button>
+      </div>
+      <p className="text-trace">
+        {last ? (
+          <>
+            {k.lastImport} : <RelTime iso={last.at} /> ({last.ok ? fmt(k.importDone, { n: last.imported }) : fmt(k.importFailed, { error: last.error ?? "?" })})
+          </>
+        ) : (
+          k.importHelp
+        )}
+      </p>
+      {msg && <p className="text-trace">{msg}</p>}
+      {err && <ErrorText>{err}</ErrorText>}
+    </div>
   )
 }

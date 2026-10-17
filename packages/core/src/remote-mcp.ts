@@ -161,7 +161,19 @@ export type McpConnectorConfig = {
   token?: string
   pending?: McpPending
   last_check?: McpCheck
+  /** Outils proposés aux agents de l'équipe via le MCP du cerveau (par défaut : lecture seule). */
+  agents?: McpAgentsMode
+  /** Zone de rattachement : ceux qui la lisent voient les outils ; l'import y range le contenu (absente : toute l'équipe, classement auto). */
+  zone?: string
+  /** Import du contenu dans le cerveau (Claude explore l'outil en lecture seule). */
+  import?: { enabled: boolean; last_run?: McpImportRun }
 }
+
+/** `off` : aucun outil ; `read` : outils en lecture seule ; `all` : tous les outils (écritures comprises). */
+export type McpAgentsMode = "off" | "read" | "all"
+export const MCP_AGENTS_MODES: readonly McpAgentsMode[] = ["off", "read", "all"]
+
+export type McpImportRun = { at: string; ok: boolean; imported: number; skipped?: number; calls?: number; error?: string; duration_ms?: number }
 
 export type McpConnectorsConfig = Record<string, McpConnectorConfig>
 
@@ -179,6 +191,10 @@ export type McpConnectorPublic = {
   has_client: boolean
   has_token: boolean
   last_check?: McpCheck
+  agents: McpAgentsMode
+  zone?: string
+  import_enabled: boolean
+  last_import?: McpImportRun
 }
 
 export function hasAccess(c: McpConnectorConfig): boolean {
@@ -200,6 +216,10 @@ export function publicMcpConnector(c: McpConnectorConfig): McpConnectorPublic {
     has_client: Boolean(c.client?.client_id),
     has_token: Boolean(c.token || c.tokens?.access_token),
     last_check: c.last_check,
+    agents: c.agents ?? "read",
+    zone: c.zone,
+    import_enabled: Boolean(c.import?.enabled),
+    last_import: c.import?.last_run,
   }
 }
 
@@ -365,4 +385,64 @@ export function findResponse(body: string, contentType: string, id: number | str
     }
   }
   return msgs.find((m) => m.id === id && (m.result !== undefined || m.error !== undefined)) ?? null
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Outils des connecteurs, proposés aux agents de l'équipe par le MCP du cerveau, et import de leur contenu
+
+/** Un outil d'un serveur MCP connecté, tel que mis en cache (schéma d'entrée JSON Schema). */
+export type McpToolDef = { name: string; title?: string; description?: string; input_schema: Record<string, unknown>; read_only: boolean }
+
+const WRITE_VERB = /^(create|update|delete|remove|add|set|send|post|write|edit|move|archive|merge|close|assign|upload|invite|publish|cancel|refund|run|execute|trigger|deploy|duplicate|copy|rename|reply|mark|complete|batch|bulk|upsert|patch|put|insert|apply|approve|reject|start|stop)$/i
+const READ_VERB = /^(search|list|get|fetch|read|query|find|retrieve|lookup|describe|show|view|count|whoami)(?:[_\-.:]|[A-Z]|$)/i
+
+/**
+ * Outil sans effet de bord ? L'annotation `readOnlyHint` du serveur fait foi ; sans annotation, le nom doit commencer
+ * par un verbe de lecture (search, list, get…), éventuellement après un préfixe de marque (« notion-search »).
+ */
+export function isReadOnlyTool(t: { name: string; annotations?: { readOnlyHint?: unknown } | null }): boolean {
+  if (typeof t.annotations?.readOnlyHint === "boolean") return t.annotations.readOnlyHint
+  if (READ_VERB.test(t.name)) return true
+  const prefix = t.name.match(/^([a-z0-9]+)[-_.]/i)?.[1] ?? ""
+  return Boolean(prefix) && !WRITE_VERB.test(prefix) && READ_VERB.test(t.name.slice(prefix.length + 1))
+}
+
+/** Outils d'un connecteur visibles par les agents selon la règle choisie par l'admin. */
+export function toolsForAgents(defs: McpToolDef[], mode: McpAgentsMode): McpToolDef[] {
+  if (mode === "off") return []
+  return mode === "all" ? defs : defs.filter((d) => d.read_only)
+}
+
+/** Résultat d'un appel `tools/call` → texte pour l'agent (texte, ressources texte, mentions des contenus binaires). */
+export function callResultText(result: unknown, maxChars = 40_000): { text: string; is_error: boolean } {
+  const r = (result ?? {}) as { content?: unknown; structuredContent?: unknown; isError?: unknown }
+  const parts: string[] = []
+  for (const c of Array.isArray(r.content) ? r.content : []) {
+    const b = c as { type?: string; text?: unknown; resource?: { uri?: string; text?: unknown; mimeType?: string }; uri?: string; name?: string; mimeType?: string }
+    if (b.type === "text" && typeof b.text === "string") parts.push(b.text)
+    else if (b.type === "resource" && b.resource) parts.push(typeof b.resource.text === "string" ? b.resource.text : `[ressource ${b.resource.uri ?? ""} (${b.resource.mimeType ?? "binaire"})]`)
+    else if (b.type === "resource_link") parts.push(`[lien ${b.name ?? ""} ${b.uri ?? ""}]`.trim())
+    else if (b.type === "image" || b.type === "audio") parts.push(`[${b.type} ${b.mimeType ?? ""} non transmis]`.trim())
+  }
+  if (!parts.length && r.structuredContent !== undefined) parts.push(JSON.stringify(r.structuredContent))
+  const text = parts.join("\n\n").trim() || "(réponse vide)"
+  return { text: text.length > maxChars ? `${text.slice(0, maxChars)}\n… (tronqué à ${maxChars} caractères)` : text, is_error: r.isError === true }
+}
+
+/** Intervalle entre deux imports automatiques (Claude lit l'outil : appels payants, donc espacés). */
+export const MCP_IMPORT_INTERVAL_MS = 6 * 60 * 60_000
+
+export function mcpImportDue(c: McpConnectorConfig | undefined, now = Date.now()): boolean {
+  if (!c?.enabled || !c.import?.enabled || !hasAccess(c)) return false
+  const last = c.import.last_run
+  return !last || now - Date.parse(last.at) >= MCP_IMPORT_INTERVAL_MS
+}
+
+/** Nom d'outil accepté par l'API Claude (^[a-zA-Z0-9_-]{1,64}$), unique dans la liste. */
+export function claudeToolName(name: string, taken: Set<string>): string {
+  const base = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60) || "tool"
+  let out = base
+  for (let i = 2; taken.has(out); i++) out = `${base.slice(0, 57)}_${i}`
+  taken.add(out)
+  return out
 }

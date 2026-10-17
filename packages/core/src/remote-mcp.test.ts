@@ -5,7 +5,12 @@ import {
   MCP_CATEGORIES,
   authServerMetadataUrls,
   buildAuthorizeUrl,
+  callResultText,
   canonicalResource,
+  claudeToolName,
+  isReadOnlyTool,
+  mcpImportDue,
+  toolsForAgents,
   isMcpReturn,
   MCP_RETURN_PAGES,
   findResponse,
@@ -136,4 +141,49 @@ test("page de retour après la connexion : liste fermée de pages internes", () 
   assert.equal(isMcpReturn("https://evil.example"), false)
   assert.equal(isMcpReturn("toString"), false, "pas de propriété héritée")
   assert.equal(MCP_RETURN_PAGES.creer, "/creer?brouillon=1")
+})
+
+test("outils en lecture seule : l'annotation fait foi, sinon le verbe du nom", () => {
+  assert.equal(isReadOnlyTool({ name: "create_issue", annotations: { readOnlyHint: true } }), true)
+  assert.equal(isReadOnlyTool({ name: "search", annotations: { readOnlyHint: false } }), false)
+  for (const name of ["search", "list_issues", "get_page", "notion-search", "notion-fetch", "fetchDocument", "linear_list_projects", "query"]) assert.equal(isReadOnlyTool({ name }), true, name)
+  for (const name of ["create_issue", "update_page", "notion-create-pages", "delete_list", "delete-list", "send_message", "run_sql", "execute_query", "add_comment"]) assert.equal(isReadOnlyTool({ name }), false, name)
+})
+
+test("outils ouverts aux agents selon la règle de l'admin", () => {
+  const defs = [
+    { name: "search", input_schema: { type: "object" }, read_only: true },
+    { name: "create_issue", input_schema: { type: "object" }, read_only: false },
+  ]
+  assert.deepEqual(toolsForAgents(defs, "off"), [])
+  assert.deepEqual(toolsForAgents(defs, "read").map((d) => d.name), ["search"])
+  assert.deepEqual(toolsForAgents(defs, "all").map((d) => d.name), ["search", "create_issue"])
+})
+
+test("résultat d'un appel d'outil → texte (ressources, binaires, structuré, erreur, troncature)", () => {
+  const r = callResultText({ content: [{ type: "text", text: "a" }, { type: "resource", resource: { uri: "x://1", text: "b" } }, { type: "image", mimeType: "image/png", data: "…" }] })
+  assert.equal(r.text, "a\n\nb\n\n[image image/png non transmis]")
+  assert.equal(r.is_error, false)
+  assert.equal(callResultText({ content: [], structuredContent: { n: 1 } }).text, '{"n":1}')
+  assert.equal(callResultText({ content: [{ type: "text", text: "non" }], isError: true }).is_error, true)
+  assert.match(callResultText({ content: [{ type: "text", text: "x".repeat(50) }] }, 10).text, /^x{10}\n… \(tronqué/)
+  assert.equal(callResultText(null).text, "(réponse vide)")
+})
+
+test("import automatique : activé, connecté, puis toutes les 6 heures", () => {
+  const base = { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", auth: "dynamic" as const, enabled: true, added_at: "", tokens: { access_token: "t" } }
+  const now = Date.parse("2026-10-17T12:00:00Z")
+  assert.equal(mcpImportDue({ ...base }, now), false, "import non activé")
+  assert.equal(mcpImportDue({ ...base, import: { enabled: true } }, now), true)
+  assert.equal(mcpImportDue({ ...base, tokens: undefined, import: { enabled: true } }, now), false, "pas connecté")
+  assert.equal(mcpImportDue({ ...base, import: { enabled: true, last_run: { at: "2026-10-17T08:00:00Z", ok: true, imported: 1 } } }, now), false)
+  assert.equal(mcpImportDue({ ...base, import: { enabled: true, last_run: { at: "2026-10-17T05:00:00Z", ok: false, imported: 0 } } }, now), true)
+})
+
+test("noms d'outils pour l'API Claude : caractères permis, uniques", () => {
+  const taken = new Set<string>(["save_knowledge"])
+  assert.equal(claudeToolName("notion-search", taken), "notion-search")
+  assert.equal(claudeToolName("notion.search", taken), "notion_search")
+  assert.equal(claudeToolName("notion:search", taken), "notion_search_2")
+  assert.equal(claudeToolName("save_knowledge", taken), "save_knowledge_2")
 })

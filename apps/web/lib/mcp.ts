@@ -5,6 +5,8 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import type { Org, Profile } from "@brain/core"
 import { createBrainMcpServer, type ApiZone, type BrainToolsApi } from "@brain/core/mcp"
+import * as connectedToolsRoute from "@/app/api/connected-tools/route"
+import * as connectedCallRoute from "@/app/api/connected-tools/call/route"
 import * as ingestRoute from "@/app/api/ingest/route"
 import * as queryRoute from "@/app/api/query/route"
 import * as statusRoute from "@/app/api/status/route"
@@ -40,6 +42,11 @@ function routesApi(token: string): BrainToolsApi {
     status: () => call(statusRoute.GET as Route, "GET", "/api/status"),
     query: (input) => call(queryRoute.POST as Route, "POST", "/api/query", input),
     ingest: (items, agent = "mcp") => call(ingestRoute.POST as Route, "POST", "/api/ingest", { items, agent }),
+    connectedTools: ({ connector, query }) => {
+      const q = new URLSearchParams({ ...(connector ? { connector } : {}), ...(query ? { query } : {}) })
+      return call(connectedToolsRoute.GET as Route, "GET", `/api/connected-tools${q.toString() ? `?${q}` : ""}`)
+    },
+    callConnectedTool: (input) => call(connectedCallRoute.POST as Route, "POST", "/api/connected-tools/call", input),
   }
 }
 

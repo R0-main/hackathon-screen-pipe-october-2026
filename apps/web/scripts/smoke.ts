@@ -82,6 +82,9 @@ import * as mcpConnectorsRoute from "../app/api/connectors/mcp/route"
 import * as mcpConnectorRoute from "../app/api/connectors/mcp/[id]/route"
 import * as mcpConnectorTestRoute from "../app/api/connectors/mcp/[id]/test/route"
 import * as mcpCallbackRoute from "../app/api/connectors/mcp/callback/route"
+import * as mcpImportRoute from "../app/api/connectors/mcp/[id]/import/route"
+import * as connectedToolsRoute from "../app/api/connected-tools/route"
+import * as connectedCallRoute from "../app/api/connected-tools/call/route"
 import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceLegacyDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
 import { DEMO_ITEMS, DEMO_ORG, LEGACY_DEMO_NAMES } from "./demo-data"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
@@ -566,6 +569,17 @@ async function main() {
   assert(!JSON.stringify(mcpList.data).includes("SECRET-SMOKE-MCP") && mcpList.data.redirect_uri.endsWith("/api/connectors/mcp/callback"), "liste : secret jamais renvoyé, adresse de retour fournie")
   const mcpTest = await call(mcpConnectorTestRoute.POST, "/api/connectors/mcp/linear/test", { method: "POST", session: claireSession, params: { id: "linear" } })
   assert(mcpTest.status === 200 && mcpTest.data?.last_check?.ok === false && mcpTest.data?.status === "needs_auth", "test sans connexion : échec noté, sans appel réseau")
+  assert((await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/linear", { method: "PUT", session: claireSession, params: { id: "linear" }, body: { agents: "tout" } })).status === 400, "règle des agents inconnue : 400")
+  assert((await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/linear", { method: "PUT", session: claireSession, params: { id: "linear" }, body: { zone: "zone-inconnue" } })).status === 400, "zone inconnue : 400")
+  const mcpPolicy = await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/linear", { method: "PUT", session: claireSession, params: { id: "linear" }, body: { agents: "all", import_enabled: true } })
+  assert(mcpPolicy.status === 200 && mcpPolicy.data?.agents === "all" && mcpPolicy.data?.import_enabled === true, "règle des agents et import enregistrés")
+  const mcpImport = await call(mcpImportRoute.POST, "/api/connectors/mcp/linear/import", { method: "POST", session: claireSession, params: { id: "linear" } })
+  assert(mcpImport.status === 200 && mcpImport.data?.ok === false && /Pas encore connecté/.test(mcpImport.data?.error ?? ""), "import sans connexion : échec noté, sans appel")
+  const hugoTools = await call(connectedToolsRoute.GET, "/api/connected-tools", { session: hugoSession })
+  assert(hugoTools.status === 200 && hugoTools.data.connectors.length === 0, "outils des connecteurs : un connecteur pas encore connecté n'est pas proposé aux agents")
+  const hugoCall = await call(connectedCallRoute.POST, "/api/connected-tools/call", { method: "POST", session: hugoSession, body: { connector: "linear", tool: "list_issues" } })
+  assert(hugoCall.status === 404, "appel d'un outil d'un connecteur non partagé : 404")
+  assert((await call(connectedCallRoute.POST, "/api/connected-tools/call", { method: "POST", session: hugoSession, body: { tool: "x" } })).status === 400, "appel mal formé : 400")
   const cb = await mcpCallbackRoute.GET(new Request("http://smoke.test/api/connectors/mcp/callback?state=inconnu&code=x", { headers: { cookie: `brain_session=${claireSession}` } }))
   assert(cb.status === 303 && /\/connecteurs\?mcp=error/.test(cb.headers.get("location") ?? ""), "retour OAuth avec un état inconnu : renvoi vers /connecteurs avec l'erreur")
   const cbAnon = await mcpCallbackRoute.GET(new Request("http://smoke.test/api/connectors/mcp/callback?state=x&code=x"))
@@ -900,12 +914,16 @@ async function main() {
       )
       const mcpTools = await rpc(acme.id, token, { jsonrpc: "2.0", id: 2, method: "tools/list" })
       assert(
-        mcpTools.data.result.tools.map((t: { name: string }) => t.name).join() === "search_brain,get_zone_summary,list_zones,whoami_context,company_status,remember",
-        "MCP : les six outils du cerveau, sans paramètre company (une entreprise par serveur)",
+        mcpTools.data.result.tools.map((t: { name: string }) => t.name).join() === "search_brain,get_zone_summary,list_zones,whoami_context,company_status,remember,connected_tools,use_connected_tool",
+        "MCP : les huit outils du cerveau (dont ceux des connecteurs), sans paramètre company (une entreprise par serveur)",
       )
       assert(!JSON.stringify(mcpTools.data).includes('"company"'), "MCP : pas de paramètre company")
       const mcpZones = await rpc(acme.id, token, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_zones", arguments: {} } })
       assert(mcpZones.data.result.content[0].text.includes("**Ops** (`ops`)"), "MCP : un outil répond, avec les zones de l'entreprise")
+      const mcpConnected = await rpc(acme.id, token, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "connected_tools", arguments: {} } })
+      assert(/Aucun connecteur n'est ouvert aux agents/.test(mcpConnected.data.result.content[0].text), "MCP : connected_tools sans connecteur branché le dit")
+      const mcpUse = await rpc(acme.id, token, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "use_connected_tool", arguments: { connector: "linear", tool: "list_issues" } } })
+      assert(mcpUse.data.result.isError === true && /introuvable ou non partagé/.test(mcpUse.data.result.content[0].text), "MCP : use_connected_tool sur un connecteur absent : erreur claire")
       assert((await rpc(butine.id, token, hello)).status === 401, "MCP : le jeton d'une entreprise n'ouvre pas le serveur d'une autre")
       assert((await rpc(acme.id, newToken(), hello)).status === 401, "MCP : jeton inconnu refusé")
       assert((await rpc(acme.id, token, null, "GET")).status === 405, "MCP : GET refusé (serveur sans état)")

@@ -40,7 +40,7 @@ after(async () => {
 
 test("MCP : liste des outils", async () => {
   const { tools } = await client.listTools()
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "get_zone_summary", "list_zones", "remember", "search_brain", "whoami_context"])
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
   const search = tools.find((t) => t.name === "search_brain")!
   assert.match(search.description ?? "", /décisions, procédures/)
   assert.deepEqual(search.inputSchema.required, ["query"])

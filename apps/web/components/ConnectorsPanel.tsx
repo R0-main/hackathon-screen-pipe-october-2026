@@ -30,7 +30,7 @@ export function ConnectorsPanel({ initial, mcp, redirectUri }: Props) {
         <div>
           <h1 className="text-[22px] font-medium leading-tight">{t.connectors.title}</h1>
         </div>
-        <McpConnectors initial={mcp} redirectUri={redirectUri} />
+        <McpConnectors initial={mcp} redirectUri={redirectUri} zones={zones} />
         <div className="pt-4">
           <h2 className="text-[18px] font-medium leading-tight">{t.connectors.apiTitle}</h2>
           <p className="mt-1 max-w-3xl text-[13px] text-trace">{t.connectors.lead}</p>
