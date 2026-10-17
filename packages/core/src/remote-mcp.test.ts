@@ -6,6 +6,8 @@ import {
   authServerMetadataUrls,
   buildAuthorizeUrl,
   canonicalResource,
+  isMcpReturn,
+  MCP_RETURN_PAGES,
   findResponse,
   parseSseMessages,
   parseTokenResponse,
@@ -126,4 +128,12 @@ test("public view: never a secret, derived status", () => {
   assert.equal(publicMcpConnector({ ...c, tokens: undefined }).status, "needs_auth")
   assert.equal(publicMcpConnector({ ...c, last_check: { at: "", ok: false, tools: [], error: "x" } }).status, "error")
   assert.equal(publicMcpConnector({ ...c, auth: "none", tokens: undefined }).status, "connected")
+})
+
+test("return page after sign-in: closed list of internal pages", () => {
+  assert.equal(isMcpReturn("create"), true)
+  assert.equal(isMcpReturn("connectors"), true)
+  assert.equal(isMcpReturn("https://evil.example"), false)
+  assert.equal(isMcpReturn("toString"), false, "no inherited property")
+  assert.equal(MCP_RETURN_PAGES.create, "/create?draft=1")
 })

@@ -166,7 +166,7 @@ test("prompts: a blocked action is settled in one sentence, without working arou
   }
 })
 
-test("onboarding prompt: framed by what the company does, to leave unrelated conversations aside", () => {
+test("onboarding prompt: framed by the name and description entered, nothing else is learned", () => {
   const p = buildOnboardingAgentPrompt({
     baseUrl: "https://brain.example.com",
     code: "co_x",
@@ -174,10 +174,14 @@ test("onboarding prompt: framed by what the company does, to leave unrelated con
     description: "Product design studio for healthcare startups.",
     zones: [],
   })
-  assert.match(p, /The company is Atelier Lumen: "Product design studio for healthcare startups\."/)
-  assert.match(p, /an unrelated conversation \(personal project, another company or another customer, a general question\) is left aside/)
+  assert.match(
+    p,
+    /You look ONLY for the projects and conversations of the company "Atelier Lumen", which describes itself as: "Product design studio for healthcare startups\."/,
+  )
+  assert.match(p, /learn nothing else: a personal project, another company, another customer, a general question or another subject is not read in detail/)
+  assert.match(p, /When in doubt, leave it aside\./)
   const noDescription = buildOnboardingAgentPrompt({ baseUrl: "https://brain.example.com", code: "co_x", orgName: "Orbite", zones: [] })
-  assert.match(noDescription, /The company is Orbite\. Only keep what concerns it/)
+  assert.match(noDescription, /You look ONLY for the projects and conversations of the company "Orbite"\. First spot/)
 })
 const FP = "33483DC29874755818A10E941E52452421D5FF791FCF37578DB0E4EC570DF8F5"
 

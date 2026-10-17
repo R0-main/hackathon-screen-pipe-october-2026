@@ -121,7 +121,7 @@ Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-
 | GET | `/api/admin/zones/auto/input` | Admin: material for a run (zones, numbered recent knowledge) for `refresh-zones`. |
 | GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`): daily "new zones" job, across all companies. |
 | POST | `/api/sync/report` | Report of a computer's sync (counters, redacted error): Monitoring page. |
-| GET | `/api/admin/monitoring` | Admin: state of the computers, server incidents, instance. `GET /api/health`: public probe (200 / 503). |
+| GET | `/api/admin/monitoring` | Admin: state of the computers, server incidents, instance. `GET /api/health`: public probe (200 / 503), with the migrations state on Postgres (`migrations.up_to_date`). |
 | GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin: Notion, Linear, Todoist, ICS calendar connectors (settings without the token, sync on demand). |
 | GET/POST | `/api/connectors/mcp` | Admin: MCP servers added (without token) and the OAuth redirect URI; adding from the catalog or a custom server. |
 | PUT/DELETE/POST | `/api/connectors/mcp/:id`, `/api/connectors/mcp/:id/authorize`, `/api/connectors/mcp/:id/test` | Admin: manual OAuth client or token, removal; address of the provider's sign-in page; test (list of tools). |
@@ -130,8 +130,16 @@ Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-
 
 ## Create your company from scratch
 
-On the home page, **Create my company** (`/create`): four questions, one per screen (name, activity, who you are,
-zones of the brain), and the company's dashboard exists, with you as its admin. Then:
+On the home page, **Create my company** (`/create`): three questions, one per screen (name, activity, who you are),
+and the company's brain exists, without a zone, with you as its admin. Then:
+
+- **Claude suggests the zones** (optional, "Skip" to choose yourself): a prompt to open in Claude Code or Codex, framed
+  by the name and activity entered (see below). The page receives its proposal live;
+- **the zones**: those suggested by Claude, ticked by default, then the usual list and the zones added by hand.
+  "Validate the zones" creates them, adds the first suggested knowledge and redoes the computer's install prompt with
+  these zones (`POST /api/onboarding/zones`, same token: the session stays valid).
+
+Then:
 
 1. **Your computer**: copy the prompt (or "Open in Claude Code") and paste it into Claude Code. It installs everything
    like the home page demo; the page switches to "Your computer is connected" at the first sign of its agent.
@@ -155,16 +163,21 @@ token or a session points to its company, and each route reads its own. `BRAIN_S
 
 ### Fill the brain from past conversations
 
-**Onboarding** page (admins), "context" step of `/create`, and a reminder on an empty dashboard: "Give the brain your
-accounts' context". The prompt opens in Claude Code locally (`claude-cli://` link, terminal on this computer; VS Code
-and the desktop app in "Local" mode as options) or is copied for Codex. The agent stops if it runs in the cloud, first
-asks for the person's consent ("Do you agree to give this website access to that data?"), only keeps the conversations
-that concern the company (its name and what it does, as entered in `/create`), reads the computer's history
-(`~/.claude/projects`, `~/.codex/sessions`) and the READMEs of those projects, draws the zones and 10 to 40 first
-knowledge items from them (never any secrets or personal data), then sends them with an upload code valid for 2 h
-(`POST /api/onboarding/import`, Bearer `co_…`, admin only). The page fills in on its own with the proposal, redacted
-again on the server; nothing is applied before the admin has reviewed and validated it. The 7-question interview stays
-available below. The link is also offered at the end of `/create`, and the `/demo` page offers "Create my dashboard".
+**Onboarding** page (admins), "Let Claude suggest the zones" step of `/create` (right before the zones), and a
+reminder on an empty dashboard: "Give the brain your accounts' context". The prompt opens in Claude Code locally
+(`claude-cli://` link, terminal on this computer; VS Code and the desktop app in "Local" mode as options) or is copied
+for Codex. The agent stops if it runs in the cloud, first asks for the person's consent ("Do you agree to give this
+website access to that data?"), only looks for the company's projects and conversations (its name and description, as
+entered in `/create`) and learns nothing else (personal project, another company, another customer: left aside), reads
+the computer's history (`~/.claude/projects`, `~/.codex/sessions`) and the READMEs of those projects, draws the zones
+and 10 to 40 first knowledge items from them (never any secrets or personal data), then sends them with an upload code
+valid for 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin only). It reports its start as soon as it has
+consent, then its findings and its end (`POST /api/onboarding/progress`, same code): the page says "it's started, you
+can move on" and each report arrives as a notification. It sends a first version early then completes it (each upload
+replaces the previous one); a proposal that arrives during the zones step is added to it. The page fills in on its own
+with the proposal, redacted again on the server; nothing is applied before the admin has reviewed and validated it (at
+the zones step of `/create`, or on the Onboarding page). The 7-question interview stays available below, and the
+`/demo` page offers "Create my dashboard".
 
 ## Connect a real computer
 

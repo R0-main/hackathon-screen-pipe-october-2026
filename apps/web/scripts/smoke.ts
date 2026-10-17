@@ -48,6 +48,7 @@ import {
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as zoneRoute from "../app/api/zones/[id]/route"
+import * as healthRoute from "../app/api/health/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
@@ -69,7 +70,9 @@ import * as itemRoute from "../app/api/items/[id]/route"
 import * as joinRoute from "../app/api/join/route"
 import * as onboardingAgentRoute from "../app/api/onboarding/agent/route"
 import * as onboardingImportRoute from "../app/api/onboarding/import/route"
+import * as onboardingProgressRoute from "../app/api/onboarding/progress/route"
 import * as onboardingApplyRoute from "../app/api/onboarding/apply/route"
+import * as onboardingZonesRoute from "../app/api/onboarding/zones/route"
 import * as joinStatusRoute from "../app/api/join/status/route"
 import * as adminJoinRoute from "../app/api/admin/join/route"
 import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
@@ -727,6 +730,23 @@ async function main() {
     assert(!(await poller.poll()).some((e) => e.id === slowId || e.id === fast.id), "without duplicates")
     await sql.end({ timeout: 5 })
 
+    console.log("\n— Health probe: migrations applied compared with those shipped with the code")
+    {
+      const files = fs.readdirSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../supabase/migrations")).filter((f) => f.endsWith(".sql")).sort()
+      const saved = process.env.BRAIN_EXPECTED_MIGRATION
+      process.env.BRAIN_EXPECTED_MIGRATION = files.at(-1)
+      try {
+        const h = (await (await healthRoute.GET()).json()) as { migrations?: { applied: number; last: string | null; expected: string | null; up_to_date: boolean | null } }
+        assert(h.migrations?.up_to_date === true && h.migrations.last === files.at(-1) && h.migrations.applied >= files.length, `database up to date: ${JSON.stringify(h.migrations)}`)
+        process.env.BRAIN_EXPECTED_MIGRATION = "99999999999999_future.sql"
+        const late = (await (await healthRoute.GET()).json()) as { ok: boolean; migrations?: { up_to_date: boolean | null } }
+        assert(late.ok && late.migrations?.up_to_date === false, "a migration shipped but not applied: reported, without failing the probe")
+      } finally {
+        if (saved === undefined) delete process.env.BRAIN_EXPECTED_MIGRATION
+        else process.env.BRAIN_EXPECTED_MIGRATION = saved
+      }
+    }
+
     console.log("\n— Postgres: organization reread (reseed, onboarding on another instance)")
     const other = new PostgresStore(url)
     const orgBefore = await store.getOrg()
@@ -1005,8 +1025,20 @@ async function main() {
       assert((await upload(`co_${"A".repeat(40)}`, proposal)).status === 401, "a made-up code is refused")
       assert((await upload(await createOnboardingCode(bob.id), proposal)).status === 401, "a (non-admin) member's code is refused")
       assert((await upload(sendCode, { ...proposal, items: [{ zone: "x" }] })).status === 400, "a malformed proposal is refused")
+      const signal = (code: string, body: unknown) =>
+        onboardingProgressRoute.POST(new Request("http://smoke.test/api/onboarding/progress", { method: "POST", headers: { authorization: `Bearer ${code}`, "content-type": "application/json" }, body: JSON.stringify(body) }))
+      assert((await signal(`co_${"A".repeat(40)}`, { step: "start", message: "Go" })).status === 401, "report: a made-up code is refused")
+      assert((await signal(sendCode, { step: "start", message: "Consent received, looking for the conversations" })).status === 201, "the agent reports its start")
+      assert((await signal(sendCode, { step: "progress", message: "Key sk-ant-api03-abcdefghijklmnopqrstuvwxyz found" })).status === 201, "then its findings")
       const sent = await upload(sendCode, proposal)
       assert(sent.status === 201, "the agent drops off its proposal")
+      const progress = (await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: cookie })).data.events as { step: string; message: string }[]
+      assert(progress.map((e) => e.step).join() === "start,progress,draft" && /First proposal received: 2 zones, 1 knowledge item/.test(progress[2].message), "the feed: start, finding, proposal received")
+      assert(!JSON.stringify(progress).includes("sk-ant"), "secrets redacted in the feed")
+      assert((await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: butineAdmin })).data.events.length === 0, "Butine does not see the feed")
+      assert((await upload(sendCode, proposal)).status === 201, "the agent sends its completed proposal again")
+      const completed = (await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: cookie })).data.events.at(-1)
+      assert(completed.step === "draft" && completed.message.startsWith("Proposal completed"), "the page knows it is a completed version")
       const pendingDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft
       assert(pendingDraft?.source === "codex" && pendingDraft.items.length === 1, "the Onboarding page finds it (it fills itself in)")
       assert(!JSON.stringify(pendingDraft).includes("sk-ant") && !JSON.stringify(pendingDraft).includes("alice@"), "secrets and emails redacted on receipt")
@@ -1016,6 +1048,57 @@ async function main() {
       const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
       assert(applied.status === 200 && (await acmeStore.listZones()).some((z) => z.id === "design"), "validated: zones and knowledge applied")
       assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft === null, "and the proposal is cleared")
+
+      console.log("\n— /create: brain created without a zone, Claude suggests them, the zones step starts from its proposal")
+      {
+        const hive = await root.createTenantOrg({ name: `Hive ${run}`, description: "Connected scales for beehives", zones: [] })
+        const hiveStore = storeForOrg(hive.id)
+        const founderToken = newToken()
+        const founder = await hiveStore.createProfile({ name: `Inès ${run}`, role: "admin", manager_id: null, token_hash: hashToken(founderToken) })
+        const hiveCookie = await createSessionValue(founder.id)
+        const rAgent = await call(onboardingAgentRoute.POST, "/api/onboarding/agent", { method: "POST", session: hiveCookie })
+        assert(
+          rAgent.status === 200 && rAgent.data.prompt.includes(`You look ONLY for the projects and conversations of the company "Hive ${run}", which describes itself as: "Connected scales for beehives"`),
+          "the prompt frames the reading by the name and description entered",
+        )
+        const rCode = rAgent.data.prompt.match(/Bearer (co_[A-Za-z0-9_-]+)/)?.[1] as string
+        const rProposal = {
+          source: "claude-code",
+          company_name: `Hive ${run}`,
+          description: "",
+          zones: [
+            { id: "sensors", name: "Sensors", description: "Scales and firmware", keywords: ["firmware"] },
+            { id: "beekeepers", name: "Beekeepers", description: "Customers and support", keywords: ["support"] },
+          ],
+          items: [{ zone: "sensors", kind: "decision", title: `Firmware in Rust (${run})`, body: "Chosen for reliability on battery.", entities: [], source: { app: "onboarding", tool: "onboarding" }, confidence: 0.8 }],
+        }
+        assert((await upload(rCode, rProposal)).status === 201, "the proposal arrives during creation")
+        const rDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: hiveCookie })).data.draft
+        const memberCookie = await createSessionValue(bob.id)
+        assert(
+          (await call(onboardingZonesRoute.POST, "/api/onboarding/zones", { method: "POST", session: memberCookie, body: { custom: ["Hack"] } })).status === 403,
+          "admins only",
+        )
+        const zonesRes = await call(onboardingZonesRoute.POST, "/api/onboarding/zones", {
+          method: "POST",
+          session: hiveCookie,
+          // "beekeepers" removed, "product" ticked in the list, "Legal" added by hand.
+          body: { proposed: [rDraft.zones[0]], picked: ["product"], custom: ["Legal"], items: rDraft.items, description: "Connected scales for beehives.", token: founderToken },
+        })
+        const ids = (await hiveStore.listZones()).map((z) => z.id).sort().join()
+        assert(zonesRes.status === 200 && ids === "legal,product,sensors", `zones created: the kept one, the ticked one, the added one (${ids})`)
+        assert((await hiveStore.listZoneAccess(founder.id)).length === 3, "the admin reads and writes all their zones")
+        assert((await hiveStore.listItems({ zones: ["sensors"] })).some((i) => i.title.startsWith("Firmware in Rust")), "the suggested knowledge is added")
+        assert(zonesRes.data.prompt.includes("zones: sensors, product, legal") && zonesRes.data.prompt.includes(founderToken), "the install prompt is redone with these zones, same token")
+        assert((await viewerFromCookies(hiveCookie, undefined))?.real.id === founder.id, "the dashboard session stays valid")
+        assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: hiveCookie })).data.draft === null, "the proposal is cleared")
+        const empty = await root.createTenantOrg({ name: `Empty ${run}`, description: "", zones: [] })
+        const emptyAdmin = await storeForOrg(empty.id).createProfile({ name: `Yann ${run}`, role: "admin", manager_id: null, token_hash: hashToken(newToken()) })
+        const none = await call(onboardingZonesRoute.POST, "/api/onboarding/zones", { method: "POST", session: await createSessionValue(emptyAdmin.id), body: {} })
+        assert(none.status === 400, "without any zone: refused")
+        const other = await call(onboardingZonesRoute.POST, "/api/onboarding/zones", { method: "POST", session: hiveCookie, body: { custom: ["Ops"], token: newToken() } })
+        assert(other.status === 200 && other.data.prompt === null, "a token that is not theirs: zones added, but no prompt")
+      }
 
       console.log("\n— New zones created automatically (daily job)")
       {

@@ -18,6 +18,8 @@ monitoring without reports, task connectors refused with a clear message, search
 - **Alerts**: `BRAIN_ALERT_WEBHOOK` receives a JSON `{ text }` (Slack, Discord `/slack`, Mattermost, n8n…) for a route
   error, a failed sync on a computer, a failed connector. At most one alert per cause and per hour.
 - **Probe**: `GET /api/health` answers 200 with version, uptime, storage, feed mode; 503 if the storage does not answer.
+  On Postgres, `migrations` gives the last migration applied in the database, the last one shipped with the code and
+  `up_to_date`: enough to check from outside that a deployment did migrate the database.
 - API: `GET /api/admin/monitoring`.
 
 ## 2. Connectors (`/connectors`, admins)

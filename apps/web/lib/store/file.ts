@@ -822,6 +822,10 @@ export class FileStore implements BrainStore {
     })
   }
 
+  async migrationStatus() {
+    return null
+  }
+
   async isEmpty() {
     return (await this.listProfiles()).length === 0
   }

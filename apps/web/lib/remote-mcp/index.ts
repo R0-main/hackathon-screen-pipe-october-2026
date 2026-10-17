@@ -3,6 +3,7 @@
 // provider's sign-in page, return (callback) and connection test (list of tools).
 
 import {
+  MCP_RETURN_PAGES,
   buildAuthorizeUrl,
   catalogEntry,
   publicMcpConnector,
@@ -13,6 +14,7 @@ import {
   type McpConnectorConfig,
   type McpConnectorPublic,
   type McpConnectorsConfig,
+  type McpReturn,
 } from "@brain/core"
 import type { Viewer } from "../auth"
 import { getStore } from "../store"
@@ -140,7 +142,7 @@ export async function removeMcp(id: string): Promise<void> {
  * Prepares the OAuth connection and returns the address of the provider's sign-in page. The client is registered
  * automatically when the provider accepts it; the state (anti-CSRF) is tied to the admin who clicks.
  */
-export async function startAuthorize(id: string, viewer: Viewer, redirectUri: string): Promise<string> {
+export async function startAuthorize(id: string, viewer: Viewer, redirectUri: string, returnTo: McpReturn = "connectors"): Promise<string> {
   const c = await getMcpConnector(id)
   if (!c) throw new McpUserError("Unknown connector.")
   if (c.auth === "none") throw new McpUserError("This server is public: no sign-in is needed.")
@@ -163,9 +165,15 @@ export async function startAuthorize(id: string, viewer: Viewer, redirectUri: st
     const cur = ensure(cfg, id)
     cur.client = client
     cur.oauth = meta
-    cur.pending = { state, verifier, redirect_uri: redirectUri, by: viewer.real.id, created_at: Date.now() }
+    cur.pending = { state, verifier, redirect_uri: redirectUri, by: viewer.real.id, created_at: Date.now(), return_to: returnTo }
   })
   return buildAuthorizeUrl(meta, { client_id: client.client_id, redirect_uri: redirectUri, state, code_challenge: challenge })
+}
+
+/** Page to bring the admin back to after the provider's return (the one the sign-in started from). */
+export async function pendingReturnPage(state: string): Promise<string> {
+  const c = Object.values(await load()).find((x) => x.pending?.state === state)
+  return MCP_RETURN_PAGES[c?.pending?.return_to ?? "connectors"] ?? MCP_RETURN_PAGES.connectors
 }
 
 /** The provider's return: checks the state, exchanges the code for tokens, tests the connection. Returns the id. */

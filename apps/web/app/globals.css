@@ -65,15 +65,17 @@ body {
   outline-offset: 2px;
 }
 
+/* Longhand text-wrap-style: the text-wrap shorthand would reset text-wrap-mode to wrap, and these rules outside a layer
+   would win over the truncate / whitespace-nowrap utilities. */
 h1,
 h2,
 h3,
 h4 {
-  text-wrap: balance;
+  text-wrap-style: balance;
 }
 
 p {
-  text-wrap: pretty;
+  text-wrap-style: pretty;
 }
 
 .mono {
@@ -366,7 +368,8 @@ button.chip:hover:not(.chip-on) {
   transform: translateX(-50%);
   white-space: nowrap;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  /* The brain's background (Brain3D, paper option): white on the dashboard, bone on /create. */
+  background: color-mix(in srgb, var(--brain-paper, var(--color-surface)) 75%, transparent);
   padding: 0 4px;
   font-size: 11px;
   line-height: 1.4;

@@ -35,6 +35,15 @@ export type Brain3DProps = {
   selected?: string | null
   onSelect?: (zone: string) => void
   people?: BrainPerson[]
+  /** Zoom buttons and "drag to rotate" help (default: yes); not in a preview (company creation). */
+  controls?: boolean
+  /** Color of the background the brain blends into (background, fog, fading): white by default, bone on /create. */
+  paper?: number
+  /**
+   * Brain as a page background (/create): the canvas covers its whole container, the brain frames itself on this element,
+   * and zooming goes right into the brain without ever hitting a frame.
+   */
+  anchor?: React.RefObject<HTMLElement | null>
 }
 
 // Ink on white. A zone touched live (an agent, a click) lights up in its own color, brightened.
@@ -62,6 +71,8 @@ const DOT_SPACING = 44
 /** Radius of a dot in the scene: about twenty pixels wide at the starting zoom. */
 const DOT_R = 0.052
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
+/** As a page background, you can go into the brain: the camera stops just before its center. */
+const DEEP_ZOOM_MIN = 0.15
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
 /** Interval between two ripples while a zone is selected. */
@@ -128,7 +139,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * the wheel only zooms. Without WebGL, it falls back to the 2D view.
  */
 export function Brain3D(props: Brain3DProps) {
-  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [] } = props
+  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [], controls = true, paper = WHITE, anchor } = props
+  const paperCss = `#${paper.toString(16).padStart(6, "0")}`
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const labelsRef = useRef(new Map<string, HTMLButtonElement>())
@@ -166,7 +178,7 @@ export function Brain3D(props: Brain3DProps) {
       .then((T) => {
         if (disposed) return
         try {
-          dispose = build(T, container, canvas, zones, synapses, placed.map((p) => ({ ...p, look: looks.get(p.id)! })), { labelsRef, dotsRef, peopleRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef })
+          dispose = build(T, container, canvas, zones, synapses, placed.map((p) => ({ ...p, look: looks.get(p.id)! })), paper, { labelsRef, dotsRef, peopleRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef, anchor })
         } catch {
           setFallback(true)
         }
@@ -180,6 +192,8 @@ export function Brain3D(props: Brain3DProps) {
   }, [sceneKey, fallback])
 
   if (fallback) {
+    // As a page background, the 2D view stays in the brain's box.
+    if (anchor) return <AnchoredFallback anchor={anchor} {...props} />
     return (
       <div className="grid h-full w-full place-items-center overflow-hidden bg-surface p-6">
         <div className="w-full max-w-[1100px]">
@@ -190,7 +204,7 @@ export function Brain3D(props: Brain3DProps) {
   }
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-surface">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden" style={{ background: paperCss, ["--brain-paper" as string]: paperCss }}>
       <canvas ref={canvasRef} className="block h-full w-full cursor-grab touch-none active:cursor-grabbing" aria-hidden />
 
       {/* Dots: 3D models in the scene. Here, their clickable area and their first name, placed every frame at the same spot. */}
@@ -237,7 +251,7 @@ export function Brain3D(props: Brain3DProps) {
               data-live={live ? "1" : undefined}
               onClick={() => onSelect?.(z.id)}
             >
-              <span className="flex items-start gap-1.5 rounded-[4px] bg-surface/70 px-1.5 py-0.5">
+              <span className="flex items-start gap-1.5 rounded-[4px] px-1.5 py-0.5" style={{ background: `color-mix(in srgb, ${paperCss} 70%, transparent)` }}>
                 <Dot color={zoneColor(z.color, z.position)} size={7} className="mt-[4px]" />
                 <span>
                   <span className={`block whitespace-nowrap text-[11px] font-medium leading-tight sm:text-[12px] ${isSel ? "underline underline-offset-4" : ""}`}>{z.name}</span>
@@ -263,15 +277,19 @@ export function Brain3D(props: Brain3DProps) {
         })}
       </div>
 
-      <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
-        <button type="button" className="btn btn-icon" aria-label="Zoom in" onClick={() => zoomRef.current(-ZOOM.step)}>
-          <PlusIcon />
-        </button>
-        <button type="button" className="btn btn-icon" aria-label="Zoom out" onClick={() => zoomRef.current(ZOOM.step)}>
-          <MinusIcon />
-        </button>
-      </div>
-      <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Drag to rotate, scroll or pinch to zoom.</p>
+      {controls && (
+        <>
+          <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
+            <button type="button" className="btn btn-icon" aria-label="Zoom in" onClick={() => zoomRef.current(-ZOOM.step)}>
+              <PlusIcon />
+            </button>
+            <button type="button" className="btn btn-icon" aria-label="Zoom out" onClick={() => zoomRef.current(ZOOM.step)}>
+              <MinusIcon />
+            </button>
+          </div>
+          <p className="pointer-events-none absolute bottom-4 left-4 hidden text-[12px] text-trace sm:block">Drag to rotate, scroll or pinch to zoom.</p>
+        </>
+      )}
     </div>
   )
 }
@@ -286,19 +304,45 @@ type Refs = {
   onSelectRef: React.RefObject<((zone: string) => void) | undefined>
   viewRef: React.RefObject<View>
   zoomRef: React.RefObject<(delta: number) => void>
+  anchor?: React.RefObject<HTMLElement | null>
+}
+
+/** Without WebGL, as a page background: the 2D view placed on the element framing the brain. */
+function AnchoredFallback({ anchor, zones, synapses, activity, ripples, now, selected, onSelect }: Brain3DProps & { anchor: React.RefObject<HTMLElement | null> }) {
+  const [box, setBox] = useState<DOMRect | null>(null)
+  useEffect(() => {
+    const el = anchor.current
+    if (!el) return
+    const measure = () => setBox(el.getBoundingClientRect())
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    window.addEventListener("scroll", measure, { passive: true, capture: true })
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("scroll", measure, { capture: true })
+    }
+  }, [anchor])
+  if (!box) return null
+  return (
+    <div className="fixed grid place-items-center" style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
+      <BrainViz zones={zones} synapses={synapses} activity={activity} ripples={ripples} now={now} selected={selected} onSelect={onSelect} />
+    </div>
+  )
 }
 
 /** Builds the scene and starts the render loop. Returns the cleanup function. */
-function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], refs: Refs): () => void {
+function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], paper: number, refs: Refs): () => void {
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   renderer.setClearColor(0x000000, 0)
 
   const scene = new T.Scene()
   // White fog: the back side fades, the front links stay readable.
-  const fog = new T.Fog(WHITE, 1, 10)
+  const fog = new T.Fog(paper, 1, 10)
   scene.fog = fog
-  const camera = new T.PerspectiveCamera(36, 1, 0.1, 50)
+  const camera = new T.PerspectiveCamera(36, 1, 0.02, 50)
+  const zoomMin = refs.anchor ? DEEP_ZOOM_MIN : ZOOM.min
   const view = refs.viewRef.current
   const state = { zoomTarget: view.zoom, lastInteraction: -Infinity, visible: true, running: false }
   camera.position.set(0, 0.2, view.zoom)
@@ -396,7 +440,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   materials.push(netMat, neuronMat)
 
   const inkC = new T.Color(INK)
-  const whiteC = new T.Color(WHITE)
+  // The "white" everything fades toward: the background color, so the brain blends into it.
+  const whiteC = new T.Color(paper)
   const bareC = new T.Color(BARE)
   const zoneList = [...gfx.values()]
   const tone = new T.Color()
@@ -416,7 +461,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     camLocal.copy(camera.position)
     group.worldToLocal(camLocal)
     backFade(net, camLocal.toArray(), fade)
-    shadeCurves(curves, linkBase, fade, BACK, [1, 1, 1], netCol)
+    shadeCurves(curves, linkBase, fade, BACK, whiteC.toArray() as [number, number, number], netCol)
     net.points.forEach((_, i) => neurons.setColorAt(i, tone.copy(dotBase[i]).lerp(whiteC, fade[i] * BACK)))
     netGeo.attributes.color.needsUpdate = true
     if (neurons.instanceColor) neurons.instanceColor.needsUpdate = true
@@ -590,21 +635,33 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const dotWorld = new T.Vector3()
   const zoneWorld = new T.Vector3()
 
-  // Size: the canvas follows its container.
+  // Size: the canvas follows its container. As a page background, the brain keeps the size and place of the element
+  // framing it (view offset), but it is drawn over the whole page: zooming never cuts it.
   const size = { w: 1, h: 1 }
   const resize = () => {
     const w = container.clientWidth
     const h = container.clientHeight
     if (!w || !h) return
+    if (w !== size.w || h !== size.h) renderer.setSize(w, h, false)
     size.w = w
     size.h = h
-    renderer.setSize(w, h, false)
     camera.aspect = w / h
-    camera.zoom = Math.min(1, camera.aspect / 1.1)
+    const box = refs.anchor?.current?.getBoundingClientRect()
+    if (box && box.width && box.height) {
+      const own = container.getBoundingClientRect()
+      camera.zoom = Math.min(1, box.width / box.height / 1.1) * (box.height / h)
+      camera.setViewOffset(w, h, w / 2 - (box.left - own.left + box.width / 2), h / 2 - (box.top - own.top + box.height / 2), w, h)
+    } else {
+      camera.zoom = Math.min(1, camera.aspect / 1.1)
+      camera.clearViewOffset()
+    }
     camera.updateProjectionMatrix()
   }
   const ro = new ResizeObserver(resize)
   ro.observe(container)
+  if (refs.anchor?.current) ro.observe(refs.anchor.current)
+  // The framing element can move without changing size (page scrolling).
+  if (refs.anchor) window.addEventListener("scroll", resize, { passive: true, capture: true })
   resize()
 
   // Interaction: drag to rotate, click to open a zone, wheel (or pinch on the touchpad) to zoom.
@@ -630,6 +687,11 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const [a, b] = [...pointers.values()]
     return Math.hypot(a.x - b.x, a.y - b.y)
   }
+  // Zoom proportional to the distance: the same gesture always brings you equally closer, right into the brain.
+  const zoomBy = (delta: number) => {
+    state.zoomTarget = clamp(state.zoomTarget * Math.exp(delta / ZOOM.start), zoomMin, ZOOM.max)
+    state.lastInteraction = performance.now()
+  }
   const onDown = (e: PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -652,7 +714,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (pointers.size >= 2) {
       const d = spreadOf()
-      state.zoomTarget = clamp(state.zoomTarget - (d - pinch) * 0.01, ZOOM.min, ZOOM.max)
+      zoomBy(-(d - pinch) * 0.01)
       pinch = d
       state.lastInteraction = performance.now()
     } else if (dragging) {
@@ -683,18 +745,14 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     e.preventDefault()
     // A touchpad pinch arrives as wheel + Ctrl, with small deltas: it is amplified.
     const k = e.ctrlKey ? 0.012 : e.deltaMode === 1 ? 0.12 : 0.004
-    state.zoomTarget = clamp(state.zoomTarget + e.deltaY * k, ZOOM.min, ZOOM.max)
-    state.lastInteraction = performance.now()
+    zoomBy(e.deltaY * k)
   }
   canvas.addEventListener("pointerdown", onDown)
   canvas.addEventListener("pointermove", onMove)
   canvas.addEventListener("pointerup", onUp)
   canvas.addEventListener("pointercancel", onUp)
   canvas.addEventListener("wheel", onWheel, { passive: false })
-  refs.zoomRef.current = (delta: number) => {
-    state.zoomTarget = clamp(state.zoomTarget + delta, ZOOM.min, ZOOM.max)
-    state.lastInteraction = performance.now()
-  }
+  refs.zoomRef.current = zoomBy
 
   // Loop: ripples, active states, idle rotation, projected labels.
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -835,7 +893,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       el.classList.toggle("is-flip", flip)
       el.style.opacity = behind ? "0.45" : "1"
       el.style.zIndex = behind ? "1" : el.dataset.live ? "3" : "2"
-      el.style.visibility = "visible"
+      // A zone gone behind the camera (we went into the brain) no longer has a label.
+      el.style.visibility = tmp.z > 1 ? "hidden" : "visible"
     }
 
     placeDots(dt, t / 1000)
@@ -955,6 +1014,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     stop()
     io.disconnect()
     ro.disconnect()
+    window.removeEventListener("scroll", resize, { capture: true })
     document.removeEventListener("visibilitychange", onVisibility)
     canvas.removeEventListener("pointerdown", onDown)
     canvas.removeEventListener("pointermove", onMove)

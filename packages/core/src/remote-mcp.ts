@@ -134,7 +134,15 @@ export type McpOAuthMeta = {
 
 export type McpCheck = { at: string; ok: boolean; tools: string[]; server?: string; error?: string }
 
-export type McpPending = { state: string; verifier: string; redirect_uri: string; by: string; created_at: number }
+/** Pages to come back to after signing in at the provider: the Connectors page, or company creation (step 8). */
+export const MCP_RETURN_PAGES = { connectors: "/connectors", create: "/create?draft=1" } as const
+export type McpReturn = keyof typeof MCP_RETURN_PAGES
+
+export function isMcpReturn(v: unknown): v is McpReturn {
+  return typeof v === "string" && Object.hasOwn(MCP_RETURN_PAGES, v)
+}
+
+export type McpPending = { state: string; verifier: string; redirect_uri: string; by: string; created_at: number; return_to?: McpReturn }
 
 export type McpConnectorConfig = {
   id: string

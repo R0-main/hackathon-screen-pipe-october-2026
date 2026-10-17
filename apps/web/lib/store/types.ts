@@ -202,6 +202,11 @@ export interface BrainStore {
    */
   /** True if the brain does not contain any account yet (without creating anything, unlike the other reads). */
   isEmpty(): Promise<boolean>
+  /**
+   * Migrations applied in the database (Postgres): their number and the last one; null with file storage. `applied` is
+   * 0 and `last` null if the tracking table does not exist yet (no migration applied by npm run db:migrate).
+   */
+  migrationStatus(): Promise<{ applied: number; last: string | null } | null>
   claimOnce(key: string): Promise<boolean>
   releaseClaim(key: string): Promise<void>
   /** Marks the protected task as done; `isClaimDone` lets the other instances wait for it. */

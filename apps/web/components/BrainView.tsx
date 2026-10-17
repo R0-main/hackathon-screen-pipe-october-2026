@@ -4,7 +4,6 @@ import Link from "next/link"
 import { useState } from "react"
 import { useBrainLive } from "./BrainLive"
 import { Brain3D } from "./Brain3D"
-import { AskBrain } from "./AskBrain"
 import { ZoneDrawer } from "./ZoneDrawer"
 import { WelcomeBanner } from "./WelcomeBanner"
 import { LiveFeed } from "./LiveFeed"
@@ -51,9 +50,6 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
       )}
 
       <div className="pointer-events-none absolute inset-x-4 top-4 z-10 flex flex-col gap-2 sm:right-auto sm:w-[min(560px,calc(100%-2rem))]">
-        <div className="panel pointer-events-auto p-3">
-          <AskBrain me={state.me} zones={state.zones} />
-        </div>
         {isAdmin && state.totals.items === 0 && !state.impersonating && (
           <div className="panel pointer-events-auto flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
             <p className="min-w-0 flex-1 text-[13px] leading-snug">
