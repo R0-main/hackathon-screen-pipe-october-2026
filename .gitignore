@@ -11,6 +11,11 @@ dist/
 apps/web/.brain/
 # Built client bundle served by the dashboard
 apps/web/public/brain.mjs
+# Cerveau auto-hébergé (deploy/local) : certificats fournis, certificat racine exporté, sauvegardes
+deploy/local/certs/*
+!deploy/local/certs/.gitkeep
+deploy/local/ca.crt
+deploy/local/backups/
 .DS_Store
 .next-build/
 
