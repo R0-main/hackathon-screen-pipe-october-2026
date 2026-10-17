@@ -8,7 +8,7 @@ import { BrainIcon, ErrorText } from "./ui"
 
 type DemoUser = { id: string; name: string; title?: string; role: string }
 
-/** Demo entrance: a click on a Fournil account opens the dashboard with its permissions. Next to it, create your own. */
+/** Demo entrance: a click on a Butine account opens the dashboard with its permissions. Next to it, create your own. */
 export function DemoPicker({ signup = false }: { signup?: boolean }) {
   const router = useRouter()
   const [users, setUsers] = useState<DemoUser[] | null>(null)
@@ -46,9 +46,9 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
           <Link href="/" className="rounded-[6px]" aria-label="Home page">
             <BrainIcon size={56} />
           </Link>
-          <h1 className="mt-3 text-[24px] font-medium leading-tight">The demo: Fournil's brain</h1>
+          <h1 className="mt-3 text-[24px] font-medium leading-tight">The demo: Butine's brain</h1>
           <p className="mt-1 text-[13px] text-trace">
-            Fournil is a fictional six-person company. Choose who you are: each person only sees the zones they have access to.
+            Butine makes connected scales for beehives: beekeepers see on their phone whether their bees are doing well, without opening the hive. A fictional six-person company. Choose who you are: each person only sees the zones they have access to.
           </p>
         </div>
         <section className="panel p-5" aria-busy={busy || users === null}>
@@ -74,7 +74,7 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
         {signup && (
           <section className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1 py-3">
             <span className="min-w-0">
-              <span className="block text-[14px] font-medium">Your company, rather than Fournil?</span>
+              <span className="block text-[14px] font-medium">Your company, rather than Butine?</span>
               <span className="block text-[13px] text-trace">Four questions, then a prompt to paste into Claude Code or Codex.</span>
             </span>
             <Link href="/create" className="btn">

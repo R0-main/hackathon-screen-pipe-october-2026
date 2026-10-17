@@ -88,7 +88,7 @@ Two modes, which can be combined:
 | Update | `sh deploy/local/brain-local.sh update` (git pull, rebuild, restart; the data stays) |
 | Root certificate | `sh deploy/local/brain-local.sh ca` (exports `deploy/local/ca.crt` again, shows the fingerprint) |
 | Stop | `sh deploy/local/brain-local.sh down` (the volumes stay; `docker compose down -v` deletes everything) |
-| Demo | `BRAIN_DEMO=1` in `.env` then `up`: the fictitious company Fournil loads the first time `/login` is opened |
+| Demo | `BRAIN_DEMO=1` in `.env` then `up`: the fictitious company Butine loads the first time `/login` is opened |
 
 The containers restart with Docker (`restart: unless-stopped`): if the machine reboots, the brain comes back on its own.
 

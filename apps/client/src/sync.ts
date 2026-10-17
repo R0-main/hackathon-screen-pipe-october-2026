@@ -16,6 +16,7 @@ import {
   type PersonalSignals,
   type ZoneHint,
 } from "@brain/core"
+import { AGENT_ENGINE_LABELS, agentWindow, pickAgentEngine, runScreenpipeAgent, type AgentResult } from "./agent"
 import { BrainApi, type IngestResult, type Workflow } from "./api"
 import { refreshCache, zoneHints } from "./cache"
 import {
@@ -673,12 +674,35 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
         `nothing was sent for ${them(stuck.length, "it", "them")}, the sync goes on without ${them(stuck.length, "it", "them")} (checkpoints moved forward).`,
     )
 
+  // 4b. Screenpipe agent: Claude Code or Codex looks at the recent activity itself (Screenpipe MCP, read-only).
+  // Its window only moves forward once its knowledge is sent; on a failure, it is read again on the next run (60 min at most).
+  let agent: AgentResult | null = null
+  const spRead = results.find((r) => r.source === "screenpipe")
+  // Claude signed out during distillation: the Claude agent would fail the same way (Codex can still run).
+  const engine = spRead?.available && opts.distiller !== "heuristic" ? pickAgentEngine(cfg) : null
+  const agentEngine = engine && !(engine.engine === "claude" && authFailure && distiller.kind === "claude-cli") ? engine : null
+  const agentWin = agentEngine ? agentWindow(opts.reset ? {} : baseState, new Date(now), baseline) : null
+  if (agentEngine && agentWin) {
+    const who = cache.whoami ? [cache.whoami.name, cache.whoami.title].filter(Boolean).join(", ") : undefined
+    agent = await runScreenpipeAgent({ ...agentEngine, cfg, zones, fallbackZone: defaultZone, window: agentWin, who })
+    const span = `${AGENT_ENGINE_LABELS[agentEngine.engine]}, ${hhmm(agentWin.start.toISOString())} → ${hhmm(agentWin.end.toISOString())}`
+    if (agent.ok) {
+      processed.add(agent.id)
+      io.log(
+        `Screenpipe agent (${span}): ${plural(agent.items.length, "knowledge item proposed", "knowledge items proposed")}` +
+          (agent.personal ? `, ${agent.personal} dropped (personal content)` : "") +
+          ".",
+      )
+    } else io.warn(`  Screenpipe agent (${span}): failed (${truncate(maskOwnSecrets(agent.error, secrets).text, 160)}); window read again on the next run.`)
+  }
+
   // Items grouped by conversation (in processing order): a conversation is "done" when all its items have gone.
   const byConv = new Map<string, KnowledgeItemInput[]>()
   jobs.forEach((j, n) => {
     if (notDistilled.has(j.conv.id)) return
     byConv.set(j.conv.id, [...(byConv.get(j.conv.id) ?? []), ...distilled[n]])
   })
+  if (agent?.ok) byConv.set(agent.id, agent.items)
   const seenKeys = new Set<string>()
   const flat: { item: KnowledgeItemInput; conv: string; last: boolean }[] = []
   for (const [conv, list] of byConv) {
@@ -691,6 +715,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   for (const r of results) convCounts[r.source] = r.conversations.length
 
   const commits = results.flatMap((r) => r.commits)
+  if (agent?.ok) commits.push(agent.commit)
 
   // What the preview does not contain: said clearly (none of it will go with --confirm).
   const gaps: string[] = []
@@ -701,6 +726,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     if (Number(r.stats.pending)) gaps.push(`${SOURCE_LABELS[r.source]}: ${plural(Number(r.stats.pending), "conversation turn in progress", "conversation turns in progress")} (answer not written yet)`)
   }
   if (notDistilled.size) gaps.push(`${plural(notDistilled.size, "conversation Claude did not distill", "conversations Claude did not distill")}`)
+  if (agent && !agent.ok) gaps.push("Screenpipe agent: failed, its recent activity was not looked at")
   if (retry.size)
     gaps.push(
       retry.size > 1

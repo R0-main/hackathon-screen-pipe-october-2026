@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { AgentLogos } from "./brand-logos"
+import { PersonDot } from "./PersonDot"
 import { copyText } from "./PromptActions"
-import { api, errorMessage, initials } from "./format"
+import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 import { CheckIcon, Dot, ErrorText, zoneColor } from "./ui"
+import { possessive } from "@/lib/install-prompt"
 
 type ZoneLite = { id: string; name: string; color: string; position: number }
 type Person = { id: string; name: string }
@@ -26,7 +28,7 @@ const POLL_MS = 4000
  * sends a pre-filled request; an admin completes it (role, zones, manager) and accepts it, and the computer finishes
  * its install on its own. Pending requests are re-read regularly.
  */
-export function TeamJoin(props: { zones: ZoneLite[]; people?: Person[]; defaultManager?: string | null; onAccepted?: (p: Accepted) => void; compact?: boolean }) {
+export function TeamJoin(props: { orgName: string; zones: ZoneLite[]; people?: Person[]; defaultManager?: string | null; onAccepted?: (p: Accepted) => void; compact?: boolean }) {
   const [prompt, setPrompt] = useState<string | null>(null)
   const [requests, setRequests] = useState<JoinRequest[] | null>(null)
   const [copied, setCopied] = useState(false)
@@ -77,10 +79,10 @@ export function TeamJoin(props: { zones: ZoneLite[]; people?: Person[]; defaultM
   return (
     <div className="space-y-5">
       <div className={props.compact ? "" : "panel px-5 py-5"}>
-        {!props.compact && <h2 className="panel-title">One message for the whole team</h2>}
+        {!props.compact && <h2 className="panel-title">One message for {possessive(props.orgName)} whole team</h2>}
         <p className={`${props.compact ? "" : "mt-1.5"} max-w-[40em] text-[14px] leading-relaxed text-trace`}>
-          The same message for everyone: each person pastes it into Claude Code or Codex, which sends a request with what it already knows (name, role, email). You complete it
-          and accept it here, and their computer sets itself up.
+          The same message for everyone: each person pastes it into Claude Code or Codex, which asks to join {props.orgName} with what it already knows about the person
+          (name, role, email). You complete the request and accept it here, and their computer sets itself up.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button type="button" className="btn" onClick={copy} disabled={busy}>
@@ -168,9 +170,7 @@ function RequestCard(props: { request: JoinRequest; zones: ZoneLite[]; people?: 
   return (
     <li className="panel bubble-in px-4 py-4 sm:px-5">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-full border border-dashed border-line-strong bg-surface text-[12px] font-medium">
-          {r.name ? initials(r.name) : "?"}
-        </span>
+        <PersonDot id={r.id} size={36} bg="surface" dashed />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-medium">{r.name ?? "Unknown name"}</p>
           <p className="text-[12px] text-trace">

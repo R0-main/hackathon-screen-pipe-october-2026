@@ -39,6 +39,12 @@ more emptiness. The rules below apply to all of `apps/web`. They are coded in
 - Primary button: ink background, white text. Only one per view. Secondary button: white, strong line.
 - Icons: inline SVG from `ui.tsx`, 1.5 stroke, 16 px, `aria-hidden`. An icon button carries an `aria-label`.
 
+## Logo
+
+- `<LogoMark>` (`components/ui.tsx`) and the favicon `app/icon.svg`, only: top left (home, `/create`, sidebar) and in
+  the tab. Everywhere else, the brain icon stays `<BrainIcon>`.
+- Its central bead is phosphor: the only exception to the phosphor rule, it is part of the brand.
+
 ## Motion
 
 - Transform and opacity only, 200 ms at most, `ease-out` on entry, `prefers-reduced-motion` respected.
@@ -66,10 +72,34 @@ more emptiness. The rules below apply to all of `apps/web`. They are coded in
   pages scroll within their column.
 - The live state (SSE stream, lit zones) lives in the layout (`components/BrainLive.tsx`): it survives navigation.
 
+## Where the company stands (`/status`, `components/StatusPanel.tsx`)
+
+- Read like a team update, without a panel: the page title, then the answer (the generated headline, 19 to 21 px), who
+  wrote it and when, and for an admin without Claude the command to copy.
+- Under a 1 px line, two columns (one below 1024 px): "Next up", the next steps of all zones (an empty bead, filled
+  and struck through when the matching task is done), and the zone summary (link to their section, number of
+  knowledge items, progress).
+- "Zone by zone": each zone hangs on a vertical thread by its bead (`ZoneBead`: its color ringed with ink, like a zone
+  center in the brain). Summary, goals, who did what (with the person's dot), and a link to its knowledge
+  (`/knowledge?zone=…`).
+- Progress reads in beads: one per readable task (`task_counts` of the status), filled when it is done, then
+  "1 of 2". Beyond 10 tasks, the beads scale down.
+
+## Knowledge (`/knowledge`, `components/KnowledgeList.tsx`)
+
+- A chronological thread, day by day ("Today", "Yesterday", then the date), in the company's time zone. All the
+  current knowledge of the readable zones (500 at most), plus what arrives live.
+- Each knowledge item: its bead on the day's thread, the title, its kind and zone, the author's dot and the time.
+  Unfolded, the row becomes a white panel: content, entities (links), author, source, confidence.
+- Filter bar stuck to the top of the column: accent-insensitive search (title, content, entities, author), zones and
+  kinds as chips with their count given the other filters. The filters are written into the address (`?q=`, `?zone=`,
+  `?type=`), without a history entry.
+
 ## Public home page (`/`)
 
 Addresses: `/` the home page (for everyone), `/create` company creation, `/demo` the demo entrance
-(choosing a Fournil account, demo mode only), `/login` token sign-in, `/dashboard` the brain and,
+(choosing a Butine account, demo mode only), `/login` the entrance (remembered companies, a big "Create my company"
+button, token folded below it), `/dashboard` the brain and,
 next to it, the other signed-in pages. The old French addresses (`/accueil`, `/creer`, …) redirect permanently.
 
 Same world, at the scale of a page (`components/landing`, "Home page" block of `globals.css`).
@@ -86,7 +116,7 @@ Same world, at the scale of a page (`components/landing`, "Home page" block of `
     very close to a chapter or a section, the scroll snaps to it gently.
   - All section animations follow the scroll: they move forward when you scroll down, stop when you
     stop, replay backwards when you scroll up. Titles go from pale to ink word by word; the
-    "Where Fournil stands" panel fills and the prompt types itself during the hold; the privacy diagram (`PrivacyFlow`)
+    "Where Butine stands" panel fills and the prompt types itself during the hold; the privacy diagram (`PrivacyFlow`)
     waits for its section to be snapped before playing.
   - An ink thread runs down along the sections, with a bead that fills at each section.
   - Only the entrance of the first screen plays on load (the title's words, then the rest), and the brain's slow

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands } from "../../web/lib/install-prompt"
+import { ABOUT_ORG_MAX, EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands } from "../../web/lib/install-prompt"
 import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
 import { EXIT_JOIN_PENDING, EXIT_JOIN_REJECTED } from "../src/join"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
@@ -15,7 +15,7 @@ import { EXIT_NO_SCREENPIPE, EXIT_PERMISSIONS_PENDING } from "../src/setup"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const installSh = fileURLToPath(new URL("../../web/public/install.sh", import.meta.url))
-const EXAMPLE = { baseUrl: "https://brain.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Fournil", zones: ["finance"] }
+const EXAMPLE = { baseUrl: "https://brain.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Butine", zones: ["finance"] }
 const prompt = buildInstallPrompt(EXAMPLE)
 
 test("install prompt: a single command per system (install.sh or install.ps1, then setup), a single permission in Claude Code", () => {
@@ -32,7 +32,7 @@ test("install prompt: a single command per system (install.sh or install.ps1, th
   assert.equal(prompt.split(EXAMPLE.token).length, 3)
   assert.match(prompt, /Code 3 \("WAITING"\)/)
   assert.match(prompt, /Code 5: network or address, rerun the same command/)
-  assert.match(prompt, /brain doctor --json`, explain each failing check simply and run the fixes marked "safe" \(same timeout\)/)
+  assert.match(prompt, /brain doctor --json` and the fixes marked "safe" \(same timeout\), then tell me in one sentence what is left to do/)
   assert.match(prompt, /10-minute timeout/)
   // No prerequisites to check by hand and no separate steps: the scripts and setup take care of them.
   assert.ok(!/node -v|winget|install-schedule|install-hooks|claude mcp add/.test(prompt))
@@ -95,7 +95,25 @@ test("team message: one command per system (install.sh or install.ps1 --join), u
   assert.match(joinPrompt, /Code 5: network or address, rerun the same command/)
   assert.match(joinPrompt, /brain doctor --json`/)
   assert.match(joinPrompt, /Atelier Lumen's company brain/, "possessive")
-  assert.ok(joinPrompt.length < 3000, `short message (${joinPrompt.length} characters)`)
+  assert.ok(joinPrompt.length < 3200, `short message (${joinPrompt.length} characters)`)
+})
+
+test("prompts: the company introduced in a nutshell when it has a description, nothing otherwise", () => {
+  const about = "Butine makes connected scales for beehives.\n6 people, based in Lyon."
+  const withAbout = buildInstallPrompt({ ...EXAMPLE, orgDescription: about })
+  assert.ok(withAbout.startsWith('You are going to connect this computer to NOS Brainer, Butine\'s company brain. The company, in a nutshell: "Butine makes connected scales for beehives. 6 people, based in Lyon". I am Jean-Marc Dubois'))
+  assert.ok(INSTALL_PROMPT_RE.test(withAbout))
+  const join = buildJoinPrompt({ ...JOIN, orgDescription: about })
+  assert.match(join, /^You are going to ask to join NOS Brainer, Atelier Lumen's company brain\. The company, in a nutshell: "Butine/)
+  assert.ok(INSTALL_PROMPT_RE.test(join))
+  for (const empty of [undefined, "", "  \n "]) {
+    assert.equal(buildInstallPrompt({ ...EXAMPLE, orgDescription: empty }), prompt)
+    assert.equal(buildJoinPrompt({ ...JOIN, orgDescription: empty }), joinPrompt)
+  }
+  // A long description is cut at the last whole word.
+  const long = buildInstallPrompt({ ...EXAMPLE, orgDescription: "hive ".repeat(100) })
+  const quoted = long.match(/nutshell: "(.*?)"/)?.[1] ?? ""
+  assert.ok(quoted.length <= ABOUT_ORG_MAX + 1 && quoted.endsWith("hive…"), quoted)
 })
 
 test("exit codes: one code, one meaning, for the scripts, setup and join", () => {
@@ -138,6 +156,13 @@ test("onboarding prompt for an agent: reads the history, sends without applying 
 test("prompts: a Claude Code session in the cloud stops instead of acting outside the computer", () => {
   for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://brain.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
     assert.match(p, /If you are not running on my computer \(cloud session, remote container\), stop/)
+  }
+})
+
+test("prompts: a blocked action is settled in one sentence, without working around it or listing options", () => {
+  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://brain.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
+    assert.match(p, /Action blocked or refused: work around nothing, tell me in one sentence what to do/)
+    assert.match(p, /with no list or explanation/)
   }
 })
 

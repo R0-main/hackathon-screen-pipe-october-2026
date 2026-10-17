@@ -7,12 +7,15 @@ import { PageScroll } from "./AppShell"
 import { useBrainLive } from "./BrainLive"
 import { AgentLogos } from "./brand-logos"
 import { OrgChart, type Presence } from "./OrgChart"
-import { AGENT_LABEL, api, errorMessage, initials } from "./format"
+import { AGENT_LABEL, api, errorMessage } from "./format"
+import { PersonAvatar } from "./PersonDot"
 import { RelTime } from "./RelTime"
 import { TeamJoin } from "./TeamJoin"
 import { ADMIN_VIEWS, type AdminTab } from "./admin-views"
 import { AutoZones } from "./AutoZones"
+import { Moderation } from "./Moderation"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
+import { possessive } from "@/lib/install-prompt"
 
 type User = Profile & { zones: string[] }
 
@@ -153,7 +156,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
         )}
         {tab === "requests" && (
           <PageScroll width="max-w-[860px]">
-            <TeamJoin zones={zones} people={users.map((u) => ({ id: u.id, name: u.name }))} defaultManager={defaultManager} onAccepted={() => void reload()} />
+            <TeamJoin orgName={props.orgName} zones={zones} people={users.map((u) => ({ id: u.id, name: u.name }))} defaultManager={defaultManager} onAccepted={() => void reload()} />
           </PageScroll>
         )}
         {tab === "zones" && (
@@ -161,6 +164,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
             <div className="space-y-4">
               <ZoneForm zones={zones} reload={reload} storeKind={props.storeKind} />
               <AutoZones onZonesChanged={() => void reload()} />
+              <Moderation />
             </div>
           </PageScroll>
         )}
@@ -186,8 +190,9 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
       )}
 
       {invite && (
-        <Modal title="Invite someone" onClose={() => setInvite(null)}>
+        <Modal title={`Invite someone to ${props.orgName}`} onClose={() => setInvite(null)}>
           <InviteForm
+            orgName={props.orgName}
             zones={zones}
             users={users}
             defaultManager={invite.managerId}
@@ -199,7 +204,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
           />
         </Modal>
       )}
-      {prompt && <PromptModal name={prompt.name} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
+      {prompt && <PromptModal name={prompt.name} orgName={props.orgName} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
     </div>
   )
 }
@@ -248,8 +253,8 @@ function MemberDrawer(props: {
       aria-busy={props.saving}
     >
       <div className="flex items-start gap-3">
-        <span className="relative grid size-12 shrink-0 place-items-center rounded-full border border-line-strong bg-bone text-[14px] font-medium">
-          {initials(u.name)}
+        <span className="relative shrink-0">
+          <PersonAvatar id={u.id} size={48} />
           <span className={`absolute bottom-0 right-0 size-3 rounded-full border border-ink ${p?.active ? "bg-phosphor" : "bg-surface"}`} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
@@ -503,11 +508,13 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function InviteForm({
+  orgName,
   zones,
   users,
   defaultManager,
   onInvited,
 }: {
+  orgName: string
   zones: Zone[]
   users: User[]
   defaultManager: string | null
@@ -547,8 +554,10 @@ function InviteForm({
 
   return (
     <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
-      <h2 className="panel-title">Invite someone</h2>
-      <p className="text-[13px] text-trace">The person gets a prompt to paste into Claude Code or Codex: one command installs Screenpipe, the MCP and the hooks, then opens the brain.</p>
+      <h2 className="panel-title">Invite someone to {orgName}</h2>
+      <p className="text-[13px] text-trace">
+        The person gets a message to paste into Claude Code or Codex: it installs everything on their computer, then opens {possessive(orgName)} brain for them.
+      </p>
       <div className="grid gap-2 sm:grid-cols-2">
         <input className="input" aria-label="First and last name" placeholder="First Last" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
         <input className="input" aria-label="Role" placeholder="Role, for example Accountant" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
@@ -715,7 +724,7 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
   )
 }
 
-function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; onClose: () => void }) {
+function PromptModal({ name, orgName, prompt, onClose }: { name: string; orgName: string; prompt: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const [copyErr, setCopyErr] = useState<string | null>(null)
   const copyRef = useRef<HTMLButtonElement>(null)
@@ -764,7 +773,7 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="prompt-modal-title" className="panel-title">
-              Install prompt for {name}
+              Invitation for {name} to {orgName}
             </h2>
             <p className="mt-1 text-[13px] text-trace">
               Send it to {name.split(" ")[0]} through a private channel: it contains their token, shown only once. They just paste it into Claude Code or Codex, on their computer.

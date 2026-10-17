@@ -246,7 +246,7 @@ test("doctor: scheduled sync failing and Claude signed out, read in sync.log (re
     let r = await doctorIn(station)
     const auth = byId(r, "claude-signin")!
     assert.equal(auth.status, "fail")
-    assert.match(auth.command!, /init --claude-token <token>$/)
+    assert.match(auth.command!, /connect-claude$/)
     assert.equal(auth.safe, false, "never run without the employee")
     const hookErr = byId(r, "hook-errors")!
     assert.equal(hookErr.status, "warn")

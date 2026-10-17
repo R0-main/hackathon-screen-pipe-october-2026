@@ -1,19 +1,20 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import type { ConnectorId, ConnectorPublic } from "@brain/core"
+import type { ConnectorId, ConnectorPublic, McpConnectorPublic } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { fmt } from "@/lib/i18n"
 import { PageScroll } from "./AppShell"
 import { useBrainLive } from "./BrainLive"
 import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
+import { McpConnectors } from "./McpConnectors"
 import { RelTime } from "./RelTime"
 import { Dot, ErrorText, zoneColor } from "./ui"
 
-type Props = { initial: ConnectorPublic[] }
+type Props = { initial: ConnectorPublic[]; mcp: McpConnectorPublic[]; redirectUri: string }
 
-export function ConnectorsPanel({ initial }: Props) {
+export function ConnectorsPanel({ initial, mcp, redirectUri }: Props) {
   const { t } = useT()
   const { state, refresh } = useBrainLive()
   const [connectors, setConnectors] = useState(initial)
@@ -28,6 +29,10 @@ export function ConnectorsPanel({ initial }: Props) {
       <div className="space-y-4">
         <div>
           <h1 className="text-[22px] font-medium leading-tight">{t.connectors.title}</h1>
+        </div>
+        <McpConnectors initial={mcp} redirectUri={redirectUri} />
+        <div className="pt-4">
+          <h2 className="text-[18px] font-medium leading-tight">{t.connectors.apiTitle}</h2>
           <p className="mt-1 max-w-3xl text-[13px] text-trace">{t.connectors.lead}</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">

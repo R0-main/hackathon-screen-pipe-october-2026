@@ -9,11 +9,13 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { BrainApi } from "./api"
-import { cmdHello, cmdInit } from "./commands"
+import { cmdHello, initBrain } from "./commands"
 import { fingerprintOfFile, trustInBrowsers } from "./ca"
-import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Config } from "./config"
+import { cmdConnectClaude, hasScheduledClaude } from "./connect"
+import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Company, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
+import { companiesWithIds, mcpSpecs, probeMcp, registerMcpServers } from "./mcp-config"
 import { refreshSkills } from "./skills"
 import {
   installedScreenpipeBin,
@@ -207,8 +209,37 @@ export function ensureMcp(log: Log = console.log): boolean {
   return r.ok
 }
 
+/**
+ * MCP: the server of each company of the computer (the brain's endpoint, HTTP), connected in Claude Code and Codex as
+ * "nos-brainer-<company>"; the computer's server (stdio) would then duplicate the first company's one, so it is
+ * removed. Brain with a private certificate (unknown to Claude Code and Codex), or endpoint unreachable: the computer's
+ * server, as before.
+ */
+export async function ensureMcpServers(log: Log = console.log): Promise<void> {
+  const cfg = requireConfig()
+  const list = cfg.ca_file ? null : await companiesWithIds(cfg)
+  const specs = list ? mcpSpecs(list) : null
+  const down = specs ? (await Promise.all(specs.map(async (s) => ({ s, err: await probeMcp(s.url) })))).find((p) => p.err) : undefined
+  if (!specs || down) {
+    log(
+      cfg.ca_file
+        ? "MCP: brain with a private certificate, which Claude Code and Codex do not know: the computer's MCP server (company-brain)."
+        : `MCP: ${down ? `${down.s.label}'s MCP server does not answer (${down.err})` : "this brain does not give the company's id"}: the computer's MCP server (company-brain) instead.`,
+    )
+    ensureMcp(log)
+    return
+  }
+  if (!registerMcpServers(specs, log)) return
+  const legacy = readMcpEntry()
+  const claude = findOnPath("claude")
+  if (legacy && claude && runCommand(claude, ["mcp", "remove", MCP_NAME, "--scope", "user"], 30_000).ok) {
+    log(`MCP ${MCP_NAME} (the computer's server) removed: each company now has its own MCP server.`)
+  }
+  log("The MCP servers are active from the next session (Claude Code: /mcp; Codex: codex mcp list).")
+}
+
 /** Opens the brain, already signed in thanks to a short-lived sign-in link; failing that, the sign-in page. */
-async function openBrain(cfg: Config, noOpen: boolean, log: Log) {
+async function openBrain(cfg: Pick<Config, "url" | "token">, noOpen: boolean, log: Log) {
   if (noOpen) return log(`The brain: ${cfg.url}`)
   let target = `${cfg.url}/login`
   try {
@@ -315,6 +346,27 @@ export function trustCaForBrowsers(file: string, log: Log) {
   if (t.ok && fp) saveState({ ...state, ca_trusted: fp })
 }
 
+/**
+ * The computer's Claude Code token, asked for at install: in a terminal, `connect-claude` right away; run by
+ * Claude Code (no terminal of its own), a "TO DO" line that the install prompt has repeated. Nothing to ask
+ * with a token already saved, an API key, or without Claude Code. Returns the "TO DO" line, or null.
+ */
+async function askClaudeToken(log: Log): Promise<string | null> {
+  if (hasScheduledClaude() || !findOnPath("claude")) {
+    if (hasScheduledClaude()) log("Claude Code token: already saved for the scheduled sync.")
+    return null
+  }
+  const todo = `TO DO (once, 1 min): in a terminal, run \`${selfCommand()} connect-claude\` (sign in to Claude in the browser, then paste the token shown). Without it, the 15-min sync cannot run Claude when no session is open.`
+  if (!(process.stdin.isTTY && process.stdout.isTTY)) return todo
+  try {
+    await cmdConnectClaude(log)
+    return null
+  } catch (err) {
+    log(`Claude Code token: ${(err as Error).message}`)
+    return todo
+  }
+}
+
 export async function cmdSetup(flags: Record<string, string | boolean>, log: Log = console.log): Promise<number> {
   const audio = yesNo(flags.audio, "audio")
   const waitS = typeof flags.wait === "string" ? Number.parseInt(flags.wait, 10) : DEFAULT_WAIT_S
@@ -322,11 +374,15 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   const me = selfCommand()
 
   log("[1/6] Connecting to the brain")
+  // Company added next to the first one (another company's token): it is the one that lights up and opens at the end.
+  let added: Company | undefined
   if (flags.url || flags.token) {
-    if ((await cmdInit(flags, log)) !== 0) {
+    const init = await initBrain(flags, log)
+    if (init.code !== 0) {
       log("The brain did not accept the connection: check the URL and the token, then run setup again.")
       return 1
     }
+    if (init.added) added = init.company
   }
   let cfg = requireConfig()
   if (!(flags.url || flags.token)) {
@@ -374,8 +430,8 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
     }
   }
 
-  log("[4/6] Claude Code: company-brain MCP, hooks and company skills")
-  ensureMcp(log)
+  log("[4/6] Claude Code and Codex: each company's MCP server, hooks and skills")
+  await ensureMcpServers(log)
   installHooks(log)
   await refreshSkills(log)
 
@@ -383,18 +439,24 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   // Already scheduled: paths updated, without a new starting point (what is waiting to be sent is not skipped).
   if (scheduleInstalled()) refreshSchedule(log)
   else installSchedule(log)
+  // Claude Code token: without it, the 15-min sync (without an open session) cannot run Claude.
+  const claudeToDo = await askClaudeToken(log)
 
   log("[6/6] Your neon and the brain")
   try {
-    await cmdHello(log)
+    await cmdHello(log, added)
   } catch (err) {
     log(`Neon: ${(err as Error).message}`)
   }
-  await openBrain(cfg, Boolean(flags["no-open"]), log)
+  await openBrain(added ?? cfg, Boolean(flags["no-open"]), log)
 
   log("")
   log("It is connected. Keep working with Claude Code: each session lights up your zone, and distilled knowledge reaches the brain every 15 minutes.")
   log(`See what would be sent: ${me} sync --dry-run --full — diagnosis: ${me} doctor — remove everything: ${me} uninstall`)
+  if (claudeToDo) {
+    log("")
+    log(claudeToDo)
+  }
   if (capture && !capture.up) {
     log("")
     log(`WAITING: Screenpipe no longer answers on ${cfg.screenpipe_url}. Run again: ${me} setup`)

@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
-import { LOOKS, dotKit, dotLook, type DotLook } from "./dot-model"
+import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes, type V3 } from "./brain-geometry"
+import { arcBeads, arcTube, type FlowArc } from "./arc-flow"
+import { assignLooks, dotKit, type DotLook } from "./dot-model"
 import { firstName } from "./format"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
@@ -36,12 +37,11 @@ export type Brain3DProps = {
   people?: BrainPerson[]
 }
 
-// Ink on white. The only bright color is phosphor, reserved to a zone an agent is touching live.
+// Ink on white. A zone touched live (an agent, a click) lights up in its own color, brightened.
 const INK = 0x0a0a0a
 const LINE = 0xd6d6cf
 const NEUTRAL = 0xb8b8b8
 const WHITE = 0xffffff
-const PHOSPHOR = 0xc7ff3e
 /** Network lines in ink, slightly softened toward white. */
 const SOFTEN = 0.35
 /** Small neurons in their zone's color, slightly softened; gray outside zones (cerebellum, brainstem, locked zone). */
@@ -64,6 +64,15 @@ const DOT_R = 0.052
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
+/** Interval between two ripples while a zone is selected. */
+const PULSE_MS = 2000
+/** Back to normal when the zone is no longer selected: color, circle and ripples fade out gently. */
+const SETTLE_MS = 600
+/** The ink circle around a lit zone, relative to its bead. */
+const RIM = 1.14
+/** Shock wave: maximum push of the points (scene units), and reach beyond the zone's edge. */
+const SHOCK = 0.03
+const SHOCK_AROUND = 0.22
 
 type ThreeModule = typeof import("three")
 type SphereMesh = THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>
@@ -73,17 +82,40 @@ type ZoneGfx = {
   id: string
   locked: boolean
   color: number
+  /** The zone's color when it lights up: its own, more saturated and a little lighter. */
+  glow: number
+  /** Distance of the knowledge farthest from the center: the ripple goes as far as it. */
+  reach: number
   center: SphereMesh
   outline: SphereMesh
   nodes: SphereMesh[]
   nodeMat: THREE.MeshBasicMaterial
   linkMat: THREE.LineBasicMaterial
+  /** Center → knowledge lines: vertex 2k + 1 is knowledge k. */
+  linkGeo: THREE.BufferGeometry
+  centerPos: THREE.Vector3
   active: boolean
   selected: boolean
+  /** Lit: touched live or selected with a click. */
+  lit: boolean
+  /** Displayed share of lighting, from 0 (normal) to 1 (lit), which follows `lit` gently. */
+  mix: number
+  outlineMat: THREE.MeshBasicMaterial
+  /** When it stopped being selected: the activity of that click (coming back from the server) does not light it again. */
+  dismissedAt: number
 }
 
-type SynapseGfx = { a: string; b: string; mat: THREE.MeshBasicMaterial; baseOpacity: number; active: boolean }
-type RippleGfx = { key: string; mesh: RingMesh; start: number }
+type SynapseGfx = {
+  a: string
+  b: string
+  mat: THREE.MeshBasicMaterial
+  baseOpacity: number
+  active: boolean
+  /** The arc, where the light beads flow (see arc-flow). */
+  arc: FlowArc
+}
+/** `fade`: moment the ripple starts fading before its end (zone deselected). */
+type RippleGfx = { key: string; zone: ZoneGfx; mesh: RingMesh; start: number; fade?: number }
 type View = { rx: number; ry: number; zoom: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -120,14 +152,7 @@ export function Brain3D(props: Brain3DProps) {
     .map((s) => `${s.a}-${s.b}:${s.weight}`)
     .join("|")}#${people.map((p) => `${p.id}:${p.zone ?? ""}`).join("|")}`
   const placed = people.filter((p) => p.zone && zones.some((z) => z.id === p.zone))
-  // Two neighbors in a zone don't wear the same outfit (as long as a free one remains).
-  const looks = new Map<string, DotLook>()
-  for (const p of [...placed].sort((a, b) => a.id.localeCompare(b.id))) {
-    const taken = new Set(placed.filter((q) => q.zone === p.zone && looks.has(q.id)).map((q) => looks.get(q.id)))
-    const start = LOOKS.indexOf(dotLook(p.id))
-    const free = LOOKS.map((_, k) => LOOKS[(start + k) % LOOKS.length]).find((l) => !taken.has(l))
-    looks.set(p.id, free ?? dotLook(p.id))
-  }
+  const looks = assignLooks(placed)
   peopleRef.current = new Map(placed.map((p) => [p.id, p]))
 
   useEffect(() => {
@@ -229,7 +254,7 @@ export function Brain3D(props: Brain3DProps) {
               </span>
               {live && (
                 <span key={act!.startedAt} className="bubble-in mt-1 hidden max-w-[260px] items-start gap-1.5 rounded-[4px] border border-ink bg-surface px-2 py-1 text-[11.5px] leading-snug sm:flex">
-                  <span className="mt-[3px] size-2 shrink-0 rounded-full border border-ink bg-phosphor" aria-hidden />
+                  <span className="mt-[3px] size-2 shrink-0 rounded-full border border-ink" style={{ background: z.locked ? "#b8b8b8" : zoneColor(z.color, z.position) }} aria-hidden />
                   <span className="whitespace-normal">{act!.label}</span>
                 </span>
               )}
@@ -285,10 +310,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   scene.add(group)
 
   const geoSphere = new T.SphereGeometry(1, 20, 14)
-  const geoRing = new T.RingGeometry(0.93, 1, 48)
-  const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
+  const geoRing = new T.RingGeometry(0.975, 1, 64)
   const geometries: THREE.BufferGeometry[] = [geoSphere, geoRing]
-  const materials: THREE.Material[] = [outlineMat]
+  const materials: THREE.Material[] = []
 
   const surface = brainSurface()
   const anchors = zoneAnchors(zones.length)
@@ -313,9 +337,11 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     center.position.copy(centerPos)
     center.scale.setScalar(CENTER_R)
     center.userData.zone = z.id
+    const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide, transparent: true, opacity: 0 })
+    materials.push(outlineMat)
     const outline: SphereMesh = new T.Mesh(geoSphere, outlineMat)
     outline.position.copy(centerPos)
-    outline.scale.setScalar(CENTER_R * 1.3)
+    outline.scale.setScalar(CENTER_R * RIM)
     outline.visible = false
     group.add(outline, center)
     pickables.push(center)
@@ -333,6 +359,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       node.scale.setScalar(r)
       node.userData.zone = z.id
       node.userData.r = r
+      node.userData.d = p.distanceTo(centerPos)
+      node.userData.base = p.clone()
       group.add(node)
       nodes.push(node)
       pickables.push(node)
@@ -343,7 +371,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     group.add(new T.LineSegments(linkGeo, linkMat))
     geometries.push(linkGeo)
     materials.push(centerMat, nodeMat, linkMat)
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, center, outline, nodes, nodeMat, linkMat, active: false, selected: false })
+    const glow = new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
+    const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
+    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false, mix: 0, outlineMat, dismissedAt: -Infinity })
   })
 
   // The network that draws the brain: links as arcs, in ink; only the zones carry color.
@@ -394,7 +424,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
   // Knowledge items linked to each other by straight lines, each to its nearest neighbors, whatever their zone.
   const known = [...gfx.values()].flatMap((g) => g.nodes.map((node) => ({ p: node.position.toArray(), color: new T.Color(g.locked ? NEUTRAL : g.color).toArray() })))
-  const knownSeg = gradientSegments(knowledgeLinks(known.map((k) => k.p)).map(([a, b]) => ({ pts: [known[a].p, known[b].p], from: known[a].color, to: known[b].color })))
+  const knownPairs = knowledgeLinks(known.map((k) => k.p))
+  const knownSeg = gradientSegments(knownPairs.map(([a, b]) => ({ pts: [known[a].p, known[b].p], from: known[a].color, to: known[b].color })))
   const knownGeo = new T.BufferGeometry()
   knownGeo.setAttribute("position", new T.BufferAttribute(knownSeg.positions, 3))
   knownGeo.setAttribute("color", new T.BufferAttribute(knownSeg.colors, 3))
@@ -403,10 +434,107 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   geometries.push(knownGeo)
   materials.push(knownMat)
 
+  // Shock wave: as the front passes, the zone's knowledge and the network neurons around it (up to
+  // SHOCK_AROUND beyond the zone) are pushed outward then come back; their links follow.
+  const knownNodes = [...gfx.values()].flatMap((g) => g.nodes.map((node, k) => ({ node, g, k })))
+  const netBase = curves.positions.slice()
+  const neuronR = net.points.map((_, i) => NEURON_R * (1 - 0.25 * net.depth[i]))
+  type Field = { neurons: number[]; netVerts: number[]; known: number[]; knownVerts: number[] }
+  const fields = new Map<ZoneGfx, Field>()
+  /** What a zone's ripple can reach, computed once per zone. */
+  const fieldOf = (g: ZoneGfx): Field => {
+    let f = fields.get(g)
+    if (f) return f
+    const c = g.centerPos
+    const far = (g.reach + SHOCK_AROUND) ** 2
+    const near = (p: V3) => (p[0] - c.x) ** 2 + (p[1] - c.y) ** 2 + (p[2] - c.z) ** 2 < far
+    const neurons = net.points.map((p, i) => (near(p) ? i : -1)).filter((i) => i >= 0)
+    const inNet = new Set(neurons)
+    const netVerts: number[] = []
+    for (let v = 0; v < curves.a.length; v++) if (inNet.has(curves.a[v]) || inNet.has(curves.b[v])) netVerts.push(v)
+    const known = knownNodes.map((k, i) => (near((k.node.userData.base as THREE.Vector3).toArray()) ? i : -1)).filter((i) => i >= 0)
+    const inKnown = new Set(known)
+    const knownVerts = knownPairs.flatMap(([a, b], l) => (inKnown.has(a) || inKnown.has(b) ? [l] : []))
+    f = { neurons, netVerts, known, knownVerts }
+    fields.set(g, f)
+    return f
+  }
+  const netShift = new Float32Array(net.points.length * 3)
+  const knownShift = new Float32Array(knownNodes.length * 3)
+  let shaken = new Set<ZoneGfx>()
+  /** Offset of a point p by the current ripples of zone g, added into out (at index o). */
+  const addWave = (g: ZoneGfx, p: ArrayLike<number>, out: Float32Array, o: number, t: number) => {
+    const c = g.centerPos
+    const vx = p[0] - c.x
+    const vy = p[1] - c.y
+    const vz = p[2] - c.z
+    const d = Math.hypot(vx, vy, vz) || 1
+    // Beyond the zone, the ripple dampens until it dies out at SHOCK_AROUND.
+    const edge = d > g.reach ? Math.max(0, 1 - (d - g.reach) / SHOCK_AROUND) : 1
+    if (edge === 0) return
+    for (const r of live) {
+      if (r.zone !== g) continue
+      const k = (t - r.start) / RIPPLE_MS
+      const off = (d - rippleRadius(r, k)) / 0.08
+      const push = (SHOCK * edge * Math.exp(-off * off) * (1 - k) * rippleGain(r, t)) / d
+      out[o] += vx * push
+      out[o + 1] += vy * push
+      out[o + 2] += vz * push
+    }
+  }
+  const netPos = netGeo.attributes.position as THREE.BufferAttribute
+  const knownPos = knownGeo.attributes.position as THREE.BufferAttribute
+  const shake = (t: number) => {
+    const now = new Set(reduced ? [] : live.map((r) => r.zone))
+    const touched = new Set([...now, ...shaken])
+    shaken = now
+    if (touched.size === 0) return
+    // Reset everything that moved, then add up the current ripples.
+    for (const g of touched) {
+      const f = fieldOf(g)
+      for (const i of f.neurons) netShift.fill(0, i * 3, i * 3 + 3)
+      for (const i of f.known) knownShift.fill(0, i * 3, i * 3 + 3)
+    }
+    for (const g of now) {
+      const f = fieldOf(g)
+      for (const i of f.neurons) addWave(g, net.points[i], netShift, i * 3, t)
+      for (const i of f.known) addWave(g, (knownNodes[i].node.userData.base as THREE.Vector3).toArray(), knownShift, i * 3, t)
+    }
+    for (const g of touched) {
+      const f = fieldOf(g)
+      for (const i of f.neurons) {
+        const p = net.points[i]
+        const r = neuronR[i]
+        neurons.setMatrixAt(i, mtx.makeScale(r, r, r).setPosition(p[0] + netShift[i * 3], p[1] + netShift[i * 3 + 1], p[2] + netShift[i * 3 + 2]))
+      }
+      // Each vertex of a curved link follows its two neurons, in proportion to its place along the arc.
+      for (const v of f.netVerts) {
+        const a = curves.a[v] * 3
+        const b = curves.b[v] * 3
+        const u = curves.t[v]
+        for (let c = 0; c < 3; c++) netPos.array[v * 3 + c] = netBase[v * 3 + c] + netShift[a + c] * (1 - u) + netShift[b + c] * u
+      }
+      for (const i of f.known) {
+        const { node, g: owner, k } = knownNodes[i]
+        const base = node.userData.base as THREE.Vector3
+        node.position.set(base.x + knownShift[i * 3], base.y + knownShift[i * 3 + 1], base.z + knownShift[i * 3 + 2])
+        ;(owner.linkGeo.attributes.position as THREE.BufferAttribute).setXYZ(k * 2 + 1, node.position.x, node.position.y, node.position.z)
+        owner.linkGeo.attributes.position.needsUpdate = true
+      }
+      for (const l of f.knownVerts) {
+        const [a, b] = knownPairs[l]
+        knownPos.setXYZ(l * 2, knownNodes[a].node.position.x, knownNodes[a].node.position.y, knownNodes[a].node.position.z)
+        knownPos.setXYZ(l * 2 + 1, knownNodes[b].node.position.x, knownNodes[b].node.position.y, knownNodes[b].node.position.z)
+      }
+    }
+    neurons.instanceMatrix.needsUpdate = true
+    netPos.needsUpdate = true
+    knownPos.needsUpdate = true
+  }
+
+  const reducedFlow = window.matchMedia("(prefers-reduced-motion: reduce)").matches
   // Synapses: arcs between two zones that share entities, as a gradient from one's color to the
   // other's, stronger when they are active.
-  const TUBULAR = 64
-  const RADIAL = 6
   const syn: SynapseGfx[] = []
   for (const s of synapses) {
     const A = gfx.get(s.a)
@@ -415,17 +543,22 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
     const baseOpacity = 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08)
     const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
-    const geo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), TUBULAR, SYNAPSE_R, RADIAL, false)
     const from = new T.Color(A.locked ? NEUTRAL : A.color)
     const to = new T.Color(B.locked ? NEUTRAL : B.color)
-    const cols = new Float32Array(geo.attributes.position.count * 3)
-    // The tube's vertices go ring by ring: the ring gives the position along the arc.
-    for (let v = 0; v < geo.attributes.position.count; v++) tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / TUBULAR).toArray(cols, v * 3)
-    geo.setAttribute("color", new T.BufferAttribute(cols, 3))
+    const { geo, arc } = arcTube(T, pts, from, to, SYNAPSE_R, `${s.a}|${s.b}`)
     group.add(new T.Mesh(geo, mat))
     geometries.push(geo)
     materials.push(mat)
-    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false })
+    syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, arc })
+  }
+  // The flow: small light beads in each arc, which speed up when one of the two zones is active.
+  const flow = arcBeads(T, syn.map((s) => s.arc))
+  flow.mesh.visible = !reducedFlow
+  group.add(flow.mesh)
+  const flowFrame = (time: number) => {
+    if (reducedFlow) return
+    for (const s of syn) s.arc.fast = s.active
+    flow.frame(time)
   }
 
   // People dots: placed on screen, just outside the brain's silhouette, in the direction of their zone.
@@ -566,6 +699,19 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   // Loop: ripples, active states, idle rotation, projected labels.
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
   const live: RippleGfx[] = []
+  /** Radius of the ripple at instant k (0 → 1): it starts from the center and dies out a little after the farthest knowledge. */
+  const rippleRadius = (r: RippleGfx, k: number) => 0.05 + (r.zone.reach + 0.08) * k
+  /** Strength of a ripple: 1, then toward 0 in SETTLE_MS once its zone is left. */
+  const rippleGain = (r: RippleGfx, t: number) => (r.fade === undefined ? 1 : Math.max(0, 1 - (t - r.fade) / SETTLE_MS))
+  /** Activity (in ms, browser clock) dating from the click just left, or coming back from it late. */
+  const dismissed = (g: ZoneGfx, at: number) => at < g.dismissedAt + 3000
+  const spawnRipple = (g: ZoneGfx, key: string, t: number) => {
+    const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: g.glow, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
+    mesh.position.copy(g.center.position)
+    group.add(mesh)
+    live.push({ key, zone: g, mesh, start: t })
+  }
+  const pulse = { zone: null as string | null, next: 0, seq: 0 }
   const seen = new Set<string>()
   const tmp = new T.Vector3()
   let raf = 0
@@ -584,23 +730,54 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
     const act = refs.activityRef.current
     const sel = refs.selectedRef.current
+    // Zone selected with a click: a ripple starts right away (without waiting for the server round trip), then one every two seconds
+    // while it stays selected.
+    if (sel !== pulse.zone) {
+      // The zone left goes dark: its current ripples fade, its click's activity does not light it again.
+      const left = pulse.zone ? gfx.get(pulse.zone) : undefined
+      if (left) {
+        left.dismissedAt = nowMs
+        for (const r of live) if (r.zone === left && r.fade === undefined) r.fade = t
+      }
+      pulse.zone = sel ?? null
+      pulse.next = t
+    }
+    const selG = sel ? gfx.get(sel) : undefined
+    if (selG && t >= pulse.next) {
+      spawnRipple(selG, `sel-${++pulse.seq}`, t)
+      pulse.next = reduced ? Infinity : t + PULSE_MS
+    }
     for (const g of gfx.values()) {
       const a = act[g.id]
-      const on = Boolean(a && a.until > nowMs)
-      if (on !== g.active) {
-        g.active = on
-        g.center.material.color.setHex(on ? PHOSPHOR : g.locked ? NEUTRAL : g.color)
-        g.linkMat.color.setHex(on ? INK : LINE)
-        for (const node of g.nodes) node.scale.setScalar((node.userData.r as number) * (on ? 1.6 : 1))
-      }
+      g.active = Boolean(a && a.until > nowMs && !dismissed(g, a.startedAt))
       const isSel = sel === g.id
-      if (isSel !== g.selected) {
-        g.selected = isSel
+      g.selected = isSel
+      const on = g.active || isSel
+      g.lit = on
+      // Light up and go dark gently: color, lines and ink circle follow the same share of lighting.
+      const mix = g.mix + ((on ? 1 : 0) - g.mix) * Math.min(1, (dt * 1000) / (SETTLE_MS / 4))
+      if (Math.abs(mix - g.mix) > 1e-4 || (on ? mix < 1 : mix > 0)) {
+        g.mix = Math.abs(mix - (on ? 1 : 0)) < 0.003 ? (on ? 1 : 0) : mix
+        g.center.material.color.setHex(g.locked ? NEUTRAL : g.color).lerp(tone.setHex(g.glow), g.mix)
+        g.linkMat.color.setHex(LINE).lerp(tone.setHex(INK), g.mix)
+        g.outlineMat.opacity = g.mix
       }
-      g.outline.visible = g.active || g.selected
-      const target = CENTER_R * (on ? 1.3 : 1)
-      g.center.scale.setScalar(g.center.scale.x + (target - g.center.scale.x) * Math.min(1, dt * 10))
-      g.outline.scale.setScalar(g.center.scale.x * 1.3)
+      // The ripple goes through the zone's knowledge: each one swells when the ripple's front reaches it.
+      for (const node of g.nodes) {
+        let pulse = 0
+        if (!reduced)
+          for (const r of live) {
+            if (r.zone !== g) continue
+            const k = (t - r.start) / RIPPLE_MS
+            const front = rippleRadius(r, k)
+            const off = ((node.userData.d as number) - front) / 0.07
+            pulse = Math.max(pulse, Math.exp(-off * off) * (1 - k * 0.6) * rippleGain(r, t))
+          }
+        node.scale.setScalar((node.userData.r as number) * (1 + 0.6 * g.mix) * (1 + 1.4 * pulse))
+      }
+      g.outline.visible = g.mix > 0.01
+      g.center.scale.setScalar(CENTER_R * (1 + 0.3 * g.mix))
+      g.outline.scale.setScalar(g.center.scale.x * RIM)
     }
     shadeNetwork()
     for (const s of syn) {
@@ -616,27 +793,28 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       if (seen.has(r.key)) continue
       seen.add(r.key)
       const g = gfx.get(r.zone)
-      if (!g) continue
-      const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: PHOSPHOR, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
-      mesh.position.copy(g.center.position)
-      group.add(mesh)
-      live.push({ key: r.key, mesh, start: t })
+      // The selected zone already has its ripples right away: the server's one (the click coming back) would be a duplicate.
+      // So would one from a zone just left: it is the same click, back late.
+      if (g && r.zone !== sel && !dismissed(g, nowMs)) spawnRipple(g, r.key, t)
     }
     for (const k of seen) if (!wanted.some((r) => r.key === k)) seen.delete(k)
     for (let i = live.length - 1; i >= 0; i--) {
       const r = live[i]
       const k = (t - r.start) / RIPPLE_MS
-      if (k >= 1) {
+      const gain = rippleGain(r, t)
+      if (k >= 1 || gain <= 0) {
         group.remove(r.mesh)
         r.mesh.material.dispose()
         live.splice(i, 1)
         continue
       }
-      r.mesh.scale.setScalar(0.05 + 0.42 * k)
-      r.mesh.material.opacity = 0.9 * (1 - k)
+      r.mesh.scale.setScalar(rippleRadius(r, k))
+      r.mesh.material.opacity = 0.9 * (1 - k) * gain
       r.mesh.lookAt(camera.position)
     }
 
+    shake(t)
+    flowFrame(t / 1000)
     renderer.render(scene, camera)
 
     const centerDepth = tmp.set(0, 0, 0).project(camera).z
@@ -789,6 +967,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
     neurons.dispose()
+    flow.dispose()
     kit.dispose()
     renderer.dispose()
   }

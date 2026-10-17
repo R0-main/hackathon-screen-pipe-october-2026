@@ -4,10 +4,11 @@ import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify } from "@brain/core"
 import { AgentLogos } from "./brand-logos"
+import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
-import { api, errorMessage, initials } from "./format"
-import { BrainIcon, CheckIcon, CloseIcon, Dot, ErrorText, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
+import { api, errorMessage } from "./format"
+import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
 import { possessive } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
@@ -37,6 +38,11 @@ const DEFAULT_PICK = ["dev", "product", "leadership"]
  * contains the prompts, hence the tokens: that is what lets them be copied again after a reload.
  */
 const STORAGE_KEY = "nos-brainer:create"
+/**
+ * Set in the address when the flow opens (`/create?draft=1`): a reload or going back resumes the draft, whereas
+ * arriving through a link ("Create my company") starts from scratch, even after a company was created.
+ */
+const DRAFT_PARAM = "draft"
 const POLL_MS = 3000
 
 function load(): Partial<Saved> | null {
@@ -62,6 +68,12 @@ function save(s: Saved) {
   } catch {}
 }
 
+function clear() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {}
+}
+
 /**
  * Create your company from scratch, one question per screen: name, business, who you are, brain zones.
  * Then, the prompt to paste into Claude Code or Codex to connect your computer, then one prompt per colleague to invite them.
@@ -83,6 +95,12 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has(DRAFT_PARAM)) {
+      clear()
+      url.searchParams.set(DRAFT_PARAM, "1")
+      window.history.replaceState(null, "", url)
+    }
     const s = load()
     if (s) {
       if (s.step) setStep(s.step)
@@ -147,9 +165,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
   function restart() {
     if (created && !confirm(`Start over? ${possessive(created.orgName)} brain stays in place, you will create a new one.`)) return
-    try {
-      sessionStorage.removeItem(STORAGE_KEY)
-    } catch {}
+    clear()
     setCompany("")
     setDescription("")
     setName("")
@@ -175,7 +191,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     <main className="create flex min-h-dvh flex-col">
       <header className="create-wrap flex items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
-          <BrainIcon size={26} />
+          <LogoMark size={26} />
           <span className="whitespace-nowrap text-[15px] font-medium">NOS Brainer</span>
         </Link>
         <div className="flex items-center gap-3 text-[13px] text-trace">
@@ -241,7 +257,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     maxLength={80}
                     autoFocus
                     aria-label="Company name"
-                    placeholder="Fournil"
+                    placeholder="Butine"
                     onChange={(e) => setCompany(e.target.value)}
                   />
                 </Question>
@@ -262,7 +278,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     rows={2}
                     autoFocus
                     aria-label="Company business"
-                    placeholder="Point-of-sale and ordering software for independent bakeries."
+                    placeholder="Connected scales for beehives: beekeepers follow their bees from their phone."
                     onChange={(e) => setDescription(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -631,7 +647,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
 
   return (
     <div>
-      <h1 className="create-title">Invite your team.</h1>
+      <h1 className="create-title">Invite {possessive(created.orgName)} team.</h1>
       <p className="create-lead">
         Two ways, your choice: one message per person, with their own token, or a single message for the whole team, where each person asks to join. Either
         way, it is pasted into Claude Code or Codex, and the computer shows up here as soon as it is connected to {possessive(created.orgName)} brain.
@@ -682,10 +698,11 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
         <ul className="mt-6 divide-y divide-line border-y border-line" aria-label="Invited people">
           {invites.map((i) => {
             const connected = Boolean(props.team[i.id])
+            const first = i.zones.length > 0 ? zone(i.zones[0]) : undefined
             return (
               <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5">
-                <span className="relative grid size-9 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-[12px] font-medium">
-                  {initials(i.name)}
+                <span className="relative shrink-0">
+                  <PersonAvatar id={i.id} size={36} bg="surface" color={first ? zoneColor(first.color, first.position) : undefined} />
                   <span className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-ink ${connected ? "bg-phosphor" : "bg-surface"}`} aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -722,6 +739,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       <div className="mt-3">
         <TeamJoin
           compact
+          orgName={created.orgName}
           zones={created.zones}
           defaultManager={created.meId}
           onAccepted={(p) => props.setInvites((list) => [{ ...p, prompt: "" }, ...list])}

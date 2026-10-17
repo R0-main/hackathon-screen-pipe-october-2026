@@ -26,7 +26,7 @@ function workstation(brainUrl: string, extra: Record<string, unknown> = {}) {
   const claude = tempDir()
   const proj = join(claude, "projects", "-home-hugo-fournil")
   mkdirSync(proj, { recursive: true })
-  writeFileSync(join(home, "config.json"), JSON.stringify({ url: brainUrl, token: "cb_test_token_123456", screenpipe_url: "http://127.0.0.1:9", use_claude_cli: false, sources: ["claude"], ...extra }))
+  writeFileSync(join(home, "config.json"), JSON.stringify({ url: brainUrl, token: "cb_test_token_123456", screenpipe_url: "http://127.0.0.1:9", use_claude_cli: false, sources: ["claude"], screenpipe_agent: false, ...extra }))
   process.env.COMPANY_BRAIN_HOME = home
   process.env.CLAUDE_CONFIG_DIR = claude
   process.env.CODEX_HOME = tempDir()

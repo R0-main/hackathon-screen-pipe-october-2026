@@ -19,25 +19,25 @@ const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]
 /** Questions an agent asks the brain through the MCP (search_brain). */
 const AGENT_QUERIES: Record<string, string[]> = {
   dev: ["production deployment procedure", "Stripe invoice.paid webhook", "Supabase RLS isolation", "restore a backup"],
-  product: ["quarter priority preorders", "La Mie Dorée feedback Excel export", "morning app usage"],
+  product: ["quarter priority swarm alert", "Miellerie Roussel feedback Excel export", "app usage at the apiary"],
   sales: ["October pipeline negotiations", "new yearly pricing", "prepare a demo"],
   finance: ["Qonto Pennylane reconciliation", "month-end close Durand Accounting", "Stripe payouts on Qonto"],
-  support: ["reset the receipt printer", "top October tickets"],
+  support: ["scale no longer sending weighings", "top October tickets"],
   leadership: ["Q4 goals MRR", "seed round postponed", "quarterly board KPIs"],
 }
 
 /** Fresh knowledge that brain-sync "distills" during the demo. */
 const FRESH: (KnowledgeItemInput & { author: string })[] = [
   {
-    author: "hugo", zone: "dev", kind: "decision", title: "Preorders use a Supabase Queues queue for SMS notifications",
-    body: "Avoids blocking the order request; SMS go out in under 30 seconds through Brevo.",
-    entities: [{ type: "tool", name: "Supabase" }, { type: "tool", name: "Brevo" }, { type: "project", name: "Preorders" }],
+    author: "hugo", zone: "dev", kind: "decision", title: "Swarm alerts go through a Supabase Queues queue",
+    body: "Avoids blocking the intake of weighings; the SMS reaches the beekeeper in under 30 seconds through Brevo.",
+    entities: [{ type: "tool", name: "Supabase" }, { type: "tool", name: "Brevo" }, { type: "project", name: "Swarm alert" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.82,
   },
   {
-    author: "sarah", zone: "sales", kind: "fact", title: "Au Pain d'Antan asks for a discount for 3 shops",
-    body: "They would sign at €44/shop yearly. To validate with Claire before Friday.",
-    entities: [{ type: "client", name: "Au Pain d'Antan" }, { type: "person", name: "Claire Martin" }],
+    author: "sarah", zone: "sales", kind: "fact", title: "Coop'Apis Provence asks for a discount for its 60 beekeepers",
+    body: "They would sign at €3.40 per hive yearly. To validate with Claire before Friday.",
+    entities: [{ type: "client", name: "Coop'Apis Provence" }, { type: "person", name: "Claire Martin" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.78,
   },
   {
@@ -47,15 +47,15 @@ const FRESH: (KnowledgeItemInput & { author: string })[] = [
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.85,
   },
   {
-    author: "leo", zone: "product", kind: "decision", title: "Preorder pickup slots in 30-minute blocks",
-    body: "Bakers want to smooth out the Saturday morning rush; 30 minutes is the best compromise according to the interviews.",
-    entities: [{ type: "project", name: "Preorders" }],
+    author: "leo", zone: "product", kind: "decision", title: "The swarm alert mutes itself for an hour during a visit",
+    body: "Opening the hive shifts the weight by several kilos; an hour covers a visit according to the beekeeper interviews.",
+    entities: [{ type: "project", name: "Swarm alert" }],
     source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.8,
   },
   {
-    author: "ines", zone: "dev", kind: "fact", title: "The POS offline mode loses receipts beyond 500 sales",
-    body: "The IndexedDB queue is capped; to fix before the PWA. Repro: e2e script pos-offline.spec.ts.",
-    entities: [{ type: "project", name: "POS" }, { type: "tool", name: "Playwright" }],
+    author: "ines", zone: "dev", kind: "fact", title: "The scale's buffer overflows beyond 2,000 weighings",
+    body: "The flash memory queue is capped; to fix before the new firmware. Repro: e2e script scale-offline.spec.ts.",
+    entities: [{ type: "project", name: "B2 scale" }, { type: "tool", name: "Playwright" }],
     source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.76,
   },
   {

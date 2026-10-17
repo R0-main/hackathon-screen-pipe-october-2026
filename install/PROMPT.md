@@ -26,7 +26,12 @@ and, on an error, relies on `brain doctor --json`. The prompt stays short becaus
    deleted after 14 days (the text stays). The local API token is read and saved on its own.
 3. **Permissions** (macOS): opens the right Settings pane, then watches `GET /health` and carries on as soon as capture
    starts. Nobody has to come back to the terminal to say "done".
-4. **Claude Code**: `company-brain` MCP (user scope) and `SessionStart` / `UserPromptSubmit` / `Stop` hooks.
+4. **Claude Code and Codex**: the company's MCP server, `nos-brainer-<company>`, plugged straight into the brain
+   (`<brain>/api/mcp/<company id>/<token>`, HTTP): `claude mcp add --transport http` (user scope) and
+   `~/.codex/config.toml` if Codex is there. It shows as "Connected" in `/mcp` and `claude mcp list`, and in
+   `codex mcp list`. A second company installed on the computer gets its own next to it. Brain with a private
+   certificate: the computer's MCP server (`company-brain`, stdio) instead. Then the `SessionStart` /
+   `UserPromptSubmit` / `Stop` hooks.
 5. **Sync** every 15 minutes, starting now: only the activity to come is sent, never the history.
 6. **Neon and browser**: `hello` lights up the person's zones, then the brain opens **already signed in** thanks to a
    sign-in link valid for 2 minutes (`POST /api/session/link`, without the token in the URL), with a welcome banner.
@@ -57,7 +62,8 @@ changing anything** and gives, for each KO item, the command that repairs it:
 | Computer | Node.js (version, version manager that will break the paths, Rosetta), shortcut (it starts and runs this client), private folder |
 | Brain | Config, connection and token (revoked?), client up to date with the one the brain serves (`/brain.mjs.sha256`) |
 | Screenpipe | Answers, captures the screen (permission refused, capture stalled, power saving), Accessibility, local API token, "parsed" data |
-| Claude Code | `claude` CLI, `company-brain` MCP (registered and it starts), hooks (all three, without duplicates, on the current client, startable without Git Bash on Windows), recent hook errors |
+| Claude Code | `claude` CLI, each company's MCP server (registered at the right address and it answers; otherwise `company-brain`, registered and it starts), hooks (all three, without duplicates, on the current client, startable without Git Bash on Windows), recent hook errors |
+| Codex | Each company's MCP server declared in `~/.codex/config.toml` (if Codex is installed) |
 | Sync | Schedule (and what it really runs), last sync, last error of the log, orphaned lock, pending conversations, unconfirmed dry run |
 | Distillation | Claude Code or API key, `claude` found by the scheduled sync, Claude sign-in lost (expired token) |
 
@@ -83,15 +89,19 @@ company, an MDM profile (PPPC) can pre-grant Accessibility to the `screenpipe` b
 
 ## Example (fake token)
 
+When the company has a description (entered in `/create` or during onboarding), the first line repeats it after the
+company name (`The company, in a nutshell: "…".`), on one line and cut at 300 characters. The team message does the
+same. Without a description, the line stays as in the example.
+
 ```text
-You are going to connect this computer to NOS Brainer, Fournil's company brain. I am Jean-Marc Dubois, zones: finance.
-This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal).
+You are going to connect this computer to NOS Brainer, Butine's company brain. I am Jean-Marc Dubois, zones: finance.
+This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me in one sentence to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal). Action blocked or refused: work around nothing, tell me in one sentence what to do, with no list or explanation, then wait.
 
 1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
 2. Run the command for my system as is, in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there):
    macOS, Linux, Git Bash: (curl -fsSL --create-dirs https://brain.example.com/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://brain.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
    Windows, PowerShell: New-Item -ItemType Directory -Force "$env:USERPROFILE\.company-brain" | Out-Null; try { Invoke-WebRequest -UseBasicParsing https://brain.example.com/install.ps1 -OutFile "$env:USERPROFILE\.company-brain\install.ps1" -ErrorAction Stop } catch { exit 5 }; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.company-brain\install.ps1" --url https://brain.example.com --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX; exit $LASTEXITCODE
-3. Code 0: it's done, the brain has opened in my browser. Code 3 ("WAITING"): tell me again where to tick, then rerun `~/.company-brain/brain setup` (same timeout). Code 5: network or address, rerun the same command. Any other code (6: connected without Screenpipe): run `~/.company-brain/brain doctor --json`, explain each failing check simply and run the fixes marked "safe" (same timeout). On Windows, the client is `~/.company-brain/brain.cmd`.
+3. Code 0: it's done, the brain has opened in my browser. Code 3 ("WAITING"): tell me again where to tick, then rerun `~/.company-brain/brain setup` (same timeout). Code 5: network or address, rerun the same command. Any other code (6: connected without Screenpipe): run `~/.company-brain/brain doctor --json` and the fixes marked "safe" (same timeout), then tell me in one sentence what is left to do. On Windows, the client is `~/.company-brain/brain.cmd`. A "TO DO" line in the output: repeat it to me as is.
 4. Finish in three lines: what is running, what gets sent (distilled knowledge, never the raw screen; no history is sent) and how to remove everything (`~/.company-brain/brain uninstall`). Finally, offer to have the brain learn my last 24 h: first show me `~/.company-brain/brain sync --dry-run --full --since 24h` in full; nothing is sent before my explicit approval, then `~/.company-brain/brain sync --confirm` sends exactly what I reviewed.
 ```
 
@@ -119,15 +129,15 @@ certificate (`/ca.crt`), checks its SHA-256 fingerprint (pinned in the prompt, c
 With a public certificate (cloud), none of this appears.
 
 ```text
-You are going to connect this computer to NOS Brainer, Fournil's company brain. I am Jean-Marc Dubois, zones: finance.
-This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal).
+You are going to connect this computer to NOS Brainer, Butine's company brain. I am Jean-Marc Dubois, zones: finance.
+This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me in one sentence to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal). Action blocked or refused: work around nothing, tell me in one sentence what to do, with no list or explanation, then wait.
 
 1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
 2. Run the command for my system as is, in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there):
    macOS, Linux, Git Bash: mkdir -p ~/.company-brain && (curl -ksSL https://192.168.1.20/ca.crt -o ~/.company-brain/ca.crt || exit 5) && ([ "$(openssl x509 -in ~/.company-brain/ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "33483DC29874755818A10E941E52452421D5FF791FCF37578DB0E4EC570DF8F5" ] || exit 9) && (curl -fsSL --cacert ~/.company-brain/ca.crt https://192.168.1.20/install.sh -o ~/.company-brain/install.sh || exit 5) && sh ~/.company-brain/install.sh --url https://192.168.1.20 --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX --ca ~/.company-brain/ca.crt
    Windows, PowerShell: New-Item -ItemType Directory -Force "$env:USERPROFILE\.company-brain" | Out-Null; $ca = "$env:USERPROFILE\.company-brain\ca.crt"; $skip = @{}; if ($PSVersionTable.PSVersion.Major -ge 6) { $skip = @{ SkipCertificateCheck = $true } } else { [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true } }; try { Invoke-WebRequest -UseBasicParsing https://192.168.1.20/ca.crt -OutFile $ca -ErrorAction Stop @skip } catch { exit 5 }; [Net.ServicePointManager]::ServerCertificateValidationCallback = $null; $c = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $ca; if (([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData)) -replace '-') -ne '33483DC29874755818A10E941E52452421D5FF791FCF37578DB0E4EC570DF8F5') { exit 9 }; if (-not (Get-ChildItem Cert:\CurrentUser\Root | Where-Object Thumbprint -eq $c.Thumbprint)) { certutil -user -addstore Root $ca | Out-Null }; try { Invoke-WebRequest -UseBasicParsing https://192.168.1.20/install.ps1 -OutFile "$env:USERPROFILE\.company-brain\install.ps1" -ErrorAction Stop } catch { exit 5 }; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.company-brain\install.ps1" --url https://192.168.1.20 --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX --ca $ca; exit $LASTEXITCODE
    (self-hosted brain over local HTTPS: the command fetches its certificate and checks its fingerprint before using it; code 9 = different fingerprint, stop and tell me. On Windows, a dialog asks to confirm adding the certificate: accept.)
-3. Code 0: it's done, the brain has opened in my browser. Code 3 ("WAITING"): tell me again where to tick, then rerun `~/.company-brain/brain setup` (same timeout). Code 5: network or address, rerun the same command. Any other code (6: connected without Screenpipe): run `~/.company-brain/brain doctor --json`, explain each failing check simply and run the fixes marked "safe" (same timeout). On Windows, the client is `~/.company-brain/brain.cmd`.
+3. Code 0: it's done, the brain has opened in my browser. Code 3 ("WAITING"): tell me again where to tick, then rerun `~/.company-brain/brain setup` (same timeout). Code 5: network or address, rerun the same command. Any other code (6: connected without Screenpipe): run `~/.company-brain/brain doctor --json` and the fixes marked "safe" (same timeout), then tell me in one sentence what is left to do. On Windows, the client is `~/.company-brain/brain.cmd`. A "TO DO" line in the output: repeat it to me as is.
 4. Finish in three lines: what is running, what gets sent (distilled knowledge, never the raw screen; no history is sent) and how to remove everything (`~/.company-brain/brain uninstall`). Finally, offer to have the brain learn my last 24 h: first show me `~/.company-brain/brain sync --dry-run --full --since 24h` in full; nothing is sent before my explicit approval, then `~/.company-brain/brain sync --confirm` sends exactly what I reviewed.
 ```
 
@@ -137,8 +147,9 @@ Second way to add someone, next to the personal prompt: a single message per com
 step of `/create`), source `buildJoinPrompt` in [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
 It contains a team code (`cj_…`), no token: to send to colleagues only, it only allows asking.
 
-1. The requester's Claude fills in `--name`, `--title`, `--email` with what it already knows (git config, memory,
-   CLAUDE.md), without asking any question or making anything up: an unknown value is left out, the admin will fill it in.
+1. The requester's Claude fills in `--name`, `--title`, `--email` with what it already knows about the person (their
+   account, its memory, their conversations), without asking any question, running commands to look things up or
+   making anything up: an unknown value is left out, the admin will fill it in.
 2. The command for their system (`install.sh --join` on macOS / Linux / Git Bash, `install.ps1 --join` on Windows) runs
    `brain join` (`apps/client/src/join.ts`): the computer's token is created locally, the request goes with its
    fingerprint only, then the command waits for approval (8 min).

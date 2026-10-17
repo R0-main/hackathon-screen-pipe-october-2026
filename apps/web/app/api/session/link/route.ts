@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server"
-import {
-  createLoginCode,
-  createSessionValue,
-  LOGIN_LINK_SECONDS,
-  profileFromToken,
-  SESSION_COOKIE,
-  sessionCookieOptions,
-  VIEW_AS_COOKIE,
-  verifyLoginCode,
-} from "@/lib/auth"
+import { createLoginCode, LOGIN_LINK_SECONDS, profileFromToken, verifyLoginCode } from "@/lib/auth"
 import { error, json } from "@/lib/http"
+import { openSession } from "@/lib/session"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -23,12 +15,14 @@ export async function POST(req: Request) {
   return json({ path: `/api/session/link?code=${encodeURIComponent(code)}`, expires_in: LOGIN_LINK_SECONDS })
 }
 
-/** Opens the session from the link, then the brain with the welcome banner. Expired link: sign-in page. */
+/**
+ * Opens the session from the link, then the brain with the welcome banner. Expired link: sign-in page.
+ * The company joins those remembered by this browser, next to the one that was open.
+ */
 export async function GET(req: Request) {
   const userId = await verifyLoginCode(new URL(req.url).searchParams.get("code"))
   if (!userId) return NextResponse.redirect(new URL("/login", req.url), 303)
   const res = NextResponse.redirect(new URL("/dashboard?welcome=1", req.url), 303)
-  res.cookies.set(SESSION_COOKIE, await createSessionValue(userId), sessionCookieOptions)
-  res.cookies.delete(VIEW_AS_COOKIE)
+  await openSession(userId, res)
   return res
 }

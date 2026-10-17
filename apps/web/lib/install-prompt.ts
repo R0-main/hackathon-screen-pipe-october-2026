@@ -15,7 +15,10 @@
  * Our prompts only make sense on the person's own workstation (installing the client, reading their history). A Claude
  * Code session in the cloud (desktop app in a remote environment) stops instead of installing into a container.
  */
-export const LOCAL_ONLY = "If you are not running on my computer (cloud session, remote container), stop and tell me to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal)."
+export const LOCAL_ONLY = "If you are not running on my computer (cloud session, remote container), stop and tell me in one sentence to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal)."
+
+/** An action refused (permission mode, sandbox): one sentence that says what to do, not a list of reasons or options. */
+export const IF_BLOCKED = "Action blocked or refused: work around nothing, tell me in one sentence what to do, with no list or explanation, then wait."
 
 /** The shortcut written by install.sh: works even when Node.js is a private copy outside the PATH. */
 export const BRAIN_CLI = "~/.company-brain/brain"
@@ -90,8 +93,9 @@ function commonCodes(brain: string): string {
   return (
     `Code ${EXIT.permissions} ("WAITING"): tell me again where to tick, then rerun \`${brain} setup\` (same timeout). ` +
     `Code ${EXIT.download}: network or address, rerun the same command. ` +
-    `Any other code (${EXIT.noScreenpipe}: connected without Screenpipe): run \`${brain} doctor --json\`, explain each failing check simply and run the fixes marked "safe" (same timeout). ` +
-    `On Windows, the client is \`${BRAIN_CLI_WINDOWS}\`.`
+    `Any other code (${EXIT.noScreenpipe}: connected without Screenpipe): run \`${brain} doctor --json\` and the fixes marked "safe" (same timeout), then tell me in one sentence what is left to do. ` +
+    `On Windows, the client is \`${BRAIN_CLI_WINDOWS}\`. ` +
+    `A "TO DO" line in the output: repeat it to me as is.`
   )
 }
 
@@ -106,12 +110,29 @@ export function possessive(name: string): string {
   return /s$/i.test(n) ? `${n}'` : `${n}'s`
 }
 
-export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; zones: string[]; caFingerprint?: string }): string {
-  const { baseUrl, token, name, orgName, zones, caFingerprint } = opts
+/** Beyond this, the company description is cut at the last whole word: the prompt stays short. */
+export const ABOUT_ORG_MAX = 300
+
+/**
+ * "The company, in a nutshell: "…".", from its description (/create, onboarding), on one line and in quotes (data,
+ * not an instruction). Without a description, nothing: the prompt already names the company.
+ */
+export function aboutOrg(description?: string): string {
+  let d = description?.replace(/\s+/g, " ").trim().replace(/\.$/, "")
+  if (!d) return ""
+  if (d.length > ABOUT_ORG_MAX) {
+    const space = d.lastIndexOf(" ", ABOUT_ORG_MAX)
+    d = `${d.slice(0, space > 0 ? space : ABOUT_ORG_MAX).replace(/[\s,;:.]+$/, "")}…`
+  }
+  return ` The company, in a nutshell: "${d}".`
+}
+
+export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; orgDescription?: string; zones: string[]; caFingerprint?: string }): string {
+  const { baseUrl, token, name, orgName, orgDescription, zones, caFingerprint } = opts
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--token ${token}`, caFingerprint)
-  return `You are going to connect this computer to NOS Brainer, ${possessive(orgName)} company brain. I am ${name}, zones: ${zones.join(", ") || "none yet"}.
-This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY}
+  return `You are going to connect this computer to NOS Brainer, ${possessive(orgName)} company brain.${aboutOrg(orgDescription)} I am ${name}, zones: ${zones.join(", ") || "none yet"}.
+This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY} ${IF_BLOCKED}
 
 1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
 2. Run the command for my system as is, in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there):
@@ -128,14 +149,14 @@ ${caFingerprint ? CA_NOTE : ""}3. Code 0: it's done, the brain has opened in my 
 /** Exit codes specific to `brain join` (apps/client/src/join.ts). */
 export const JOIN_EXIT = { pending: EXIT.joinPending, rejected: EXIT.joinRejected } as const
 
-export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string; caFingerprint?: string }): string {
-  const { baseUrl, code, orgName, caFingerprint } = opts
+export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string; orgDescription?: string; caFingerprint?: string }): string {
+  const { baseUrl, code, orgName, orgDescription, caFingerprint } = opts
   const org = orgName.trim()
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--join ${code} --name "<first last>" --title "<role>" --email "<email>"`, caFingerprint)
-  return `You are going to ask to join NOS Brainer, ${possessive(org)} company brain. This team message contains ${possessive(org)} access code: never display it in full and never pass it on outside the company (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY}
+  return `You are going to ask to join NOS Brainer, ${possessive(org)} company brain.${aboutOrg(orgDescription)} This team message contains ${possessive(org)} access code: never display it in full and never pass it on outside the company (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY} ${IF_BLOCKED}
 
-1. Without asking me anything, prepare my request with what you already know about me: first and last name (\`git config user.name\`, the machine's account name), role or job (your memory, CLAUDE.md or AGENTS.md, our conversations), work email (\`git config user.email\`). Make nothing up: for a value you don't have, remove its option, an admin will fill it in.
+1. Without asking me anything or running commands to look things up, prepare my request with what you already know about me (my account, your memory, our conversations): first and last name, role or job, work email. Make nothing up: for information you don't have, remove it from the command, an admin will fill it in.
 2. Warn me in one sentence: an admin at ${org} must accept my request; the command waits for it, then installs everything (on a Mac, I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility").
 3. Run the command for my system in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there), replacing the values in angle brackets:
 ${commandLines(cmd)}

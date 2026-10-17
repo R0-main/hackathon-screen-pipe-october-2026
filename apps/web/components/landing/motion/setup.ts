@@ -10,7 +10,7 @@ gsap.registerPlugin(ScrollTrigger, SplitText)
   The markup carries attributes this module animates:
   - data-hero="nav|title|sub|cta|note"  first screen;
   - data-reveal="title|text|panel|cards" section titles, paragraphs, panels and cards (hosting, pricing);
-  - data-rows, data-type                 rows of "Where Fournil stands" and Jean-Marc's prompt;
+  - data-rows, data-type                 rows of "Where Butine stands" and Jean-Marc's prompt;
   - data-privacy (+ data-pf-*)           the path of the captures, from the computer to the brain (PrivacyFlow);
   - data-rule, data-facts                ink rule and three commitments;
   - data-after, data-thread, data-bead   thread of beads linking the sections;
@@ -185,7 +185,7 @@ function thread(root: HTMLElement) {
 
 /**
  * You read the page the way you read the brain. Titles go from pale to ink and texts rise to the rhythm of the
- * scroll; the "Where Fournil stands" panel and the privacy diagram play during their section's hold:
+ * scroll; the "Where Butine stands" panel and the privacy diagram play during their section's hold:
  * the page holds still, the story moves on before your eyes.
  */
 function sections(root: HTMLElement, holds: Holds) {

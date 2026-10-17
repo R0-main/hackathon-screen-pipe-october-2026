@@ -6,8 +6,9 @@ import type { WorkstationHealth } from "@brain/core"
 import type { MonitoringState } from "@/app/api/admin/monitoring/route"
 import { fmt } from "@/lib/i18n"
 import { PageScroll } from "./AppShell"
-import { api, errorMessage, initials } from "./format"
+import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
+import { PersonAvatar } from "./PersonDot"
 import { RelTime } from "./RelTime"
 import { ErrorText } from "./ui"
 
@@ -90,7 +91,7 @@ export function MonitoringPanel() {
                 {data.workstations.map((p) => (
                   <li key={p.profile.id} className="grid gap-x-4 gap-y-1 py-3 md:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))]">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-[10px] font-medium">{initials(p.profile.name)}</span>
+                      <PersonAvatar id={p.profile.id} size={28} bg="surface" />
                       <div className="min-w-0">
                         <Link href={`/people/${p.profile.id}`} className="block truncate text-[13px] font-medium hover:underline">
                           {p.profile.name}

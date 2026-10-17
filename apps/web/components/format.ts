@@ -48,15 +48,6 @@ export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-export function initials(name: string): string {
-  return name
-    .split(/[\s-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("")
-}
-
 export function firstName(name: string): string {
   return name.split(" ")[0] ?? name
 }
@@ -106,4 +97,9 @@ export async function api<T = unknown>(path: string, init?: RequestInit & { json
     throw new Error(res.status === 401 ? "Session expired: please sign in again." : `Error ${res.status}`)
   }
   return data as T
+}
+
+/** Link to an entity's page (everything about it). Outside KnowledgeList ("use client"): server pages call it too. */
+export function entityHref(type: string, name: string): string {
+  return `/entities/${encodeURIComponent(type)}/${encodeURIComponent(name)}`
 }

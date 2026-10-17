@@ -15,6 +15,7 @@ export type FakeClaudeCall = { args: string[]; token: string | null; internal: s
  * answer, is_error false, code 0). In normal mode: a prompt with QZXBAD gets a refusal in prose (unreadable
  * output), a prompt with QZXERR an unknown error (code 1); otherwise one decision per QZX… tag found (dev zone).
  * `allow(n)`: the next n calls answer normally whatever the mode (limit reached during a sync).
+ * Screenpipe agent (`--mcp-config` in the arguments): in normal mode, one work knowledge item and one personal one.
  */
 export function fakeClaude(opts: { help?: string } = {}) {
   const dir = tempDir("fake-claude-")
@@ -46,6 +47,27 @@ process.stdin.on("end", () => {
   if (mode === "limit") { out({ type: "result", subtype: "success", is_error: true, api_error_status: 429, duration_ms: 640, result: limit }); process.exit(1) }
   if (mode === "limit-text") { process.stderr.write("You've hit your weekly limit · resets Oct 20, 3pm\\n"); process.exit(1) }
   if (mode === "limit-ok") { out({ type: "result", subtype: "success", is_error: false, result: limit }); return }
+  // Moderator (brain moderate): removes what carries QZXPERSO, fixes what carries QZXFIX, keeps the rest.
+  if (input.includes('{"verdicts"')) {
+    const refs = [...input.matchAll(/<knowledge ref="(\\d+)"[^>]*>\\ntitle: ([^\\n]*)/g)].map((m) => ({ ref: Number(m[1]), title: m[2] }))
+    const verdicts = refs.map(({ ref, title }) =>
+      title.includes("QZXPERSO")
+        ? { ref, decision: "reject", category: "personal", reason: "Private life." }
+        : title.includes("QZXFIX")
+          ? { ref, decision: "edit", zone: "finance", title: "Fixed title" }
+          : { ref, decision: "publish", category: null, reason: "ok" },
+    )
+    out({ type: "result", is_error: false, result: JSON.stringify({ verdicts }) })
+    return
+  }
+  if (process.argv.includes("--mcp-config")) {
+    const items = [
+      { zone: "dev", kind: "fact", title: "Ticket FOUR-42: invoice dispute with Boulangerie Martin", body: "The customer disputes invoice 2026-118, follow-up planned.", entities: [], confidence: 0.8 },
+      { zone: "dev", kind: "fact", title: "Doctor's appointment", body: "My sick leave starts on Monday.", entities: [], confidence: 0.8 },
+    ]
+    out({ type: "result", is_error: false, result: JSON.stringify({ items }) })
+    return
+  }
   if (/QZXBAD/.test(input)) { out({ type: "result", is_error: false, result: "Sorry, I would rather not process this conversation." }); return }
   if (/QZXERR/.test(input)) { process.stderr.write("Unexpected error\\n"); process.exit(1) }
   if (status) {

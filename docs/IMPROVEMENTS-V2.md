@@ -1,7 +1,8 @@
 # Improvements v2: monitoring, connectors, language, real-time feed, brain quality
 
 Branch `feat/ameliorations-v2`. Five work items, each usable on its own; everything works without a new npm dependency.
-On Postgres, apply the migrations (`npm run db:migrate`): `20261017000004_sync_reports.sql`,
+On Postgres, the migrations apply on their own on the Vercel production deployment and when the Docker container
+starts (otherwise `npm run db:migrate`): `20261017000004_sync_reports.sql`,
 `20261017000005_connectors_tasks.sql`, `20261017000006_search_quality.sql`. Without them, the brain stays usable:
 monitoring without reports, task connectors refused with a clear message, search without vectors.
 

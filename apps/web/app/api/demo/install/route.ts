@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic"
 
 /** Cap on visitor accounts, so that a public page cannot fill the database. */
 const MAX_VISITORS = 100
-const VISITOR_ZONES = ["dev", "produit"]
+const VISITOR_ZONES = ["dev", "product"]
 
 /**
  * Demo mode only (BRAIN_DEMO=1): creates a "Visitor" account on the demo brain and returns its install
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     })
     await store.setZoneAccess(profile.id, zones.map((zone_id) => ({ zone_id, can_write: true })))
     const org = await store.getOrg()
-    return json({ prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones, caFingerprint: caFingerprint() }) }, 201)
+    return json({ prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, orgDescription: org.description, zones, caFingerprint: caFingerprint() }) }, 201)
   } catch (err) {
     return internalError(err)
   }

@@ -26,5 +26,5 @@ export const prefilledEmail = prefilled(200).transform((v) => (v && /^[^\s@]+@[^
 
 export async function joinPromptFor(store: BrainStore, baseUrl: string) {
   const [code, org] = await Promise.all([store.getJoinCode(), store.getOrg()])
-  return { code, prompt: buildJoinPrompt({ baseUrl, code, orgName: org.name, caFingerprint: caFingerprint() }) }
+  return { code, prompt: buildJoinPrompt({ baseUrl, code, orgName: org.name, orgDescription: org.description, caFingerprint: caFingerprint() }) }
 }

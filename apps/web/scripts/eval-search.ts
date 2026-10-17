@@ -1,4 +1,4 @@
-// Search evaluation on the Fournil demo company: npm run eval (after npm run seed).
+// Search evaluation on the Butine demo company: npm run eval (after npm run seed).
 // For each question, a given knowledge item (recognized by part of its title) is expected in the top 3
 // results. Prints precision@1, success@3 and MRR, with or without embeddings depending on the configuration.
 // To add a case: one line in CASES. A case that regresses shows up right away.
@@ -11,9 +11,9 @@ type Case = { query: string; expect: string; zones?: string[] }
 
 /** Phrasings deliberately different from the titles (synonyms, slight typos). */
 export const CASES: Case[] = [
-  { query: "how do we deploy to production?", expect: "Deploy Fournil to production" },
-  { query: "how do we ship a release", expect: "Deploy Fournil to production" },
-  { query: "go live", expect: "Deploy Fournil to production" },
+  { query: "how do we deploy to production?", expect: "Deploy Butine to production" },
+  { query: "how do we ship a release", expect: "Deploy Butine to production" },
+  { query: "go live", expect: "Deploy Butine to production" },
   { query: "Qonto reconciliation", expect: "bank reconciliation" },
   { query: "bank reconcilation", expect: "bank reconciliation" },
   { query: "month-end close accountant export", expect: "Month-end close" },
@@ -22,19 +22,21 @@ export const CASES: Case[] = [
   { query: "webhook invoice.paid", expect: "invoice.paid webhook" },
   { query: "restore a backup", expect: "Restore a Supabase backup" },
   { query: "backup restore staging", expect: "Restore a Supabase backup" },
-  { query: "sumup terminals disconnect", expect: "SumUp" },
-  { query: "data isolation per bakery", expect: "Supabase RLS" },
-  { query: "price per shop", expect: "€49" },
-  { query: "pricing per month", expect: "€49" },
+  { query: "scales drifting in freezing cold", expect: "frosty night" },
+  { query: "data isolation per beekeeper", expect: "Supabase RLS" },
+  { query: "price per hive", expect: "€4 per hive" },
+  { query: "pricing per month", expect: "€4 per hive" },
   { query: "sales pipeline october", expect: "October pipeline" },
-  { query: "La Mie Dorée accounting export", expect: "La Mie Dorée" },
-  { query: "receipt printer broken", expect: "receipt printer" },
+  { query: "Miellerie Roussel weighing export", expect: "Miellerie Roussel" },
+  { query: "silent scale not sending anything", expect: "Wake up a scale" },
+  { query: "false swarm alerts at harvest time", expect: "false swarm alerts" },
   { query: "burn and runway", expect: "Monthly burn" },
-  { query: "year-end customer goal", expect: "120 bakery customers" },
+  { query: "year-end hive goal", expect: "4,500 hives" },
   { query: "expense reports", expect: "Swile" },
-  { query: "offline first PWA POS", expect: "offline-first" },
-  { query: "hire a mobile dev", expect: "mobile developer" },
-  { query: "Europain trade show leads", expect: "Europain" },
+  { query: "buffer without network", expect: "LoRa network goes down" },
+  { query: "asian hornet", expect: "hornet" },
+  { query: "hire an embedded dev", expect: "embedded engineer" },
+  { query: "Miel & Ruches convention leads", expect: "40% of the year's leads" },
 ]
 
 async function main() {

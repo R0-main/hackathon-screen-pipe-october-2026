@@ -29,14 +29,33 @@ import {
   statusForViewer,
   streamStartId,
 } from "../lib/brain"
-import { createLoginCode, createOnboardingCode, createSessionValue, hashToken, newToken, profileFromToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
+import {
+  createLoginCode,
+  createOnboardingCode,
+  createSessionValue,
+  forgetAccount,
+  hashToken,
+  isRemembered,
+  latestRemembered,
+  listRememberedAccounts,
+  newToken,
+  profileFromToken,
+  rememberAccounts,
+  verifyLoginCode,
+  viewerFromCookies,
+  type Viewer,
+} from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
+import * as zoneRoute from "../app/api/zones/[id]/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
 import * as cronNewZonesRoute from "../app/api/cron/new-zones/route"
 import * as adminClaudeRoute from "../app/api/admin/claude/route"
+import * as adminModerationRoute from "../app/api/admin/moderation/route"
+import * as adminModerationInputRoute from "../app/api/admin/moderation/input/route"
+import { loadModerationLog, moderationInput, runModeration, setModerationEnabled } from "../lib/moderation"
 import { runNewZones } from "../lib/new-zones"
 import { getOrgClaudeKey, setOrgClaudeKey } from "../lib/claude-key"
 import { getClaude } from "../lib/ai"
@@ -56,7 +75,13 @@ import * as adminJoinRoute from "../app/api/admin/join/route"
 import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
 import * as skillsRoute from "../app/api/skills/route"
 import * as skillRoute from "../app/api/skills/[id]/route"
-import { DEMO_VISITOR_TITLE, demoVisitorManager, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
+import * as mcpRoute from "../app/api/mcp/[orgId]/[token]/route"
+import * as mcpConnectorsRoute from "../app/api/connectors/mcp/route"
+import * as mcpConnectorRoute from "../app/api/connectors/mcp/[id]/route"
+import * as mcpConnectorTestRoute from "../app/api/connectors/mcp/[id]/test/route"
+import * as mcpCallbackRoute from "../app/api/connectors/mcp/callback/route"
+import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceLegacyDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
+import { DEMO_ITEMS, DEMO_ORG, LEGACY_DEMO_NAMES } from "./demo-data"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
@@ -79,11 +104,11 @@ function item(zone: string, title: string, kind: KnowledgeItemInput["kind"] = "f
 type Handler = (req: Request, ctx: any) => Promise<Response>
 
 /** Calls an API route the way Next would (dashboard session cookie). */
-async function call(handler: Handler, url: string, opts: { method?: string; session?: string; body?: unknown; raw?: string } = {}) {
+async function call(handler: Handler, url: string, opts: { method?: string; session?: string; body?: unknown; raw?: string; params?: Record<string, string> } = {}) {
   const headers: Record<string, string> = { "content-type": "application/json" }
   if (opts.session) headers.cookie = `brain_session=${opts.session}`
   const body = opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined)
-  const res = await handler(new Request(`http://smoke.test${url}`, { method: opts.method ?? "GET", headers, body }), { params: Promise.resolve({}) })
+  const res = await handler(new Request(`http://smoke.test${url}`, { method: opts.method ?? "GET", headers, body }), { params: Promise.resolve(opts.params ?? {}) })
   return { status: res.status, data: (await res.json().catch(() => null)) as any }
 }
 
@@ -228,20 +253,20 @@ async function main() {
   assert(devForJm.items.length === 0, "RLS: finance sees nothing of the dev zone")
   assert(devForJm.zones_restricted.includes("dev"), "the dev zone is flagged as restricted")
   const devForHugo = await queryBrain(hugo, { query: "deploy to production" })
-  assert(devForHugo.items.some((i) => i.title.includes("Deploy Fournil")), "Hugo finds the deployment procedure")
+  assert(devForHugo.items.some((i) => i.title.includes("Deploy Butine")), "Hugo finds the deployment procedure")
   const finance = await queryBrain(jm, { query: "Qonto Pennylane reconciliation" })
   assert(finance.items[0]?.zone === "finance" && finance.zones_hit.includes("finance"), "Jean-Marc finds the reconciliation, the finance zone lights up")
 
   const before = (await store.zoneStats()).find((z) => z.zone === "dev")?.count ?? 0
   const res = await ingestItems(hugo, [
     {
-      zone: "unknown", kind: "task", title: `Add an index on preorders (${run})`, body: "TODO before going to prod. Contact: hugo@fournil.example, key sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+      zone: "unknown", kind: "task", title: `Add an index on swarm alerts (${run})`, body: "TODO before going to prod. Contact: hugo@butine.example, key sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
       entities: [{ type: "tool", name: "Postgres" }], source: { app: "Terminal", tool: "claude-code", at: new Date().toISOString() }, confidence: 0.7,
     },
   ])
   const it = await store.getItem(res.ids[0])
   assert(it && it.zone === "dev", "an unknown zone is reclassified (dev)")
-  assert(it && !it.body.includes("sk-ant") && !it.body.includes("@fournil"), "secrets and emails redacted on the server")
+  assert(it && !it.body.includes("sk-ant") && !it.body.includes("@butine"), "secrets and emails redacted on the server")
   assert(((await store.zoneStats()).find((z) => z.zone === "dev")?.count ?? 0) === before + 1, "the dev zone counter goes up")
   assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.source_item_id === res.ids[0]), "a task is created from the item")
 
@@ -263,13 +288,14 @@ async function main() {
   assert(ctx && ctx.zones[0]?.zone === "dev" && ctx.items.length > 0, "Hugo's handover context")
 
   assert(await store.deleteItem(res.ids[0]), "the author can delete a knowledge item")
+  assert(!(await store.listTasks({})).some((t) => t.source_item_id === res.ids[0]), "its task goes with it")
 
   console.log("\n— Company skills: publishing under permission, assignment to a cortex")
   const names = async (v: Viewer) => (await listVisibleSkills(v)).map((x) => x.name)
   const jmSkills = await names(jm)
-  assert(jmSkills.includes("fournil-tone") && jmSkills.includes("qonto-pennylane-reconciliation"), "Jean-Marc receives the company-wide skills and the finance cortex's")
-  assert(!jmSkills.includes("deploy-fournil"), "but not the dev cortex's")
-  assert((await names(hugo)).includes("deploy-fournil") && !(await names(hugo)).includes("qonto-pennylane-reconciliation"), "Hugo receives the dev skill, not the finance one")
+  assert(jmSkills.includes("butine-tone") && jmSkills.includes("qonto-pennylane-reconciliation"), "Jean-Marc receives the company-wide skills and the finance cortex's")
+  assert(!jmSkills.includes("deploy-butine"), "but not the dev cortex's")
+  assert((await names(hugo)).includes("deploy-butine") && !(await names(hugo)).includes("qonto-pennylane-reconciliation"), "Hugo receives the dev skill, not the finance one")
   assert((await names(claire)).length >= 5, "the admin sees every skill")
   assert(canPublishSkills(claire) && canPublishSkills(hugo) && !canPublishSkills(ines), "publishing: admins and allowed members only")
   const refused = async (p: Promise<unknown>, status: number) => {
@@ -341,13 +367,44 @@ async function main() {
       assert(after.get("Inès Lefèvre")?.manager_id === id("Hugo") && after.get("Jean-Marc Dubois")?.manager_id === id("Claire"), "the flat org chart gets its reporting lines back")
       assert(after.get("Claire Martin")?.manager_id == null, "the CEO stays at the top")
       assert(after.get("Visitor 1234")?.manager_id === id("Hugo"), "visitors join the lead dev's team")
-      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deploy-fournil")?.version === 3, "the demo skills are added")
+      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deploy-butine")?.version === 3, "the demo skills are added")
       assert(after.get("Hugo Bernard")?.can_publish_skills === true && after.get("Inès Lefèvre")?.can_publish_skills === false, "Hugo and Jean-Marc get the right to publish")
       assert((await old.listItems({})).length === itemsBefore && visitor.id === after.get("Visitor 1234")?.id, "nothing is erased")
       await old.updateProfile(id("Inès"), { manager_id: id("Claire") })
       const again = await upgradeDemoBrain(old)
       assert(again.managers === 0 && again.skills === 0 && (await old.getProfile(id("Inès")))?.manager_id === id("Claire"), "run again: no longer touches an admin's choices")
       assert((await demoVisitorManager(old)) === id("Hugo"), "a new visitor reports to the lead dev")
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  console.log("\n— Demo still on the former fictional company: replaced, visitors kept")
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "brain-legacy-"))
+    try {
+      const old = new FileStore(tmp)
+      await seedDemoBrain(old)
+      assert((await replaceLegacyDemoBrain(old)) === null, "the current demo is never replaced")
+      await old.updateOrg({ name: LEGACY_DEMO_NAMES[0] })
+      const token = newToken()
+      // A visitor created by an earlier (French) version: its title was still French.
+      const visitor = await old.createProfile({ name: "Visitor 4321", title: "Visiteur de la démo", role: "member", token_hash: hashToken(token) })
+      await old.setZoneAccess(visitor.id, [{ zone_id: "dev", can_write: true }, { zone_id: "product", can_write: false }])
+      await old.insertItems([{ ...item("dev", `Smoke ${run} former demo`), author_id: visitor.id }])
+      const res = await replaceLegacyDemoBrain(old)
+      const kept = await old.getProfileByTokenHash(hashToken(token))
+      const hugoNow = (await old.listProfiles()).find((p) => p.name === "Hugo Bernard")
+      assert(res?.visitors === 1 && (await old.getOrg()).name === DEMO_ORG.name, `the former demo becomes ${DEMO_ORG.name}`)
+      assert(kept?.name === "Visitor 4321" && kept.title === DEMO_VISITOR_TITLE && kept.manager_id === hugoNow?.id, "the visitor keeps its token and joins the lead dev's team")
+      assert(
+        (await old.listZoneAccess(kept!.id)).map((a) => `${a.zone_id}:${a.can_write}`).sort().join() === "dev:true,product:false",
+        "and keeps its zones",
+      )
+      assert(
+        (await old.listItems({})).length === DEMO_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-butine"),
+        "knowledge and skills of the new demo, without those of the former one",
+      )
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }
@@ -378,7 +435,7 @@ async function main() {
   const dup = await ingestItems(hugo, [item("dev", `Smoke ${run} duplicate`), item("dev", `smoke ${run} duplicate`), item("product", `Smoke ${run} duplicate`)])
   created.push(...dup.ids)
   assert(dup.inserted === 2 && dup.skipped === 1, "duplicate within a batch skipped, same title in another zone kept")
-  const sameTitle = `Smoke ${run} claude — fournil`
+  const sameTitle = `Smoke ${run} claude — butine`
   const fact1 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "We decided to switch to Pennylane." }])
   const fact2 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "We also decided to keep Qonto for cash." }])
   created.push(...fact1.ids, ...fact2.ids)
@@ -390,7 +447,7 @@ async function main() {
   assert(partly.inserted === 1 && partly.skipped === 1 && partly.zones.join() === "product", "ingestion response: only the zones that really received an item")
 
   console.log("\n— Write events per zone and summaries (D2)")
-  const batch = await ingestItems(claire, [item("finance", `Smoke ${run} treasury: 2 months of cash left`), item("dev", `Smoke ${run} Postgres migration of preorders`)])
+  const batch = await ingestItems(claire, [item("finance", `Smoke ${run} treasury: 2 months of cash left`), item("dev", `Smoke ${run} Postgres migration of the alerts table`)])
   created.push(...batch.ids)
   const writes = (await store.listEvents({ limit: 20, type: "write" })).filter((e) => e.user_id === claire.profile.id && e.summary?.includes(`Smoke ${run}`))
   const financeWrite = writes.find((e) => e.zones.join() === "finance")
@@ -442,7 +499,7 @@ async function main() {
   assert(persoEvent.zones.includes("dev") && !persoEvent.summary, "personal search: zone lit, text not kept")
   await queryBrain(hugo, { query: `Smoke ${run} deploy to production` })
   assert((await lastEvent(hugo)).summary === `Smoke ${run} deploy to production`, "search within one's zones, nothing personal: text kept")
-  const both = `Smoke ${run} support ticket printer and deployment`
+  const both = `Smoke ${run} support tickets about scales and deployment`
   await queryBrain(hugo, { query: both })
   const bothEvent = await lastEvent(hugo)
   assert(bothEvent.summary === both && bothEvent.zones.includes("dev") && bothEvent.zones.includes("support"), "text kept: the event carries every zone touched (dev + support)")
@@ -495,6 +552,25 @@ async function main() {
   const edited = (await store.listZones()).find((z) => z.id === existing.id)!
   assert(edit.status === 200 && edited.keywords.length === existing.keywords.length && edited.description === existing.description, "with its id: updated, keywords and description kept")
   assert((await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: hugoSession, body: { name: `Smoke ${run}` } })).status === 403, "admins only (403)")
+
+  console.log("\n— API: MCP servers (catalog, manual OAuth client, secrets never sent back)")
+  assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: hugoSession })).status === 403, "MCP servers: admins only (403)")
+  const mcpLinear = await call(mcpConnectorsRoute.POST, "/api/connectors/mcp", { method: "POST", session: claireSession, body: { catalog_id: "linear" } })
+  assert(mcpLinear.status === 201 && mcpLinear.data?.status === "needs_auth" && mcpLinear.data?.auth === "dynamic", `Linear added from the catalog, to connect (${mcpLinear.status} ${mcpLinear.data?.status})`)
+  assert((await call(mcpConnectorsRoute.POST, "/api/connectors/mcp", { method: "POST", session: claireSession, body: { catalog_id: "unknown" } })).status === 400, "entry outside the catalog: 400")
+  const mcpGithub = await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/github", { method: "PUT", session: claireSession, params: { id: "github" }, body: { client_id: `cid-${run}`, client_secret: "SECRET-SMOKE-MCP" } })
+  assert(mcpGithub.status === 200 && mcpGithub.data?.has_client === true && mcpGithub.data?.auth === "manual", "GitHub: OAuth client declared by hand saved")
+  const mcpList = await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: claireSession })
+  assert(mcpList.status === 200 && ["linear", "github"].every((id) => mcpList.data.connectors.some((c: { id: string }) => c.id === id)), "list: Linear and GitHub")
+  assert(!JSON.stringify(mcpList.data).includes("SECRET-SMOKE-MCP") && mcpList.data.redirect_uri.endsWith("/api/connectors/mcp/callback"), "list: secret never sent back, redirect URI provided")
+  const mcpTest = await call(mcpConnectorTestRoute.POST, "/api/connectors/mcp/linear/test", { method: "POST", session: claireSession, params: { id: "linear" } })
+  assert(mcpTest.status === 200 && mcpTest.data?.last_check?.ok === false && mcpTest.data?.status === "needs_auth", "test without a connection: failure noted, no network call")
+  const cb = await mcpCallbackRoute.GET(new Request("http://smoke.test/api/connectors/mcp/callback?state=unknown&code=x", { headers: { cookie: `brain_session=${claireSession}` } }))
+  assert(cb.status === 303 && /\/connectors\?mcp=error/.test(cb.headers.get("location") ?? ""), "OAuth return with an unknown state: back to /connectors with the error")
+  const cbAnon = await mcpCallbackRoute.GET(new Request("http://smoke.test/api/connectors/mcp/callback?state=x&code=x"))
+  assert(cbAnon.status === 303 && /\/login$/.test(cbAnon.headers.get("location") ?? ""), "OAuth return without a session: to the sign-in")
+  for (const id of ["linear", "github"]) await call(mcpConnectorRoute.DELETE, `/api/connectors/mcp/${id}`, { method: "DELETE", session: claireSession, params: { id } })
+  assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: claireSession })).data.connectors.length === mcpList.data.connectors.length - 2, "removal: both servers are gone")
 
   console.log("\n— Company status produced on a workstation (E4)")
   const originalStatus = await store.getStatus()
@@ -693,6 +769,39 @@ async function main() {
     }
     assert((await viewerFromCookies(oldCookie, undefined))?.real.id === hugo.profile.id, "table restored: the session is valid again")
 
+    console.log("\n— Postgres: \"quality\" migration missing, ingesting a revised decision does not crash")
+    {
+      const ddlQ = pgClient(url, 1)
+      const legacy = new PostgresStore(url)
+      const gq = globalThis as unknown as { __brainStore?: BrainStore }
+      const currentQ = gq.__brainStore
+      const qtagM = `Smoke ${run} without migration`
+      const dec = (body: string, at: number): KnowledgeItemInput => ({
+        zone: "dev",
+        kind: "decision",
+        title: `${qtagM}: accounting exports go through an encrypted S3 bucket`,
+        body,
+        entities: [],
+        source: { app: "Terminal", tool: "claude-code", at: new Date(at).toISOString() },
+        confidence: 0.8,
+      })
+      await ddlQ`alter table knowledge_items rename column superseded_by to superseded_by_smoke`
+      gq.__brainStore = legacy
+      let ids: string[] = []
+      try {
+        const a = await ingestItems(hugo, [dec(`The exports go to an encrypted S3 bucket (${run}).`, Date.now() - 60_000)])
+        const b = await ingestItems(hugo, [dec(`In the end the exports stay on the file server, the S3 bucket is dropped (${run}).`, Date.now() + 5_000)])
+        ids = [...a.ids, ...b.ids]
+        assert(a.inserted === 1 && b.inserted === 1 && b.replaced === 0, "revised decision inserted, nothing marked, no error (no 503 for the workstation)")
+      } finally {
+        gq.__brainStore = currentQ
+        await legacy.end()
+        await ddlQ`alter table knowledge_items rename column superseded_by_smoke to superseded_by`
+        await ddlQ.end({ timeout: 5 })
+      }
+      for (const id of ids) await store.deleteItem(id)
+    }
+
     console.log("\n— Postgres: atomic reset, never a stray organization (E3)")
     await orgRaceTest(url, run)
   }
@@ -729,7 +838,7 @@ async function main() {
   console.log("\n— Create your company (/create): a separate brain")
   {
     const root = getRootStore()
-    const fournil = await root.getOrg()
+    const butine = await root.getOrg()
     const tenantsBefore = await root.countTenantOrgs()
     const acme = await root.createTenantOrg({
       name: `Acme ${run}`,
@@ -739,7 +848,7 @@ async function main() {
     const acmeStore = storeForOrg(acme.id)
     try {
       assert((await root.countTenantOrgs()) === tenantsBefore + 1, "a created company is counted")
-      assert((await root.getOrg()).id === fournil.id && !(await root.isEmpty()), "the database's brain stays Fournil's")
+      assert((await root.getOrg()).id === butine.id && !(await root.isEmpty()), "the database's brain stays Butine's")
       assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops", "the new company only has its own zones")
       const token = newToken()
       const boss = await acmeStore.createProfile({ name: `Alice ${run}`, role: "admin", manager_id: null, token_hash: hashToken(token) })
@@ -748,13 +857,76 @@ async function main() {
       const cookie = await createSessionValue(boss.id)
       const alice = await viewerFromCookies(cookie, claire.profile.id)
       assert(alice?.real.id === boss.id && alice.profile.id === boss.id, "its session is recognized; \"view as\" does not leave its company")
-      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Fournil does not see this account")
+      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Butine does not see this account")
 
       const st = await call(stateRoute.GET, "/api/state", { session: cookie })
       assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "its dashboard only shows its company")
+
+      console.log("\n— The company's MCP server (/api/mcp/<company>/<token>): what Claude Code and Codex plug in")
+      const rpc = async (orgId: string, tok: string, body: unknown, method = "POST") => {
+        const res = await mcpRoute.POST(
+          new Request(`http://smoke.test/api/mcp/${orgId}/${tok}`, {
+            method,
+            headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18" },
+            body: method === "POST" ? JSON.stringify(body) : undefined,
+          }),
+          { params: Promise.resolve({ orgId, token: tok }) },
+        )
+        return { status: res.status, data: (await res.json().catch(() => null)) as any }
+      }
+      const hello = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "0" } } }
+      const mcpInit = await rpc(acme.id, token, hello)
+      assert(
+        mcpInit.status === 200 && mcpInit.data.result.instructions.includes(`Acme ${run}`) && mcpInit.data.result.instructions.includes("company brain: Smoke test") && mcpInit.data.result.instructions.includes(`Alice ${run}`),
+        "MCP: handshake, instruction with the company's name and description, for this person",
+      )
+      const mcpTools = await rpc(acme.id, token, { jsonrpc: "2.0", id: 2, method: "tools/list" })
+      assert(
+        mcpTools.data.result.tools.map((t: { name: string }) => t.name).join() === "search_brain,get_zone_summary,list_zones,whoami_context,company_status,remember",
+        "MCP: the brain's six tools, without a company parameter (one company per server)",
+      )
+      assert(!JSON.stringify(mcpTools.data).includes('"company"'), "MCP: no company parameter")
+      const mcpZones = await rpc(acme.id, token, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_zones", arguments: {} } })
+      assert(mcpZones.data.result.content[0].text.includes("**Ops** (`ops`)"), "MCP: a tool answers, with the company's zones")
+      assert((await rpc(butine.id, token, hello)).status === 401, "MCP: one company's token does not open another's server")
+      assert((await rpc(acme.id, newToken(), hello)).status === 401, "MCP: unknown token refused")
+      assert((await rpc(acme.id, token, null, "GET")).status === 405, "MCP: GET refused (stateless server)")
+
+      console.log("\n— Companies remembered by the browser: go back to one, switch from one to another")
+      const butineSession = await createSessionValue(claire.profile.id)
+      const both = await rememberAccounts(cookie, butineSession)
+      const listed = await listRememberedAccounts(both)
+      assert(
+        listed.map((a) => a.org.id).join() === `${acme.id},${butine.id}` && listed[0].org.name === `Acme ${run}` && listed[0].org.description === "Smoke test",
+        "two companies remembered, the most recent first, with their name and description",
+      )
+      const sameOrg = await listRememberedAccounts(await rememberAccounts(await createSessionValue(hugo.profile.id), both))
+      assert(
+        sameOrg.length === 2 && sameOrg[0].userId === hugo.profile.id && !sameOrg.some((a) => a.userId === claire.profile.id),
+        "another account of the same company replaces the previous one (one line per company)",
+      )
+      assert((await isRemembered(both, boss.id)) && !(await isRemembered(both, hugo.profile.id)), "only remembered accounts reopen without a token")
+      const stretched = `${boss.id}.${Date.now() + 86400_000}.${cookie.split(".")[2]}`
+      assert(
+        (await listRememberedAccounts(`${stretched}~not-a-session~${butineSession}`)).map((a) => a.userId).join() === claire.profile.id,
+        "a tampered or unreadable remembered session is dropped",
+      )
+      assert((await listRememberedAccounts(await forgetAccount(both, boss.id))).map((a) => a.org.id).join() === butine.id, "forgetting a company removes it from the list")
+      const [entry] = both.split("~")
+      assert(!(await viewerFromCookies(entry, undefined)), "a remembered company is not a session cookie (separate use)")
+      assert(Number(entry.split(".")[1]) > Date.now() + 300 * 86400_000, "a remembered company lasts a year, not a session's 14 days")
+      assert((await latestRemembered(both)) === boss.id, "automatic sign-in: the most recent remembered company")
+      assert((await rememberAccounts(both)) === both, "an entry still valid is kept as is")
+      const bossHash = await acmeStore.getTokenHash(boss.id)
+      await acmeStore.updateProfile(boss.id, { token_hash: hashToken(newToken()) })
+      try {
+        assert((await latestRemembered(both)) === claire.profile.id, "regenerating the token also invalidates the remembered company")
+      } finally {
+        await acmeStore.updateProfile(boss.id, { token_hash: bossHash! })
+      }
       const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
       assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviting a colleague: prompt in its name, company zones only")
-      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "the colleague joins the company, not Fournil")
+      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "the colleague joins the company, not Butine")
 
       const bob = (await profileFromToken(inv.data.token))!
       const bobViewer: Viewer = { profile: bob, real: bob, access: await getAccess(bob) }
@@ -766,15 +938,15 @@ async function main() {
 
       const ing = await runInOrg(acme.id, () => ingestItems(bobViewer, [item("ops", `Oncall procedure for Acme (${run})`)]))
       assert((await acmeStore.getItem(ing.ids[0]))?.zone === "ops", "a knowledge item from Bob's workstation reaches the company")
-      const fromFournil = await queryBrain(claire, { query: `oncall Acme ${run}` })
-      assert(fromFournil.items.every((i) => i.org_id === fournil.id), "Fournil sees none of it")
+      const fromButine = await queryBrain(claire, { query: `oncall Acme ${run}` })
+      assert(fromButine.items.every((i) => i.org_id === butine.id), "Butine sees none of it")
       const fromAcme = await runInOrg(acme.id, () => queryBrain(alice!, { query: "deploy to production" }))
-      assert(fromAcme.items.length === 0, "and the company sees nothing of Fournil")
-      const fournilItem = created[0]
-      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${fournilItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
-        params: Promise.resolve({ id: fournilItem }),
+      assert(fromAcme.items.length === 0, "and the company sees nothing of Butine")
+      const butineItem = created[0]
+      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${butineItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
+        params: Promise.resolve({ id: butineItem }),
       })
-      assert(del.status === 404 && (await store.getItem(fournilItem)), "a Fournil knowledge item cannot be found (and is intact) from the company")
+      assert(del.status === 404 && (await store.getItem(butineItem)), "a Butine knowledge item cannot be found (and is intact) from the company")
       console.log("\n— Team message: ask to join, an admin accepts")
       const decide = (id: string, session: string, body: unknown) =>
         adminJoinIdRoute.POST(new Request(`http://smoke.test/api/admin/join/${id}`, { method: "POST", headers: { cookie: `brain_session=${session}`, "content-type": "application/json" }, body: JSON.stringify(body) }), {
@@ -797,9 +969,9 @@ async function main() {
       const status0 = await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: leaToken } })
       assert(status0.status === 200 && status0.data.status === "pending", "the workstation follows its request: pending")
       assert((await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: newToken() } })).status === 404, "nobody else can follow the request")
-      const fournilAdmin = await createSessionValue(claire.profile.id)
-      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: fournilAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Fournil does not see the request")
-      assert((await decide(asked.data.id, fournilAdmin, { action: "accept", name: "Intruder" })).status === 404, "nor can it accept it")
+      const butineAdmin = await createSessionValue(claire.profile.id)
+      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: butineAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Butine does not see the request")
+      assert((await decide(asked.data.id, butineAdmin, { action: "accept", name: "Intruder" })).status === 404, "nor can it accept it")
       const accepted = await decide(asked.data.id, cookie, { action: "accept", name: "Léa Bernard", title: "Designer", zones: ["ops"], manager_id: boss.id })
       assert(accepted.status === 200, "a company admin completes and accepts")
       const lea = await profileFromToken(leaToken)
@@ -838,7 +1010,7 @@ async function main() {
       const pendingDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft
       assert(pendingDraft?.source === "codex" && pendingDraft.items.length === 1, "the Onboarding page finds it (it fills itself in)")
       assert(!JSON.stringify(pendingDraft).includes("sk-ant") && !JSON.stringify(pendingDraft).includes("alice@"), "secrets and emails redacted on receipt")
-      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: fournilAdmin })).data.draft === null, "Fournil does not see it")
+      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: butineAdmin })).data.draft === null, "Butine does not see it")
       assert((await acmeStore.listZones()).every((z) => z.id !== "design"), "nothing is applied before validation")
       const { source: _src, ...validated } = pendingDraft
       const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
@@ -907,7 +1079,7 @@ async function main() {
             const res = await cron({ authorization: `Bearer secret-${run}` }, "?force=1")
             const body = (await res.json()) as { ran: boolean; orgs: { org_id: string; status: string; reason?: string }[] }
             const acmeRun = body.orgs.find((o) => o.org_id === acme.id)
-            assert(res.status === 200 && body.orgs[0].org_id === fournil.id && acmeRun?.reason === "no_claude", "cron: every company is reviewed; without an API key, nothing is created")
+            assert(res.status === 200 && body.orgs[0].org_id === butine.id && acmeRun?.reason === "no_claude", "cron: every company is reviewed; without an API key, nothing is created")
           }
         } finally {
           if (prevSecret === undefined) delete process.env.CRON_SECRET
@@ -927,7 +1099,7 @@ async function main() {
         assert((await getOrgClaudeKey(acmeStore)) === fakeKey && (await getClaude(acmeStore)) !== null, "the server reads it back for the company's calls")
         const info = await claudeRoute("GET", cookie)
         assert(info.status === 200 && info.data.source === "org" && info.data.last4 === "AbCd" && !JSON.stringify(info.data).includes(fakeKey), "the admin only sees its last 4 characters")
-        assert(!(await getOrgClaudeKey(store)), "Fournil does not have Acme's key")
+        assert(!(await getOrgClaudeKey(store)), "Butine does not have Acme's key")
         const removed = await claudeRoute("DELETE", cookie)
         assert(removed.status === 200 && removed.data.source !== "org" && !(await getOrgClaudeKey(acmeStore)), "the admin can remove it")
       }
@@ -961,7 +1133,7 @@ async function main() {
   const server = http.createServer((req, res) => {
     if (req.url === "/page") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-encoding": "gzip" })
-      return res.end(zlib.gzipSync("<html><head><title>Fournil</title></head><body><p>Software for bakeries</p></body></html>"))
+      return res.end(zlib.gzipSync("<html><head><title>Butine</title></head><body><p>Connected scales for beehives</p></body></html>"))
     }
     if (req.url === "/big") {
       res.writeHead(200, { "content-type": "text/plain" })
@@ -983,7 +1155,7 @@ async function main() {
   const fakeBlocked = (ip: string) => ip !== "127.0.0.1" && isBlockedAddress(ip)
   try {
     const okPage = await scrapeUrlWith(`http://public.test:${port}/page`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
-    assert(okPage.title === "Fournil" && okPage.text.includes("bakeries"), "a public (gzip) page is read")
+    assert(okPage.title === "Butine" && okPage.text.includes("beehives"), "a public (gzip) page is read")
     const big = await scrapeUrlWith(`http://public.test:${port}/big`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
     assert(!big.error && big.truncated && big.text.length <= 20000, "page size bounded")
     const viaIp = await scrapeUrlWith(`http://public.test:${port}/redirect-ip`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
@@ -1060,6 +1232,14 @@ async function main() {
   const redis = await getEntityContext(hugo, "tool", "redis")
   assert(redis !== null && redis.items.some((i) => i.id === revised.ids[0]) && !redis.items.some((i) => i.id === firstDecision.ids[0]), "an entity's page only cites up-to-date knowledge")
   assert(redis !== null && redis.name === "Redis", "the displayed name keeps its original case")
+  const zoneRes = await zoneRoute.GET(new Request("http://smoke.test/api/zones/dev", { headers: { cookie: `brain_session=${hugoSession}` } }), {
+    params: Promise.resolve({ id: "dev" }),
+  })
+  const zoneItems = ((await zoneRes.json()) as { items: { id: string }[] }).items
+  assert(
+    zoneRes.status === 200 && zoneItems.some((i) => i.id === revised.ids[0]) && !zoneItems.some((i) => i.id === firstDecision.ids[0]),
+    "zone summary (MCP get_zone_summary, zone drawer): only the up-to-date version",
+  )
   // Cleanup: a next run on the same storage must not find these decisions as near-duplicates.
   for (const id of [firstDecision.ids[0], revised.ids[0]]) assert(await store.deleteItem(id), "test decision deleted")
 
@@ -1081,6 +1261,66 @@ async function main() {
   assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.id === ext1a!.id && t.external_url === "https://linear.app/x/1"), "the link to the tool is kept")
   // Cleanup: nothing open from this run remains for the next one.
   assert((await store.updateTask(ext1a!.id, { status: "done" }))?.status === "done", "test task closed")
+
+  console.log("\n— Moderator: a run every 15 min (the CEO's Claude Code in CI, or the server)")
+  {
+    const keep = (ref: number) => ({ ref, decision: "publish" as const, category: null, reason: "", zone: null, kind: null, title: null, body: null })
+    // What was already waiting (seed, previous runs) is reviewed first: empty the queue.
+    for (let n = 0; n < 50; n++) if ((await runModeration(async (input) => input.items.map((i) => keep(i.ref)))).status !== "done") break
+    assert("skipped" in (await moderationInput()), "moderator queue empty at the start")
+
+    const tag = `Moderation ${run}`
+    const posted = await ingestItems(hugo, [
+      { ...item("dev", `${tag}: Stripe webhooks go through a Redis queue`, "decision"), body: "To absorb the swarm alert spikes." },
+      { ...item("dev", `${tag}: doctor's appointment on Thursday`, "task"), source: { app: "Screenpipe", tool: "agent", at: new Date().toISOString() } },
+      { ...item("dev", `${tag}: VAT to file`), body: "Return before the 19th of the month." },
+    ])
+    assert(posted.inserted === 3, "three knowledge items arrive, published right away")
+    const [good, perso, vat] = posted.ids
+    assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.source_item_id === perso), "the appointment created a task")
+    const material = await moderationInput()
+  assert(!("skipped" in material) && [...material.input.items.map((i) => i.id!)].sort().join() === [...posted.ids].sort().join(), "the next run reviews exactly what arrived")
+    assert(!("skipped" in material) && material.input.items[0].author === "Hugo Bernard", "with the author's name")
+    const claireSession = await createSessionValue(claire.profile.id)
+    const jmSession = await createSessionValue(jm.profile.id)
+    assert((await call(adminModerationInputRoute.GET, "/api/admin/moderation/input", { session: jmSession })).status === 403, "admins only")
+
+    // Decisions of Claude Code (in CI), sent by `brain moderate`.
+    const verdicts = [
+      { id: good, decision: "publish" },
+      { id: perso, decision: "reject", category: "personal", reason: "The employee's medical appointment." },
+      { id: vat, decision: "edit", zone: "finance", kind: "procedure", title: `${tag}: file the VAT before the 19th` },
+    ]
+    const applied = await call(adminModerationRoute.POST, "/api/admin/moderation", { method: "POST", session: claireSession, body: { ids: posted.ids, verdicts } })
+    assert(applied.status === 200 && applied.data.reviewed === 3 && applied.data.edited === 1 && applied.data.rejected === 1, "three reviewed, one edited, one removed")
+    assert((await store.getItem(perso)) === null, "the personal knowledge is removed from the brain")
+    const boardAfter = await store.listTasks({ zones: ["dev"] })
+    assert(!boardAfter.some((t) => t.source_item_id === perso || t.title.includes("doctor")), "its task leaves the board with it")
+    assert(boardAfter.some((t) => t.id === ext1a!.id && t.external_source === "linear"), "tasks imported from a tool are not touched")
+    const fixed = await store.getItem(vat)
+    assert(fixed?.zone === "finance" && fixed.kind === "procedure" && fixed.title.endsWith("file the VAT before the 19th"), "the edit is applied in place (zone, kind, title)")
+    assert((await store.getItem(good))?.title.includes("Stripe webhooks"), "the good one stays as is")
+    const log = await loadModerationLog()
+    assert(log[0]?.decision !== undefined && !JSON.stringify(log).includes("doctor") && !JSON.stringify(log).includes("appointment"), "the log does not keep the removed text")
+    assert(log.some((e) => e.decision === "reject" && e.category === "personal" && !e.reason), "\"personal\" removal: reason id only, without Claude's sentence")
+    const modEvents = (await store.listEvents({ limit: 20, type: "write" })).filter((e) => e.summary?.startsWith("Moderator"))
+    assert(modEvents.some((e) => e.summary === "Moderator: 1 knowledge item removed (personal content)" && e.zones.join() === "dev"), "the activity feed shows the removal, without the text")
+    assert("skipped" in (await moderationInput()), "already reviewed: the next run has nothing to do")
+    const replay = await call(adminModerationRoute.POST, "/api/admin/moderation", { method: "POST", session: claireSession, body: { ids: [good], verdicts: [{ id: good, decision: "reject", category: "vague" }] } })
+    assert(replay.data.reviewed === 0 && (await store.getItem(good)) !== null, "a verdict on knowledge already reviewed is ignored")
+
+    // Server run: a batch without an answer from Claude stays waiting, the cursor does not skip it.
+    const later = await ingestItems(hugo, [item("dev", `${tag}: revised go-live procedure`, "procedure")])
+    const failed = await runModeration(async () => null)
+    assert(failed.status === "claude_error" && failed.remaining === 1, "silent Claude: nothing reviewed, the knowledge waits")
+    const ok = await runModeration(async (input) => input.items.map((i) => keep(i.ref)))
+    assert(ok.status === "done" && ok.reviewed === 1 && ok.via === "server", "reviewed at the next run")
+
+    await setModerationEnabled(false)
+    assert((await moderationInput()).hasOwnProperty("skipped") && (await call(adminModerationRoute.POST, "/api/admin/moderation", { method: "POST", session: claireSession, body: { ids: [], verdicts: [] } })).status === 409, "off: no more runs")
+    await setModerationEnabled(true)
+    for (const id of [good, vat, later.ids[0]]) assert(await store.deleteItem(id), "test knowledge deleted")
+  }
 
   console.log("\nAll green.")
   if ("end" in store) await (store as unknown as { end: () => Promise<void> }).end()

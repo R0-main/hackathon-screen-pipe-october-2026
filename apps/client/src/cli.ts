@@ -7,7 +7,7 @@ import type { DistillerKind } from "./distill"
 import type { SyncSummary } from "./sync"
 
 const VERSION = "0.1.0"
-const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json"])
+const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json", "refresh-status"])
 
 export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string | boolean>; positional: string[] } {
   const flags: Record<string, string | boolean> = {}
@@ -38,7 +38,8 @@ Commands:
   setup [--url <url> --token <token>] [--ca <pem>] [--audio yes|no] [--wait <seconds>] [--no-open] [--skip-screenpipe]
                      Everything in one command (it is what the install prompt runs): config, Screenpipe (installed and started
                      as a service if it is not running, microphone off by default), macOS permissions (settings opened, resumes as
-                     soon as they are granted, --wait 300 s by default), MCP, hooks, sync every 15 min (upcoming activity
+                     soon as they are granted, --wait 300 s by default), each company's MCP server in Claude Code and
+                     Codex ("nos-brainer-<company>", the brain's endpoint), hooks, sync every 15 min (upcoming activity
                      only), neon, then the brain opens in the browser. Can be run again without parameters.
                      Exit codes: 0 everything is connected; 3 everything but the screen recording permission (run setup again
                      once granted); 6 everything but Screenpipe (no version for this computer, or it does not start: see doctor).
@@ -51,8 +52,12 @@ Commands:
                      Screenpipe (capture, permissions, token), Claude Code (MCP, hooks), scheduled sync, distillation.
                      Each KO item gives the command that fixes it. --json: the same report for Claude Code ("safe" field
                      on the commands that only reconnect the computer). Exit code 1 if a KO item remains.
+  connect-claude     The computer's Claude Code token (asked for at install): runs \`claude setup-token\` (sign-in in the
+                     browser), you paste the token shown, it is tried then kept on the computer (config.json, mode 600).
+                     The 15-min sync uses it without an open session: distillation, Screenpipe agent, moderator.
   init --url <url> --token <token> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
-       [--claude-token <token>] [--share-prompt-summaries yes|no] [--screenpipe-meetings yes|no] [--ca <pem>]
+       [--claude-token <token>] [--share-prompt-summaries yes|no] [--screenpipe-meetings yes|no]
+       [--screenpipe-agent yes|no|claude|codex] [--agent-model <model>] [--ca <pem>]
                      Saves the config (~/.company-brain/config.json, mode 600) and tests the connection.
                      --ca: certificate (PEM) of the authority of a self-hosted brain on local HTTPS; the client trusts
                      it for all its calls, on top of the public certificates ("none" to remove it).
@@ -61,6 +66,16 @@ Commands:
                      passed to every \`claude -p\` of the client, scheduled sync included ("none" to remove it).
                      --share-prompt-summaries no: the hook no longer sends any prompt summary (fingerprint only).
                      --screenpipe-meetings no: the meetings transcribed by Screenpipe are not distilled.
+                     --screenpipe-agent: on every sync, Claude Code (otherwise Codex) looks at the recent activity itself
+                     through the Screenpipe MCP, read-only, and draws the useful knowledge from it. "claude" or "codex"
+                     forces the engine, "no" turns the agent off. --agent-model: its model (default: sonnet for Claude Code,
+                     Codex's own otherwise, with low reasoning effort; "default" to go back to it).
+                     The token of ANOTHER company (install prompt of a second company) adds it next to the first
+                     one instead of replacing it: see companies.
+  companies [--default <name|number>] [--remove <name|number>]
+                     The companies of this computer, each with its MCP server in Claude Code and Codex. The first one is the
+                     default: the sync, the hooks and the skills stay on it. --default changes the first one, --remove
+                     removes one (and its MCP server).
   hello              End-to-end test: your zones light up on the dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
                      Reads the local AI sessions, filters (secrets, personal), distills and sends to the brain.
@@ -87,8 +102,15 @@ Commands:
                      Admins: "new zones" run done here by Claude Code (\`claude -p\`, your subscription;
                      in CI, CLAUDE_CODE_OAUTH_TOKEN from \`claude setup-token\`). The brain creates the missing zones
                      and files their knowledge in them. --dry-run: shows the proposals without sending anything.
+  moderate [--dry-run] [--refresh-status]
+                     Admins: moderator run done here by Claude Code (\`claude -p\`, Sonnet, your subscription;
+                     done on its own every 15 min by the scheduled sync of an admin's computer). Claude rereads what
+                     arrived since the previous run, then the brain keeps, fixes or removes each knowledge item.
+                     --refresh-status: if there was something new, then redoes the "where the company stands" summary.
+                     --dry-run: shows the decisions without applying anything.
   status             Client status in short: connection, last sync, Screenpipe, hooks, scheduling (details: doctor).
-  mcp                "company-brain" stdio MCP server (connected by setup in Claude Code, user scope).
+  mcp                The computer's "company-brain" stdio MCP server: setup's fallback when Claude Code cannot reach
+                     the brain's MCP endpoint (private certificate); company parameter if there are several companies.
   hook               Claude Code hook handler (reads the hook's JSON on standard input).
   install-hooks      Adds the SessionStart, UserPromptSubmit and Stop hooks to ~/.claude/settings.json.
   install-schedule   Schedules "sync" every 15 min (launchd, crontab or Windows task), from now on for
@@ -154,6 +176,14 @@ async function main(argv: string[]): Promise<number> {
       const { cmdInit } = await import("./commands")
       return cmdInit(flags)
     }
+    case "connect-claude": {
+      const { cmdConnectClaude } = await import("./connect")
+      return cmdConnectClaude()
+    }
+    case "companies": {
+      const { cmdCompanies } = await import("./companies")
+      return cmdCompanies(flags)
+    }
     case "hello": {
       const { cmdHello } = await import("./commands")
       return cmdHello()
@@ -203,6 +233,11 @@ async function main(argv: string[]): Promise<number> {
         const { refreshSkills } = await import("./skills")
         await refreshSkills(console.log, { quiet: true })
       }
+      // An admin's computer: the scheduled sync also does the moderator's run (with its Claude Code token).
+      if (flags.scheduled && !summary.skipped) {
+        const { scheduledModeration } = await import("./moderate")
+        await scheduledModeration(console.log)
+      }
       return 0
     }
     case "skills": {
@@ -216,6 +251,10 @@ async function main(argv: string[]): Promise<number> {
     case "refresh-zones": {
       const { cmdRefreshZones } = await import("./refresh-zones")
       return cmdRefreshZones({ dryRun: Boolean(flags["dry-run"]) })
+    }
+    case "moderate": {
+      const { cmdModerate } = await import("./moderate")
+      return cmdModerate({ dryRun: Boolean(flags["dry-run"]), refreshStatus: Boolean(flags["refresh-status"]) })
     }
     case "mcp": {
       const { runMcpServer } = await import("./mcp")

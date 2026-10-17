@@ -31,6 +31,14 @@ export function Dot({ color, size = 8, className = "" }: { color: string; size?:
   return <span aria-hidden className={`inline-block shrink-0 rounded-full ${className}`} style={{ background: color, width: size, height: size }} />
 }
 
+/**
+ * Zone bead, like the center of a zone in the brain: its color ringed in ink. It hooks a zone (or a piece of knowledge
+ * from that zone) to a thread; the zone's name is always written next to it.
+ */
+export function ZoneBead({ color, size = 11, className = "" }: { color: string; size?: number; className?: string }) {
+  return <span aria-hidden className={`block shrink-0 rounded-full border border-ink ${className}`} style={{ background: color, width: size, height: size }} />
+}
+
 /** Zone name with its dot: the only way to show a zone in the interface. */
 export function ZoneTag({ name, color, className = "" }: { name: string; color: string; className?: string }) {
   return (
@@ -88,6 +96,24 @@ export function MinusIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M3.5 8h9" />
+    </Icon>
+  )
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.4 10.4l3.1 3.1" />
+    </Icon>
+  )
+}
+
+export function CopyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.2" />
+      <path d="M10.5 5.5V3.7a1.2 1.2 0 0 0-1.2-1.2H3.7a1.2 1.2 0 0 0-1.2 1.2v5.6a1.2 1.2 0 0 0 1.2 1.2h1.8" />
     </Icon>
   )
 }
@@ -213,6 +239,13 @@ export function TagIcon(props: IconProps) {
   )
 }
 
+export function ChevronsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 6l3-3 3 3M5 10l3 3 3-3" />
+    </Icon>
+  )
+}
 export function LogoutIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -234,6 +267,29 @@ export function BrainIcon({ size = 30, className = "" }: { size?: number; classN
       />
       <circle cx="10.5" cy="12" r="1.5" fill="currentColor" />
       <circle cx="21.5" cy="18" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** NOS Brainer logo (same drawing as the favicon): six linked ink beads, the central bead in phosphor. */
+export function LogoMark({ size = 26, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 97 97" aria-hidden className={className}>
+      <path
+        d="M24.6 15.95L8.05 50.35L25.75 80.8L48.35 49.5L24.6 15.95M48.35 49.5L72.35 17.2L84.55 51.35L69.1 82.65M48.35 49.5L84.55 51.35"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <g fill="currentColor">
+        <circle cx="24.6" cy="15.95" r="13.6" />
+        <circle cx="72.35" cy="17.2" r="8.4" />
+        <circle cx="84.55" cy="51.35" r="12.5" />
+        <circle cx="8.05" cy="50.35" r="8" />
+        <circle cx="25.75" cy="80.8" r="13.8" />
+        <circle cx="69.1" cy="82.65" r="8.3" />
+      </g>
+      <circle cx="48.35" cy="49.5" r="9" fill="var(--color-phosphor)" />
     </svg>
   )
 }

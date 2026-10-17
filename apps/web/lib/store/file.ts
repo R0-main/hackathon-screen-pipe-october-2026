@@ -437,9 +437,11 @@ export class FileStore implements BrainStore {
   }
 
   async markSuperseded(oldId: string, newId: string) {
-    this.mutate((d) => {
+    return this.mutate((d) => {
       const old = d.items.find((i) => i.id === oldId)
-      if (old && d.items.some((i) => i.id === newId)) old.superseded_by = newId
+      if (!old || !d.items.some((i) => i.id === newId)) return false
+      old.superseded_by = newId
+      return true
     })
   }
 
@@ -538,7 +540,24 @@ export class FileStore implements BrainStore {
     return this.mutate((d) => {
       const before = d.items.length
       d.items = d.items.filter((i) => i.id !== id)
-      return d.items.length < before
+      if (d.items.length === before) return false
+      d.tasks = d.tasks.filter((t) => t.source_item_id !== id || Boolean(t.external_source))
+      return true
+    })
+  }
+  async updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }) {
+    return this.mutate((d) => {
+      const i = (d.items as StoredItem[]).find((x) => x.id === id)
+      if (!i) return false
+      const moved = i.zone !== patch.zone
+      Object.assign(i, patch)
+      delete i.embedding
+      delete i.embedding_model
+      if (moved) {
+        const now = new Date().toISOString()
+        for (const t of d.tasks) if (t.source_item_id === id) Object.assign(t, { zone: patch.zone, updated_at: now })
+      }
+      return true
     })
   }
   async moveItems(ids: string[], zone: string) {

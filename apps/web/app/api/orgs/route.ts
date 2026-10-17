@@ -1,11 +1,11 @@
-import { cookies } from "next/headers"
 import { z } from "zod"
 import { DEFAULT_ZONES, normalize, slugify, tokenize, zoneColor, type Zone } from "@brain/core"
 import { getRootStore, storeForOrg } from "@/lib/store"
-import { createSessionValue, hashToken, newToken, SESSION_COOKIE, sessionCookieOptions, signupOpen, VIEW_AS_COOKIE } from "@/lib/auth"
+import { hashToken, newToken, signupOpen } from "@/lib/auth"
 import { caFingerprint } from "@/lib/ca"
 import { buildInstallPrompt } from "@/lib/install-prompt"
 import { error, internalError, json, parseBody, publicBaseUrl } from "@/lib/http"
+import { openSession } from "@/lib/session"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -41,7 +41,8 @@ function buildZones(picked: string[], custom: string[]): Zone[] {
 
 /**
  * Creates a company from /create: its brain (separate from the demo's), its zones, and its first account, an admin.
- * Opens the dashboard session and returns the install prompt for this first workstation (token shown only once).
+ * Opens the dashboard session (the company joins those remembered by this browser) and returns the install prompt for
+ * this first workstation (token shown only once).
  */
 export async function POST(req: Request) {
   if (!signupOpen()) return error(404, "Company creation is closed on this brain.")
@@ -59,11 +60,10 @@ export async function POST(req: Request) {
     const profile = await store.createProfile({ name, title: title || undefined, role: "admin", manager_id: null, token_hash: hashToken(token) })
     await store.setZoneAccess(profile.id, zones.map((z) => ({ zone_id: z.id, can_write: true })))
 
-    const jar = await cookies()
-    jar.set(SESSION_COOKIE, await createSessionValue(profile.id), sessionCookieOptions)
-    jar.delete(VIEW_AS_COOKIE)
+    // The session of the company you come from (if any) stays remembered: you go back to it in one click.
+    await openSession(profile.id)
 
-    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
+    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, orgDescription: org.description, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
     return json({ org: { id: org.id, name: org.name }, profile: { id: profile.id, name: profile.name }, zones, prompt }, 201)
   } catch (err) {
     return internalError(err)

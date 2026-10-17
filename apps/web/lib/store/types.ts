@@ -125,11 +125,20 @@ export interface BrainStore {
   /** `excludeSuperseded`: without superseded knowledge (dashboard lists, status summary). */
   listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
+  /** Deletes the knowledge item and the tasks drawn from it (not those imported from an external tool). False if it did not exist. */
   deleteItem(id: string): Promise<boolean>
   /** Files these items into `zone`, with the tasks derived from them; returns the number of items moved. */
   moveItems(ids: string[], zone: string): Promise<number>
-  /** Marks `oldId` as superseded by `newId` (a more recent item on the same subject). */
-  markSuperseded(oldId: string, newId: string): Promise<void>
+  /**
+   * Fixes a knowledge item (moderator): title, body, kind, zone. Its semantic vector is cleared (recomputed by the
+   * embeddings job) and its tasks follow the zone. False if it no longer exists.
+   */
+  updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }): Promise<boolean>
+  /**
+   * Marks `oldId` as superseded by `newId` (a more recent item on the same subject). False if nothing was marked,
+   * notably in Postgres until the "quality" migration is applied: ingestion never fails because of it.
+   */
+  markSuperseded(oldId: string, newId: string): Promise<boolean>
   /** Items (not superseded) citing an entity, in the given zones (or by this author). */
   listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }): Promise<KnowledgeItem[]>
   /** Semantic vectors of the non-superseded items of the given zones (most recent first), for ranking. */

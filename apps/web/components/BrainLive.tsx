@@ -47,6 +47,11 @@ export function useBrainLive(): BrainLive {
   return v
 }
 
+/** The same state, or null outside the app (company creation). */
+export function useBrainLiveOptional(): BrainLive | null {
+  return useContext(Ctx)
+}
+
 /**
  * Live state of the brain, shared by all the app's pages: it lives in the layout, so the SSE stream
  * stays open from one page to the next and the brain keeps its zones lit.

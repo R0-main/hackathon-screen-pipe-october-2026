@@ -22,10 +22,12 @@ import {
   selfCommand,
   selfScript,
   shortcutPath,
+  companiesOf,
   withDefaults,
   type Config,
 } from "./config"
 import { DISTILLER_LABELS, apiKey, findOnPath, pickDistiller, spawnTarget } from "./distill"
+import { codexConfigPath, codexPresent, mcpSpecs, probeMcp, readClaudeMcp, readCodexMcp, type McpCompany, type McpServerSpec } from "./mcp-config"
 import {
   HOOK_EVENTS,
   claudeCodeVersion,
@@ -50,7 +52,7 @@ import { LOCK_STALE_MS, PREVIEW_TTL_MS, pidAlive } from "./sync"
 type Log = (s: string) => void
 
 export type Status = "ok" | "warn" | "fail" | "skip" | "info"
-export const GROUPS = ["Computer", "Brain", "Screenpipe", "Claude Code", "Sync", "Distillation"] as const
+export const GROUPS = ["Computer", "Brain", "Screenpipe", "Claude Code", "Codex", "Sync", "Distillation"] as const
 export type Group = (typeof GROUPS)[number]
 
 /**
@@ -585,6 +587,42 @@ async function checkScreenpipe(ctx: Ctx) {
 
 // ——— Claude Code ———
 
+/** The companies' MCP servers expected on this computer (setup connected them), or null: the computer's server (stdio). */
+function companyMcpSpecs(ctx: Ctx): McpServerSpec[] | null {
+  const cfg = ctx.cfg
+  if (!cfg || cfg.ca_file) return null
+  const list = companiesOf(cfg)
+  if (!list.every((c) => c.id)) return null
+  if (!Object.keys(readClaudeMcp() ?? {}).length && !Object.keys(readCodexMcp()).length) return null
+  return mcpSpecs(list as McpCompany[])
+}
+
+/** Each company's MCP server: registered in Claude Code (and Codex if it is there), at the right address, and it answers. */
+async function checkCompanyMcp(ctx: Ctx) {
+  const specs = companyMcpSpecs(ctx)
+  if (!specs) return
+  const setup = { command: `${ctx.me} setup`, safe: true }
+  const names = specs.map((s) => s.name).join(", ")
+  const claude = readClaudeMcp() ?? {}
+  const missing = specs.filter((s) => claude[s.name] !== s.url)
+  if (missing.length) {
+    add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: `MCP ${missing.map((s) => s.name).join(", ")} missing from Claude Code, or on an old address`, fix: "setup reconnects them.", ...setup })
+  } else {
+    const down = (await Promise.all(specs.map(async (s) => ({ s, err: await probeMcp(s.url, 5000) })))).filter((d) => d.err)
+    if (down.length) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: clean(ctx, `MCP ${down.map((d) => `${d.s.name} does not answer (${d.err})`).join("; ")}`), fix: "Check the connection to the brain, then run setup again.", ...setup })
+    else add(ctx, { id: "mcp", group: "Claude Code", status: "ok", detail: `MCP ${names} connected (HTTP, user scope), answering` })
+  }
+  if (!codexPresent()) return
+  const codex = readCodexMcp()
+  const absent = specs.filter((s) => codex[s.name] !== s.url)
+  add(
+    ctx,
+    absent.length
+      ? { id: "codex-mcp", group: "Codex", status: "warn", detail: `MCP ${absent.map((s) => s.name).join(", ")} missing from ${codexConfigPath()}`, fix: "setup adds them there.", ...setup }
+      : { id: "codex-mcp", group: "Codex", status: "ok", detail: `MCP ${names} declared in ${codexConfigPath()}` },
+  )
+}
+
 function checkClaudeCode(ctx: Ctx) {
   const claude = findOnPath("claude")
   const setup = { command: `${ctx.me} setup`, safe: true }
@@ -600,9 +638,13 @@ function checkClaudeCode(ctx: Ctx) {
     })
   else add(ctx, { id: "claude", group: "Claude Code", status: "ok", detail: `Claude Code ${version ?? "(unknown version)"} (${claude})` })
 
-  // company-brain MCP: read from ~/.claude.json, then started for real.
-  const entry = readMcpEntry()
-  if (entry === undefined) add(ctx, { id: "mcp", group: "Claude Code", status: "warn", detail: `${claudeJsonPath()} unreadable: cannot check the MCP` })
+  // company-brain MCP (the computer's server): read from ~/.claude.json, then started for real. When each company has
+  // its MCP server (HTTP), checkCompanyMcp checks them instead.
+  const perCompany = companyMcpSpecs(ctx) !== null
+  const entry = perCompany ? null : readMcpEntry()
+  if (perCompany) {
+    // checked by checkCompanyMcp
+  } else if (entry === undefined) add(ctx, { id: "mcp", group: "Claude Code", status: "warn", detail: `${claudeJsonPath()} unreadable: cannot check the MCP` })
   else if (entry === null) add(ctx, { id: "mcp", group: "Claude Code", status: "fail", detail: "company-brain MCP missing from Claude Code: your agents cannot query the brain", fix: "setup connects it.", ...setup })
   else {
     const p = probeOnce(entry.command, entry.args.slice(0, 1))
@@ -819,8 +861,8 @@ function checkDistiller(ctx: Ctx) {
       group: "Distillation",
       status: "fail",
       detail: `on the last sync${run.at ? ` (${ago(ctx.now - run.at)})` : ""}, Claude was no longer signed in: nothing was distilled (nothing is lost, everything goes again once signed in)`,
-      fix: "Run `claude setup-token` in a terminal (sign-in in the browser), then save the token shown.",
-      command: `${ctx.me} init --claude-token <token>`,
+      fix: "In a terminal: sign in to Claude in the browser, then paste the token shown.",
+      command: `${ctx.me} connect-claude`,
       safe: false,
     })
   else if (cfg.claude_oauth_token) add(ctx, { id: "claude-signin", group: "Distillation", status: "ok", detail: "long-lived Claude Code token saved for the scheduled sync" })
@@ -843,6 +885,7 @@ export async function runDoctor(opts: { version: string; platform?: NodeJS.Platf
   }
   await Promise.all(network)
   checkClaudeCode(ctx)
+  await checkCompanyMcp(ctx)
   checkSync(ctx)
   if (configured) checkDistiller(ctx)
   else add(ctx, { id: "distillation", group: "Distillation", status: "skip", detail: "sans config" })

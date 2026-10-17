@@ -1,22 +1,22 @@
 # Demo script (5 minutes)
 
-Fictitious company: **Fournil**, point-of-sale and pre-order software for artisan bakeries (6 people).
+Fictitious company: **Butine**, connected scales for beehives (6 people, 3,200 hives equipped at 140 beekeepers). Slipped under the hive, the scale tells the beekeeper, on their phone, whether their bees are doing well (harvest, swarming, cold, theft), without opening the hive.
 
 ## Before going on stage
 
 ```bash
 npm run seed -- --force          # starts from a clean brain (tokens shown in the terminal)
-BRAIN_DEMO=1 npm run dev         # or the deployed URL
+make demo                        # or the deployed URL (http://localhost:3000/demo)
 npm run simulate -- --speed 1.5  # 2nd terminal, to start at the right moment (Ctrl-C to stop)
 ```
 
 Tabs to prepare: the dashboard (`/dashboard`, entry through `/demo`) signed in as **Claire (CEO, admin)**, `/admin`, and a terminal with Claude Code on a real project if a computer is connected.
 
-Online version: https://cerveau-entreprise.vercel.app (demo mode, fictitious data, seeded automatically on an empty database).
+Online version: https://www.nos-brainer.tech (demo mode, fictitious data, seeded automatically on an empty database). Always with `www`: the address without `www` redirects, and the computer's client would lose its token in the redirect.
 
 ## Run-through
 
-1. **The problem (30 s).** "At Fournil, everyone works with Claude Code or ChatGPT. But when Hugo figures out how to deploy, or Jean-Marc fine-tunes his bank reconciliation, that knowledge stays in their session."
+1. **The problem (30 s).** "Butine makes scales that monitor beehives. At Butine, everyone works with Claude Code or ChatGPT. But when Hugo figures out how to deploy, or Jean-Marc fine-tunes his bank reconciliation, that knowledge stays in their session."
 
 2. **The brain (45 s).** The dashboard: each zone (Dev, Product, Sales, Finance, Support, Leadership) is a knowledge area, the dots are the most cited customers/tools/projects, the synapses link the zones that share entities. Start `npm run simulate`: the zones light up as sessions and MCP queries go by, the "Live agents" feed scrolls.
 
@@ -29,12 +29,13 @@ Online version: https://cerveau-entreprise.vercel.app (demo mode, fictitious dat
 
 6. **The automation (45 s).** The green card: "Jean-Marc runs this prompt almost every day around 09:07 (6 times over 6 days) → run it automatically Monday to Friday at 09:02". Detected from the prompt fingerprints sent by the hooks, without storing the raw text. "Set it up".
 
-7. **The skills (30 s).** "Skills" tab: Fournil's know-how ready for Claude Code, with their scripts (`deploy-fournil` and its `release.sh`). "View as: Jean-Marc": he only gets the whole company's skill and those of the Finance cortex, and his computer installs them on its own. In `/admin`, the "Publishes skills" column: pushing a skill needs a permission.
+7. **The skills (30 s).** "Skills" tab: Butine's know-how ready for Claude Code, with their scripts (`deploy-butine` and its `release.sh`). "View as: Jean-Marc": he only gets the whole company's skill and those of the Finance cortex, and his computer installs them on its own. In `/admin`, the "Publishes skills" column: pushing a skill needs a permission.
 
 8. **The handover (30 s).** `/admin` → "Handover" on Hugo: his zones, his tools, his recurring prompts and his knowledge. "The day Hugo goes on leave, the person replacing him gets all of this."
 
 ## Key lines
 
+- "A hive is already a collective brain. Butine equips the hives; NOS Brainer gives one to its team."
 - "Screenpipe is the pipe between the computer, its AI agents and the company's brain."
 - "A few KB distilled per day instead of 19 GB of captures."
 - "Finance does not need the code context, and neither do its agents."

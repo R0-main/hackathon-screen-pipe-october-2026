@@ -10,20 +10,26 @@ Every employee already works with Claude Code, Codex or ChatGPT, but that contex
 
 **The raw data stays on the computer, only the distilled knowledge goes up to the brain.**
 
-## Run the demo in 2 minutes
+## Run locally
 
-Prerequisite: Node.js ≥ 20.
+Prerequisites: Node.js ≥ 20 and `make`. Docker is optional.
 
 ```bash
-npm install
-npm run seed                 # fictitious company "Fournil": 6 accounts, 5 skills, 34 knowledge items, 10 days of activity
-BRAIN_DEMO=1 npm run dev     # http://localhost:3000/demo → one-click sign-in (demo mode)
-npm run simulate             # in a 2nd terminal: agents work, the brain lights up
+make dev      # first time: .env, npm install, Postgres, migrations, then the browser opens on creating your company
+make demo     # the same with the fictitious company Butine: http://localhost:3000/demo
+make help     # all the commands (db-stop, db-reset, seed, simulate, test…)
 ```
 
-- Sign in as **Claire (CEO, admin)** to see everything, then "View as: Jean-Marc": finance only sees its zone, and a question about deployment returns nothing (the Dev zone is locked).
-- Without a Claude key, everything works with local heuristics. With `ANTHROPIC_API_KEY`, the "where does the company stand" summary and the onboarding are written by Claude.
-- `npm run smoke` checks the brain end to end (per-zone access, secret redaction, automation detection…).
+- **Ports and API keys**: `make dev` creates `.env` from [.env.example](.env.example). A port already taken on your
+  computer? Change `BRAIN_PORT` (dashboard, 3000) or `POSTGRES_PORT` (database, 5432) in `.env`, then run again. The API
+  keys are all optional: without a Claude key, everything works with local heuristics.
+- **Postgres, without choosing anything**: with Docker if it works without `sudo`, otherwise a private Postgres
+  downloaded into the repository's `.local/postgres`, without administrator rights (42 school computers included). An
+  existing database (Neon, Supabase…): set `DATABASE_URL` in `.env` and no local Postgres is started.
+- With `make demo`, sign in as **Claire (CEO, admin)** to see everything, then "View as: Jean-Marc": finance only sees
+  its zone. `make simulate` in a 2nd terminal makes fictional agents work.
+- No HTTPS or Caddy here: they are only needed when other computers reach the brain over the company network
+  ([docs/LOCAL.md](docs/LOCAL.md)).
 
 ## What the repo contains
 
@@ -32,7 +38,7 @@ packages/core/        Shared contracts (KnowledgeItem, AgentEvent), zones, priva
                       distillation (Claude + heuristic), automation detection, status summary
 apps/web/             The brain: Next.js dashboard + API (/api/ingest, /api/query, /api/events, /api/stream…)
   lib/store/          Storage: JSON file (zero config) or Postgres/Supabase (DATABASE_URL)
-  scripts/            seed (Fournil), simulate (live activity), smoke (tests), migrate (SQL)
+  scripts/            seed (Butine), simulate (live activity), smoke (tests), migrate (SQL)
 apps/client/          The computer client, shipped as ONE file (brain.mjs, served by the dashboard on /brain.mjs):
                       brain-sync, company-brain MCP server, Claude Code hooks, install
 supabase/migrations/  Postgres schema + per-zone RLS policies
@@ -49,12 +55,15 @@ demo/                 Demo script
 | **Skills** | `/skills` | The company's Claude Code skills (SKILL.md and the scripts they use), grouped by cortex. Publishing needs a permission granted in `/admin` (admins always have it); a skill assigned to a cortex (a zone) is only given to those who read that zone. A script that contains a secret is refused. |
 | **Onboarding** | `/onboarding` | Guided 7-question interview + reading of links → zones and first knowledge, reviewed before being applied. |
 | **Handover** | `/people/:id` | Zones, topics, frequent prompts and knowledge of a computer (and oversight: the employee deletes their items). |
-| **brain-sync** | `brain.mjs sync` | Reads the Claude Code / Codex logs and Screenpipe's local API, filters (app allowlist, secrets, personal data), distills with Claude, sends. `--dry-run --full` shows everything that would be sent, `--confirm` sends exactly what was reviewed. |
+| **brain-sync** | `brain.mjs sync` | Reads the Claude Code / Codex logs and Screenpipe's local API, filters (app allowlist, secrets, personal data), distills with Claude, sends. **Screenpipe agent**: on each run, Claude Code (Sonnet), or Codex otherwise, looks at the activity since the previous run itself through the Screenpipe MCP (read-only tools) and proposes the useful knowledge, which goes through the same filters (`init --screenpipe-agent no` to turn it off). `--dry-run --full` shows everything that would be sent, `--confirm` sends exactly what was reviewed. |
 | **Skills on the computer** | `brain.mjs skills` | Installs in `~/.claude/skills` the skills assigned to the computer (after each sync and at `setup`), removes those that no longer are, never touches a personal skill. `skills push <folder> --cortex <zone>` publishes a folder. |
 | **Status by Claude** | `brain.mjs refresh-status` | Admins: writes "where does the company stand" on their computer with Claude (subscription) and sends it to the dashboard. |
+| **Moderator** | `brain.mjs moderate --refresh-status` | Admins: every 15 min, the scheduled sync of an admin's computer (the CEO's) runs Claude Code (their subscription, Sonnet, token asked for at install) which rereads what arrived since the previous run: it keeps, fixes (title, zone, kind) or removes (personal, secret, duplicate, too vague, suspicious instruction, judgment about a person), then redoes the "where does the company stand" summary. The removed text is kept nowhere. |
 | **New zones** | `brain.mjs refresh-zones` | Admins: "new zones" run done by Claude Code (subscription), on a computer or in the company's CI (GitHub Actions). |
 | **Diagnosis** | `brain.mjs doctor` | Reviews the computer without changing anything (Node, shortcut, brain, Screenpipe, MCP, hooks, sync, distillation) and gives the command that repairs each KO item; `--json` for Claude Code. |
-| **company-brain MCP** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Each query lights up the zone found. |
+| **Company MCP** | `/api/mcp/<company>/<token>` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`, served by the brain (HTTP, stateless) with the token's rights. `brain setup` registers it in Claude Code and Codex as `nos-brainer-<company>`: it shows there as connected, one entry per company. Each query lights up the zone found. |
+| **Computer MCP** | `brain.mjs mcp` | The same tools over stdio (`@brain/core/mcp`): the fallback when Claude Code cannot reach the endpoint (brain with a private certificate); `company` parameter if there are several companies. |
+| **Several companies** | `brain.mjs companies`, `/login` | A second company's install prompt adds it next to the first one instead of replacing it, with its own MCP server (sync, hooks and skills stay on the first one; `companies --default` changes it, `--remove` removes one and its MCP server). The browser remembers each company opened: sign-in offers to go back into one of them in one click, and the sidebar header switches from one to another. |
 | **Claude Code hooks** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → events: reliable neons, and detection of repetitive prompts by fingerprint. A short redacted summary is only sent if the prompt concerns a zone and has nothing personal (`init --share-prompt-summaries no` turns it off). |
 
 ## Monitoring, connectors, language
@@ -68,6 +77,13 @@ demo/                 Demo script
 - **Connectors** (`/connectors`, admins): Notion (pages → knowledge), Linear and Todoist (issues and tasks →
   tasks, closed when they disappear from the tool), ICS calendar (meetings → knowledge). Sync on demand and every
   hour in the background. The token stays on the server.
+- **MCP servers** (`/connectors`, admins): catalog of 44 official remote MCP servers (Notion, Linear, GitHub,
+  Jira/Confluence, Stripe, Figma, Slack, Google Drive…) with their logo, search and categories, plus any custom MCP
+  server. "Connect" redirects to the provider's sign-in page (OAuth 2.1 from the MCP spec: RFC 9728 / RFC 8414
+  discovery, dynamic client registration, PKCE S256, `resource` parameter), then comes back to
+  `/api/connectors/mcp/callback`. Providers without dynamic registration (GitHub, Slack, HubSpot, Google…) need an
+  OAuth client declared by hand: the redirect URI to declare is shown. Tokens refreshed automatically, connection test
+  (list of tools), SSRF protection on all requests. Tokens, secrets and PKCE verifiers stay on the server.
 - **Language**: the product is in English (interface, server and CLI messages, prompts, demo data). The old French
   routes (`/etat`, `/connecteurs`, `/creer`…) redirect permanently to the English ones.
 - **Real-time feed**: the storage notifies the SSE stream as soon as an event is inserted (local emitter, or
@@ -75,11 +91,11 @@ demo/                 Demo script
 - **Brain quality**: synonyms in search, optional semantic search (`VOYAGE_API_KEY` or an OpenAI-compatible
   endpoint, Ollama included: `npm run embed` for existing data), automatic replacement of a revised decision or
   procedure (the old one leaves the searches), Entities pages (`/entities`), and `npm run eval` which measures search
-  on the Fournil demo.
+  on the Butine demo.
 
 ## Brain API
 
-Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-256 on the server) for agents; signed session cookie for the dashboard.
+Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-256 on the server) for agents; signed session cookie for the dashboard. The `brain_accounts` cookie (httpOnly) remembers for a year each company opened on this browser, with no token to retype: `POST /api/session/accounts {userId}` goes back into one, `DELETE` forgets it, and an expired session reopens on its own on the most recent one (`/resume`). Signing out only closes the current session and suspends this automatic sign-in until the next company is opened.
 
 | Method | Route | Use |
 |---|---|---|
@@ -100,11 +116,16 @@ Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-
 | GET | `/api/admin/team` | Admin: the team and the last sign of each computer (`last_at`, null until it is connected). |
 | GET/PUT/DELETE | `/api/admin/claude` | Admin: the company's Claude API key (`{key}`, checked then encrypted); GET only returns its source and last 4 characters. |
 | GET/POST | `/api/admin/zones/auto` | Admin: history of the "new zones" job; POST without a body: server run (API key); with `{zones: [{name, description, keywords, item_ids}]}`: applies what `refresh-zones` proposed. |
+| GET/PUT/POST | `/api/admin/moderation` | Admin: the moderator's state, runs and decisions; PUT `{enabled}`; POST without a body: server run (API key); with `{ids, verdicts}`: applies what `brain moderate` decided. |
+| GET | `/api/admin/moderation/input` | Admin: knowledge that arrived since the moderator's last run (numbered, with their id and the close knowledge already in place). |
 | GET | `/api/admin/zones/auto/input` | Admin: material for a run (zones, numbered recent knowledge) for `refresh-zones`. |
 | GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`): daily "new zones" job, across all companies. |
 | POST | `/api/sync/report` | Report of a computer's sync (counters, redacted error): Monitoring page. |
 | GET | `/api/admin/monitoring` | Admin: state of the computers, server incidents, instance. `GET /api/health`: public probe (200 / 503). |
 | GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin: Notion, Linear, Todoist, ICS calendar connectors (settings without the token, sync on demand). |
+| GET/POST | `/api/connectors/mcp` | Admin: MCP servers added (without token) and the OAuth redirect URI; adding from the catalog or a custom server. |
+| PUT/DELETE/POST | `/api/connectors/mcp/:id`, `/api/connectors/mcp/:id/authorize`, `/api/connectors/mcp/:id/test` | Admin: manual OAuth client or token, removal; address of the provider's sign-in page; test (list of tools). |
+| GET | `/api/connectors/mcp/callback` | OAuth return from the provider (the admin's session, anti-CSRF state tied to the account, 15 min). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Accounts, access, zones, onboarding, sign-in. |
 
 ## Create your company from scratch
@@ -126,7 +147,7 @@ zones of the brain), and the company's dashboard exists, with you as its admin. 
      (`~/.company-brain/brain join` resumes the same request); 8: declined. The other codes are those of the install
      ([docs/CLI.md](docs/CLI.md)).
 
-Each company has its own brain: accounts, zones, knowledge and activity never cross, and the Fournil demo is not
+Each company has its own brain: accounts, zones, knowledge and activity never cross, and the Butine demo is not
 touched (a reseed replaces it without deleting the companies created). On the storage side: one organization per
 company (Postgres: marked `tenant:<id>` in `brain_settings`, no migration; file: `<BRAIN_DATA_DIR>/orgs/<id>/`). A
 token or a session points to its company, and each route reads its own. `BRAIN_SIGNUP=0` closes sign-up,
@@ -173,14 +194,14 @@ Then `https://<address>/create` to create the company. All the details (certific
 
 The brain runs on **Vercel Hobby** (always online) with **Neon** (free Postgres, asleep after 5 min of inactivity, wakes up in less than a second). Any Postgres works (Supabase included): the schema is in `supabase/migrations/`.
 
-1. **Database**: create a Neon project (Frankfurt region), then `DATABASE_URL=… npm run db:migrate` — or run `supabase/local/auth_stub.sql` then `supabase/migrations/*.sql` in Neon's SQL editor.
+1. **Database**: create a Neon project (Frankfurt region). The migrations apply on their own at each Vercel production deployment (at build time, before the new code is served; if a migration fails, the build fails and the previous deployment stays online). Previews do not migrate, since they often share the production database (`BRAIN_MIGRATE_ON_BUILD=1` if a preview has its own database, `=0` to turn it off). By hand: `DATABASE_URL=… npm run db:migrate`. The Docker container migrates when it starts.
 2. **Vercel**: import the repo with these settings:
    - Root Directory: `apps/web` (with "Include source files outside of the Root Directory")
    - Install Command: `cd ../.. && npm ci` (the monorepo installs from the root)
    - Build Command: `npm run build` (also builds `brain.mjs`, served on `/brain.mjs`)
    - Functions region: the same as the database (`fra1` for Neon Frankfurt)
    - Turn off "Vercel Authentication": the computers call the API with their personal token.
-3. **Variables**: `DATABASE_URL` (Neon, "pooled" connection), `BRAIN_PUBLIC_URL` (the public URL, used in the install prompt), `BRAIN_DEMO=1` for the demo. With `BRAIN_DEMO=1`, an empty database is filled automatically with the fictitious company Fournil the first time `/login` is opened. The session secret is generated on its own and kept in the database.
+3. **Variables**: `DATABASE_URL` (Neon, "pooled" connection), `BRAIN_PUBLIC_URL` (the public URL, used in the install prompt), `BRAIN_DEMO=1` for the demo. With `BRAIN_DEMO=1`, an empty database is filled automatically with the fictitious company Butine the first time `/login` is opened (a database still on the old demo, Fournil, is replaced once by Butine, keeping the visitor accounts and their tokens). The session secret is generated on its own and kept in the database.
 
 4. **Daily "new zones" job**: set `CRON_SECRET` (a long random string, `openssl rand -hex 32`) and
    `BRAIN_SECRET_KEY` (same, encrypts the companies' Claude keys). `apps/web/vercel.json` declares the cron. The Claude
@@ -225,7 +246,7 @@ who does the analysis:
 ### Claude without an API key (Claude Code subscription)
 
 - **brain-sync** distills on each computer with `claude -p`: it uses the employee's Claude Code subscription.
-- Scheduled sync (without an open session): generate a token with `claude setup-token` then `~/.company-brain/brain init --claude-token <token>`. The token stays on the computer (config in mode 600), it is passed to each `claude -p` of the client and never appears in the crontab or the logs. It is valid for **one year** and does not renew on its own: when it expires, the client says so; run `claude setup-token` again then `init --claude-token`.
+- Scheduled sync (without an open session): the token is asked for when the computer is installed (`brain setup`). Run by Claude Code, the install shows a "TO DO" line: `~/.company-brain/brain connect-claude` in a terminal (sign-in in the browser with `claude setup-token`, paste the token, it is tried then kept). `init --claude-token <token>` is still possible. The token stays on the computer (config in mode 600), it is passed to each `claude -p` of the client and never appears in the crontab or the logs. It is valid for **one year** and does not renew on its own: when it expires, the client says so; run `claude setup-token` again then `init --claude-token`.
 - "Where does the company stand" written by Claude: an admin runs `~/.company-brain/brain refresh-status` on their computer (can be scheduled every morning); without it, the server keeps the heuristic summary. The server needs no key (`ANTHROPIC_API_KEY` is still possible).
 - Each employee uses **their own** subscription and their own token: Anthropic's terms forbid routing several people's requests through one person's subscription. To offer the tool to other companies, API keys are needed.
 - If `ANTHROPIC_API_KEY` is set on the computer, Claude Code uses it; `claude auth status` shows the active authentication.
@@ -249,5 +270,5 @@ who does the analysis:
 npm test                 # unit tests (core + client)
 npm run typecheck
 npm run smoke            # end to end on the current storage (file, or Postgres if DATABASE_URL)
-npm run eval             # search quality on the Fournil demo (after npm run seed)
+npm run eval             # search quality on the Butine demo (after npm run seed)
 ```

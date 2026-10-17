@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { Profile, Zone } from "@brain/core"
-import { initials } from "./format"
+import { PersonAvatar } from "./PersonDot"
 import { Dot, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 export type OrgUser = Profile & { zones: string[] }
@@ -244,8 +244,8 @@ export function OrgChart({
                   }`}
                 >
                   <span className="flex min-w-0 items-start gap-3">
-                    <span className="relative grid size-10 shrink-0 place-items-center rounded-full border border-line-strong bg-bone text-[12px] font-medium">
-                      {initials(u.name)}
+                    <span className="relative shrink-0">
+                      <PersonAvatar id={u.id} size={40} />
                       <span
                         className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-ink ${p?.active ? "bg-phosphor" : "bg-surface"}`}
                         title={p?.active ? "Agent active in the last 15 minutes" : "No active agent"}

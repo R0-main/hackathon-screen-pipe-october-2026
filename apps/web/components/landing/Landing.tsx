@@ -6,7 +6,7 @@ import { gsap } from "gsap"
 import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
-import { BrainIcon, ZoneTag, zoneColor } from "../ui"
+import { LogoMark, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
 import { Hosting, Pricing } from "./Offer"
 import { PrivacyFlow } from "./PrivacyFlow"
@@ -142,7 +142,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
           <header className="absolute inset-x-0 top-0 z-10">
             <nav data-hero="nav" className="landing-wrap flex items-center justify-between py-4" aria-label="Main">
               <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
-                <BrainIcon size={26} />
+                <LogoMark size={26} />
                 <span className="text-[15px] font-medium">NOS Brainer</span>
               </Link>
               <div className="flex items-center gap-2">
@@ -188,7 +188,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                 </a>
               </div>
               <p data-hero="note" className="mt-8 text-[13px] text-trace">
-                The brain of Fournil, the demo's fictional company.
+                The brain of Butine, the demo's fictional company: connected scales that tell beekeepers, without opening the hive, whether their bees are doing well.
               </p>
             </div>
           </div>
@@ -207,7 +207,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
               <span ref={counterRef} className="text-[15px] font-medium tabular-nums text-ink">
                 {mode === "scroll" ? 0 : LANDING_TOTAL}
               </span>{" "}
-              knowledge items in ten days at Fournil.
+              knowledge items in ten days at Butine.
             </p>
           </Chapter>
 
@@ -215,7 +215,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
             <p>
               The admin chooses who sees what. Jean-Marc, in finance, doesn't need the code: neither he nor his agents have access to the Dev zone.
             </p>
-            <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[14px]" aria-label="Zones of Fournil's brain">
+            <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[14px]" aria-label="Zones of Butine's brain">
               {LANDING_ZONES.map((z) => (
                 <li key={z.id}>
                   <ZoneTag name={z.name} color={zoneColor(z.color, z.position)} />
@@ -266,9 +266,9 @@ function Chapter({ title, children, refFn }: { title: string; children: React.Re
 /** What the CEO sees: an excerpt of the demo dashboard, in its own components. */
 function Dashboard() {
   const status = [
-    { zone: "leadership", text: "Q4 goal: 120 bakery customers and €25k MRR." },
-    { zone: "product", text: "Priority of the quarter: the online preorder module." },
-    { zone: "sales", text: "La Mie Dorée (12 shops) is ready to sign if the accounting export ships in November." },
+    { zone: "leadership", text: "Q4 goal: 4,500 equipped hives and €20k MRR." },
+    { zone: "product", text: "Priority of the quarter: the swarm alert, within the hour, on the beekeeper's phone." },
+    { zone: "sales", text: "Miellerie Roussel (900 hives) is ready to sign if the weighing export ships in November." },
     { zone: "finance", text: "September VAT to file before October 19." },
   ]
   return (
@@ -286,7 +286,7 @@ function Dashboard() {
 
         <figure data-reveal="panel" className="panel overflow-hidden">
           <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-            <span className="panel-title">Where Fournil stands</span>
+            <span className="panel-title">Where Butine stands</span>
             <span className="text-[12px] text-trace">This week</span>
           </div>
           <ul data-rows className="divide-y divide-line">
@@ -304,7 +304,7 @@ function Dashboard() {
               <p data-type className="mono mt-1.5 text-[13px] leading-relaxed">Reconcile yesterday&apos;s Qonto statements with the Pennylane invoices and list the variances</p>
             </div>
           </div>
-          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Excerpt of the demo dashboard. Fournil is a fictional company.</figcaption>
+          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Excerpt of the demo dashboard. Butine is a fictional company.</figcaption>
         </figure>
       </div>
     </section>
@@ -380,7 +380,7 @@ function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; de
       <Bead />
       <div className="landing-wrap">
         <h2 id="end" data-reveal="title" className="landing-display max-w-[10em]">
-          {signup ? "Give your company a brain." : "Open Fournil's brain."}
+          {signup ? "Give your company a brain." : "Open Butine's brain."}
         </h2>
         <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
           {signup

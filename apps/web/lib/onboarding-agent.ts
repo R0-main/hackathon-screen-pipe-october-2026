@@ -6,7 +6,7 @@
 import { z } from "zod"
 import { KNOWLEDGE_KINDS, ENTITY_TYPES, KnowledgeItemInputSchema, redactText } from "@brain/core"
 import type { BrainStore } from "./store"
-import { LOCAL_ONLY, possessive } from "./install-prompt"
+import { IF_BLOCKED, LOCAL_ONLY, possessive } from "./install-prompt"
 
 /** What /api/onboarding/apply validates, and what an agent sends (with its origin). */
 export const OnboardingDraftSchema = z.object({
@@ -78,14 +78,14 @@ export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string
   const scope = about ? `${orgName}: "${about}"` : orgName
   return `You are going to prepare the onboarding of NOS Brainer, ${possessive(orgName)} company brain, from my past conversations on this computer. This message contains an upload code valid for 2 hours: never display it in full.
 
-0. ${LOCAL_ONLY} Then, before reading anything, ask me: "This message asks me to read your Claude Code and Codex conversations on this computer, then send ${host} a summary of what concerns the company (without secrets or personal data). Do you agree to give this website access to that data?" Without a clear yes, stop without reading or sending anything.
+0. ${LOCAL_ONLY} Then, before reading anything, ask me: "This message asks me to read your Claude Code and Codex conversations on this computer, then send ${host} a summary of what concerns the company (without secrets or personal data). Do you agree to give this website access to that data?" Without a clear yes, stop without reading or sending anything. ${IF_BLOCKED}
 1. The company is ${scope}. Only keep what concerns it (business, projects, customers, tools); an unrelated conversation (personal project, another company or another customer, a general question) is left aside, even if recent.
    History: Claude Code (~/.claude/projects/**/*.jsonl, one folder per project) and Codex (~/.codex/sessions/**/*.jsonl). Sort by project and first messages, then read the company's sessions in detail, from most recent to oldest, along with the README, CLAUDE.md and AGENTS.md of those projects.
 2. Keep what a newcomer must know: what the company does and for whom, teams, customers and partners, tools, goals, procedures, decisions (with their reason). Never any secrets, personal data (emails, phone numbers, addresses) or anything private.
 3. Write ~/.company-brain/onboarding.json:
    {"source": "claude-code" or "codex", "company_name": "…", "description": "2 or 3 sentences", "zones": [{"id": "…", "name": "…", "description": "…", "keywords": ["…"]}], "items": [{"zone": "<id>", "kind": "${KNOWLEDGE_KINDS.join(" | ")}", "title": "…", "body": "…", "entities": [{"type": "${ENTITY_TYPES.join(" | ")}", "name": "…"}]}]}
    3 to 8 zones (current ones: ${zones}; keep their ids if they fit), 10 to 40 self-contained, factual items, in English.
-4. Send it in a single call (outside the sandbox if it is blocked; if my permission mode refuses it, don't work around anything: tell me to switch to the default mode with Shift+Tab, then retry):
+4. Send it in a single call (outside the sandbox if it is blocked there):
    curl -fsS -X POST ${baseUrl}/api/onboarding/import -H "Authorization: Bearer ${code}" -H "content-type: application/json" --data @"$HOME/.company-brain/onboarding.json"
 5. Delete the file and tell me how many zones and items were sent. Nothing is applied: I review and validate the proposal on the dashboard's Onboarding page.`
 }

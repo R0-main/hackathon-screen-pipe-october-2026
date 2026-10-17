@@ -2,7 +2,8 @@
 
 import type { ZoneView } from "@/lib/brain"
 import type { FeedEvent } from "./BrainLive"
-import { AGENT_LABEL, EVENT_VERB, initials } from "./format"
+import { AGENT_LABEL, EVENT_VERB } from "./format"
+import { PersonAvatar } from "./PersonDot"
 import { RelTime } from "./RelTime"
 import { ZoneTag, zoneColor } from "./ui"
 
@@ -89,9 +90,7 @@ export function LiveFeed({
           return (
             <li key={e.id} className={`rounded-[6px] px-2.5 py-2 hover:bg-bone ${e.fresh ? "feed-enter" : ""}`}>
               <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-[10px] font-medium" aria-hidden>
-                  {initials(name)}
-                </span>
+                <PersonAvatar id={e.user_id} size={28} bg="surface" className="mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] leading-snug">
                     <b className="font-medium">{name.split(" ")[0]}</b> <span className="text-trace">{EVENT_VERB[e.type]}</span>

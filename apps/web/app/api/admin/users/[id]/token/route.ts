@@ -19,7 +19,7 @@ export const POST = withViewer<Ctx>(
     if (!profile) return error(404, "Member not found.")
     const zones = (await store.listZoneAccess(id)).map((a) => a.zone_id)
     const org = await store.getOrg()
-    return json({ token, prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones, caFingerprint: caFingerprint() }) })
+    return json({ token, prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, orgDescription: org.description, zones, caFingerprint: caFingerprint() }) })
   },
   { admin: true },
 )

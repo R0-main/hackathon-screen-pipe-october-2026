@@ -235,6 +235,8 @@ export class PostgresStore implements BrainStore {
   private listen: ListenState
   /** Do the columns of the "quality" migration (superseded_by, embedding) exist? Checked once. */
   private qualityColumns: boolean | null = null
+  private taskExternalColumns: boolean | null = null
+  private qualityWarned = false
 
   constructor(url: string | { sql: Sql; orgId: string; listen: ListenState; url: string | null }) {
     if (typeof url !== "string") {
@@ -655,6 +657,14 @@ export class PostgresStore implements BrainStore {
     return this.qualityColumns
   }
 
+  /** external_* columns of tasks (connectors migration): absent, no task is imported. */
+  private async hasTaskExternal(): Promise<boolean> {
+    if (this.taskExternalColumns !== null) return this.taskExternalColumns
+    const [r] = await this.sql`select exists (select 1 from information_schema.columns where table_name = 'tasks' and column_name = 'external_source') as ok`
+    this.taskExternalColumns = Boolean(r.ok)
+    return this.taskExternalColumns
+  }
+
   /** "Not superseded" fragment (bare table or alias `k`), empty while the column does not exist. */
   private live(hasQuality: boolean, alias: "" | "k" = "") {
     if (!hasQuality) return this.sql``
@@ -732,11 +742,20 @@ export class PostgresStore implements BrainStore {
   }
 
   async markSuperseded(oldId: string, newId: string) {
-    if (!UUID_RE.test(oldId) || !UUID_RE.test(newId)) return
-    if (!(await this.hasQuality())) throw new StoreSetupError(QUALITY_MISSING_MESSAGE)
+    if (!UUID_RE.test(oldId) || !UUID_RE.test(newId)) return false
+    // "Quality" migration not applied yet: the new knowledge item is already saved, ingestion does not fail because of
+    // it (the computer would see a failed sync); the old one simply keeps being suggested.
+    if (!(await this.hasQuality())) {
+      if (!this.qualityWarned) {
+        this.qualityWarned = true
+        console.error(`[store] ${QUALITY_MISSING_MESSAGE} Superseded knowledge keeps being suggested in the meantime.`)
+      }
+      return false
+    }
     const org = await this.orgId()
-    await this.sql`update knowledge_items set superseded_by = ${newId} where id = ${oldId} and org_id = ${org}
-      and exists (select 1 from knowledge_items n where n.id = ${newId} and n.org_id = ${org})`
+    const rows = await this.sql`update knowledge_items set superseded_by = ${newId} where id = ${oldId} and org_id = ${org}
+      and exists (select 1 from knowledge_items n where n.id = ${newId} and n.org_id = ${org}) returning id`
+    return rows.length > 0
   }
 
   async listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }) {
@@ -790,8 +809,31 @@ export class PostgresStore implements BrainStore {
   }
   async deleteItem(id: string) {
     if (!UUID_RE.test(id)) return false
-    const rows = await this.sql`delete from knowledge_items where id = ${id} and org_id = ${await this.orgId()} returning id`
-    return rows.length > 0
+    const org = await this.orgId()
+    const external = await this.hasTaskExternal()
+    return this.sql.begin(async (tx: any) => {
+      // Before the item: the foreign key (on delete set null) would otherwise detach its tasks, which would stay on the board.
+      await tx`delete from tasks where org_id = ${org} and source_item_id = ${id} ${external ? tx`and external_source is null` : tx``}`
+      const rows = await tx`delete from knowledge_items where id = ${id} and org_id = ${org} returning id`
+      return rows.length > 0
+    }) as Promise<boolean>
+  }
+  async updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }) {
+    if (!UUID_RE.test(id)) return false
+    const org = await this.orgId()
+    const quality = await this.hasQuality()
+    return this.sql.begin(async (tx: any) => {
+      const [cur] = await tx`select entities from knowledge_items where id = ${id} and org_id = ${org}`
+      if (!cur) return false
+      const entities = (cur.entities ?? []) as { name: string }[]
+      const searchTitle = normalize(patch.title)
+      const searchBody = normalize(`${patch.body} ${entities.map((e) => e.name).join(" ")}`)
+      await tx`update knowledge_items set title = ${patch.title}, body = ${patch.body}, kind = ${patch.kind}, zone = ${patch.zone},
+        search_title = ${searchTitle}, search_body = ${searchBody} where id = ${id} and org_id = ${org}`
+      if (quality) await tx`update knowledge_items set embedding = null, embedding_model = null where id = ${id} and org_id = ${org}`
+      await tx`update tasks set zone = ${patch.zone}, updated_at = now() where org_id = ${org} and source_item_id = ${id} and zone <> ${patch.zone}`
+      return true
+    }) as Promise<boolean>
   }
   async moveItems(ids: string[], zone: string) {
     const valid = ids.filter((id) => UUID_RE.test(id))

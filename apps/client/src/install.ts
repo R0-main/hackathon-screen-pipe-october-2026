@@ -12,6 +12,7 @@ import { isBrainSetupText, ownSecrets } from "./secrets"
 import { completeLinesEnd, listJsonlFiles } from "./sources/jsonl"
 import { uninstallScreenpipeService } from "./screenpipe-cli"
 import { removeInstalledSkills } from "./skills"
+import { claudeJsonPath, unregisterMcpServers } from "./mcp-config"
 
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const
 export const HOOK_TIMEOUT_S = 5
@@ -679,6 +680,8 @@ export function uninstallPipe(log: (s: string) => void = console.log, file = pip
 }
 
 // --- MCP company-brain (Claude Code) ----------------------------------------------------------------------------------
+// The computer's MCP server (stdio): the fallback when Claude Code cannot reach the brain's MCP endpoint (private
+// certificate). Otherwise each company has its direct MCP server (mcp-config.ts), and this one is removed.
 
 export const MCP_NAME = "company-brain"
 
@@ -687,10 +690,7 @@ export function mcpArgs(script = selfScript()): string[] {
   return clientArgs(script, "mcp")
 }
 
-/** Where Claude Code keeps user-scope MCP servers: ~/.claude.json, or in CLAUDE_CONFIG_DIR if it is set. */
-export function claudeJsonPath(): string {
-  return process.env.CLAUDE_CONFIG_DIR ? join(claudeDir(), ".claude.json") : join(homedir(), ".claude.json")
-}
+export { claudeJsonPath }
 
 export type McpEntry = { command: string; args: string[] }
 
@@ -762,14 +762,22 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
   } catch (err) {
     log(`Screenpipe: ${(err as Error).message}`)
   }
-  const r = spawnSync("claude", ["mcp", "remove", "company-brain", "--scope", "user"], {
-    encoding: "utf8",
-    timeout: 15000,
-    shell: process.platform === "win32",
-    env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" },
-  })
-  if (!r.error && r.status === 0) log("company-brain MCP server removed from Claude Code.")
-  else log("MCP: nothing removed (missing, or `claude` CLI not found). By hand: claude mcp remove company-brain --scope user")
+  // The computer's MCP server (stdio): only if it is there (setup replaces it with each company's server).
+  if (readMcpEntry() !== null) {
+    const r = spawnSync("claude", ["mcp", "remove", MCP_NAME, "--scope", "user"], {
+      encoding: "utf8",
+      timeout: 15000,
+      shell: process.platform === "win32",
+      env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" },
+    })
+    if (!r.error && r.status === 0) log(`${MCP_NAME} MCP server removed from Claude Code.`)
+    else log(`MCP ${MCP_NAME}: nothing removed (\`claude\` CLI not found). By hand: claude mcp remove ${MCP_NAME} --scope user`)
+  }
+  try {
+    unregisterMcpServers(log)
+  } catch (err) {
+    log(`Companies' MCP: ${(err as Error).message}`)
+  }
   if (opts.purge) {
     try {
       rmSync(brainHome(), { recursive: true, force: true })

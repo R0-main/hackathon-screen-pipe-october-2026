@@ -1,0 +1,447 @@
+// The brain's MCP tools, shared by the computer's MCP server (brain.mjs mcp, stdio) and the brain's MCP endpoint
+// (/api/mcp/<company>/<token>, HTTP): same names, same descriptions, same markdown answers. Each one provides
+// access to the API (HTTP for the computer, internal calls for the brain).
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { z } from "zod"
+import type { AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, Zone } from "./types"
+import { KNOWLEDGE_KINDS } from "./types"
+import { DEFAULT_ZONES, classifyZones } from "./zones"
+import { extractEntities, type ZoneHint } from "./distill"
+import { redactText } from "./privacy"
+import { normalize, truncate } from "./text"
+
+// --- API responses read by the tools -----------------------------------------------------------------------------------
+
+export type ApiZone = Zone & { readable: boolean; count?: number }
+
+export type WhoAmI = {
+  /** `id`: missing from an older brain. */
+  org: { id?: string; name: string; description: string }
+  profile: Profile
+  access: { isAdmin: boolean; readable: string[]; writable: string[] }
+  context: {
+    person: Profile
+    zones: { zone: string; weight: number }[]
+    entities: { type: string; name: string; count: number; zones: string[] }[]
+    frequent_prompts: { summary: string; count: number; last: string }[]
+    items: ApiItem[]
+    decisions: ApiItem[]
+    procedures: ApiItem[]
+  } | null
+}
+
+export type ApiItem = {
+  id: string
+  zone: string
+  kind: KnowledgeKind
+  title: string
+  body: string
+  entities: Entity[]
+  source: { app: string; tool: string; at: string }
+  confidence: number
+  created_at: string
+  author_id: string
+  author?: string
+  score?: number
+}
+
+export type QueryResult = {
+  query: string
+  zones_searched: string[]
+  zones_hit: string[]
+  zones_restricted: string[]
+  items: ApiItem[]
+}
+
+export type ZoneSummary = {
+  zone: Zone
+  status: {
+    summary: string
+    objectives: string[]
+    progress: string
+    next_steps: string[]
+    who_did_what: { person: string; did: string }[]
+  } | null
+  items: ApiItem[]
+  entities: { type: string; name: string; count: number }[]
+  tasks: { id: string; title: string; status: string; assignee?: string }[]
+}
+
+export type CompanyStatusResult = {
+  headline: string
+  zones: { zone: string; summary: string; objectives: string[]; progress: string; next_steps: string[]; who_did_what: { person: string; did: string }[] }[]
+  generated_at: string
+  generator: string
+} | null
+
+/**
+ * Response of POST /api/ingest. `skipped`: items already received (same author, zone, title and content over 30 days), skipped.
+ * `zones`: zones where at least one item was inserted. `per_zone` (optional): number of items inserted per zone.
+ */
+export type IngestResult = { inserted: number; skipped?: number; ids: string[]; zones: string[]; per_zone?: Record<string, number> }
+
+/** What the tools need: the brain's API routes, with the access rights of the person's token. */
+export interface BrainToolsApi {
+  whoami(): Promise<WhoAmI>
+  zones(): Promise<ApiZone[]>
+  zone(id: string): Promise<ZoneSummary>
+  status(): Promise<CompanyStatusResult>
+  query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }): Promise<QueryResult>
+  ingest(items: KnowledgeItemInput[], agent?: AgentName): Promise<IngestResult>
+}
+
+// --- Formatting (markdown) ------------------------------------------------------------------------------------------
+
+const KIND_LABELS: Record<string, string> = { fact: "fact", decision: "decision", task: "task", procedure: "procedure", question: "question" }
+
+export type ZoneNamer = (id: string) => string
+
+export function shortDate(iso: string | undefined): string {
+  if (!iso) return "?"
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Europe/Paris" })
+}
+
+function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
+  const meta = [
+    `Zone: ${zoneName(i.zone)}`,
+    `Type: ${KIND_LABELS[i.kind] ?? i.kind}`,
+    `By: ${i.author ?? "?"}`,
+    `Date: ${shortDate(i.source?.at ?? i.created_at)}`,
+    i.source?.tool ? `Source: ${i.source.tool}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const ents = i.entities?.length ? `\nEntities: ${i.entities.map((e) => e.name).join(", ")}` : ""
+  return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}`
+}
+
+export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
+  const searched = r.zones_searched.length ? r.zones_searched.map(zoneName).join(", ") : "none"
+  const restricted = r.zones_restricted?.length
+    ? "\n\nNote: zones you do not have access to might know more (ask an admin or the person concerned)."
+    : ""
+  if (!r.items.length) {
+    return (
+      `No knowledge found in the brain for "${r.query}" (zones searched: ${searched}).\n` +
+      `Try other keywords (customer, tool or project name) or list_zones to see the available areas.${restricted}`
+    )
+  }
+  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched})`
+  return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${restricted}`
+}
+
+export function formatZones(zones: ApiZone[]): string {
+  const lines = zones
+    .sort((a, b) => a.position - b.position)
+    .map((z) => `- **${z.name}** (\`${z.id}\`): ${z.description}${z.readable ? ` — accessible, ${z.count ?? 0} knowledge item${(z.count ?? 0) === 1 ? "" : "s"}` : " — not accessible"}`)
+  return `## Brain zones\n${lines.join("\n")}\n\nUse the id between backticks with get_zone_summary or in the zones filter of search_brain.`
+}
+
+export function formatZoneSummary(s: ZoneSummary): string {
+  const parts = [`## Zone ${s.zone.name} (\`${s.zone.id}\`)`, s.zone.description]
+  if (s.status) {
+    parts.push(`### Status\n${s.status.summary}\nProgress: ${s.status.progress}`)
+    if (s.status.objectives.length) parts.push(`Goals:\n${s.status.objectives.map((o) => `- ${o}`).join("\n")}`)
+    if (s.status.next_steps.length) parts.push(`Next steps:\n${s.status.next_steps.map((o) => `- ${o}`).join("\n")}`)
+    if (s.status.who_did_what.length) parts.push(`Who did what:\n${s.status.who_did_what.map((w) => `- ${w.person}: ${w.did}`).join("\n")}`)
+  }
+  const recent = s.items.slice(0, 12)
+  parts.push(
+    recent.length
+      ? `### Recent knowledge\n${recent.map((i) => `- [${KIND_LABELS[i.kind] ?? i.kind}] ${i.title} — ${i.author ?? "?"}, ${shortDate(i.source?.at ?? i.created_at)}`).join("\n")}`
+      : "### Recent knowledge\n(none for now)",
+  )
+  const open = s.tasks.filter((t) => t.status !== "done").slice(0, 10)
+  if (open.length) parts.push(`### Open tasks\n${open.map((t) => `- ${t.title}${t.assignee ? ` (${t.assignee})` : ""}`).join("\n")}`)
+  if (s.entities.length) parts.push(`### Most cited entities\n${s.entities.slice(0, 12).map((e) => `${e.name} (${e.type}, ${e.count})`).join(", ")}`)
+  return parts.join("\n\n")
+}
+
+export function formatWhoami(w: WhoAmI, zoneName: ZoneNamer): string {
+  const p = w.profile
+  const parts = [
+    `## ${p.name}${p.title ? ` — ${p.title}` : ""} (${w.org.name})`,
+    `Role: ${p.role === "admin" ? "admin" : "member"} · Readable zones: ${w.access.readable.map(zoneName).join(", ") || "none"} · Writable zones: ${w.access.writable.map(zoneName).join(", ") || "none"}`,
+  ]
+  const c = w.context
+  if (c) {
+    if (c.zones.length) parts.push(`### Zones most used by this computer\n${c.zones.slice(0, 6).map((z) => `- ${zoneName(z.zone)} (weight ${z.weight})`).join("\n")}`)
+    if (c.entities.length) parts.push(`### Main entities\n${c.entities.slice(0, 12).map((e) => `${e.name} (${e.type}, ${e.count})`).join(", ")}`)
+    const prompts = dedupePrompts(c.frequent_prompts)
+    if (prompts.length) parts.push(`### Frequent prompts\n${prompts.map((f) => `- "${f.summary}" (${f.count} time${f.count === 1 ? "" : "s"}, last on ${shortDate(f.last)})`).join("\n")}`)
+    if (c.decisions.length) parts.push(`### Recent decisions\n${c.decisions.slice(0, 8).map((i) => `- ${i.title} (${zoneName(i.zone)}, ${shortDate(i.created_at)})`).join("\n")}`)
+    if (c.procedures.length) parts.push(`### Procedures\n${c.procedures.slice(0, 8).map((i) => `- ${i.title} (${zoneName(i.zone)})`).join("\n")}`)
+    parts.push("Useful for a handover: search_brain then opens the details of each subject.")
+  }
+  return parts.join("\n\n")
+}
+
+function dedupePrompts(list: { summary: string; count: number; last: string }[]) {
+  const seen = new Map<string, { summary: string; count: number; last: string }>()
+  for (const f of list) {
+    const k = f.summary.trim().toLowerCase()
+    const prev = seen.get(k)
+    if (!prev) seen.set(k, { ...f })
+    else {
+      prev.count = Math.max(prev.count, f.count)
+      if (f.last > prev.last) prev.last = f.last
+    }
+  }
+  return [...seen.values()].slice(0, 8)
+}
+
+export function formatStatus(s: CompanyStatusResult, zoneName: ZoneNamer): string {
+  if (!s || !s.headline) return "The company status has not been generated yet (an admin can refresh it from the dashboard, or with `brain.mjs refresh-status`)."
+  const zones = (s.zones ?? []).map((z) => {
+    const lines = [`### ${zoneName(z.zone)}`, z.summary, `Progress: ${z.progress}`]
+    if (z.objectives.length) lines.push(`Goals: ${z.objectives.join("; ")}`)
+    if (z.next_steps.length) lines.push(`Next steps: ${z.next_steps.join("; ")}`)
+    if (z.who_did_what.length) lines.push(`Who did what: ${z.who_did_what.map((w) => `${w.person} — ${w.did}`).join("; ")}`)
+    return lines.join("\n")
+  })
+  return `## Where does the company stand?\n${s.headline}\n\n${zones.join("\n\n")}\n\n(generated on ${shortDate(s.generated_at)}, ${s.generator === "claude" ? "by Claude" : "automatically"})`
+}
+
+// --- MCP server ------------------------------------------------------------------------------------------------------
+
+/** Known zones of a company (readable names, remember's classification) and the computer's access rights. */
+export type ZoneCache = {
+  updated_at?: string
+  zones?: (Pick<Zone, "id" | "name" | "description" | "keywords"> & { readable: boolean })[]
+  whoami?: { readable: string[]; writable: string[] }
+}
+
+/** The company targeted by a tool call. `key` identifies its zone cache; `header` comes before each answer. */
+export type BrainMcpTarget = { api: BrainToolsApi; key: string; header?: string; cache?: () => ZoneCache | null }
+
+export type BrainMcpOptions = {
+  version?: string
+  /** The server's instruction (which company, when to query it). */
+  instructions?: string
+  /** Description of the `company` parameter (computer connected to several companies); missing: no parameter. */
+  companyParam?: string
+  /** The company of a call (`company` asked for, otherwise the default one); throws if it is unknown. */
+  open: (company?: string) => BrainMcpTarget
+  /** Redaction of the text saved by remember (redactText by default): the computer adds its own secrets to it. */
+  clean?: (text: string) => string
+  /** `source.app` of the knowledge saved by remember. */
+  sourceApp?: string
+}
+
+type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean }
+
+const ok = (text: string): ToolResult => ({ content: [{ type: "text", text }] })
+const fail = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true })
+
+function zoneHints(cache: ZoneCache | null): ZoneHint[] {
+  return cache?.zones?.length ? cache.zones : DEFAULT_ZONES
+}
+
+function zoneName(cache: ZoneCache | null, id: string): string {
+  return cache?.zones?.find((z) => z.id === id)?.name ?? DEFAULT_ZONES.find((z) => z.id === id)?.name ?? id
+}
+
+/** The "company-brain" MCP server and its six tools, on the company `open` gives. */
+export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
+  const server = new McpServer({ name: "company-brain", version: opts.version ?? "0.1.0" }, opts.instructions ? { instructions: opts.instructions } : undefined)
+  // Zones of each company, by key: start from the cache provided, completed on the first call.
+  const caches = new Map<string, ZoneCache | null>()
+
+  type Ctx = { api: BrainToolsApi; key: string; header: string }
+  const open = (wanted?: string): Ctx => {
+    const t = opts.open(wanted)
+    if (!caches.has(t.key)) caches.set(t.key, t.cache?.() ?? null)
+    return { api: t.api, key: t.key, header: t.header ?? "" }
+  }
+  const cacheOf = (c: Ctx) => caches.get(c.key) ?? null
+  const keepZones = (c: Ctx, zones: ApiZone[]) =>
+    caches.set(c.key, {
+      ...(cacheOf(c) ?? { updated_at: new Date().toISOString() }),
+      zones: zones.map((z) => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords, readable: z.readable })),
+    })
+  const namer = (c: Ctx) => (id: string) => zoneName(cacheOf(c), id)
+  /** Accepts a zone id or its name ("Finance", "finance"…). */
+  const resolveZone = (c: Ctx, z: string): string => {
+    const n = normalize(z.trim())
+    const found = cacheOf(c)?.zones?.find((x) => x.id === z || normalize(x.id) === n || normalize(x.name) === n)
+    return found?.id ?? z.trim()
+  }
+  const guard = async (company: string | undefined, fn: (c: Ctx) => Promise<string>): Promise<ToolResult> => {
+    try {
+      const c = open(company)
+      return ok(c.header + (await fn(c)))
+    } catch (err) {
+      return fail(`Company brain error: ${(err as Error).message}`)
+    }
+  }
+  // Refreshes the zone cache on the first call if needed (readable names, classification).
+  const ensureZones = async (c: Ctx) => {
+    if (cacheOf(c)?.zones?.length) return
+    try {
+      keepZones(c, await c.api.zones())
+    } catch {
+      // no big deal: the ids will be shown
+    }
+  }
+  // `company` parameter, only if the computer has several companies (otherwise nothing to choose). Typed as always
+  // present: it is optional, the tools receive it `undefined` when it is missing from the schema.
+  const companyParam = (opts.companyParam ? { company: z.string().max(120).optional().describe(opts.companyParam) } : {}) as {
+    company: z.ZodOptional<z.ZodString>
+  }
+
+  server.registerTool(
+    "search_brain",
+    {
+      title: "Search the company brain",
+      description:
+        "Searches the company's shared brain: decisions, procedures (deployment, closing, support…), facts about customers, " +
+        "projects and tools, open tasks and questions, fed by the whole team's AI sessions. Use it BEFORE guessing " +
+        "whenever a question touches the company's context (\"how do we deploy?\", \"what did we decide for X?\", \"who handles customer Y?\"). " +
+        "Only the zones the user has access to are searched.",
+      inputSchema: {
+        query: z.string().min(1).max(500).describe("The question or the keywords, in natural language (e.g. \"deploy to production\")."),
+        zones: z.array(z.string()).max(20).optional().describe("Optional: limit to some zones (ids from list_zones, e.g. [\"dev\"])."),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum number of results (8 by default)."),
+        ...companyParam,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ query, zones, limit, company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        const r = await c.api.query({ query, zones: zones?.map((x) => resolveZone(c, x)), limit, agent: "mcp" })
+        return formatQuery(r, namer(c))
+      }),
+  )
+
+  server.registerTool(
+    "get_zone_summary",
+    {
+      title: "Zone summary",
+      description:
+        "Gives the state of one of the company's knowledge zones (dev, product, sales, finance…): summary, goals, next steps, " +
+        "who did what, recent knowledge, open tasks and key entities. Useful to catch up on an area.",
+      inputSchema: { zone: z.string().min(1).max(64).describe("Id or name of the zone (see list_zones), e.g. \"dev\"."), ...companyParam },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ zone, company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        return formatZoneSummary(await c.api.zone(resolveZone(c, zone)))
+      }),
+  )
+
+  server.registerTool(
+    "list_zones",
+    {
+      title: "List the zones",
+      description: "Lists the company's knowledge zones (id, description, number of knowledge items) and shows those the user has access to.",
+      inputSchema: { ...companyParam },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ company }) =>
+      guard(company, async (c) => {
+        const zones = await c.api.zones()
+        keepZones(c, zones)
+        return formatZones(zones)
+      }),
+  )
+
+  server.registerTool(
+    "whoami_context",
+    {
+      title: "My computer's context",
+      description:
+        "Describes the signed-in user's role: role, accessible zones, the zones and entities they use the most, frequent prompts, " +
+        "recent decisions and procedures. Useful for a handover, a replacement, or to adapt an answer to the user's role.",
+      inputSchema: { ...companyParam },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        return formatWhoami(await c.api.whoami(), namer(c))
+      }),
+  )
+
+  server.registerTool(
+    "company_status",
+    {
+      title: "Where does the company stand?",
+      description: "Summary of the company's state per zone: goals, progress, next steps and who did what (limited to accessible zones).",
+      inputSchema: { ...companyParam },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        return formatStatus(await c.api.status(), namer(c))
+      }),
+  )
+
+  server.registerTool(
+    "remember",
+    {
+      title: "Save to the brain",
+      description:
+        "Saves a reusable knowledge item to the company brain: a decision made (and why), a procedure that works, " +
+        "a lasting fact about a customer/project/tool, a task to do or an open question. Use it when the user asks for it " +
+        "or when an important decision has just been made. Never secrets or personal data (they are redacted anyway).",
+      inputSchema: {
+        title: z.string().min(3).max(200).describe("Short, precise title (≤ 120 characters)."),
+        body: z.string().min(1).max(4000).describe("1 to 5 sentences a colleague can understand, with the why."),
+        kind: z.enum(KNOWLEDGE_KINDS).describe("fact | decision | task | procedure | question"),
+        zone: z.string().max(64).optional().describe("Optional: zone id; otherwise classified automatically (the answer gives the zone chosen)."),
+        ...companyParam,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ title, body, kind, zone, company }) =>
+      guard(company, async (c) => {
+        await ensureZones(c)
+        const cache = cacheOf(c)
+        const name = namer(c)
+        const hints = zoneHints(cache)
+        const zoneIds = new Set(hints.map((z) => z.id))
+        const asked = zone ? resolveZone(c, zone) : undefined
+        const classified = classifyZones(`${title} ${body}`, hints, 1)[0]
+        const chosen = (asked && zoneIds.has(asked) ? asked : undefined) ?? classified ?? cache?.whoami?.writable[0] ?? hints[0]?.id ?? "general"
+        const how =
+          asked && chosen === asked
+            ? "zone requested"
+            : `zone chosen automatically from the content${asked ? ` ("${zone}" does not exist)` : ""}; give \`zone\` to choose another one`
+        const clean = (t: string) => (opts.clean ?? ((x: string) => redactText(x)))(t).trim()
+        const cleanTitle = truncate(clean(title), 140)
+        const cleanBody = truncate(clean(body), 4000)
+        const item: KnowledgeItemInput = {
+          zone: chosen,
+          kind,
+          title: cleanTitle,
+          body: cleanBody,
+          entities: extractEntities(`${cleanTitle}\n${cleanBody}`),
+          source: { app: opts.sourceApp ?? "claude-code", tool: "agent", at: new Date().toISOString() },
+          confidence: 0.8,
+        }
+        const r = await c.api.ingest([item], "mcp")
+        const where = r.zones[0] ?? chosen
+        const label = `${name(where)} (\`${where}\`)`
+        if (!r.inserted && r.skipped) {
+          return `Already in the brain: a knowledge item with the same title and the same content already exists in the ${label} zone ("${cleanTitle}"). Nothing new was saved.`
+        }
+        const readable = cache?.zones?.find((z) => z.id === where)?.readable ?? cache?.whoami?.readable.includes(where)
+        const readableIds = cache?.zones?.length ? cache.zones.filter((z) => z.readable).map((z) => z.id) : (cache?.whoami?.readable ?? [])
+        const mine = readableIds.map(name).join(", ")
+        const visibility =
+          readable === false
+            ? "Note: this zone is not one of your readable zones. Only the people who have access to it will see it; " +
+              "since you saved it, you find it in your own searches and in \"My context\" (where you can delete it). " +
+              `To file it elsewhere, call remember again with \`zone\`${mine ? ` (your zones: ${mine})` : ""}.`
+            : "It can now be found by search_brain for the people who have access to this zone."
+        return `Knowledge saved in the ${label} zone — ${how}${where !== chosen ? `; the brain filed it here rather than in "${name(chosen)}"` : ""}.\n"${cleanTitle}" (${kind}). ${visibility}`
+      }),
+  )
+
+  return server
+}

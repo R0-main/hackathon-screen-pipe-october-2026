@@ -13,6 +13,7 @@ const LEGACY_PATHS = [
   ["/supervision", "/monitoring"],
   ["/admin/acces", "/admin/access"],
   ["/admin/demandes", "/admin/requests"],
+  ["/reprise", "/resume"],
 ]
 
 /** @type {import('next').NextConfig} */

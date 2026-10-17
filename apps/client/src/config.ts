@@ -12,9 +12,20 @@ export type SourceName = (typeof SOURCE_NAMES)[number]
 export const DEFAULT_SCREENPIPE_URL = "http://localhost:3030"
 export const DEFAULT_SCREENPIPE_CONTENT_TYPES = ["parsed", "accessibility", "ocr"]
 
+/**
+ * A company connected on this computer: its brain and the personal token we have there. Name and description (noted by
+ * `init`) tell the agents which one to query.
+ */
+export type Company = { url: string; token: string; id?: string; name?: string; description?: string }
+
 export type Config = {
+  /** Brain and token of the first company: the default one (MCP tools), and the one of the sync, the hooks and the skills. */
   url: string
   token: string
+  /** Who the first company is (noted by `init`). */
+  org?: { id?: string; name: string; description?: string }
+  /** The computer's other companies, in order: the MCP tools query them when asked to. */
+  companies?: Company[]
   screenpipe_url: string
   screenpipe_token?: string
   anthropic_api_key?: string
@@ -26,6 +37,13 @@ export type Config = {
   screenpipe_content_types?: string[]
   /** Screenpipe meetings (transcriptions) distilled like the AI sessions (default: yes). */
   screenpipe_meetings?: boolean
+  /**
+   * Screenpipe agent: on every sync, Claude Code or Codex looks at the recent activity through the Screenpipe MCP.
+   * true (default): Claude Code if it is there, otherwise Codex; "claude" / "codex": that engine only; false: off.
+   */
+  screenpipe_agent?: boolean | "claude" | "codex"
+  /** Model of the Screenpipe agent (default: sonnet for Claude Code, Codex's own otherwise). */
+  agent_model?: string
   /** UserPromptSubmit hook: send a short redacted summary of the prompts classified in a zone (default: yes). */
   share_prompt_summaries?: boolean
   /** Certificate (PEM) of the authority that signs a self-hosted brain: the client trusts it on top of the public certificates. */
@@ -52,6 +70,8 @@ export type State = {
     span_ms?: number
     /** End of the last distilled meeting: the meetings finished before it are done. */
     meetings_last_end?: string
+    /** End of the last window looked at by the Screenpipe agent. */
+    agent_until?: string
   }
   /** Set by install-schedule: the automatic sync sends up nothing earlier that has not already been read. */
   baseline_at?: string
@@ -187,6 +207,7 @@ export function withDefaults(raw: Partial<Config>): Partial<Config> {
     use_claude_cli: true,
     share_prompt_summaries: true,
     screenpipe_meetings: true,
+    screenpipe_agent: true,
     sources: [...SOURCE_NAMES],
     ...raw,
     url: raw.url?.replace(/\/+$/, ""),
@@ -203,6 +224,31 @@ export function applyScheduleEnv(cfg: Partial<Config>, env: NodeJS.ProcessEnv = 
 export function saveConfig(cfg: Partial<Config>) {
   ensureHome()
   writeJson(paths.config(), cfg, 0o600)
+}
+
+/** All the computer's companies, the first one (the default) first. */
+export function companiesOf(cfg: Pick<Config, "url" | "token" | "org" | "companies">): Company[] {
+  return [{ url: cfg.url, token: cfg.token, ...cfg.org }, ...(cfg.companies ?? [])]
+}
+
+/** Display name of a company: its name, otherwise the address of its brain. */
+export function companyLabel(c: Company): string {
+  if (c.name) return c.name
+  try {
+    return new URL(c.url).host
+  } catch {
+    return c.url
+  }
+}
+
+/** The config with these companies, in this order (the first one becomes the default). */
+export function withCompanies<T extends Partial<Config>>(cfg: T, list: Company[]): T {
+  const [first, ...rest] = list
+  const { url, token, ...org } = first
+  const next: T = { ...cfg, url, token, org: org.name ? org : undefined, companies: rest.length ? rest : undefined }
+  if (!next.org) delete next.org
+  if (!next.companies) delete next.companies
+  return next
 }
 
 export function requireConfig(): Config {

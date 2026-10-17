@@ -11,7 +11,7 @@ Scope: `/` for a signed-out visitor (the dashboard stays on `/` once signed in).
 
 - Audience: leaders of SMBs and startups, the Screenpipe hackathon jury.
 - Action: "Open the demo" (to `/login`, one-click sign-in in demo mode; "Sign in" otherwise).
-- Proof: Fournil's brain (fictional company, 34 knowledge items, 6 zones), the real install prompt, the demo's real automation suggestion. No made-up customers or numbers.
+- Proof: Butine's brain (fictional company making connected scales for beehives, 34 knowledge items, 6 zones), the real install prompt, the demo's real automation suggestion. No made-up customers or numbers.
 - Constraints: DESIGN.md (bone, ink, phosphor only when an agent touches a zone, beads and lines, Space Grotesk). Concept set by the brief: the brain, which goes full screen and rotates as soon as you scroll, then the page moves on.
 
 ## Direction contract

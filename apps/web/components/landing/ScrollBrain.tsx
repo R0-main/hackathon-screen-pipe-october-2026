@@ -5,6 +5,7 @@ import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz } from "../BrainViz"
 import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, scatter, seeded, territories, zoneAnchors, zoneNodes } from "../brain-geometry"
+import { arcBeads, arcTube, type FlowArc } from "../arc-flow"
 import { Dot, zoneColor } from "../ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -20,12 +21,13 @@ export type ScrollBrainProps = {
   still: boolean
 }
 
-// Same values as the dashboard brain: ink on bone, phosphor reserved to a zone an agent touches.
+// Same values as the dashboard brain: ink on bone; a zone an agent touches lights up in its own color, brightened.
 const INK = 0x0a0a0a
 const LINE = 0xd6d6cf
 const RAW = 0xc6c6bf
 const WHITE = 0xffffff
-const PHOSPHOR = 0xc7ff3e
+/** The ink circle around a lit zone (or knowledge item), relative to its bead. */
+const RIM = 1.14
 
 const CENTER_R = 0.034
 /** Height kept free at the top and bottom of the screen during the chapters (nav bar, progress bar). */
@@ -49,8 +51,6 @@ const BACK = 0.86
 const NEURON_R = 0.007
 /** Radius of the arcs between zones: thin tubes, a bit thicker than the links (WebGL lines stay at 1 px). */
 const SYNAPSE_R = 0.004
-const TUBULAR = 64
-const RADIAL = 6
 /** Assembly progress on the home page: a quarter of the knowledge is already in place. */
 const HERO_ASSEMBLY = 0.32
 /** The last third of the beads arrives later: maximal delay of a bead in the assembly. */
@@ -145,7 +145,7 @@ export function ScrollBrain({ zones, synapses, agents, progress, still }: Scroll
                   }}
                   className="mt-1.5 flex max-w-[240px] items-start gap-1.5 rounded-[4px] border border-ink bg-surface px-2 py-1 text-[12px] leading-snug opacity-0 sm:max-w-[280px] sm:text-[13px]"
                 >
-                  <span className="mt-[4px] size-2 shrink-0 rounded-full border border-ink bg-phosphor" />
+                  <span className="mt-[4px] size-2 shrink-0 rounded-full border border-ink" style={{ background: zoneColor(z.color, z.position) }} />
                   <span className="whitespace-normal">{agent.label}</span>
                 </div>
               )}
@@ -173,9 +173,11 @@ type BuildArgs = {
   bubbles: Map<string, HTMLDivElement>
 }
 
-type Node = { zone: number; end: THREE.Vector3; start: THREE.Vector3; r: number; delay: number; wobble: number }
-type ZoneGfx = { id: string; color: THREE.Color; center: SphereMesh; outline: SphereMesh; pos: THREE.Vector3; first: number; last: number }
-type SynapseGfx = { a: number; b: number; mat: THREE.MeshBasicMaterial; base: number }
+/** `d`: distance of the (placed) knowledge from its zone's center; the ripple makes it swell as it passes. */
+type Node = { zone: number; end: THREE.Vector3; start: THREE.Vector3; r: number; delay: number; wobble: number; d: number }
+/** `glow`: the zone's color when an agent touches it, its own more saturated and a little lighter. */
+type ZoneGfx = { id: string; color: THREE.Color; glow: THREE.Color; center: SphereMesh; outline: SphereMesh; pos: THREE.Vector3; first: number; last: number }
+type SynapseGfx = { a: number; b: number; mat: THREE.MeshBasicMaterial; base: number; arc: FlowArc }
 type Layout = { heroZ: number; fullZ: number; endZ: number; hero: [number, number]; full: [number, number] }
 
 /** Builds the scene and starts the render loop. Returns the cleanup function. */
@@ -194,7 +196,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   scene.fog = fog
 
   const geoSphere = new T.SphereGeometry(1, 18, 12)
-  const geoRing = new T.RingGeometry(0.93, 1, 48)
+  const geoRing = new T.RingGeometry(0.975, 1, 64)
   const geometries: THREE.BufferGeometry[] = [geoSphere, geoRing]
   const materials: THREE.Material[] = []
   const surface = brainSurface()
@@ -251,9 +253,10 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       const away = scatter(dir, rand, 1.2)
       // Not too far: the bead must not float over the title or the chapters.
       const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(1.5 + rand() * 0.45)
-      nodes.push({ zone: i, end, start, r: 0.0065 + rand() * 0.005, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2 })
+      nodes.push({ zone: i, end, start, r: 0.0065 + rand() * 0.005, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2, d: end.distanceTo(pos) })
     }
-    gfx.push({ id: z.id, color: new T.Color(zoneColor(z.color, z.position)), center, outline, pos, first, last: nodes.length })
+    const color = new T.Color(zoneColor(z.color, z.position))
+    gfx.push({ id: z.id, color, glow: color.clone().offsetHSL(0, 0.18, 0.06), center, outline, pos, first, last: nodes.length })
   })
 
   // The knowledge: a single instanced geometry, one color per bead (raw, settled, or touched by an agent).
@@ -307,31 +310,30 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const b = index.get(s.b)
     if (a === undefined || b === undefined) continue
     const pts = arcBetween(gfx[a].pos.toArray(), gfx[b].pos.toArray()).map((p) => new T.Vector3(...p))
-    const geo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), TUBULAR, SYNAPSE_R, RADIAL, false)
-    const cols = new Float32Array(geo.attributes.position.count * 3)
-    const tone = new T.Color()
-    // The tube's vertices go ring by ring: the ring gives the position along the arc.
-    for (let v = 0; v < geo.attributes.position.count; v++) tone.copy(gfx[a].color).lerp(gfx[b].color, Math.floor(v / (RADIAL + 1)) / TUBULAR).toArray(cols, v * 3)
-    geo.setAttribute("color", new T.BufferAttribute(cols, 3))
+    const { geo, arc } = arcTube(T, pts, gfx[a].color, gfx[b].color, SYNAPSE_R, `${s.a}|${s.b}`)
     const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false })
     group.add(new T.Mesh(geo, mat))
     geometries.push(geo)
     materials.push(mat)
-    syn.push({ a, b, mat, base: 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08) })
+    syn.push({ a, b, mat, base: 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08), arc })
   }
+  // The flow, as on the dashboard: small light beads in each arc. Under reduced motion, none.
+  const flow = arcBeads(T, syn.map((sy) => sy.arc))
+  flow.mesh.visible = !still
+  group.add(flow.mesh)
 
-  // Phosphor ripples under each agent: two offset rings, fully driven by scrolling (reversible).
+  // Ripples under each agent, in its zone's color: two offset rings, fully driven by scrolling (reversible).
   const ripples = agents.flatMap((a) => {
     const z = index.get(a.zone)
     if (z === undefined) return []
     return [0, 0.4].map((lag) => {
-      const mat = new T.MeshBasicMaterial({ color: PHOSPHOR, transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false })
+      const mat = new T.MeshBasicMaterial({ color: gfx[z].glow, transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false })
       const mesh: RingMesh = new T.Mesh(geoRing, mat)
       mesh.position.copy(gfx[z].pos)
       mesh.visible = false
       group.add(mesh)
       materials.push(mat)
-      return { agent: a, lag, mesh }
+      return { agent: a, lag, mesh, zone: z, radius: 0, u: 0 }
     })
   })
 
@@ -384,7 +386,6 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const inkC = new T.Color(INK)
   const rawC = new T.Color(RAW)
   const lineC = new T.Color(LINE)
-  const phosC = new T.Color(PHOSPHOR)
   const whiteC = new T.Color(WHITE)
 
   const boneC = new T.Color(BONE)
@@ -467,11 +468,19 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       tmp.x += Math.sin(t * 0.0006 + nd.wobble) * float
       tmp.y += Math.cos(t * 0.0005 + nd.wobble) * float
       const on = lit.has(gfx[nd.zone].id) && k >= 1
-      const r = nd.r * (0.55 + 0.45 * e) * (on ? 1.3 : 1)
+      // The ripple goes through the zone's knowledge: each one swells when the ripple's front reaches it.
+      let pulse = 0
+      if (on)
+        for (const rp of ripples) {
+          if (rp.zone !== nd.zone || !rp.mesh.visible) continue
+          const off = (nd.d - rp.radius) / 0.07
+          pulse = Math.max(pulse, Math.exp(-off * off) * (1 - rp.u))
+        }
+      const r = nd.r * (0.55 + 0.45 * e) * (on ? 1.3 : 1) * (1 + 1.4 * pulse)
       mtx.compose(tmp, quat, scl.setScalar(r))
       nodeMesh.setMatrixAt(i, mtx)
-      ringMesh.setMatrixAt(i, mtx.compose(tmp, quat, scl.setScalar(on ? r * 1.2 : 0)))
-      nodeMesh.setColorAt(i, on ? phosC : col.copy(rawC).lerp(gfx[nd.zone].color, e * named))
+      ringMesh.setMatrixAt(i, mtx.compose(tmp, quat, scl.setScalar(on ? r * RIM : 0)))
+      nodeMesh.setColorAt(i, on ? gfx[nd.zone].glow : col.copy(rawC).lerp(gfx[nd.zone].color, e * named))
 
       // Line: it starts from the center at the moment the bead arrives.
       const grow = easeOut(clamp01((k - 0.55) / 0.45))
@@ -488,16 +497,24 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
 
     for (const g of gfx) {
       const on = lit.has(g.id)
-      g.center.material.color.copy(on ? phosC : col.copy(rawC).lerp(g.color, named))
+      g.center.material.color.copy(on ? g.glow : col.copy(rawC).lerp(g.color, named))
       const target = CENTER_R * (0.6 + 0.4 * smooth(0.05, 0.3, assembly)) * (on ? 1.3 : 1)
       g.center.scale.setScalar(target)
-      g.outline.scale.setScalar(target * 1.3)
+      g.outline.scale.setScalar(target * RIM)
       g.outline.visible = on
     }
     knownMat.opacity = 0.55 * (still ? 1 : smooth(0.43, 0.55, s))
+    // The arcs (and their light beads) appear with the links between knowledge items.
+    const arcsIn = still ? 1 : smooth(0.43, 0.55, s)
     for (const sy of syn) {
       const on = lit.has(gfx[sy.a].id) || lit.has(gfx[sy.b].id)
-      sy.mat.opacity = on ? 1 : sy.base * (still ? 1 : smooth(0.43, 0.55, s))
+      sy.mat.opacity = on ? 1 : sy.base * arcsIn
+      sy.arc.fast = on
+      sy.arc.gain = arcsIn
+    }
+    if (!still) {
+      flow.material.opacity = arcsIn
+      flow.frame(t / 1000)
     }
 
     // The raw dust fades as the brain fills up: it stays on the computer.
@@ -519,7 +536,9 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       rp.mesh.visible = on
       if (!on) continue
       const u = k / 0.6
-      rp.mesh.scale.setScalar(0.04 + 0.36 * u)
+      rp.u = u
+      rp.radius = 0.04 + 0.36 * u
+      rp.mesh.scale.setScalar(rp.radius)
       rp.mesh.material.opacity = 0.9 * (1 - u)
       rp.mesh.lookAt(camera.position)
     }
@@ -596,6 +615,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     ringMesh.dispose()
     dustMesh.dispose()
     neurons.dispose()
+    flow.dispose()
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
     renderer.dispose()

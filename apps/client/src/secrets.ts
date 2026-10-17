@@ -16,10 +16,10 @@ const BRAIN_TOKEN_RE = /\bc[bjo]_[A-Za-z0-9_-]{20,}/g
 
 const TOKEN_MASK = "[token redacted]"
 
-/** The secrets configured on this computer (long enough to be recognized without false positives). */
-export function ownSecrets(cfg: Partial<Pick<Config, "token" | "screenpipe_token" | "anthropic_api_key" | "claude_oauth_token">> | null | undefined): string[] {
+/** The secrets configured on this computer, tokens of all its companies included (long enough to be recognized without false positives). */
+export function ownSecrets(cfg: Partial<Pick<Config, "token" | "companies" | "screenpipe_token" | "anthropic_api_key" | "claude_oauth_token">> | null | undefined): string[] {
   if (!cfg) return []
-  return [cfg.token, cfg.screenpipe_token, cfg.anthropic_api_key, cfg.claude_oauth_token]
+  return [cfg.token, ...(cfg.companies ?? []).map((c) => c.token), cfg.screenpipe_token, cfg.anthropic_api_key, cfg.claude_oauth_token]
     .filter((s): s is string => typeof s === "string" && s.trim().length >= 8)
     .map((s) => s.trim())
 }

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = { title: "Company brain demo" }
 
-/** Demo: you enter Fournil's brain by choosing an account. Outside demo mode, the usual sign-in. */
+/** Demo: you enter Butine's brain by choosing an account. Outside demo mode, the usual sign-in. */
 export default function DemoPage() {
   if (!isDemoMode()) redirect("/login")
   return <DemoPicker signup={signupOpen()} />

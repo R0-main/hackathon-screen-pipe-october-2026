@@ -15,7 +15,8 @@ export const GET = withViewer<Ctx>(async (_req, viewer, { params }) => {
   if (!zone) return error(404, "Unknown zone.")
   if (!canRead(viewer.access, id)) return error(403, "You don't have access to this zone.")
   const [items, entities, tasks, status, profiles] = await Promise.all([
-    store.listItems({ zones: [id], limit: 60 }),
+    // A knowledge item superseded by a more recent version is no longer suggested (MCP get_zone_summary, zone drawer).
+    store.listItems({ zones: [id], limit: 60, excludeSuperseded: true }),
     store.topEntities({ zones: [id], limit: 20 }),
     store.listTasks({ zones: [id] }),
     store.getStatus(),

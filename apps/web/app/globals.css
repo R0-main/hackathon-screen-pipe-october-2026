@@ -190,6 +190,11 @@ p {
 .input::placeholder {
   color: var(--muted);
 }
+/* Search field: the browser's clear button is replaced by ours. */
+.input[type="search"]::-webkit-search-cancel-button,
+.input[type="search"]::-webkit-search-decoration {
+  appearance: none;
+}
 .input:disabled {
   color: var(--muted);
   background: var(--bg);
