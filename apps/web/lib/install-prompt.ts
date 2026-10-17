@@ -138,7 +138,7 @@ export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: 
   const cmd = installCommands(baseUrl, `--join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"`, caFingerprint)
   return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY} ${IF_BLOCKED}
 
-1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md ou AGENTS.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
+1. Sans me poser de question ni lancer de commande pour chercher, prépare ma demande avec ce que tu sais déjà de moi (mon compte, ta mémoire, nos échanges) : prénom et nom, poste ou métier, email pro. N'invente rien : une information que tu n'as pas, enlève-la de la commande, un admin la complétera.
 2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).
 3. Lance la commande de mon système en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée), en remplaçant les valeurs entre chevrons :
 ${commandLines(cmd)}

@@ -144,8 +144,9 @@ Second moyen d'ajouter quelqu'un, à côté du prompt personnel : un message uni
 ou la dernière étape de `/creer`), source `buildJoinPrompt` dans [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
 Il contient un code d'équipe (`cj_…`), pas de jeton : à envoyer aux collègues seulement, il ne permet que de demander.
 
-1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà (git config, mémoire, CLAUDE.md),
-   sans poser de question ni rien inventer : une valeur inconnue est omise, l'admin la complétera.
+1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà de la personne (son compte,
+   sa mémoire, leurs échanges), sans poser de question, sans lancer de commande pour chercher ni rien inventer : une
+   valeur inconnue est omise, l'admin la complétera.
 2. La commande de son système (`install.sh --join` sur macOS / Linux / Git Bash, `install.ps1 --join` sous Windows) lance
    `brain join` (`apps/client/src/join.ts`) : le jeton du poste est créé localement, la demande part avec son empreinte
    seulement, puis la commande attend l'acceptation (8 min).
