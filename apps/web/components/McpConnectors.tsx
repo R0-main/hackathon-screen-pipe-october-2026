@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { Fragment, createContext, useContext, useEffect, useState } from "react"
 import { MCP_CATALOG, MCP_CATEGORIES, catalogEntry, type McpCatalogEntry, type McpCategory, type McpConnectorPublic, type McpReturn } from "@brain/core"
 import { fmt } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
@@ -333,7 +333,15 @@ function ManualSetup({ id, entry, redirectUri, hasClient, onSaved }: { id: strin
       )}
       <label className="block text-[12px] font-medium">{k.redirectUri}</label>
       <div className="flex items-start gap-2">
-        <code className="mono min-w-0 flex-1 select-all break-all rounded-[6px] border border-line bg-bone px-2 py-1.5 text-[12px]">{redirectUri}</code>
+        <code className="mono min-w-0 flex-1 select-all rounded-[6px] border border-line bg-bone px-2 py-1.5 text-[12px] [overflow-wrap:anywhere]">
+          {/* Retour à la ligne de préférence après un « / », au milieu d'un segment seulement s'il est trop long. */}
+          {redirectUri.split(/(?<=\/)/).map((part, i) => (
+            <Fragment key={i}>
+              {part}
+              <wbr />
+            </Fragment>
+          ))}
+        </code>
         <button type="button" className="btn btn-sm shrink-0" onClick={copy}>
           {copied ? k.copied : k.copy}
         </button>
