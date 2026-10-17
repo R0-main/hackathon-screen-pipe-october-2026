@@ -336,6 +336,45 @@ button.chip:hover:not(.chip-on) {
 .brain-label.is-flip > span {
   flex-direction: row-reverse;
 }
+
+/* Dots des personnes autour du cerveau 3D : les modèles sont dans la scène ; ici, leur zone cliquable et leur prénom,
+   posés par le JS au même endroit. Le prénom n'apparaît qu'au survol, sauf le vôtre et ceux qui travaillent à l'instant. */
+.brain-dot {
+  visibility: hidden;
+  transform-origin: 0 0;
+  display: block;
+}
+.brain-dot-hit {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+}
+.brain-dot:focus-visible .brain-dot-hit {
+  outline: 1px solid var(--color-ink);
+  outline-offset: 2px;
+}
+.brain-dot-name {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-ink);
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.brain-dot:hover .brain-dot-name,
+.brain-dot:focus-visible .brain-dot-name,
+.brain-dot[data-me] .brain-dot-name,
+.brain-dot[data-live] .brain-dot-name {
+  opacity: 1;
+}
 }
 
 /* --- Page d'accueil publique (components/landing) ---
@@ -476,5 +515,195 @@ html.lenis body {
   background: var(--text);
   transform: scaleX(0);
   transform-origin: left center;
+}
+}
+
+/* --- Créer son entreprise (/creer) : une question par écran, beaucoup de vide, le cerveau qui se construit à droite. --- */
+@layer components {
+.create-wrap {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 4vw, 56px);
+}
+.create-progress {
+  height: 1px;
+  background: var(--border);
+}
+.create-progress-fill {
+  height: 100%;
+  background: var(--text);
+  transform-origin: left center;
+  transition: transform 0.2s ease-out;
+}
+.create-title {
+  font-size: clamp(30px, 3.4vw, 46px);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+.create-lead {
+  margin-top: 16px;
+  max-width: 34em;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+@media (min-width: 640px) {
+  .create-lead {
+    font-size: 17px;
+  }
+}
+/* Champ « page blanche » : pas de cadre, un trait qui s'épaissit au focus. */
+.create-input {
+  display: block;
+  width: 100%;
+  padding: 6px 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: clamp(22px, 2.4vw, 30px);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  outline: none;
+  border-radius: 0;
+  transition: border-color 0.15s ease-out;
+}
+.create-input::placeholder {
+  color: var(--border-strong);
+}
+.create-input:focus,
+.create-input:focus-visible {
+  border-bottom-color: var(--text);
+  box-shadow: 0 1px 0 var(--text);
+}
+.create-input-sm {
+  font-size: clamp(17px, 1.6vw, 20px);
+  font-weight: 400;
+}
+.create-textarea {
+  resize: none;
+  field-sizing: content;
+  min-height: 2.6em;
+}
+.zone-option {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  transition: border-color 0.15s ease-out;
+}
+.zone-option:hover {
+  border-color: var(--border-strong);
+}
+.zone-option[aria-pressed="true"] {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+.zone-check {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-compact);
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+}
+.zone-check.is-on {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
+}
+.step-in {
+  animation: step-in 0.2s ease-out;
+}
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mini-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mini-pop 0.2s ease-out;
+}
+@keyframes mini-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-in,
+  .mini-pop {
+    animation: none;
+  }
+  .create-progress-fill {
+    transition: none;
+  }
+}
+}
+
+/* Hors couche : la règle globale :focus-visible (non layérisée) l'emporterait. Le trait épaissi suffit comme focus. */
+.create-input:focus-visible {
+  outline: none;
+}
+
+/* --- Sous-menu de la barre latérale (Équipe et accès) --- */
+@layer components {
+.nav-sub {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.2s ease-out,
+    opacity 0.2s ease-out;
+}
+.nav-sub.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+/* La page courante : une barre d'encre posée sur le fil, qui glisse d'une sous-page à l'autre. */
+.nav-sub-mark {
+  position: absolute;
+  left: -1.5px;
+  top: 8px;
+  width: 2px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--text);
+  transition: transform 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-sub,
+  .nav-sub-mark {
+    transition: none;
+  }
+}
+}
+
+/* Boutons « ouvrir dans… » réduits au logo de l'agent (nom en aria-label et en infobulle). */
+@layer components {
+.logo-btn {
+  width: 44px;
+  padding: 0;
+}
+.logo-btn.btn-lg {
+  width: 52px;
 }
 }

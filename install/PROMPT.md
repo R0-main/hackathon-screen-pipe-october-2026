@@ -85,7 +85,7 @@ géré. En entreprise, un profil MDM (PPPC) peut pré-accorder l'Accessibilité 
 
 ```text
 Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois, zones : compta.
-Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
+Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`).
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
 2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
@@ -105,5 +105,21 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 | `--no-open` | N'ouvre pas le navigateur. |
 | `--skip-screenpipe` | Sans Screenpipe : brain-sync lit seulement les sessions Claude Code et Codex. |
 
-Tout retirer : `~/.company-brain/brain uninstall` (hooks, MCP, synchro, service Screenpipe ; `--purge` efface aussi
+Tout retirer : `~/.company-brain/brain uninstall` (hooks, MCP, skills de l'entreprise, synchro, service Screenpipe ; `--purge` efface aussi
 `~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
+
+## Le message d'équipe (rejoindre sur demande)
+
+Second moyen d'ajouter quelqu'un, à côté du prompt personnel : un message unique par entreprise (`/admin` → Demandes,
+ou la dernière étape de `/creer`), source `buildJoinPrompt` dans [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
+Il contient un code d'équipe (`cj_…`), pas de jeton : à envoyer aux collègues seulement, il ne permet que de demander.
+
+1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà (git config, mémoire, CLAUDE.md),
+   sans poser de question ni rien inventer : une valeur inconnue est omise, l'admin la complétera.
+2. La commande de son système (`install.sh --join` sur macOS / Linux / Git Bash, `install.ps1 --join` sous Windows) lance
+   `brain join` (`apps/client/src/join.ts`) : le jeton du poste est créé localement, la demande part avec son empreinte
+   seulement, puis la commande attend l'acceptation (8 min).
+3. Un admin complète et accepte la demande : le compte est créé avec cette empreinte, et `join` enchaîne sur `setup`
+   (mêmes codes : 0, 3, 5, 6, ou `doctor` en cas d'erreur). Code 7 : toujours en attente (`brain join` reprend la même
+   demande, état dans `~/.company-brain/join.json`) ; 8 : refusée, rien n'est installé.
+

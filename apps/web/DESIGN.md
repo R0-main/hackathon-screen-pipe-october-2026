@@ -58,15 +58,19 @@ plus de vide. Les règles ci-dessous s'appliquent à tout `apps/web`. Elles sont
 - Barre latérale à gauche (fond bone, trait de 1 px) : le cerveau, ses pages (agents en direct, état, connaissances,
   tâches, automatisations), la configuration pour les admins (équipe et accès, onboarding), puis « voir en tant que »,
   mon contexte et la déconnexion. Sous 768 px, elle s'ouvre par le bouton menu.
+- Une rubrique à sous-pages (Équipe et accès : organigramme, accès par zone, demandes, zones ; une adresse chacune sous
+  `/admin`) se déplie quand on y est, sans chevron : un fil de 1 px aligné sur l'icône, les sous-pages en texte
+  secondaire, et une barre d'encre qui glisse le long du fil jusqu'à la page courante (200 ms). Pas d'onglets en haut
+  de page.
 - À droite, la page. La fenêtre ne défile jamais : le cerveau remplit tout l'espace (la molette zoome), les autres
   pages défilent dans leur colonne.
 - L'état vivant (flux SSE, zones allumées) est dans le layout (`components/BrainLive.tsx`) : il survit à la navigation.
 
 ## Page d'accueil publique (`/`)
 
-Adresses : `/` la page d'accueil (pour tout le monde), `/demo` l'entrée de la démo (choix d'un compte de Fournil,
-mode démo seulement), `/login` la connexion par jeton, `/dashboard` le cerveau et, à côté, les autres pages
-connectées. `/accueil` redirige vers `/`.
+Adresses : `/` la page d'accueil (pour tout le monde), `/creer` la création d'une entreprise, `/demo` l'entrée de la
+démo (choix d'un compte de Fournil, mode démo seulement), `/login` la connexion par jeton, `/dashboard` le cerveau et,
+à côté, les autres pages connectées. `/accueil` redirige vers `/`.
 
 Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accueil » de `globals.css`).
 
@@ -79,3 +83,14 @@ Même monde, à l'échelle d'une page (`components/landing`, bloc « Page d'accu
   sauf la lente rotation d'attente.
 - `prefers-reduced-motion` : pas d'épinglage ni de défilement doux, cerveau immobile et assemblé, chapitres lus à la suite.
 - Le phosphore reste réservé aux zones qu'un agent interroge (ici, les trois agents de la démo).
+
+## Créer son entreprise (`/creer`, `components/CreateCompany.tsx`)
+
+- Une question par écran, à la manière d'une page blanche : grand titre (`.create-title`), champ sans cadre souligné
+  d'un trait qui s'épaissit au focus (`.create-input`), « Continuer » ou Entrée, « Retour » discret.
+- Un trait de 1 px sous l'en-tête avance d'étape en étape. Entrée de chaque écran : 8 px et opacité, 200 ms.
+- À droite (≥ 1024 px), le cerveau se construit dans la langue du dashboard : un centre, une bille par zone choisie,
+  les personnes autour, pleines une fois leur poste branché. Les couleurs sont celles que le serveur attribuera.
+- Après la création : le prompt de son poste (`PromptActions`, partagé avec la page d'accueil), le témoin « en direct »
+  qui s'allume quand le poste se branche, puis un prompt par collègue invité.
+

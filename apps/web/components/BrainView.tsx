@@ -10,10 +10,14 @@ import { WelcomeBanner } from "./WelcomeBanner"
 
 /** Page d'accueil : le cerveau occupe tout l'espace à droite de la barre latérale. Rien ne défile, on zoome. */
 export function BrainView({ welcome }: { welcome?: boolean }) {
-  const { state, activity, ripples, now } = useBrainLive()
+  const { state, feed, activity, ripples, now } = useBrainLive()
   const [selected, setSelected] = useState<string | null>(null)
   const selectedZone = state.zones.find((z) => z.id === selected) ?? null
   const isAdmin = state.real.role === "admin"
+  // Un dot par personne : il respire si son agent a travaillé ces 15 dernières minutes, sautille s'il touche le cerveau à l'instant.
+  const working = new Set(feed.filter((e) => e.type !== "stopped" && Date.parse(e.at) > now - 15 * 60_000).map((e) => e.user_id))
+  const live = new Set(feed.filter((e) => (e.type === "query" || e.type === "write") && Date.parse(e.at) > now - 8000).map((e) => e.user_id))
+  const people = state.people.map((p) => ({ ...p, working: working.has(p.id), live: live.has(p.id), me: p.id === state.me.id }))
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-surface">
@@ -37,6 +41,7 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
           now={now}
           selected={selected}
           onSelect={(z) => setSelected((s) => (s === z ? null : z))}
+          people={people}
         />
       )}
 
@@ -44,6 +49,17 @@ export function BrainView({ welcome }: { welcome?: boolean }) {
         <div className="panel pointer-events-auto p-3">
           <AskBrain me={state.me} zones={state.zones} />
         </div>
+        {isAdmin && state.totals.items === 0 && !state.impersonating && (
+          <div className="panel pointer-events-auto flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+            <p className="min-w-0 flex-1 text-[13px] leading-snug">
+              <span className="font-medium">Le cerveau est vide.</span>{" "}
+              <span className="text-trace">Donnez-lui le contexte de vos comptes : Claude Code ou Codex relit vos anciennes conversations.</span>
+            </p>
+            <Link href="/onboarding" className="btn btn-primary shrink-0">
+              Remplir le cerveau
+            </Link>
+          </div>
+        )}
         {welcome && (
           <div className="pointer-events-auto">
             <WelcomeBanner name={state.me.name} meId={state.me.id} />

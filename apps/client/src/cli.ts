@@ -40,6 +40,11 @@ Commandes :
                      seulement), néon, puis le cerveau s'ouvre dans le navigateur. Relançable sans paramètres.
                      Codes de sortie : 0 tout est branché ; 3 tout sauf l'autorisation d'enregistrer l'écran (relancer setup une
                      fois cochée) ; 6 tout sauf Screenpipe (pas de version pour ce poste, ou il ne démarre pas : voir doctor).
+  join --url <url> --join <code d'équipe> [--name <prénom nom>] [--title <poste>] [--email <email>] [--wait-accept <secondes>]
+                     Demande à rejoindre une entreprise (c'est ce que lance le message d'équipe) : le jeton du poste est créé
+                     ici, seule son empreinte part avec la demande. Attend qu'un admin l'accepte (--wait-accept 480 s par
+                     défaut), puis enchaîne sur setup (mêmes options, mêmes codes). Code 7 : toujours en attente, \`join\` sans
+                     paramètres reprend la même demande. Code 8 : demande refusée.
   doctor [--json]    Diagnostic du poste, sans rien modifier : Node.js, raccourci, cerveau (connexion, version du client),
                      Screenpipe (capture, autorisations, jeton), Claude Code (MCP, hooks), synchro planifiée, distillation.
                      Chaque point KO donne la commande qui répare. --json : le même rapport pour Claude Code (champ « safe »
@@ -62,6 +67,13 @@ Commandes :
                      jeton expiré ne compte pas (si Claude ne répond plus du tout : abandon après 24 h d'échecs).
   sync --confirm     Envoie exactement ce que la dernière simulation a montré (valable 24 h).
                      Options avancées : --distiller heuristic|claude-cli|claude-api, --reset (ignore les checkpoints).
+  skills [sync|list] Installe dans ~/.claude/skills les skills de l'entreprise attribués à ce poste (toute l'entreprise, plus
+                     ceux des cortex que vous lisez) et retire ceux qui ne le sont plus. Fait aussi après chaque synchro.
+                     Un skill personnel du même nom n'est jamais touché. list : affiche sans rien installer.
+  skills push <dossier> [--cortex <zone>|entreprise] [--name <nom>] [--description <texte>]
+                     Publie le dossier (SKILL.md et les scripts qu'il utilise) dans le cerveau ; même nom : version suivante.
+                     Demande le droit de publier des skills (accordé par un admin). Sans --cortex : celui de la version
+                     précédente, ou toute l'entreprise pour un nouveau skill. Un fichier qui contient un secret est refusé.
   refresh-status [--dry-run]
                      Admins : rédige « où en est la boîte » sur ce poste avec Claude (\`claude -p\`, votre abonnement ;
                      sinon la clé API) et l'envoie au dashboard. --dry-run : affiche le résumé sans l'envoyer.
@@ -74,14 +86,14 @@ Commandes :
                      automatiquement. À lancer après sync --confirm.
   install-pipe       Écrit le pipe Screenpipe « brain-sync » (~/.screenpipe/pipes/brain-sync/pipe.md) : la synchro apparaît dans les tâches
                      planifiées de Screenpipe et se relance à la fin de chaque réunion. Demande l'application Screenpipe (moteur de pipes).
-  uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP et le service Screenpipe installé par setup ;
+  uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP, skills de l'entreprise et le service Screenpipe installé par setup ;
                      --purge supprime aussi ~/.company-brain.
 
 Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
 }
 
 async function main(argv: string[]): Promise<number> {
-  const { cmd, flags } = parseArgs(argv)
+  const { cmd, flags, positional } = parseArgs(argv)
   // --home : dossier du client (utilisé par la tâche planifiée Windows, qui n'hérite pas des variables du terminal).
   if (typeof flags.home === "string" && flags.home.trim()) process.env.COMPANY_BRAIN_HOME = resolve(flags.home.trim())
   // Le hook passe en premier : aucune sortie parasite, toujours code 0.
@@ -106,6 +118,10 @@ async function main(argv: string[]): Promise<number> {
     case "setup": {
       const { cmdSetup } = await import("./setup")
       return cmdSetup(flags)
+    }
+    case "join": {
+      const { cmdJoin } = await import("./join")
+      return cmdJoin(flags)
     }
     case "init": {
       const { cmdInit } = await import("./commands")
@@ -145,7 +161,16 @@ async function main(argv: string[]): Promise<number> {
         full: Boolean(flags.full),
         confirm: Boolean(flags.confirm),
       })
+      // Les skills attribués au poste suivent la même cadence que la synchro (simulation exceptée).
+      if (!flags["dry-run"]) {
+        const { refreshSkills } = await import("./skills")
+        await refreshSkills(console.log, { quiet: true })
+      }
       return 0
+    }
+    case "skills": {
+      const { cmdSkills } = await import("./skills")
+      return cmdSkills(positional, flags)
     }
     case "refresh-status": {
       const { cmdRefreshStatus } = await import("./refresh-status")

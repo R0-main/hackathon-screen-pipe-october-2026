@@ -256,6 +256,21 @@ test("install.sh : --url=… marche aussi, et passe tel quel à setup", POSIX_ON
   }
 })
 
+test("install.sh --join (message d'équipe) : lance join, et non setup, avec les mêmes options ; code rendu tel quel", POSIX_ONLY, async () => {
+  const srv = await brainServer({ "/brain.mjs": { body: fakeClient(7) } })
+  const ws = workstation()
+  withNode(ws)
+  try {
+    const args = ["--url", srv.url, "--join", "cj_test", "--name", "Léa Bernard", "--title", "Compta"]
+    const r = await install(args, ws)
+    assert.equal(r.code, 7, `${r.stdout}\n${r.stderr}`)
+    assert.deepEqual(clientOutput(r.stdout).argv, ["join", ...args])
+  } finally {
+    ws.cleanup()
+    await srv.close()
+  }
+})
+
 test("install.sh : brain.mjs introuvable (404) → code 5, message en français, rien d'installé", POSIX_ONLY, async () => {
   const srv = await brainServer({})
   const ws = workstation()
@@ -581,6 +596,15 @@ test("install.ps1 (pwsh hors Windows) : options, --url= recollé, code de setup 
       assert.equal(readFileSync(join(home, "brain.mjs"), "utf8"), fakeClient(3), "l'ancien client reste intact")
     } finally {
       await html.close()
+    }
+    // --join (message d'équipe) : join au lieu de setup, mêmes options, code rendu tel quel.
+    const joinSrv = await brainServer({ "/brain.mjs": { body: fakeClient(8) } })
+    try {
+      const j = await installPs("pwsh", ["--url", joinSrv.url, "--join", "cj_test", "--name", "Léa Bernard"], env)
+      assert.equal(j.code, 8, `${j.stdout}\n${j.stderr}`)
+      assert.deepEqual(clientOutput(j.stdout).argv, ["join", "--url", joinSrv.url, "--join", "cj_test", "--name", "Léa Bernard"])
+    } finally {
+      await joinSrv.close()
     }
     const usage = await installPs("pwsh", ["--token", TOKEN], env)
     assert.equal(usage.code, 2)

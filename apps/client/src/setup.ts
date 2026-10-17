@@ -13,6 +13,7 @@ import { cmdHello, cmdInit } from "./commands"
 import { brainHome, loadPartialConfig, maskSecret, requireConfig, saveConfig, selfCommand, UserError, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
+import { refreshSkills } from "./skills"
 import {
   installedScreenpipeBin,
   installScreenpipeCli,
@@ -360,9 +361,10 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
     }
   }
 
-  log("[4/6] Claude Code : MCP company-brain et hooks")
+  log("[4/6] Claude Code : MCP company-brain, hooks et skills de l'entreprise")
   ensureMcp(log)
   installHooks(log)
+  await refreshSkills(log)
 
   log("[5/6] Synchro automatique")
   // Déjà planifiée : chemins remis à jour, sans nouveau point de départ (ce qui attend d'être envoyé n'est pas sauté).

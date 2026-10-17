@@ -1,6 +1,7 @@
 # NOS Brainer : branche ce poste Windows au cerveau d'entreprise en une commande.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://cerveau.example.com --token cb_...
+#   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url https://cerveau.example.com --join cj_... --name ...
 #
 # Equivalent Windows de install.sh (memes options, memes codes de sortie) ; install.sh lui passe la main dans Git Bash.
 # Fichier en ASCII pur : Windows PowerShell 5.1 lit un .ps1 sans BOM dans la page de code ANSI. Les messages detailles
@@ -9,11 +10,13 @@
 #    Node.js >= 20 x64 installe a demeure ; sinon installe la copie privee (zip officiel, empreinte SHA-256 verifiee).
 # 2. Telecharge le client du cerveau (<url>/brain.mjs), verifie que c'est bien du JavaScript, puis ecrit les raccourcis
 #    brain.cmd (PowerShell, cmd, Git Bash) et brain (Git Bash).
-# 3. Lance `brain setup` avec les memes options et rend son code de sortie.
+# 3. Lance `brain setup` avec les memes options et rend son code de sortie. Avec --join (message d'equipe), lance
+#    `brain join` : la demande attend qu'un admin l'accepte, puis enchaine sur setup.
 #
 # Codes de sortie (les memes que install.sh) :
-#   0, 1, 3, 6... ceux de `brain setup`, rendus tels quels : 0 = tout est branche ; 1 = setup a echoue (lancer
-#                 `brain.cmd doctor`) ; 3 = autorisation en attente ; 6 = branche, mais sans Screenpipe.
+#   0, 1, 3, 6, 7, 8  ceux de `brain setup` ou `brain join`, rendus tels quels : 0 = tout est branche ; 1 = echec
+#                 (lancer `brain.cmd doctor`) ; 3 = autorisation en attente ; 6 = branche, mais sans Screenpipe ;
+#                 7 = demande pas encore acceptee (relancer `brain.cmd join`) ; 8 = demande refusee.
 #   2             mauvais appel : --url absent ou pas en http(s).
 #   4             systeme non gere, ou Node.js impossible a installer ou a lancer ici (le message dit quoi installer).
 #   5             telechargement impossible (reseau, proxy, mauvaise adresse, page d'erreur au lieu du client) :
@@ -246,11 +249,14 @@ function ConvertTo-ShQuoted([string]$Value) { return "'" + $Value.Replace("'", "
 
 $ScriptArgs = @(Repair-Arguments $RawArgs)
 $Url = ''
+$Command = 'setup'
 for ($i = 0; $i -lt $ScriptArgs.Count; $i++) {
   if ($ScriptArgs[$i] -eq '--url' -and $i + 1 -lt $ScriptArgs.Count) { $Url = $ScriptArgs[$i + 1] }
   elseif ($ScriptArgs[$i] -like '--url=*') { $Url = $ScriptArgs[$i].Substring(6) }
+  # Message d'equipe : demande a rejoindre (brain join), qui enchaine sur setup une fois acceptee.
+  if ($ScriptArgs[$i] -eq '--join' -or $ScriptArgs[$i] -like '--join=*') { $Command = 'join' }
 }
-if (-not $Url) { Fail 2 'Usage : install.ps1 --url <adresse du cerveau> --token <jeton personnel>' }
+if (-not $Url) { Fail 2 'Usage : install.ps1 --url <adresse du cerveau> --token <jeton personnel>  (ou --join <code d''equipe>)' }
 $Url = $Url.TrimEnd('/')
 # Le client telecharge ici s'execute sur le poste et recoit le jeton : HTTPS obligatoire, sauf sur ce poste meme.
 # La valeur recue n'est pas reaffichee : ce pourrait etre le jeton passe au mauvais endroit.
@@ -367,7 +373,7 @@ $ErrorActionPreference = 'Continue'
 $savedEncoding = $null
 try { $savedEncoding = [Console]::OutputEncoding; [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false } catch { }
 try {
-  & $Node $Mjs setup @ScriptArgs
+  & $Node $Mjs $Command @ScriptArgs
   $code = $LASTEXITCODE
 } catch {
   $code = 4

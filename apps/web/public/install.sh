@@ -1,7 +1,8 @@
 #!/bin/sh
 # NOS Brainer : branche ce poste au cerveau d'entreprise en une commande.
 #
-#   sh install.sh --url https://cerveau.example.com --token cb_…
+#   sh install.sh --url https://cerveau.example.com --token cb_…        (prompt personnel, jeton remis par un admin)
+#   sh install.sh --url https://cerveau.example.com --join cj_… --name …  (message d'équipe : demande à rejoindre)
 #
 # 1. Node.js : la copie privée ~/.company-brain/node si elle est à la version figée ci-dessous ; sinon un Node.js ≥ 20
 #    installé à demeure sur le système ; sinon installe la copie privée (macOS, Linux), sans droits administrateur, en
@@ -9,16 +10,19 @@
 # 2. Télécharge le client du cerveau (<url>/brain.mjs), vérifie que c'est bien du JavaScript, puis écrit le raccourci
 #    ~/.company-brain/brain.
 # 3. Lance `brain setup` avec les mêmes options : Screenpipe, autorisations macOS, MCP, hooks, synchro, néon.
+#    Avec --join <code d'équipe> (message d'équipe), lance `brain join` : la demande attend qu'un admin l'accepte, puis
+#    enchaîne sur setup.
 # Sous Windows (Git Bash), passe la main à <url>/install.ps1, qui fait la même chose avec le même contrat.
 #
-# Codes de sortie (les mêmes pour install.ps1) :
-#   0, 1, 3, 6… ceux de `brain setup`, rendus tels quels : 0 = tout est branché ; 1 = setup a échoué (lancer
-#               `~/.company-brain/brain doctor`) ; 3 = autorisation macOS en attente (relancer `~/.company-brain/brain
-#               setup` une fois cochée) ; 6 = branché, mais sans Screenpipe.
-#   2           mauvais appel : --url absent ou pas en http(s), ou lancé avec sudo.
-#   4           système non géré, ou Node.js impossible à installer ou à lancer ici (le message dit quoi installer).
-#   5           téléchargement impossible (réseau, proxy, mauvaise adresse, page d'erreur au lieu du client) : relancer
-#               la même commande. Le client et Node.js déjà installés restent intacts.
+# Codes de sortie (les mêmes pour install.ps1, setup et join ; tableau complet : docs/CLI.md) :
+#   0, 1, 3, 6, 7, 8  ceux de `brain setup` ou `brain join`, rendus tels quels : 0 = tout est branché ; 1 = échec (lancer
+#                     `~/.company-brain/brain doctor`) ; 3 = autorisation macOS en attente (relancer `~/.company-brain/brain
+#                     setup` une fois cochée) ; 6 = branché, mais sans Screenpipe ; 7 = demande pas encore acceptée
+#                     (relancer `~/.company-brain/brain join`) ; 8 = demande refusée.
+#   2                 mauvais appel : --url absent ou pas en http(s), ou lancé avec sudo.
+#   4                 système non géré, ou Node.js impossible à installer ou à lancer ici (le message dit quoi installer).
+#   5                 téléchargement impossible (réseau, proxy, mauvaise adresse, page d'erreur au lieu du client) :
+#                     relancer la même commande. Le client et Node.js déjà installés restent intacts.
 # Le jeton n'est jamais affiché. Pourquoi un script et un CLI plutôt que des instructions à Claude : docs/CLI.md.
 # Tests seulement : COMPANY_BRAIN_FORCE_PRIVATE_NODE=1 ignore le Node.js du système (la CI teste le téléchargement).
 
@@ -55,15 +59,19 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # --url (ou --url=…) : l'adresse du cerveau, d'où viennent le client et install.ps1. Toutes les options passent ensuite
-# telles quelles à setup.
+# telles quelles à setup, ou à join avec --join (message d'équipe).
 url=""
+command="setup"
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--url" ]; then url="$arg"; fi
-  case "$arg" in --url=*) url="${arg#--url=}" ;; esac
+  case "$arg" in
+    --url=*) url="${arg#--url=}" ;;
+    --join | --join=*) command="join" ;;
+  esac
   prev="$arg"
 done
-[ -n "$url" ] || fail 2 "Usage : sh install.sh --url <adresse du cerveau> --token <jeton personnel>"
+[ -n "$url" ] || fail 2 "Usage : sh install.sh --url <adresse du cerveau> --token <jeton personnel>  (ou --join <code d'équipe>)"
 while :; do
   case "$url" in */) url="${url%/}" ;; *) break ;; esac
 done
@@ -390,4 +398,4 @@ shortcut_tmp=""
 
 say "Client du cerveau installé : $HOME_DIR/brain (Node.js v$NODE_V : $NODE)."
 trap - EXIT HUP INT TERM
-exec "$NODE" "$HOME_DIR/brain.mjs" setup "$@"
+exec "$NODE" "$HOME_DIR/brain.mjs" "$command" "$@"

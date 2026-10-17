@@ -214,9 +214,9 @@ export function captureDiagnosis(
 
 /** Commande d'installation à relancer (la config garde le jeton : l'adresse du cerveau suffit). */
 export function reinstallCommand(url: string, platform: NodeJS.Platform = process.platform): string {
-  const c = installCommands(url, "")
   // Les commandes du prompt d'installation, sans le jeton.
-  return (platform === "win32" ? c.windows : c.posix).replace(/ --token $/, "").replace(/ --token ; exit/, "; exit")
+  const c = installCommands(url)
+  return platform === "win32" ? c.windows : c.posix
 }
 
 type Ctx = {

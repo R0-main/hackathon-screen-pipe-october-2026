@@ -1,6 +1,6 @@
 // Client HTTP de l'API du cerveau (jeton Bearer personnel).
 
-import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, StatusInput, Zone, ZoneStatus } from "@brain/core"
+import type { AgentEventInput, AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, Skill, SkillFile, StatusInput, Zone, ZoneStatus } from "@brain/core"
 
 export class ApiError extends Error {
   constructor(
@@ -89,6 +89,11 @@ export type Workflow = {
   minutes_saved_per_week: number
 }
 
+/** Un skill reçu du cerveau : ceux de toute l'entreprise et ceux des cortex que la personne lit. */
+export type ApiSkill = Skill & { can_manage?: boolean }
+
+export type SkillPush = { name: string; description: string; zone?: string | null; files: SkillFile[] }
+
 export class BrainApi {
   readonly url: string
 
@@ -169,6 +174,13 @@ export class BrainApi {
   }
   automations(workflows: Workflow[]) {
     return this.request<{ saved: number }>("POST", "/api/automations", { workflows })
+  }
+  skills() {
+    return this.request<{ can_publish: boolean; skills: ApiSkill[] }>("GET", "/api/skills", undefined, 30000)
+  }
+  /** Publie un skill (droit de publication requis) ; même nom : version suivante. */
+  publishSkill(skill: SkillPush) {
+    return this.request<Skill>("POST", "/api/skills", { ...skill, agent: "brain-sync" }, 60000)
   }
   /** Lien de connexion au dashboard, valable 2 minutes (ouvert par `setup` dans le navigateur). */
   loginLink() {
