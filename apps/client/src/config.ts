@@ -28,6 +28,8 @@ export type Config = {
   screenpipe_meetings?: boolean
   /** Hook UserPromptSubmit : envoyer un court résumé masqué des prompts classés dans une zone (défaut : oui). */
   share_prompt_summaries?: boolean
+  /** Certificat (PEM) de l'autorité qui signe un cerveau auto-hébergé : le client lui fait confiance en plus des certificats publics. */
+  ca_file?: string
   /** Environnement relevé par install-schedule, réappliqué par `sync --scheduled` (utile sous Windows). */
   schedule_env?: Partial<Record<(typeof SCHEDULE_ENV_KEYS)[number], string>>
 }
@@ -53,6 +55,8 @@ export type State = {
   }
   /** Posé par install-schedule : la synchro automatique ne remonte rien d'antérieur qui n'ait déjà été relu. */
   baseline_at?: string
+  /** Empreinte du certificat du cerveau déjà installé pour les navigateurs du poste (setup ne le redemande pas). */
+  ca_trusted?: string
   /**
    * Conversations que Claude n'a pas su distiller (elles passent après les autres). n : essais probants (le modèle a
    * répondu, ou Claude a répondu à un autre appel de la synchro), abandon à MAX_DISTILL_ATTEMPTS ; tries : tous les essais

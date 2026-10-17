@@ -8,6 +8,7 @@ import { rmSync } from "node:fs"
 import { hostname } from "node:os"
 import { join } from "node:path"
 import { brainHome, ensureHome, readJson, UserError, writeJson } from "./config"
+import { applyCa, readCaFile } from "./ca"
 
 type Log = (s: string) => void
 
@@ -48,6 +49,8 @@ async function post<T>(f: typeof fetch, url: string, path: string, body: unknown
 
 export async function cmdJoin(flags: Record<string, string | boolean>, log: Log = console.log, deps: JoinDeps = {}): Promise<number> {
   const f = deps.fetch ?? fetch
+  // Cerveau auto-hébergé : la demande part en HTTPS vers son certificat avant toute config.
+  if (typeof flags.ca === "string" && flags.ca.trim()) applyCa(readCaFile(flags.ca.trim()).certs)
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   const str = (k: string) => (typeof flags[k] === "string" ? (flags[k] as string).trim() : undefined)
   const waitS = str("wait-accept") !== undefined ? Number.parseInt(str("wait-accept")!, 10) : DEFAULT_ACCEPT_WAIT_S
