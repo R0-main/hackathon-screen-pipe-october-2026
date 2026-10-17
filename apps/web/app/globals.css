@@ -425,9 +425,6 @@ html.lenis body {
 .landing-chapter > * {
   max-width: 30rem;
 }
-.landing-section {
-  padding-block: clamp(96px, 13vw, 184px);
-}
 
 /* Scène épinglée : le cerveau en plein cadre, les chapitres passent par-dessus. */
 .landing-stage.is-scroll {
@@ -478,28 +475,20 @@ html.lenis body {
   transform-origin: left center;
 }
 
-/* Versions comparées : chaque section occupe un écran, contenu centré verticalement ; elle s'arrête alignée
-   sur l'écran pendant une partie du scroll (components/landing/motion/setup.ts). */
-.landing[data-motion]:not([data-motion="actuelle"]) .landing-section {
+/* Chaque section occupe un écran, contenu centré verticalement ; elle s'arrête alignée sur l'écran pendant une
+   partie du scroll (components/landing/motion/setup.ts). */
+.landing-section {
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding-block: clamp(56px, 9vh, 112px);
 }
-.landing[data-motion]:not([data-motion="actuelle"]) .landing-section > .landing-wrap {
+.landing-section > .landing-wrap {
   width: 100%;
 }
 
-/* Fil de billes qui relie les sections (version Récit seulement, voir components/landing/motion). */
-.landing-thread,
-.landing-bead {
-  display: none;
-}
-.landing[data-motion="recit"] .landing-thread,
-.landing[data-motion="recit"] .landing-bead {
-  display: block;
-}
+/* Fil de billes qui relie les sections. */
 .landing-thread {
   position: absolute;
   top: clamp(56px, 9vh, 112px);
@@ -599,25 +588,15 @@ html.lenis body {
   background: var(--text);
 }
 
-/* Boutons magnétiques (Récit, Cinétique) : GSAP pilote leur transform, la transition CSS ne doit pas s'en mêler. */
-.landing[data-motion="recit"] [data-magnetic],
-.landing[data-motion="cinetique"] [data-magnetic] {
+/* Boutons magnétiques : GSAP pilote leur transform, la transition CSS ne doit pas s'en mêler. */
+.landing [data-magnetic] {
   transition-property: background-color, border-color;
 }
-
-/* Sélecteur de version, le temps de comparer. */
-.motion-switcher {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 50;
-  padding: 8px;
-}
 }
 
-/* Premier écran : masqué jusqu'à son entrée animée, sauf pour la version actuelle et sous mouvement réduit. */
+/* Premier écran : masqué jusqu'à son entrée animée, sauf sous mouvement réduit (rien ne s'anime alors). */
 @media (prefers-reduced-motion: no-preference) {
-  .landing[data-motion]:not([data-motion="actuelle"]) [data-hero] {
+  .landing [data-hero] {
     visibility: hidden;
   }
 }

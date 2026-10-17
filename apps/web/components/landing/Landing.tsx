@@ -8,21 +8,15 @@ import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
 import { BrainIcon, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
-import { MotionSwitcher } from "./MotionSwitcher"
 import { PrivacyFlow } from "./PrivacyFlow"
 import { ScrollBrain } from "./ScrollBrain"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
 import { setupLandingMotion } from "./motion/setup"
-import type { MotionVariant } from "./motion/variants"
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
-/**
- * Longueur de la scène épinglée, en hauteurs d'écran. Les versions comparées la rallongent : chaque chapitre
- * reste plus longtemps à l'écran et les transitions sont plus douces.
- */
-const PIN_SCREENS = 4
-const PIN_SCREENS_PACED = 7
+/** Longueur de la scène épinglée, en hauteurs d'écran : chaque chapitre a le temps d'être lu. */
+const PIN_SCREENS = 7
 
 /** Entrée et sortie de chaque chapitre, en fraction de la scène. */
 const CHAPTERS = [
@@ -40,7 +34,7 @@ const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!
  * il passe en plein écran et tourne pendant trois chapitres, puis la page reprend son cours.
  * Sans JavaScript ou sous `prefers-reduced-motion`, les chapitres se lisent à la suite, cerveau immobile.
  */
-export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo: boolean; signedIn?: boolean; variant?: MotionVariant }) {
+export function Landing({ demo, signedIn = false }: { demo: boolean; signedIn?: boolean }) {
   const rootRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLElement>(null)
   const heroRef = useRef<HTMLDivElement>(null)
@@ -75,7 +69,7 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
         scrollTrigger: {
           trigger: stageRef.current,
           start: "top top",
-          end: `+=${(variant === "actuelle" ? PIN_SCREENS : PIN_SCREENS_PACED) * 100}%`,
+          end: `+=${PIN_SCREENS * 100}%`,
           pin: true,
           scrub: true,
           onUpdate: (self) => {
@@ -97,10 +91,10 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
       })
       tl.fromTo(barRef.current, { scaleX: 0 }, { scaleX: 1, duration: 1 }, 0)
 
-      // Le reste de la page, selon la version comparée. Créé après la scène épinglée, pour l'ordre des déclencheurs.
+      // Le reste de la page (arrêts, calage, sections au scroll). Créé après la scène épinglée, pour l'ordre des déclencheurs.
       const scene = tl.scrollTrigger
       const stops = CHAPTERS.map((c) => (c.in + 0.045 + c.out) / 2)
-      const offMotion = rootRef.current && scene ? setupLandingMotion(variant, rootRef.current, { lenis, scene, stops }) : () => {}
+      const offMotion = rootRef.current && scene ? setupLandingMotion(rootRef.current, { lenis, scene, stops }) : () => {}
 
       return () => {
         offMotion()
@@ -110,7 +104,7 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
         triggerRef.current = null
       }
     },
-    { dependencies: [mode, variant], scope: stageRef, revertOnUpdate: true },
+    { dependencies: [mode], scope: stageRef, revertOnUpdate: true },
   )
 
   // « Voir comment ça marche » : au début du premier chapitre, en douceur quand la scène est épinglée.
@@ -127,12 +121,10 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
   const primary = cta.label
 
   return (
-    <main ref={rootRef} className="landing" data-motion={variant}>
+    <main ref={rootRef} className="landing">
       <section ref={stageRef} className={`landing-stage ${mode === "scroll" ? "is-scroll" : ""}`} aria-labelledby="landing-title">
         <div className="landing-screen">
-          <div data-parallax className="absolute inset-0">
-            <ScrollBrain zones={LANDING_ZONES} synapses={LANDING_SYNAPSES} agents={LANDING_AGENTS} progress={progress} still={mode !== "scroll"} />
-          </div>
+          <ScrollBrain zones={LANDING_ZONES} synapses={LANDING_SYNAPSES} agents={LANDING_AGENTS} progress={progress} still={mode !== "scroll"} />
 
           <header className="absolute inset-x-0 top-0 z-10">
             <nav data-hero="nav" className="landing-wrap flex items-center justify-between py-4" aria-label="Principal">
@@ -162,7 +154,7 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
                 Chaque employé travaille déjà avec Claude Code ou Codex. Screenpipe capte ces sessions sur son poste, et le cerveau en garde l'essentiel pour tous les agents de l'entreprise.
               </p>
               <div data-hero="cta" className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
-                <Link href={cta.href} data-magnetic className="btn btn-primary btn-lg">
+                <Link href={cta.href} className="btn btn-primary btn-lg">
                   {primary}
                 </Link>
                 <a href="#chapitres" onClick={toChapters} className="landing-link text-[15px]">
@@ -221,12 +213,11 @@ export function Landing({ demo, signedIn = false, variant = "actuelle" }: { demo
         <Privacy />
         <Close cta={cta} demo={demo} />
       </div>
-      <MotionSwitcher current={variant} />
     </main>
   )
 }
 
-/** Bille du fil qui relie les sections (version Récit) ; masquée dans les autres versions. */
+/** Bille du fil qui relie les sections : elle se remplit quand on arrive sur la section. */
 function Bead() {
   return (
     <span data-bead className="landing-bead" aria-hidden>
@@ -365,7 +356,7 @@ function Close({ cta, demo }: { cta: { href: string; label: string }; demo: bool
           {demo ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta." : "Connectez-vous avec le jeton que votre admin vous a remis."}
         </p>
         <div className="mt-8">
-          <Link href={cta.href} data-magnetic className="btn btn-primary btn-lg">
+          <Link href={cta.href} className="btn btn-primary btn-lg">
             {cta.label}
           </Link>
         </div>
