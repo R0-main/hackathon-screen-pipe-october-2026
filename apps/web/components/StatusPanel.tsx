@@ -68,7 +68,7 @@ export function StatusPanel({
         </div>
         {canRefresh && (
           <button type="button" className="btn btn-primary" onClick={refresh} disabled={busy}>
-            {busy ? "Generating" : "Refresh the state"}
+            {busy ? "Generating" : "Refresh the status"}
           </button>
         )}
       </div>

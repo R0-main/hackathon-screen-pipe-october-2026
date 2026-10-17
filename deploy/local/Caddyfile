@@ -1,24 +1,24 @@
-# Cerveau auto-hébergé : HTTPS sur le réseau local devant le dashboard (service « brain », port 3000).
-# BRAIN_HOSTS : les noms et adresses du cerveau (« localhost, 192.168.1.20, poste-compta.local »), tous dans le certificat.
-# BRAIN_TLS   : « internal » (autorité privée de Caddy, certificat racine servi sur /ca.crt) ou « /certs/cert.pem /certs/key.pem ».
+# Self-hosted brain: HTTPS on the local network in front of the dashboard ("brain" service, port 3000).
+# BRAIN_HOSTS: the brain's names and addresses ("localhost, 192.168.1.20, finance-desk.local"), all in the certificate.
+# BRAIN_TLS  : "internal" (Caddy's private authority, root certificate served on /ca.crt) or "/certs/cert.pem /certs/key.pem".
 
 {
-	# Les redirections HTTP → HTTPS automatiques passeraient avant notre bloc :80 (et donc avant /ca.crt) : on les fait nous-mêmes.
+	# The automatic HTTP → HTTPS redirects would come before our :80 block (and so before /ca.crt): we do them ourselves.
 	auto_https disable_redirects
-	# Inutile d'installer l'autorité dans le conteneur : ce sont les postes qui lui font confiance, via le prompt.
+	# No need to install the authority in the container: the computers are the ones that trust it, through the prompt.
 	skip_install_trust
 }
 
 {$BRAIN_HOSTS:localhost} {
 	tls {$BRAIN_TLS:internal}
 	encode gzip
-	# Le flux « Agents en direct » (/api/stream) est un flux SSE : aucune mise en tampon.
+	# The "Live agents" feed (/api/stream) is an SSE stream: no buffering.
 	reverse_proxy brain:3000 {
 		flush_interval -1
 	}
 }
 
-# Port 80 : le certificat racine, à récupérer avant de faire confiance au HTTPS ; tout le reste est renvoyé vers HTTPS.
+# Port 80: the root certificate, to fetch before trusting HTTPS; everything else is redirected to HTTPS.
 :80 {
 	handle /ca.crt {
 		root * /data/caddy/pki/authorities/local
