@@ -1,2 +1,2 @@
-# install.sh est servi tel quel aux postes macOS et Linux : jamais de CRLF, même après un checkout sous Windows.
+# install.sh is served as is to macOS and Linux computers: never CRLF, even after a checkout on Windows.
 *.sh text eol=lf
