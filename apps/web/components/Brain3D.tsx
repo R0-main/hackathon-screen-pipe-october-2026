@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
+import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes, type V3 } from "./brain-geometry"
 import { LOOKS, dotKit, dotLook, type DotLook } from "./dot-model"
 import { firstName } from "./format"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
@@ -65,6 +65,9 @@ const IDLE_MS = 5000
 const RIPPLE_MS = 2400
 /** Intervalle entre deux ondes tant qu'une zone est choisie. */
 const PULSE_MS = 1000
+/** Onde de choc : poussée maximale des points (unités de scène), et portée au-delà du bord de la zone. */
+const SHOCK = 0.03
+const SHOCK_AROUND = 0.22
 
 type ThreeModule = typeof import("three")
 type SphereMesh = THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>
@@ -83,6 +86,9 @@ type ZoneGfx = {
   nodes: SphereMesh[]
   nodeMat: THREE.MeshBasicMaterial
   linkMat: THREE.LineBasicMaterial
+  /** Traits centre → connaissance : le sommet 2k + 1 est la connaissance k. */
+  linkGeo: THREE.BufferGeometry
+  centerPos: THREE.Vector3
   active: boolean
   selected: boolean
   /** Allumée : touchée en direct ou choisie au clic. */
@@ -341,6 +347,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       node.userData.zone = z.id
       node.userData.r = r
       node.userData.d = p.distanceTo(centerPos)
+      node.userData.base = p.clone()
       group.add(node)
       nodes.push(node)
       pickables.push(node)
@@ -353,7 +360,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     materials.push(centerMat, nodeMat, linkMat)
     const glow = new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
     const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, active: false, selected: false, lit: false })
+    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false })
   })
 
   // Le réseau qui dessine le cerveau : des liaisons en arcs, à l'encre ; seules les zones portent la couleur.
@@ -404,7 +411,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
 
   // Les connaissances reliées entre elles par des traits droits, chacune à ses plus proches voisines, quelle que soit leur zone.
   const known = [...gfx.values()].flatMap((g) => g.nodes.map((node) => ({ p: node.position.toArray(), color: new T.Color(g.locked ? NEUTRAL : g.color).toArray() })))
-  const knownSeg = gradientSegments(knowledgeLinks(known.map((k) => k.p)).map(([a, b]) => ({ pts: [known[a].p, known[b].p], from: known[a].color, to: known[b].color })))
+  const knownPairs = knowledgeLinks(known.map((k) => k.p))
+  const knownSeg = gradientSegments(knownPairs.map(([a, b]) => ({ pts: [known[a].p, known[b].p], from: known[a].color, to: known[b].color })))
   const knownGeo = new T.BufferGeometry()
   knownGeo.setAttribute("position", new T.BufferAttribute(knownSeg.positions, 3))
   knownGeo.setAttribute("color", new T.BufferAttribute(knownSeg.colors, 3))
@@ -412,6 +420,104 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   group.add(new T.LineSegments(knownGeo, knownMat))
   geometries.push(knownGeo)
   materials.push(knownMat)
+
+  // Onde de choc : au passage du front, les connaissances de la zone et les neurones du réseau alentour (jusqu'à
+  // SHOCK_AROUND au-delà de la zone) sont poussés vers l'extérieur puis reviennent ; leurs liaisons suivent.
+  const knownNodes = [...gfx.values()].flatMap((g) => g.nodes.map((node, k) => ({ node, g, k })))
+  const netBase = curves.positions.slice()
+  const neuronR = net.points.map((_, i) => NEURON_R * (1 - 0.25 * net.depth[i]))
+  type Field = { neurons: number[]; netVerts: number[]; known: number[]; knownVerts: number[] }
+  const fields = new Map<ZoneGfx, Field>()
+  /** Ce que l'onde d'une zone peut atteindre, calculé une fois par zone. */
+  const fieldOf = (g: ZoneGfx): Field => {
+    let f = fields.get(g)
+    if (f) return f
+    const c = g.centerPos
+    const far = (g.reach + SHOCK_AROUND) ** 2
+    const near = (p: V3) => (p[0] - c.x) ** 2 + (p[1] - c.y) ** 2 + (p[2] - c.z) ** 2 < far
+    const neurons = net.points.map((p, i) => (near(p) ? i : -1)).filter((i) => i >= 0)
+    const inNet = new Set(neurons)
+    const netVerts: number[] = []
+    for (let v = 0; v < curves.a.length; v++) if (inNet.has(curves.a[v]) || inNet.has(curves.b[v])) netVerts.push(v)
+    const known = knownNodes.map((k, i) => (near((k.node.userData.base as THREE.Vector3).toArray()) ? i : -1)).filter((i) => i >= 0)
+    const inKnown = new Set(known)
+    const knownVerts = knownPairs.flatMap(([a, b], l) => (inKnown.has(a) || inKnown.has(b) ? [l] : []))
+    f = { neurons, netVerts, known, knownVerts }
+    fields.set(g, f)
+    return f
+  }
+  const netShift = new Float32Array(net.points.length * 3)
+  const knownShift = new Float32Array(knownNodes.length * 3)
+  let shaken = new Set<ZoneGfx>()
+  /** Décalage d'un point p par les ondes en cours de la zone g, ajouté dans out (à l'indice o). */
+  const addWave = (g: ZoneGfx, p: ArrayLike<number>, out: Float32Array, o: number, t: number) => {
+    const c = g.centerPos
+    const vx = p[0] - c.x
+    const vy = p[1] - c.y
+    const vz = p[2] - c.z
+    const d = Math.hypot(vx, vy, vz) || 1
+    // Au-delà de la zone, l'onde s'amortit jusqu'à s'éteindre à SHOCK_AROUND.
+    const edge = d > g.reach ? Math.max(0, 1 - (d - g.reach) / SHOCK_AROUND) : 1
+    if (edge === 0) return
+    for (const r of live) {
+      if (r.zone !== g) continue
+      const k = (t - r.start) / RIPPLE_MS
+      const off = (d - rippleRadius(r, k)) / 0.08
+      const push = (SHOCK * edge * Math.exp(-off * off) * (1 - k)) / d
+      out[o] += vx * push
+      out[o + 1] += vy * push
+      out[o + 2] += vz * push
+    }
+  }
+  const netPos = netGeo.attributes.position as THREE.BufferAttribute
+  const knownPos = knownGeo.attributes.position as THREE.BufferAttribute
+  const shake = (t: number) => {
+    const now = new Set(reduced ? [] : live.map((r) => r.zone))
+    const touched = new Set([...now, ...shaken])
+    shaken = now
+    if (touched.size === 0) return
+    // On remet à zéro tout ce qui a bougé, puis on additionne les ondes en cours.
+    for (const g of touched) {
+      const f = fieldOf(g)
+      for (const i of f.neurons) netShift.fill(0, i * 3, i * 3 + 3)
+      for (const i of f.known) knownShift.fill(0, i * 3, i * 3 + 3)
+    }
+    for (const g of now) {
+      const f = fieldOf(g)
+      for (const i of f.neurons) addWave(g, net.points[i], netShift, i * 3, t)
+      for (const i of f.known) addWave(g, (knownNodes[i].node.userData.base as THREE.Vector3).toArray(), knownShift, i * 3, t)
+    }
+    for (const g of touched) {
+      const f = fieldOf(g)
+      for (const i of f.neurons) {
+        const p = net.points[i]
+        const r = neuronR[i]
+        neurons.setMatrixAt(i, mtx.makeScale(r, r, r).setPosition(p[0] + netShift[i * 3], p[1] + netShift[i * 3 + 1], p[2] + netShift[i * 3 + 2]))
+      }
+      // Chaque sommet d'une liaison courbe suit ses deux neurones, au prorata de sa place le long de l'arc.
+      for (const v of f.netVerts) {
+        const a = curves.a[v] * 3
+        const b = curves.b[v] * 3
+        const u = curves.t[v]
+        for (let c = 0; c < 3; c++) netPos.array[v * 3 + c] = netBase[v * 3 + c] + netShift[a + c] * (1 - u) + netShift[b + c] * u
+      }
+      for (const i of f.known) {
+        const { node, g: owner, k } = knownNodes[i]
+        const base = node.userData.base as THREE.Vector3
+        node.position.set(base.x + knownShift[i * 3], base.y + knownShift[i * 3 + 1], base.z + knownShift[i * 3 + 2])
+        ;(owner.linkGeo.attributes.position as THREE.BufferAttribute).setXYZ(k * 2 + 1, node.position.x, node.position.y, node.position.z)
+        owner.linkGeo.attributes.position.needsUpdate = true
+      }
+      for (const l of f.knownVerts) {
+        const [a, b] = knownPairs[l]
+        knownPos.setXYZ(l * 2, knownNodes[a].node.position.x, knownNodes[a].node.position.y, knownNodes[a].node.position.z)
+        knownPos.setXYZ(l * 2 + 1, knownNodes[b].node.position.x, knownNodes[b].node.position.y, knownNodes[b].node.position.z)
+      }
+    }
+    neurons.instanceMatrix.needsUpdate = true
+    netPos.needsUpdate = true
+    knownPos.needsUpdate = true
+  }
 
   // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
   // l'autre, plus marqués quand elles sont actives.
@@ -675,6 +781,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       r.mesh.lookAt(camera.position)
     }
 
+    shake(t)
     renderer.render(scene, camera)
 
     const centerDepth = tmp.set(0, 0, 0).project(camera).z
