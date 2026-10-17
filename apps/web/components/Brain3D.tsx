@@ -56,8 +56,15 @@ const SYNAPSE_R = 0.0045
 /** Flux le long des arcs entre zones : finesse de la gaine, vitesse (tours par seconde), opacité au cœur et largeur des lueurs. */
 const FLOW_RINGS = 96
 const FLOW_SPEED = 0.16
-const FLOW_ALPHA = 0.55
-const FLOW_WIDTH = 0.07
+/**
+ * Les deux gaines d'une lueur : un cœur net, plus épais que l'arc et à sa couleur vive, et un halo large et
+ * pâle autour. `head` / `tail` : longueur de l'avant et de la traînée (en part de l'arc) : une comète.
+ */
+type FlowLayer = { radius: number; alpha: number; head: number; tail: number }
+const FLOW_LAYERS: FlowLayer[] = [
+  { radius: 1.9, alpha: 1, head: 0.025, tail: 0.13 },
+  { radius: 4.2, alpha: 0.3, head: 0.04, tail: 0.18 },
+]
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
@@ -109,14 +116,14 @@ type ZoneGfx = {
   dismissedAt: number
 }
 
-/** `flow` : gaine autour de l'arc où circulent les lueurs ; une couleur RGBA par sommet, l'alpha est animé. */
+/** `flow` : les gaines autour de l'arc où circulent les lueurs (cœur, halo) ; une couleur RGBA par sommet, l'alpha est animé. */
 type SynapseGfx = {
   a: string
   b: string
   mat: THREE.MeshBasicMaterial
   baseOpacity: number
   active: boolean
-  flow: THREE.BufferAttribute
+  flow: { attr: THREE.BufferAttribute; layer: FlowLayer }[]
   /** Décalage de départ des lueurs, propre à chaque arc : elles ne partent pas toutes ensemble. */
   phase: number
 }
@@ -539,8 +546,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
 
   const reducedFlow = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  /** Profil d'une lueur le long de l'arc : une cloche douce, de largeur FLOW_WIDTH. */
-  const flowBump = (x: number) => Math.exp(-((x / FLOW_WIDTH) ** 2))
+  /** Profil d'une lueur le long de l'arc (x > 0 : devant elle) : une tête nette, une traînée qui s'étire derrière. */
+  const flowBump = (x: number, l: FlowLayer) => Math.exp(-((x / (x > 0 ? l.head : l.tail)) ** 2))
   // Synapses : arcs entre deux zones qui partagent des entités, en dégradé de la couleur de l'une à celle de
   // l'autre, plus marqués quand elles sont actives.
   const TUBULAR = 64
@@ -564,22 +571,25 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     geometries.push(geo)
     materials.push(mat)
 
-    // La gaine du flux : même arc, un peu plus large, transparente sauf là où passe une lueur. Sa couleur suit le
-    // dégradé de l'arc, éclaircie, pour une lueur douce plutôt qu'un trait.
-    const flowGeo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), FLOW_RINGS, SYNAPSE_R * 2.2, RADIAL, false)
-    const flowCols = new Float32Array(flowGeo.attributes.position.count * 4)
-    for (let v = 0; v < flowGeo.attributes.position.count; v++) {
-      tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / FLOW_RINGS).lerp(whiteC, 0.3).toArray(flowCols, v * 4)
-      flowCols[v * 4 + 3] = 0
-    }
-    const flow = new T.BufferAttribute(flowCols, 4)
-    flowGeo.setAttribute("color", flow)
-    const flowMat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
-    const flowMesh = new T.Mesh(flowGeo, flowMat)
-    flowMesh.visible = !reducedFlow
-    group.add(flowMesh)
-    geometries.push(flowGeo)
-    materials.push(flowMat)
+    // Les gaines du flux : même arc, plus larges, transparentes sauf là où passe une lueur. Leur couleur suit le
+    // dégradé de l'arc, avivée : la lueur se voit dans la couleur des zones qu'elle relie.
+    const flow = FLOW_LAYERS.map((layer) => {
+      const flowGeo = new T.TubeGeometry(new T.CatmullRomCurve3(pts), FLOW_RINGS, SYNAPSE_R * layer.radius, RADIAL, false)
+      const flowCols = new Float32Array(flowGeo.attributes.position.count * 4)
+      for (let v = 0; v < flowGeo.attributes.position.count; v++) {
+        tone.copy(from).lerp(to, Math.floor(v / (RADIAL + 1)) / FLOW_RINGS).offsetHSL(0, 0.15, 0).toArray(flowCols, v * 4)
+        flowCols[v * 4 + 3] = 0
+      }
+      const attr = new T.BufferAttribute(flowCols, 4)
+      flowGeo.setAttribute("color", attr)
+      const flowMat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
+      const flowMesh = new T.Mesh(flowGeo, flowMat)
+      flowMesh.visible = !reducedFlow
+      group.add(flowMesh)
+      geometries.push(flowGeo)
+      materials.push(flowMat)
+      return { attr, layer }
+    })
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, flow, phase: (hashString(`${s.a}|${s.b}`) % 1000) / 1000 })
   }
   /**
@@ -590,18 +600,21 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (reducedFlow) return
     for (const s of syn) {
       const speed = FLOW_SPEED * (s.active ? 1.8 : 1)
-      const peak = FLOW_ALPHA * (s.active ? 1.8 : 1)
       const go = (time * speed + s.phase) % 1
       const back = 1 - ((time * speed + s.phase + 0.5) % 1)
-      const arr = s.flow.array as Float32Array
-      for (let ring = 0; ring <= FLOW_RINGS; ring++) {
-        const u = ring / FLOW_RINGS
-        const glow = Math.max(flowBump(u - go), flowBump(u - back))
-        const ends = Math.min(1, u / 0.1, (1 - u) / 0.1)
-        const alpha = peak * glow * ends
-        for (let k = 0; k <= RADIAL; k++) arr[(ring * (RADIAL + 1) + k) * 4 + 3] = alpha
+      for (const { attr, layer } of s.flow) {
+        const peak = Math.min(1, layer.alpha * (s.active ? 1.5 : 1))
+        const arr = attr.array as Float32Array
+        for (let ring = 0; ring <= FLOW_RINGS; ring++) {
+          const u = ring / FLOW_RINGS
+          // L'une va de A vers B (devant elle : u > go), l'autre de B vers A (devant elle : u < back).
+          const glow = Math.max(flowBump(u - go, layer), flowBump(back - u, layer))
+          const ends = Math.min(1, u / 0.08, (1 - u) / 0.08)
+          const alpha = peak * glow * ends
+          for (let k = 0; k <= RADIAL; k++) arr[(ring * (RADIAL + 1) + k) * 4 + 3] = alpha
+        }
+        attr.needsUpdate = true
       }
-      s.flow.needsUpdate = true
     }
   }
 
