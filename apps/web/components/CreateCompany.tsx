@@ -98,6 +98,7 @@ function clear() {
  */
 export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: boolean }) {
   const [ready, setReady] = useState(false)
+  const brainFrame = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<Step>("intro")
   const [company, setCompany] = useState("")
   const [description, setDescription] = useState("")
@@ -257,7 +258,9 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
   return (
     <main className="create flex min-h-dvh flex-col">
-      <header className="create-wrap flex items-center justify-between gap-4 py-4">
+      {/* Positionné et premier : tout ce qui suit (positionné aussi) passe devant. */}
+      <MiniBrain frame={brainFrame} zones={draftZones} people={people} counts={proposalCounts} />
+      <header className="create-wrap relative flex items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-2.5 rounded-[6px]">
           <LogoMark size={26} />
           <span className="whitespace-nowrap text-[15px] font-medium">NOS Brainer</span>
@@ -279,12 +282,13 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
           )}
         </div>
       </header>
-      <div className="create-progress" aria-hidden>
+      <div className="create-progress relative" aria-hidden>
         <div className="create-progress-fill" style={{ transform: `scaleX(${index < 0 ? 0 : (index + 1) / STEPS.length})` }} />
       </div>
 
-      <div className="create-wrap grid flex-1 gap-12 py-[clamp(40px,9vh,112px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-20">
-        <section className="min-w-0 max-w-[640px]" aria-live="polite">
+      {/* Le cerveau est en fond de page : là où il n'y a pas de contenu, glisser et zoomer lui reviennent. */}
+      <div className="create-wrap pointer-events-none relative grid flex-1 gap-12 py-[clamp(40px,9vh,112px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-20">
+        <section className="pointer-events-auto min-w-0 max-w-[640px]" aria-live="polite">
           {!ready ? null : (
             <div key={step} className="step-in">
               {back[step] && (
@@ -461,10 +465,10 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
 
         <aside className="hidden lg:block" aria-label={`Aperçu du cerveau ${deNom(org)}`}>
           <div className="sticky top-10">
-            <MiniBrain org={org} zones={draftZones} people={people} counts={proposalCounts} />
+            <BrainCaption frame={brainFrame} org={org} zones={draftZones} people={people} />
             {created && step !== "intro" && (
               <p className="mt-6 text-center text-[13px] text-trace">
-                <button type="button" className="hover:text-ink" onClick={restart}>
+                <button type="button" className="pointer-events-auto hover:text-ink" onClick={restart}>
                   Créer une autre entreprise
                 </button>
               </p>
@@ -905,9 +909,11 @@ function Presence({ connected, self, compact = false }: { connected: boolean; se
 /**
  * Le cerveau de l'entreprise en train de naître : le même cerveau 3D que le dashboard et la landing, sans ses
  * commandes. Chaque zone qui apparaît s'allume un instant ; les personnes y prennent place une fois le cerveau créé.
+ * Il se cadre sur sa case, à droite, mais il est dessiné sur toute la page, derrière le contenu : on zoome jusque
+ * dedans sans jamais buter sur un cadre.
  */
-function MiniBrain(props: { org: string; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[]; counts: Record<string, number> }) {
-  const { org, zones, people, counts } = props
+function MiniBrain(props: { frame: React.RefObject<HTMLDivElement | null>; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[]; counts: Record<string, number> }) {
+  const { frame, zones, people, counts } = props
   const views = useMemo<ZoneView[]>(
     () => zones.map((z) => ({ ...z, keywords: [], count: counts[z.id] ?? 0, last_at: null, contributors: 0, locked: false, entities: [] })),
     [zones, counts],
@@ -929,12 +935,20 @@ function MiniBrain(props: { org: string; zones: ZoneOption[]; people: { id: stri
   const dots: BrainPerson[] = people
     .filter((p) => p.id !== "me")
     .map((p, i) => ({ id: p.id, name: p.name, zone: zones[0]?.id ?? null, working: p.connected, me: i === 0 }))
+  return (
+    <div className="fixed inset-0 hidden lg:block">
+      <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} paper={BONE} anchor={frame} />
+    </div>
+  )
+}
+
+/** La case où se cadre le cerveau (dessiné, lui, sur toute la page), et sa légende. */
+function BrainCaption(props: { frame: React.RefObject<HTMLDivElement | null>; org: string; zones: ZoneOption[]; people: { connected: boolean }[] }) {
+  const { frame, org, zones, people } = props
   const connected = people.filter((p) => p.connected).length
   return (
     <figure>
-      <div className="relative h-[min(62vh,520px)] w-full">
-        <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} paper={BONE} />
-      </div>
+      <div ref={frame} className="h-[min(62vh,520px)] w-full" />
       <figcaption className="mt-2 text-center">
         <span className="block text-[17px] font-medium">{org.charAt(0).toUpperCase() + org.slice(1)}</span>
         <span className="text-[13px] tabular-nums text-trace">
