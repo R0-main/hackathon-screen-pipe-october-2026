@@ -11,6 +11,7 @@ import { AGENT_LABEL, api, errorMessage, initials } from "./format"
 import { RelTime } from "./RelTime"
 import { TeamJoin } from "./TeamJoin"
 import { ADMIN_VIEWS, type AdminTab } from "./admin-views"
+import { AutoZones } from "./AutoZones"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 
 type User = Profile & { zones: string[] }
@@ -157,7 +158,10 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
         )}
         {tab === "zones" && (
           <PageScroll width="max-w-[720px]">
-            <ZoneForm zones={zones} reload={reload} storeKind={props.storeKind} />
+            <div className="space-y-4">
+              <ZoneForm zones={zones} reload={reload} storeKind={props.storeKind} />
+              <AutoZones onZonesChanged={() => void reload()} />
+            </div>
           </PageScroll>
         )}
       </div>

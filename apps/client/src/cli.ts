@@ -83,6 +83,10 @@ Commandes :
   refresh-status [--dry-run]
                      Admins : rédige « où en est la boîte » sur ce poste avec Claude (\`claude -p\`, votre abonnement ;
                      sinon la clé API) et l'envoie au dashboard. --dry-run : affiche le résumé sans l'envoyer.
+  refresh-zones [--dry-run]
+                     Admins : passage « nouvelles zones » fait ici par Claude Code (\`claude -p\`, votre abonnement ;
+                     en CI, CLAUDE_CODE_OAUTH_TOKEN de \`claude setup-token\`). Le cerveau crée les zones qui manquent
+                     et y range leurs connaissances. --dry-run : affiche les propositions sans rien envoyer.
   status             État du client en bref : connexion, dernière synchro, Screenpipe, hooks, planification (détail : doctor).
   mcp                Serveur MCP stdio « company-brain » (branché par setup dans Claude Code, portée utilisateur).
   hook               Gestionnaire des hooks Claude Code (lit le JSON du hook sur l'entrée standard).
@@ -208,6 +212,10 @@ async function main(argv: string[]): Promise<number> {
     case "refresh-status": {
       const { cmdRefreshStatus } = await import("./refresh-status")
       return cmdRefreshStatus({ dryRun: Boolean(flags["dry-run"]), verbose: Boolean(flags.verbose) })
+    }
+    case "refresh-zones": {
+      const { cmdRefreshZones } = await import("./refresh-zones")
+      return cmdRefreshZones({ dryRun: Boolean(flags["dry-run"]) })
     }
     case "mcp": {
       const { runMcpServer } = await import("./mcp")

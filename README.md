@@ -52,6 +52,7 @@ demo/                 Script de démo
 | **brain-sync** | `brain.mjs sync` | Lit les logs Claude Code / Codex et l'API locale de Screenpipe, filtre (liste blanche d'apps, secrets, données perso), distille avec Claude, envoie. `--dry-run --full` montre tout ce qui partirait, `--confirm` envoie exactement ce qui a été relu. |
 | **Skills sur le poste** | `brain.mjs skills` | Installe dans `~/.claude/skills` les skills attribués au poste (après chaque synchro et au `setup`), retire ceux qui ne le sont plus, ne touche jamais un skill personnel. `skills push <dossier> --cortex <zone>` publie un dossier. |
 | **État par Claude** | `brain.mjs refresh-status` | Admins : rédige « où en est la boîte » sur le poste avec Claude (abonnement) et l'envoie au dashboard. |
+| **Nouvelles zones** | `brain.mjs refresh-zones` | Admins : passage « nouvelles zones » fait par Claude Code (abonnement), sur un poste ou dans la CI de l'entreprise (GitHub Actions). |
 | **Diagnostic** | `brain.mjs doctor` | Passe le poste en revue sans rien modifier (Node, raccourci, cerveau, Screenpipe, MCP, hooks, synchro, distillation) et donne la commande qui répare chaque point KO ; `--json` pour Claude Code. |
 | **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
 | **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
@@ -97,6 +98,10 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | POST | `/api/join`, `/api/join/status` | Public : demande pour rejoindre avec le code du message d'équipe (empreinte du jeton du poste), puis son état (pour qui détient le jeton). |
 | GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin : message d'équipe et demandes en attente, changer le code ; accepter (compte créé tel que réglé) ou refuser. |
 | GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
+| GET/PUT/DELETE | `/api/admin/claude` | Admin : clé API Claude de l'entreprise (`{key}`, vérifiée puis chiffrée) ; GET n'en renvoie que la source et les 4 derniers caractères. |
+| GET/POST | `/api/admin/zones/auto` | Admin : historique du job « nouvelles zones » ; POST sans corps : passage du serveur (clé API) ; avec `{zones: [{name, description, keywords, item_ids}]}` : applique ce qu'a proposé `refresh-zones`. |
+| GET | `/api/admin/zones/auto/input` | Admin : matière d'un passage (zones, connaissances récentes numérotées) pour `refresh-zones`. |
+| GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`) : job quotidien « nouvelles zones », toutes entreprises confondues. |
 | POST | `/api/sync/report` | Compte rendu d'une synchro du poste (compteurs, erreur masquée) : page Supervision. |
 | GET | `/api/admin/monitoring` | Admin : état des postes, incidents du serveur, instance. `GET /api/health` : sonde publique (200 / 503). |
 | GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin : connecteurs Notion, Linear, Todoist, calendrier ICS (réglages sans le jeton, synchro à la demande). |
@@ -178,7 +183,44 @@ Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgr
    - Désactivez « Vercel Authentication » : les postes appellent l'API avec leur jeton personnel.
 3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Fournil au premier passage sur `/login`. Le secret de session est généré tout seul et conservé dans la base.
 
+4. **Job quotidien « nouvelles zones »** : définissez `CRON_SECRET` (une longue chaîne aléatoire, `openssl rand -hex 32`) et
+   `BRAIN_SECRET_KEY` (idem, chiffre les clés Claude des entreprises). `apps/web/vercel.json` déclare le cron. La clé Claude,
+   elle, se règle dans l'appli : chaque admin colle celle de son entreprise dans **Équipe et accès → Zones**.
+
 Variables : voir [apps/web/.env.example](apps/web/.env.example).
+
+### Zones créées automatiquement
+
+Chaque jour à 10 h, Claude relit les zones et les connaissances des 30 derniers jours d'une entreprise, repère un domaine de
+travail récurrent qui n'a pas de zone à lui (du juridique rangé faute de mieux dans « Direction »…) et la zone est **créée tout
+de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisit, dans Équipe et accès → Zones, qui fait l'analyse :
+
+- **Abonnement Claude (Claude Code)**, sans clé API : un workflow GitHub Actions dans un repo de l'entreprise (le dashboard
+  le donne prêt à copier) lance chaque jour à 10 h `brain.mjs refresh-zones` avec deux secrets, `CLAUDE_CODE_OAUTH_TOKEN`
+  (`claude setup-token`) et `BRAIN_TOKEN` (le jeton du cerveau de l'admin). C'est le Claude Code de l'entreprise qui analyse
+  (`claude -p`, `GET /api/admin/zones/auto/input`) : le jeton Claude ne quitte jamais sa CI, le cerveau ne reçoit que les
+  zones proposées (`POST /api/admin/zones/auto`, connaissances désignées par identifiant) et les applique avec ses garde-fous.
+  `~/.company-brain/brain refresh-zones [--dry-run]` fait la même chose à la main sur le poste d'un admin.
+- **Clé API Claude** : Vercel Cron appelle `/api/cron/new-zones` et le serveur fait l'analyse avec la clé de l'entreprise.
+- **Cerveau hébergé sur une machine de l'entreprise (Docker)** : pas de Vercel Cron. En mode clé API, faites appeler
+  `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://<adresse>/api/cron/new-zones` par le cron de la machine, à 8 h
+  et 9 h UTC comme `vercel.json`. En mode abonnement, GitHub ne joint pas un cerveau du réseau local : lancez `refresh-zones`
+  depuis un poste (ou un runner GitHub auto-hébergé dans l'entreprise).
+
+- Les connaissances concernées y sont rangées (avec leurs tâches), et la zone reçoit des mots-clés : les synchros
+  suivantes y classent les nouvelles sessions.
+- Droits : la lisent ses auteurs et chaque membre qui lisait **toutes** les zones d'où viennent ses connaissances.
+  Personne ne perd de vue une connaissance qu'il lisait, personne n'en découvre une qu'il ne pouvait pas lire.
+- Garde-fous, puisque personne ne relit : au moins 4 connaissances (sur au moins 12 récentes), 2 zones par jour au plus,
+  12 zones au total, jamais de doublon d'une zone existante, une seule fois par jour et par entreprise.
+- **Clé Claude de l'entreprise** : un admin la colle dans Équipe et accès → Zones (clé de la Console Anthropic, `sk-ant-…`).
+  Elle est essayée auprès d'Anthropic avant d'être enregistrée, chiffrée en AES-256-GCM dans les réglages de l'entreprise
+  (avec `BRAIN_SECRET_KEY`, sinon le secret de session du cerveau) et n'est plus jamais affichée, seulement ses 4 derniers
+  caractères. Elle sert aussi au résumé d'état et à l'onboarding. Sans elle, le serveur prend `ANTHROPIC_API_KEY` s'il en a
+  une ; sinon l'entreprise est sautée par le cron (sans rien noter dans l'historique). Le jeton d'abonnement n'est jamais
+  stocké sur le serveur : les conditions d'Anthropic réservent les produits tiers aux clés API, d'où le mode CI ci-dessus.
+- Le fil d'activité annonce la zone (le néon s'allume). Les admins lisent l'historique des passages et peuvent en lancer
+  un tout de suite pour leur entreprise (`GET` / `POST /api/admin/zones/auto`). Pour tester le cron : `curl -H "Authorization: Bearer $CRON_SECRET" "$URL/api/cron/new-zones?force=1"`.
 
 ### Claude sans clé API (abonnement Claude Code)
 

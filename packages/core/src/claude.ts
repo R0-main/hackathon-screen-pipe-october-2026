@@ -9,14 +9,17 @@ import type { CompanyStatus, KnowledgeItem, KnowledgeItemInput, Profile, Task, Z
 import { ENTITY_TYPES, KNOWLEDGE_KINDS } from "./types"
 import {
   DISTILL_SYSTEM,
+  NEW_ZONES_SYSTEM,
   ONBOARDING_SYSTEM,
   STATUS_SYSTEM,
   buildExtractionPrompt,
+  buildNewZonesPrompt,
   buildStatusPrompt,
   buildTriagePrompt,
   renderZones,
 } from "./prompts"
 import { buildStatusInput, type StatusInput } from "./status"
+import type { NewZoneProposal, NewZonesInput } from "./new-zones"
 import { classifyZones, slugify } from "./zones"
 import { truncate } from "./text"
 
@@ -251,6 +254,21 @@ export async function synthesizeOnboarding(
     }
   } catch (err) {
     logError("onboarding", err)
+    return null
+  }
+}
+
+const NewZonesSchema = z.object({
+  zones: z.array(z.object({ name: z.string(), description: z.string(), keywords: z.array(z.string()), items: z.array(z.number()) })),
+})
+
+/** Nouvelles zones à créer d'après les connaissances récentes ([] le plus souvent). Null si Claude n'a pas répondu. */
+export async function proposeNewZones(client: Anthropic, input: NewZonesInput): Promise<NewZoneProposal[] | null> {
+  try {
+    const parsed = await parseWithSonnet(client, NewZonesSchema, NEW_ZONES_SYSTEM, buildNewZonesPrompt(input), "medium")
+    return parsed ? parsed.zones : null
+  } catch (err) {
+    logError("nouvelles zones", err)
     return null
   }
 }

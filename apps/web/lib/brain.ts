@@ -37,6 +37,7 @@ import type { AuthorZoneStat, NewItem } from "./store/types"
 import { canRead, canSeeEventContent, redactEvent } from "./access"
 import type { Viewer } from "./auth"
 import { getClaude } from "./ai"
+import { claudeKeyInfo } from "./claude-key"
 import { embedDocuments, embedQuery, embeddingText, getEmbeddings, rankBySimilarity } from "./embeddings"
 import { canPublishSkills, canSeeSkill } from "./skills"
 
@@ -426,7 +427,7 @@ export async function getState(viewer: Viewer) {
       contributors: new Set(profiles.map((p) => p.id)).size,
       active_24h: activeUsers.size,
     },
-    claude: Boolean(getClaude()),
+    claude: (await claudeKeyInfo(store())).source !== null,
     embeddings: getEmbeddings()?.model ?? null,
   }
 }
@@ -486,7 +487,7 @@ export async function refreshStatus(viewer: Viewer) {
     s.getOrg(),
   ])
   await emitStatusEvent(viewer, zones)
-  const claude = getClaude()
+  const claude = await getClaude()
   const status =
     (claude && (await summarizeStatus(claude, { zones, items, tasks, profiles, companyName: org.name }))) ||
     heuristicStatus({ zones, items, tasks, profiles })

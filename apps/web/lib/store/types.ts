@@ -78,6 +78,8 @@ export interface BrainStore {
   forOrg(orgId: string): BrainStore
   createTenantOrg(o: NewTenantOrg): Promise<Org>
   countTenantOrgs(): Promise<number>
+  /** Toutes les entreprises : celle de la base d'abord, puis les entreprises créées (jobs planifiés). */
+  listOrgIds(): Promise<string[]>
   /** Organisation d'un compte, toutes entreprises confondues (connexion par jeton ou par session). */
   findUserOrg(by: { id: string } | { tokenHash: string }): Promise<string | null>
   /** Entreprise d'un code d'équipe, ou d'une demande pour la rejoindre (stockage racine). */
@@ -124,6 +126,8 @@ export interface BrainStore {
   listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
   deleteItem(id: string): Promise<boolean>
+  /** Range ces connaissances dans `zone`, avec les tâches qui en sont issues ; renvoie le nombre de connaissances déplacées. */
+  moveItems(ids: string[], zone: string): Promise<number>
   /** Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). */
   markSuperseded(oldId: string, newId: string): Promise<void>
   /** Connaissances (non remplacées) qui citent une entité, dans les zones données (ou de cet auteur). */

@@ -271,6 +271,10 @@ export class FileStore implements BrainStore {
     return this.tenantIds().length
   }
 
+  async listOrgIds() {
+    return [this.load().org.id, ...this.tenantIds()]
+  }
+
   async findUserOrg(by: { id: string } | { tokenHash: string }) {
     const match = (p: StoredProfile) => ("id" in by ? p.id === by.id : p.token_hash === by.tokenHash)
     const root = this.load()
@@ -535,6 +539,20 @@ export class FileStore implements BrainStore {
       const before = d.items.length
       d.items = d.items.filter((i) => i.id !== id)
       return d.items.length < before
+    })
+  }
+  async moveItems(ids: string[], zone: string) {
+    const wanted = new Set(ids)
+    return this.mutate((d) => {
+      let moved = 0
+      for (const i of d.items) {
+        if (!wanted.has(i.id) || i.zone === zone) continue
+        i.zone = zone
+        moved++
+      }
+      const now = new Date().toISOString()
+      for (const t of d.tasks) if (t.source_item_id && wanted.has(t.source_item_id)) Object.assign(t, { zone, updated_at: now })
+      return moved
     })
   }
 

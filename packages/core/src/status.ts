@@ -170,7 +170,8 @@ function parseLoose(json: string): unknown {
 }
 
 /** Objets JSON trouvés dans un texte (blocs de code, texte autour), du premier au dernier, sans descendre dans un objet trouvé. */
-function jsonObjects(text: string): Record<string, unknown>[] {
+/** Objets JSON trouvés dans un texte libre (bloc de code, prose autour…), du premier au dernier. */
+export function jsonObjects(text: string): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = []
   let tries = 0
   for (let start = text.indexOf("{"); start !== -1 && tries < 50; start = text.indexOf("{", start + 1)) {
