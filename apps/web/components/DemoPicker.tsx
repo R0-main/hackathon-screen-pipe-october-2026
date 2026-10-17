@@ -75,7 +75,7 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
           <section className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1 py-3">
             <span className="min-w-0">
               <span className="block text-[14px] font-medium">Votre entreprise, plutôt que Fournil ?</span>
-              <span className="block text-[13px] text-trace">Quatre questions, puis un prompt à coller dans Claude Code.</span>
+              <span className="block text-[13px] text-trace">Quatre questions, puis un prompt à coller dans Claude Code ou Codex.</span>
             </span>
             <Link href="/creer" className="btn">
               Créer mon dashboard

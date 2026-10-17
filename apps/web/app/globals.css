@@ -336,6 +336,45 @@ button.chip:hover:not(.chip-on) {
 .brain-label.is-flip > span {
   flex-direction: row-reverse;
 }
+
+/* Dots des personnes autour du cerveau 3D : les modèles sont dans la scène ; ici, leur zone cliquable et leur prénom,
+   posés par le JS au même endroit. Le prénom n'apparaît qu'au survol, sauf le vôtre et ceux qui travaillent à l'instant. */
+.brain-dot {
+  visibility: hidden;
+  transform-origin: 0 0;
+  display: block;
+}
+.brain-dot-hit {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+}
+.brain-dot:focus-visible .brain-dot-hit {
+  outline: 1px solid var(--color-ink);
+  outline-offset: 2px;
+}
+.brain-dot-name {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-ink);
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.brain-dot:hover .brain-dot-name,
+.brain-dot:focus-visible .brain-dot-name,
+.brain-dot[data-me] .brain-dot-name,
+.brain-dot[data-live] .brain-dot-name {
+  opacity: 1;
+}
 }
 
 /* --- Page d'accueil publique (components/landing) ---
@@ -780,13 +819,3 @@ html.lenis body {
 }
 }
 
-/* Boutons « ouvrir dans… » réduits au logo de l'agent (nom en aria-label et en infobulle). */
-@layer components {
-.logo-btn {
-  width: 44px;
-  padding: 0;
-}
-.logo-btn.btn-lg {
-  width: 52px;
-}
-}

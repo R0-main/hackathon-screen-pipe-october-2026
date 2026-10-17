@@ -302,12 +302,12 @@ function Install({ demo, signup }: { demo: boolean; signup: boolean }) {
       <Bead />
       <div className="landing-wrap">
         <h2 id="installer" data-reveal="title" className="landing-display max-w-[12em]">
-          Un message à coller dans Claude Code.
+          Un message à coller dans Claude Code ou Codex.
         </h2>
         <div className="mt-12 grid gap-10 lg:mt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
           <div data-reveal="text" className="max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
             <p>
-              Le prompt contient votre jeton personnel. Claude Code lance une seule commande : elle installe Screenpipe, branche le MCP et les hooks, puis ouvre le
+              Le prompt contient votre jeton personnel. Claude Code ou Codex lance une seule commande : elle installe Screenpipe, branche le MCP et les hooks, puis ouvre le
               cerveau déjà connecté.
             </p>
             <p className="mt-4">Aucun historique n'est envoyé : le cerveau apprend à partir de l'installation. Ensuite, il n'y a plus rien à faire.</p>
@@ -369,7 +369,7 @@ function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; de
         </h2>
         <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
           {signup
-            ? "Quatre questions pour créer votre dashboard, un prompt à coller dans Claude Code pour brancher votre poste, puis un prompt par collègue pour les inviter."
+            ? "Quatre questions pour créer votre dashboard, un prompt à coller dans Claude Code ou Codex pour brancher votre poste, puis un prompt par collègue pour les inviter."
             : demo
               ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta."
               : "Connectez-vous avec le jeton que votre admin vous a remis."}

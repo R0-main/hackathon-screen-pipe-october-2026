@@ -1,0 +1,2 @@
+# install.sh est servi tel quel aux postes macOS et Linux : jamais de CRLF, même après un checkout sous Windows.
+*.sh text eol=lf

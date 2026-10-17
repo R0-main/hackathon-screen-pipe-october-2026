@@ -25,7 +25,7 @@ Le contexte vient du travail réel avec l'IA, capté sur chaque poste par Screen
 ## Operating Context
 
 - Démo : entreprise fictive « Fournil » (6 comptes, 34 connaissances, 10 jours d'activité), connexion en un clic en mode démo (`/login`).
-- Installation d'un poste : prompt généré par `/admin`, collé dans Claude Code, qui installe `brain.mjs`, Screenpipe, le MCP et les hooks.
+- Installation d'un poste : prompt généré par `/admin`, collé dans Claude Code, qui lance une commande (macOS, Linux ou Windows) : elle installe `brain.mjs`, Screenpipe, le MCP et les hooks ; `brain doctor` diagnostique un poste qui coince.
 - Onboarding de l'entreprise : interview guidée de 7 questions et lecture des liens fournis (`/onboarding`).
 
 ## Capabilities and Constraints

@@ -2,12 +2,12 @@
 // pipe Screenpipe « brain-sync » (~/.screenpipe/pipes), désinstallation.
 
 import { spawnSync } from "node:child_process"
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs"
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import { DISTILL_MARKER } from "@brain/core"
-import { brainHome, claudeDir, codexDir, loadPartialConfig, loadState, paths, saveConfig, saveState, selfScript, type FileCheckpoint, type State } from "./config"
-import { findOnPath } from "./distill"
+import { brainHome, claudeDir, codexDir, customHome, loadPartialConfig, loadState, paths, quoteArg, saveConfig, saveState, selfScript, type FileCheckpoint, type State } from "./config"
+import { findOnPath, spawnTarget } from "./distill"
 import { isBrainSetupText, ownSecrets } from "./secrets"
 import { completeLinesEnd, listJsonlFiles } from "./sources/jsonl"
 import { uninstallScreenpipeService } from "./screenpipe-cli"
@@ -16,47 +16,137 @@ import { removeInstalledSkills } from "./skills"
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const
 export const HOOK_TIMEOUT_S = 5
 const OUR_HOOK_RE = /brain\.mjs"?\s+hook\b/
-const OUR_SYNC_RE = /brain\.mjs"?\s+sync\b/
+export const OUR_SYNC_RE = /brain\.mjs"?\s+sync\b/
 
-type HookCommand = { type?: string; command?: string; timeout?: number; [k: string]: unknown }
+export type HookCommand = { type?: string; command?: string; args?: unknown; timeout?: number; [k: string]: unknown }
 type HookGroup = { matcher?: string; hooks?: HookCommand[]; [k: string]: unknown }
-type Settings = { hooks?: Record<string, HookGroup[] | unknown>; [k: string]: unknown }
+export type Settings = { hooks?: Record<string, HookGroup[] | unknown>; [k: string]: unknown }
 
-export function hookCommand(execPath = process.execPath, script = selfScript()): string {
-  return `"${execPath}" "${script}" hook`
+/** Arguments du client après Node.js : le dossier du client suit quand il est personnalisé (hooks et MCP n'héritent pas de l'environnement). */
+function clientArgs(script: string, cmd: string): string[] {
+  return [script, cmd, ...(customHome() ? ["--home", brainHome()] : [])]
 }
 
-export function isOurHook(cmd: unknown): boolean {
-  return typeof cmd === "string" && OUR_HOOK_RE.test(cmd)
+export function hookArgs(script = selfScript()): string[] {
+  return clientArgs(script, "hook")
+}
+
+/** Forme « shell » : une ligne passée à sh (macOS, Linux) ou à Git Bash (Windows). */
+export function hookCommand(execPath = process.execPath, script = selfScript()): string {
+  return [execPath, ...hookArgs(script)].map((a) => (a === "hook" || a === "--home" ? a : `"${a}"`)).join(" ")
+}
+
+/** Version de Claude Code à partir de laquelle un hook peut être lancé sans shell (`command` + `args`). */
+export const EXEC_HOOKS_SINCE = "2.1.139"
+
+/** Git Bash (Windows) : sans lui, Claude Code passe les hooks en ligne de commande à PowerShell. */
+export function gitBashInstalled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const candidates = [
+    env.CLAUDE_CODE_GIT_BASH_PATH,
+    env.ProgramFiles && join(env.ProgramFiles, "Git", "bin", "bash.exe"),
+    env.LOCALAPPDATA && join(env.LOCALAPPDATA, "Programs", "Git", "bin", "bash.exe"),
+  ]
+  const git = findOnPath("git", env.PATH ?? "")
+  if (git) candidates.push(join(dirname(dirname(git)), "bin", "bash.exe"))
+  return candidates.some((c) => Boolean(c) && existsSync(c!))
 }
 
 /**
- * Ajoute nos hooks sans toucher au reste : idempotent, met à jour notre commande si le chemin a changé.
+ * Notre hook. Windows : forme « exec » (node.exe lancé directement avec ses arguments), car sans Git Bash Claude Code
+ * passe la ligne à PowerShell, qui n'accepte pas `"node.exe" "brain.mjs" hook`. Version de Claude Code inconnue : la
+ * forme « exec » seulement s'il n'y a pas de Git Bash (sinon la ligne de commande, qui y marche depuis toujours).
+ * Ailleurs, ou avec un Claude Code trop ancien pour la forme « exec », la ligne de commande habituelle.
+ */
+export function hookEntry(
+  opts: { platform?: NodeJS.Platform; claudeVersion?: string | null; gitBash?: boolean; execPath?: string; script?: string } = {},
+): HookCommand {
+  const { platform = process.platform, claudeVersion = null, execPath = process.execPath, script = selfScript() } = opts
+  const exec =
+    platform === "win32" && (claudeVersion ? !versionLt(claudeVersion, EXEC_HOOKS_SINCE) : !(opts.gitBash ?? gitBashInstalled()))
+  return exec
+    ? { type: "command", command: execPath, args: hookArgs(script), timeout: HOOK_TIMEOUT_S }
+    : { type: "command", command: hookCommand(execPath, script), timeout: HOOK_TIMEOUT_S }
+}
+
+/** « 2.1.38 » < « 2.1.139 » (comparaison numérique, composante par composante). */
+export function versionLt(a: string, b: string): boolean {
+  const pa = a.split(".").map((n) => Number.parseInt(n, 10) || 0)
+  const pb = b.split(".").map((n) => Number.parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0)
+  return false
+}
+
+/** Version de Claude Code installée (`claude --version` → « 2.1.302 (Claude Code) »), ou null. */
+export function claudeCodeVersion(claude = findOnPath("claude")): string | null {
+  if (!claude) return null
+  const t = spawnTarget(claude, ["--version"])
+  const r = spawnSync(t.cmd, t.args, { encoding: "utf8", timeout: 15_000, shell: t.shell, windowsHide: true, env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" } })
+  return /(\d+\.\d+\.\d+)/.exec(`${r.stdout ?? ""}`)?.[1] ?? null
+}
+
+/** La ligne de commande complète d'un hook, quelle que soit sa forme (chaîne seule, ou commande et arguments). */
+export function hookText(h: unknown): string {
+  if (typeof h === "string") return h
+  if (!h || typeof h !== "object") return ""
+  const { command, args } = h as HookCommand
+  return [typeof command === "string" ? command : "", ...(Array.isArray(args) ? args.map(String) : [])].join(" ")
+}
+
+/** Un hook à nous (accepte l'objet du hook ou sa seule commande). */
+export function isOurHook(h: unknown): boolean {
+  return OUR_HOOK_RE.test(hookText(h))
+}
+
+function sameHook(h: HookCommand, want: HookCommand): boolean {
+  return h.type === want.type && h.command === want.command && JSON.stringify(h.args ?? null) === JSON.stringify(want.args ?? null) && h.timeout === want.timeout
+}
+
+/** Groupe sans filtre (`matcher`) : le hook s'y déclenche à chaque fois. */
+function unfiltered(g: HookGroup): boolean {
+  return g.matcher === undefined || g.matcher === "" || g.matcher === "*"
+}
+
+/**
+ * Ajoute nos hooks sans toucher au reste : idempotent, met à jour notre hook si le chemin (ou sa forme) a changé et
+ * retire nos doublons (une copie restée sur un ancien chemin échouerait à chaque prompt).
  * Renvoie les nouveaux réglages et la liste des changements.
  */
-export function mergeHooks(settings: Settings, command: string): { settings: Settings; changes: string[] } {
+export function mergeHooks(settings: Settings, entry: HookCommand | string): { settings: Settings; changes: string[] } {
+  const want: HookCommand = typeof entry === "string" ? { type: "command", command: entry, timeout: HOOK_TIMEOUT_S } : entry
   const next: Settings = structuredClone(settings ?? {})
   const hooks = (next.hooks && typeof next.hooks === "object" && !Array.isArray(next.hooks) ? next.hooks : {}) as Record<string, unknown>
   next.hooks = hooks
   const changes: string[] = []
   for (const event of HOOK_EVENTS) {
-    const groups = (Array.isArray(hooks[event]) ? hooks[event] : []) as HookGroup[]
+    let groups = (Array.isArray(hooks[event]) ? hooks[event] : []) as HookGroup[]
+    // Le hook à garder s'il y en a plusieurs : déjà à jour et sans filtre, sinon sans filtre, sinon le premier.
+    const ours = groups.flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks.filter((h) => isOurHook(h)).map((h) => ({ g, h })) : []))
+    const keep = (ours.find((o) => unfiltered(o.g) && sameHook(o.h, want)) ?? ours.find((o) => unfiltered(o.g)) ?? ours[0])?.h
     let found = false
+    let duplicates = 0
     for (const g of groups) {
-      for (const h of Array.isArray(g?.hooks) ? g.hooks : []) {
-        if (!isOurHook(h?.command)) continue
-        if (found) continue
+      if (!Array.isArray(g?.hooks)) continue
+      g.hooks = g.hooks.filter((h) => {
+        if (!isOurHook(h)) return true
+        if (h !== keep) {
+          duplicates++
+          return false
+        }
         found = true
-        if (h.command !== command || h.type !== "command") {
-          h.type = "command"
-          h.command = command
-          h.timeout = HOOK_TIMEOUT_S
+        if (!sameHook(h, want)) {
+          for (const k of ["type", "command", "args", "timeout", "shell"]) delete h[k]
+          Object.assign(h, structuredClone(want))
           changes.push(`${event} : commande mise à jour`)
         }
-      }
+        return true
+      })
+    }
+    if (duplicates) {
+      groups = groups.filter((g) => !Array.isArray(g?.hooks) || g.hooks.length > 0)
+      changes.push(`${event} : ${duplicates} doublon(s) retiré(s)`)
     }
     if (!found) {
-      groups.push({ hooks: [{ type: "command", command, timeout: HOOK_TIMEOUT_S }] })
+      groups.push({ hooks: [structuredClone(want)] })
       changes.push(`${event} : hook ajouté`)
     }
     hooks[event] = groups
@@ -78,7 +168,7 @@ export function removeHooks(settings: Settings): { settings: Settings; removed: 
         groups.push(g)
         continue
       }
-      const kept = g.hooks.filter((h) => !isOurHook(h?.command))
+      const kept = g.hooks.filter((h) => !isOurHook(h))
       removed += g.hooks.length - kept.length
       if (kept.length === g.hooks.length) groups.push(g)
       else if (kept.length > 0) groups.push({ ...g, hooks: kept })
@@ -90,7 +180,7 @@ export function removeHooks(settings: Settings): { settings: Settings; removed: 
   return { settings: next, removed }
 }
 
-function readSettings(file: string): Settings {
+export function readSettings(file: string): Settings {
   if (!existsSync(file)) return {}
   const text = readFileSync(file, "utf8")
   if (!text.trim()) return {}
@@ -114,16 +204,28 @@ export function hooksInstalled(file = paths.claudeSettings()): boolean {
     const s = readSettings(file)
     return HOOK_EVENTS.every((e) => {
       const groups = (s.hooks as Record<string, unknown> | undefined)?.[e]
-      return Array.isArray(groups) && (groups as HookGroup[]).some((g) => Array.isArray(g?.hooks) && g.hooks.some((h) => isOurHook(h?.command)))
+      return Array.isArray(groups) && (groups as HookGroup[]).some((g) => Array.isArray(g?.hooks) && g.hooks.some((h) => isOurHook(h)))
     })
   } catch {
     return false
   }
 }
 
+/** Nos hooks, événement par événement (diagnostic) ; lève une erreur si settings.json n'est pas un JSON valide. */
+export function ourHooks(file = paths.claudeSettings()): Record<(typeof HOOK_EVENTS)[number], HookCommand[]> {
+  const s = readSettings(file)
+  const out = {} as Record<(typeof HOOK_EVENTS)[number], HookCommand[]>
+  for (const e of HOOK_EVENTS) {
+    const groups = (s.hooks as Record<string, unknown> | undefined)?.[e]
+    out[e] = (Array.isArray(groups) ? (groups as HookGroup[]) : []).flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks.filter((h) => isOurHook(h)) : []))
+  }
+  return out
+}
+
 export function installHooks(log: (s: string) => void = console.log, file = paths.claudeSettings()): { changes: string[]; backup: string | null } {
   const before = readSettings(file)
-  const { settings, changes } = mergeHooks(before, hookCommand())
+  const entry = hookEntry({ claudeVersion: process.platform === "win32" ? claudeCodeVersion() : null })
+  const { settings, changes } = mergeHooks(before, entry)
   if (changes.length === 0) {
     log(`Hooks déjà installés dans ${file} : rien à changer.`)
     return { changes, backup: null }
@@ -133,7 +235,7 @@ export function installHooks(log: (s: string) => void = console.log, file = path
   writeFileSync(file, JSON.stringify(settings, null, 2) + "\n")
   log(`Hooks Claude Code installés dans ${file} :`)
   for (const c of changes) log(`  - ${c}`)
-  log(`  commande : ${hookCommand()}`)
+  log(`  commande : ${hookText(entry)}`)
   if (bak) log(`  sauvegarde de l'ancien fichier : ${bak}`)
   log("Les autres réglages et hooks n'ont pas été touchés. Effet à la prochaine session Claude Code.")
   return { changes, backup: bak }
@@ -357,16 +459,82 @@ export function scheduleInstalled(): boolean {
   return r.ok && OUR_SYNC_RE.test(r.stdout)
 }
 
+export type ScheduleTarget = { execPath: string; script: string; home?: string }
+
+/** Node.js et script de la synchro planifiée installée (diagnostic) ; null si aucune, undefined si illisible. */
+export function scheduleTarget(platform: NodeJS.Platform = process.platform): ScheduleTarget | null | undefined {
+  if (platform === "darwin") {
+    if (!existsSync(launchdPlistPath())) return null
+    return parsePlistTarget(readFileSync(launchdPlistPath(), "utf8"))
+  }
+  if (platform === "win32") {
+    const r = run("schtasks", ["/Query", "/TN", WINDOWS_TASK, "/XML"])
+    if (!r.ok) return null
+    return parseTaskXmlTarget(r.stdout)
+  }
+  const r = run("crontab", ["-l"])
+  if (!r.ok) return null
+  const line = r.stdout.split("\n").find((l) => OUR_SYNC_RE.test(l))
+  return line ? parseCronTarget(line) : null
+}
+
+const unxml = (s: string) => s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&amp;/g, "&")
+
+export function parsePlistTarget(plist: string): ScheduleTarget | undefined {
+  const block = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(plist)?.[1]
+  const args = [...(block ?? "").matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => unxml(m[1]))
+  const home = /<key>COMPANY_BRAIN_HOME<\/key>\s*<string>([\s\S]*?)<\/string>/.exec(plist)?.[1]
+  return args.length >= 2 ? { execPath: args[0], script: args[1], ...(home ? { home: unxml(home) } : {}) } : undefined
+}
+
+export function parseCronTarget(line: string): ScheduleTarget | undefined {
+  const m = /"([^"]+)" "([^"]+)" sync\b/.exec(line)
+  const home = /COMPANY_BRAIN_HOME='((?:[^']|'\\'')*)'/.exec(line)?.[1]
+  return m ? { execPath: m[1], script: m[2], ...(home ? { home: home.replace(/'\\''/g, "'") } : {}) } : undefined
+}
+
+export function parseTaskXmlTarget(xmlText: string): ScheduleTarget | undefined {
+  const command = /<Command>([\s\S]*?)<\/Command>/.exec(xmlText)?.[1]
+  const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xmlText)?.[1]
+  if (!command || !args) return undefined
+  // schtasks écrit dans la page de code de la console : un chemin accentué (C:\Users\Jérôme) arrive abîmé, illisible.
+  if (/[\uFFFD?]/.test(command + args)) return undefined
+  const script = /^\s*"([^"]+)"/.exec(unxml(args))?.[1]
+  const home = /--home "([^"]+)"/.exec(unxml(args))?.[1]
+  return script ? { execPath: unxml(command).replace(/^"|"$/g, ""), script, ...(home ? { home } : {}) } : undefined
+}
+
 export function installSchedule(log: (s: string) => void = console.log): boolean {
+  const env = scheduleEnv(process.env, process.execPath)
+  prepareSchedule(env, log)
+  return writeSchedule(env, log)
+}
+
+/**
+ * Synchro déjà planifiée (setup relancé) : la définition est réécrite avec le Node.js et le script actuels (après une
+ * réinstallation ou une mise à jour de Node, l'ancienne pointerait dans le vide), SANS nouveau point de départ : rien de
+ * ce qui attend d'être envoyé n'est sauté.
+ */
+export function refreshSchedule(log: (s: string) => void = console.log): boolean {
+  const env = scheduleEnv(process.env, process.execPath)
+  const cfg = loadPartialConfig()
+  if (cfg.url && cfg.token && JSON.stringify(cfg.schedule_env ?? null) !== JSON.stringify(env)) saveConfig({ ...cfg, schedule_env: env })
+  return writeSchedule(env, log)
+}
+
+/** Écrit la planification (launchd, crontab ou tâche Windows) avec le Node.js et le script actuels. */
+export function writeSchedule(env: Record<string, string>, log: (s: string) => void = console.log): boolean {
   const execPath = process.execPath
   const script = selfScript()
-  const env = scheduleEnv(process.env, execPath)
-  prepareSchedule(env, log)
   if (process.platform === "darwin") {
     const file = launchdPlistPath()
     const plist = launchdPlist(execPath, script, brainHome(), env)
     mkdirSync(dirname(file), { recursive: true })
     const changed = !existsSync(file) || readFileSync(file, "utf8") !== plist
+    if (!changed && run("launchctl", ["list", LAUNCHD_LABEL]).ok) {
+      log(`Synchro déjà planifiée toutes les 15 min via launchd (${file}) : à jour.`)
+      return true
+    }
     if (changed) {
       run("launchctl", ["unload", file])
       writeFileSync(file, plist)
@@ -384,13 +552,13 @@ export function installSchedule(log: (s: string) => void = console.log): boolean
     return false
   }
   if (process.platform === "win32") {
-    const args = windowsTaskArgs(execPath, script, process.env.COMPANY_BRAIN_HOME ? brainHome() : undefined)
+    const args = windowsTaskArgs(execPath, script, customHome() ? brainHome() : undefined)
     const r = run("schtasks", args)
     if (r.ok) {
       log(`Synchro planifiée toutes les 15 min (tâche Windows « ${WINDOWS_TASK} »).`)
       return true
     }
-    log(`Échec de schtasks (${r.stderr.trim()}). À lancer à la main dans un terminal :\n  schtasks ${args.map((a) => (a.includes(" ") ? `"${a.replace(/"/g, '\\"')}"` : a)).join(" ")}`)
+    log(`Échec de schtasks (${r.stderr.trim()}). Relance \`install-schedule\` dans PowerShell ou cmd (pas dans Git Bash, qui transforme « /Create » en chemin).`)
     return false
   }
   const line = cronLine(execPath, script, brainHome(), env)
@@ -508,6 +676,64 @@ export function uninstallPipe(log: (s: string) => void = console.log, file = pip
   log(`Pipe « ${PIPE_NAME} » retiré de Screenpipe.`)
 }
 
+// --- MCP company-brain (Claude Code) ----------------------------------------------------------------------------------
+
+export const MCP_NAME = "company-brain"
+
+/** Arguments du serveur MCP après Node.js. */
+export function mcpArgs(script = selfScript()): string[] {
+  return clientArgs(script, "mcp")
+}
+
+/** Où Claude Code range les serveurs MCP de portée utilisateur : ~/.claude.json, ou dans CLAUDE_CONFIG_DIR s'il est défini. */
+export function claudeJsonPath(): string {
+  return process.env.CLAUDE_CONFIG_DIR ? join(claudeDir(), ".claude.json") : join(homedir(), ".claude.json")
+}
+
+export type McpEntry = { command: string; args: string[] }
+
+/**
+ * Notre serveur MCP tel que Claude Code l'a enregistré (lecture du fichier, sans lancer `claude mcp get`, qui écrit
+ * des fichiers et contacte le réseau). null : pas enregistré ; undefined : fichier illisible.
+ */
+export function readMcpEntry(file = claudeJsonPath()): McpEntry | null | undefined {
+  if (!existsSync(file)) return null
+  let data: { mcpServers?: Record<string, { command?: unknown; args?: unknown }> }
+  try {
+    data = JSON.parse(readFileSync(file, "utf8"))
+  } catch {
+    return undefined
+  }
+  const e = data?.mcpServers?.[MCP_NAME]
+  if (!e || typeof e.command !== "string") return null
+  return { command: e.command, args: Array.isArray(e.args) ? e.args.map(String) : [] }
+}
+
+/** Deux chemins désignent-ils le même fichier ? (liens résolus ; casse ignorée sous Windows et macOS.) */
+export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
+  const norm = (p: string) => {
+    let r = resolve(p)
+    try {
+      r = realpathSync(r)
+    } catch {
+      // fichier absent : on compare le chemin tel quel
+    }
+    return platform === "win32" || platform === "darwin" ? r.toLowerCase() : r
+  }
+  return norm(a) === norm(b)
+}
+
+/** L'entrée MCP lance-t-elle bien ce Node.js et ce script, avec les bons arguments ? */
+export function mcpUpToDate(e: McpEntry, execPath = process.execPath, script = selfScript()): boolean {
+  const want = mcpArgs(script)
+  return samePath(e.command, execPath) && e.args.length === want.length && samePath(e.args[0] ?? "", want[0]) && e.args.slice(1).join(" ") === want.slice(1).join(" ")
+}
+
+/** La commande `claude mcp add` à lancer à la main si le CLI `claude` n'a pas pu le faire. */
+export function mcpAddCommand(): string {
+  return `claude mcp add ${MCP_NAME} --scope user -- ${[process.execPath, ...mcpArgs()].map((a) => quoteArg(a)).join(" ")}`
+}
+
 export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = console.log) {
   try {
     uninstallHooks(log)
@@ -543,8 +769,13 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
   if (!r.error && r.status === 0) log("Serveur MCP company-brain retiré de Claude Code.")
   else log("MCP : rien retiré (absent, ou CLI `claude` introuvable). À la main : claude mcp remove company-brain --scope user")
   if (opts.purge) {
-    rmSync(brainHome(), { recursive: true, force: true })
-    log(`Dossier ${brainHome()} supprimé (config, jeton, état, journaux).`)
+    try {
+      rmSync(brainHome(), { recursive: true, force: true })
+      log(`Dossier ${brainHome()} supprimé (config, jeton, état, journaux).`)
+    } catch (err) {
+      // Windows : le node.exe de la copie privée qui exécute cette commande ne peut pas s'effacer lui-même.
+      log(`Dossier ${brainHome()} vidé en partie (${(err as Error).message}) : supprime-le à la main une fois ce terminal fermé.`)
+    }
   } else {
     log(`Config et jeton conservés dans ${brainHome()} (ajoutez --purge pour tout supprimer).`)
   }
