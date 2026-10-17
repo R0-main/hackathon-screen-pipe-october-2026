@@ -5,7 +5,8 @@ import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { parseAuthToken, recordArgs, screenpipeBinPath } from "../src/screenpipe-cli"
-import { MACOS_PANES, captureState, waitForCapture } from "../src/setup"
+import { readMcpEntry } from "../src/install"
+import { MACOS_PANES, captureState, ensureMcp, waitForCapture } from "../src/setup"
 import { mockServer, tempDir } from "./helpers"
 import { mockBrain } from "./mock-brain"
 
@@ -125,7 +126,11 @@ test("setup --skip-screenpipe --no-open : config, hooks, néon, sans rien touche
     assert.equal(code, 0, out)
     for (const step of ["[1/6]", "[2/6]", "[4/6]", "[5/6]", "[6/6]", "C'est branché"]) assert.ok(out.includes(step), `absent : ${step}\n${out}`)
     assert.match(out, /Connexion au cerveau OK : Hugo Bernard .*chez Fournil/)
-    assert.match(out, /claude mcp add company-brain --scope user --/)
+    // Sans CLI `claude` : le MCP est écrit directement dans la config de Claude Code.
+    assert.match(out, /MCP company-brain branché dans Claude Code \(écrit dans .*\.claude\.json, CLI `claude` introuvable dans le PATH\)/)
+    const mcp = readMcpEntry(join(home, "claude", ".claude.json"))
+    assert.equal(mcp?.command, process.execPath)
+    assert.deepEqual(mcp?.args.slice(0, 2), [join(home, "brain", "brain.mjs"), "mcp"])
     const cfg = JSON.parse(readFileSync(join(home, "brain", "config.json"), "utf8"))
     assert.equal(cfg.token, "cb_test_token_123456")
     const settings = readFileSync(join(home, "claude", "settings.json"), "utf8")
@@ -134,6 +139,37 @@ test("setup --skip-screenpipe --no-open : config, hooks, néon, sans rien touche
     assert.ok(!existsSync(join(home, "brain", "screenpipe")))
   } finally {
     await brain.close()
+  }
+})
+
+test("ensureMcp : `claude mcp add` en échec → entrée écrite directement ; ensuite « déjà branché » sans relancer la CLI", { skip: process.platform === "win32" }, () => {
+  const dir = tempDir("brain-ensure-mcp-")
+  const calls = join(dir, "calls")
+  const claude = join(dir, "claude")
+  writeFileSync(claude, `#!/bin/sh\necho "$@" >> "${calls}"\necho "Error: config locked" >&2\nexit 1\n`, { mode: 0o755 })
+  const script = join(dir, "brain.mjs")
+  writeFileSync(script, "")
+  const prev = { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, COMPANY_BRAIN_SCRIPT: process.env.COMPANY_BRAIN_SCRIPT }
+  process.env.CLAUDE_CONFIG_DIR = join(dir, "claude-cfg")
+  process.env.COMPANY_BRAIN_SCRIPT = script
+  try {
+    const out: string[] = []
+    assert.equal(ensureMcp((s) => out.push(s), claude), true)
+    assert.match(out.join("\n"), /`claude mcp add` a échoué \(Error: config locked\)/)
+    assert.match(out.join("\n"), /MCP company-brain branché dans Claude Code \(écrit dans .*claude-cfg.*\.claude\.json\)/)
+    assert.equal(readMcpEntry(join(dir, "claude-cfg", ".claude.json"))?.args[0], script)
+    assert.match(readFileSync(calls, "utf8"), /^mcp add company-brain --scope user -- /m)
+
+    writeFileSync(calls, "")
+    const again: string[] = []
+    assert.equal(ensureMcp((s) => again.push(s), claude), true)
+    assert.deepEqual(again, ["MCP company-brain : déjà branché dans Claude Code."])
+    assert.equal(readFileSync(calls, "utf8"), "", "déjà à jour : la CLI n'est pas relancée")
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
   }
 })
 

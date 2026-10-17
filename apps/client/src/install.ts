@@ -6,7 +6,7 @@ import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync,
 import { homedir } from "node:os"
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import { DISTILL_MARKER } from "@brain/core"
-import { brainHome, claudeDir, codexDir, customHome, loadPartialConfig, loadState, paths, quoteArg, saveConfig, saveState, selfScript, type FileCheckpoint, type State } from "./config"
+import { brainHome, claudeDir, codexDir, customHome, loadPartialConfig, loadState, paths, quoteArg, saveConfig, saveState, selfScript, writeJson, type FileCheckpoint, type State } from "./config"
 import { findOnPath, spawnTarget } from "./distill"
 import { isBrainSetupText, ownSecrets } from "./secrets"
 import { completeLinesEnd, listJsonlFiles } from "./sources/jsonl"
@@ -734,6 +734,51 @@ export function mcpAddCommand(): string {
   return `claude mcp add ${MCP_NAME} --scope user -- ${[process.execPath, ...mcpArgs()].map((a) => quoteArg(a)).join(" ")}`
 }
 
+type ClaudeJson = { mcpServers?: Record<string, unknown>; [k: string]: unknown }
+
+/** ~/.claude.json tel quel ({} s'il n'existe pas) ; lève une erreur s'il n'est pas un objet JSON (on n'y touche pas). */
+function readClaudeJson(file: string): ClaudeJson {
+  if (!existsSync(file)) return {}
+  const text = readFileSync(file, "utf8")
+  if (!text.trim()) return {}
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    data = null
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(`${file} n'est pas un JSON valide (rien n'a été modifié)`)
+  return data as ClaudeJson
+}
+
+/** Réécrit ~/.claude.json d'un coup (Claude Code le relit sans cesse : jamais à moitié écrit), en gardant ses droits. */
+function writeClaudeJson(file: string, data: ClaudeJson) {
+  writeJson(file, data, existsSync(file) ? statSync(file).mode & 0o777 : undefined)
+}
+
+/**
+ * Enregistre notre serveur MCP comme le ferait `claude mcp add --scope user` : quand la CLI `claude` n'est pas dans le
+ * PATH (Claude Code de l'application de bureau, Windows) ou qu'elle échoue. Seule notre entrée change.
+ */
+export function writeMcpEntry(file = claudeJsonPath(), execPath = process.execPath, script = selfScript()) {
+  const data = readClaudeJson(file)
+  const servers = data.mcpServers && typeof data.mcpServers === "object" && !Array.isArray(data.mcpServers) ? data.mcpServers : {}
+  data.mcpServers = { ...servers, [MCP_NAME]: { type: "stdio", command: execPath, args: mcpArgs(script), env: {} } }
+  writeClaudeJson(file, data)
+}
+
+/** Retire notre serveur MCP de ~/.claude.json sans la CLI `claude` ; false s'il n'y était pas. */
+export function removeMcpEntry(file = claudeJsonPath()): boolean {
+  if (!existsSync(file)) return false
+  const data = readClaudeJson(file)
+  if (!data.mcpServers || typeof data.mcpServers !== "object" || !(MCP_NAME in data.mcpServers)) return false
+  const others = { ...data.mcpServers }
+  delete others[MCP_NAME]
+  data.mcpServers = others
+  writeClaudeJson(file, data)
+  return true
+}
+
 export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = console.log) {
   try {
     uninstallHooks(log)
@@ -767,7 +812,14 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
     env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" },
   })
   if (!r.error && r.status === 0) log("Serveur MCP company-brain retiré de Claude Code.")
-  else log("MCP : rien retiré (absent, ou CLI `claude` introuvable). À la main : claude mcp remove company-brain --scope user")
+  else {
+    // CLI `claude` introuvable (ou en échec) : l'entrée est retirée directement de ~/.claude.json.
+    try {
+      log(removeMcpEntry() ? `Serveur MCP company-brain retiré de Claude Code (${claudeJsonPath()}).` : "MCP : rien à retirer.")
+    } catch (err) {
+      log(`MCP : ${(err as Error).message}. À la main : claude mcp remove company-brain --scope user`)
+    }
+  }
   if (opts.purge) {
     try {
       rmSync(brainHome(), { recursive: true, force: true })

@@ -24,11 +24,13 @@ import {
   prepareSchedule,
   readMcpEntry,
   removeFromCrontab,
+  removeMcpEntry,
   removeHooks,
   scheduleEnv,
   uninstallHooks,
   versionLt,
   windowsTaskArgs,
+  writeMcpEntry,
 } from "../src/install"
 import { tempDir } from "./helpers"
 
@@ -346,6 +348,39 @@ test("MCP : entrée relue dans .claude.json, à jour seulement si elle lance ce 
   assert.ok(mcpUpToDate(e, process.execPath, script))
   assert.ok(!mcpUpToDate(e, process.execPath, join(dir, "autre.mjs")))
   assert.ok(!mcpUpToDate({ command: process.execPath, args: [script, "hook"] }, process.execPath, script))
+})
+
+test("MCP sans CLI `claude` : entrée écrite dans .claude.json comme `claude mcp add --scope user`, le reste intact", () => {
+  const dir = tempDir("brain-mcp-write-")
+  const file = join(dir, ".claude.json")
+  const script = join(dir, "brain.mjs")
+  writeFileSync(script, "")
+  writeMcpEntry(file, process.execPath, script)
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { mcpServers: { "company-brain": { type: "stdio", command: process.execPath, args: mcpArgs(script), env: {} } } })
+
+  const theirs = { numStartups: 12, projects: { "/p": { allowedTools: [] } }, mcpServers: { autre: { type: "stdio", command: "npx", args: ["-y", "x"], env: {} }, "company-brain": { command: "/vieux/node", args: ["/vieux/brain.mjs", "mcp"] } } }
+  writeFileSync(file, JSON.stringify(theirs))
+  chmodSync(file, 0o600)
+  writeMcpEntry(file, process.execPath, script)
+  const after = JSON.parse(readFileSync(file, "utf8"))
+  assert.equal(after.numStartups, 12)
+  assert.deepEqual(after.projects, theirs.projects)
+  assert.deepEqual(after.mcpServers.autre, theirs.mcpServers.autre)
+  assert.ok(mcpUpToDate(readMcpEntry(file)!, process.execPath, script), "ancienne entrée remplacée")
+  if (process.platform !== "win32") assert.equal(statSync(file).mode & 0o777, 0o600, "droits du fichier gardés")
+  assert.deepEqual(readdirSync(dir).sort(), [".claude.json", "brain.mjs"], "ni fichier temporaire ni copie laissés")
+
+  assert.equal(removeMcpEntry(file), true)
+  const removed = JSON.parse(readFileSync(file, "utf8"))
+  assert.deepEqual(removed.mcpServers, { autre: theirs.mcpServers.autre })
+  assert.equal(removed.numStartups, 12)
+  assert.equal(removeMcpEntry(file), false, "déjà retiré")
+  assert.equal(removeMcpEntry(join(dir, "absent.json")), false)
+
+  writeFileSync(file, "{ pas du json")
+  assert.throws(() => writeMcpEntry(file, process.execPath, script), /n'est pas un JSON valide/)
+  assert.throws(() => removeMcpEntry(file), /n'est pas un JSON valide/)
+  assert.equal(readFileSync(file, "utf8"), "{ pas du json", "fichier illisible : pas touché")
 })
 
 test("spawnTarget : sous Windows, un .cmd passe par le shell avec des chemins cités ; un .exe se lance directement", () => {

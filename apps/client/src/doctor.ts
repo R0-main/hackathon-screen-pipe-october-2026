@@ -594,7 +594,7 @@ function checkClaudeCode(ctx: Ctx) {
       id: "claude",
       group: "Claude Code",
       status: "warn",
-      detail: "CLI `claude` introuvable dans le PATH : MCP non vérifiable, distillation sans Claude",
+      detail: "CLI `claude` introuvable dans le PATH : distillation sans Claude (le MCP est branché directement dans la config de Claude Code)",
       fix: "Installe Claude Code (https://claude.com/claude-code), puis relance setup.",
       ...setup,
     })

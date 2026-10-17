@@ -13,7 +13,7 @@ import { cmdHello, cmdInit } from "./commands"
 import { fingerprintOfFile, trustInBrowsers } from "./ca"
 import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Config } from "./config"
 import { findOnPath } from "./distill"
-import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
+import { MCP_NAME, claudeJsonPath, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled, writeMcpEntry } from "./install"
 import { refreshSkills } from "./skills"
 import {
   installedScreenpipeBin,
@@ -179,32 +179,39 @@ export async function waitForCapture(o: PermissionOptions): Promise<CaptureState
 /**
  * MCP company-brain dans Claude Code (portée utilisateur). Déjà enregistré mais sur un autre Node.js ou un autre script
  * (réinstallation, Node mis à jour) : remplacé, sinon Claude Code lancerait un serveur qui n'existe plus.
+ * Via `claude mcp add` ; sans CLI `claude` dans le PATH (application de bureau, Windows) ou si elle échoue, l'entrée est
+ * écrite directement dans ~/.claude.json, là où `claude mcp add --scope user` la mettrait.
  */
-export function ensureMcp(log: Log = console.log): boolean {
-  const manual = mcpAddCommand()
-  const claude = findOnPath("claude")
-  if (!claude) {
-    log(`MCP : CLI \`claude\` introuvable dans le PATH. À lancer à la main : ${manual}`)
-    return false
-  }
+export function ensureMcp(log: Log = console.log, claude = findOnPath("claude")): boolean {
   const current = readMcpEntry()
   if (current && mcpUpToDate(current)) {
     log(`MCP ${MCP_NAME} : déjà branché dans Claude Code.`)
     return true
   }
-  // Fichier de Claude Code illisible : on s'en remet à la CLI pour savoir s'il est là.
-  if (current === undefined && runCommand(claude, ["mcp", "get", MCP_NAME], 30_000).ok) {
-    log(`MCP ${MCP_NAME} : déjà branché dans Claude Code.`)
-    return true
+  const done = `MCP ${MCP_NAME} ${current ? "mis à jour (il pointait vers un ancien chemin)" : "branché dans Claude Code"}`
+  if (claude) {
+    // Fichier de Claude Code illisible : on s'en remet à la CLI pour savoir s'il est là.
+    if (current === undefined && runCommand(claude, ["mcp", "get", MCP_NAME], 30_000).ok) {
+      log(`MCP ${MCP_NAME} : déjà branché dans Claude Code.`)
+      return true
+    }
+    if (current) runCommand(claude, ["mcp", "remove", MCP_NAME, "--scope", "user"], 30_000)
+    const r = runCommand(claude, ["mcp", "add", MCP_NAME, "--scope", "user", "--", process.execPath, ...mcpArgs()], 30_000)
+    if (r.ok) {
+      log(`${done} : actif dès la prochaine session.`)
+      return true
+    }
+    log(`MCP : \`claude mcp add\` a échoué (${r.stderr.trim().slice(0, 200)}) : écriture directe dans la config de Claude Code.`)
   }
-  if (current) runCommand(claude, ["mcp", "remove", MCP_NAME, "--scope", "user"], 30_000)
-  const r = runCommand(claude, ["mcp", "add", MCP_NAME, "--scope", "user", "--", process.execPath, ...mcpArgs()], 30_000)
-  log(
-    r.ok
-      ? `MCP ${MCP_NAME} ${current ? "mis à jour (il pointait vers un ancien chemin)" : "branché dans Claude Code"} : actif dès la prochaine session.`
-      : `MCP : échec (${r.stderr.trim().slice(0, 200)}). À lancer à la main : ${manual}`,
-  )
-  return r.ok
+  const file = claudeJsonPath()
+  try {
+    writeMcpEntry(file)
+  } catch (err) {
+    log(`MCP : impossible d'écrire ${file} (${(err as Error).message}). À lancer à la main : ${mcpAddCommand()}`)
+    return false
+  }
+  log(`${done} (écrit dans ${file}${claude ? "" : ", CLI `claude` introuvable dans le PATH"}) : actif dès la prochaine session.`)
+  return true
 }
 
 /** Ouvre le cerveau, déjà connecté grâce à un lien de connexion à usage court ; à défaut, la page de connexion. */
