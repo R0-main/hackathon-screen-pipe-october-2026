@@ -12,7 +12,7 @@ import { CloseIcon, Dot, ErrorText, LockIcon, ZoneTag, zoneColor } from "./ui"
 type ApiSkill = Skill & { can_manage: boolean }
 
 const COMPANY = "__entreprise__"
-const CLI_PUSH = "node ~/.company-brain/brain.mjs skills push ./mon-skill --cortex compta"
+const CLI_PUSH = "~/.company-brain/brain skills push ./mon-skill --cortex compta"
 
 /**
  * L'onglet Skills : les skills de l'entreprise (SKILL.md et leurs scripts) regroupés par cortex. Chacun ne voit que ceux
