@@ -697,13 +697,3 @@ html.lenis body {
 }
 }
 
-/* Boutons « ouvrir dans… » réduits au logo de l'agent (nom en aria-label et en infobulle). */
-@layer components {
-.logo-btn {
-  width: 44px;
-  padding: 0;
-}
-.logo-btn.btn-lg {
-  width: 52px;
-}
-}

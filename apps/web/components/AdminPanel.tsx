@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify, type Profile, type Zone } from "@brain/core"
 import { PageScroll } from "./AppShell"
 import { useBrainLive } from "./BrainLive"
+import { AgentLogos } from "./brand-logos"
 import { OrgChart, type Presence } from "./OrgChart"
 import { AGENT_LABEL, api, errorMessage, initials } from "./format"
 import { RelTime } from "./RelTime"
@@ -543,7 +544,7 @@ function InviteForm({
   return (
     <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
       <h2 className="panel-title">Inviter quelqu&apos;un</h2>
-      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code : une commande installe Screenpipe, le MCP et les hooks, puis ouvre le cerveau.</p>
+      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code ou Codex : une commande installe Screenpipe, le MCP et les hooks, puis ouvre le cerveau.</p>
       <div className="grid gap-2 sm:grid-cols-2">
         <input className="input" aria-label="Prénom et nom" placeholder="Prénom Nom" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
         <input className="input" aria-label="Poste" placeholder="Poste, par exemple Comptable" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
@@ -762,7 +763,7 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
               Prompt d&apos;installation pour {name}
             </h2>
             <p className="mt-1 text-[13px] text-trace">
-              À envoyer à {name.split(" ")[0]} par un canal privé : il contient son jeton, affiché une seule fois. Il suffit de le coller dans Claude Code.
+              À envoyer à {name.split(" ")[0]} par un canal privé : il contient son jeton, affiché une seule fois. Il suffit de le coller dans Claude Code ou Codex, sur son poste.
             </p>
           </div>
           <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Fermer">
@@ -780,7 +781,9 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
                 <CheckIcon size={14} /> Copié
               </>
             ) : (
-              "Copier le prompt"
+              <>
+                <AgentLogos /> Copier le prompt
+              </>
             )}
           </button>
         </div>
