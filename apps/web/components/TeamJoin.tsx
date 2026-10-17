@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { AgentLogos } from "./brand-logos"
+import { PersonDot } from "./PersonDot"
 import { copyText } from "./PromptActions"
-import { api, errorMessage, initials } from "./format"
+import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 import { CheckIcon, Dot, ErrorText, zoneColor } from "./ui"
 
@@ -168,9 +169,7 @@ function RequestCard(props: { request: JoinRequest; zones: ZoneLite[]; people?: 
   return (
     <li className="panel bubble-in px-4 py-4 sm:px-5">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-full border border-dashed border-line-strong bg-surface text-[12px] font-medium">
-          {r.name ? initials(r.name) : "?"}
-        </span>
+        <PersonDot id={r.id} size={36} bg="surface" dashed />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-medium">{r.name ?? "Nom inconnu"}</p>
           <p className="text-[12px] text-trace">

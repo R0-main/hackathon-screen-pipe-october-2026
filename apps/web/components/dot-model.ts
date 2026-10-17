@@ -9,6 +9,21 @@ export type DotLook = (typeof LOOKS)[number]
 
 export const dotLook = (id: string): DotLook => LOOKS[hashString(id) % LOOKS.length]
 
+/** Tenue de chacun : deux voisins de zone ne portent pas la même (tant qu'il en reste une libre). */
+export function assignLooks(people: { id: string; zone: string | null }[]): Map<string, DotLook> {
+  const looks = new Map<string, DotLook>()
+  for (const p of [...people].sort((a, b) => a.id.localeCompare(b.id))) {
+    const taken = new Set(people.filter((q) => q.zone === p.zone && looks.has(q.id)).map((q) => looks.get(q.id)))
+    const start = LOOKS.indexOf(dotLook(p.id))
+    const free = LOOKS.map((_, k) => LOOKS[(start + k) % LOOKS.length]).find((l) => !taken.has(l))
+    looks.set(p.id, free ?? dotLook(p.id))
+  }
+  return looks
+}
+
+/** Profil du corps (rayon, hauteur), tourné autour de l'axe vertical ; partagé avec le dot à plat. */
+export const DOT_PROFILE: [number, number][] = [[0, 0], [0.84, 0], [0.97, 0.07], [1.02, 0.24], [1, 0.5], [0.94, 0.8], [0.82, 1.1], [0.62, 1.36], [0.36, 1.52], [0, 1.58]]
+
 const INK = 0x141414
 
 /** Ressources partagées par tous les dots d'une scène : géométries et matériaux noirs, libérés ensemble. */
@@ -21,7 +36,7 @@ export type DotKit = { make: (color: number, look: DotLook) => THREE.Group; disp
 export function dotKit(T: ThreeModule): DotKit {
   // Le corps : un dôme à base plate (profil tourné), comme une goutte de feutre posée.
   const body = new T.LatheGeometry(
-    [[0, 0], [0.84, 0], [0.97, 0.07], [1.02, 0.24], [1, 0.5], [0.94, 0.8], [0.82, 1.1], [0.62, 1.36], [0.36, 1.52], [0, 1.58]].map(([x, y]) => new T.Vector2(x, y)),
+    DOT_PROFILE.map(([x, y]) => new T.Vector2(x, y)),
     40,
   )
   body.computeVertexNormals()

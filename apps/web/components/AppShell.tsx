@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation"
 import { useEffect, useState, type ComponentType, type ReactNode } from "react"
 import { fmt, plural } from "@/lib/i18n"
 import { useBrainLive } from "./BrainLive"
-import { api, errorMessage, initials } from "./format"
+import { api, errorMessage } from "./format"
 import { LanguageSwitch, useT } from "./I18n"
+import { PersonAvatar } from "./PersonDot"
 import { usePendingJoins } from "./TeamJoin"
 import { ADMIN_VIEWS } from "./admin-views"
 import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LinkIcon, LogoutIcon, MenuIcon, NavBrainIcon, SkillIcon, StackIcon, TagIcon, TaskIcon, UsersIcon, WatchIcon } from "./ui"
@@ -192,7 +193,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             title={t.shell.myContextHint}
             aria-current={isActive(meHref) ? "page" : undefined}
           >
-            <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-[10px] font-medium">{initials(state.me.name)}</span>
+            <PersonAvatar id={state.me.id} size={28} bg="surface" />
             <span className="min-w-0">
               <span className="block truncate text-[13px] font-medium leading-tight">{state.me.name}</span>
               <span className="block truncate text-[12px] leading-tight text-trace">{t.shell.myContext}</span>

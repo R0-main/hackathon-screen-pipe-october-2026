@@ -47,6 +47,11 @@ export function useBrainLive(): BrainLive {
   return v
 }
 
+/** Même état, ou null hors de l'application (création de l'entreprise). */
+export function useBrainLiveOptional(): BrainLive | null {
+  return useContext(Ctx)
+}
+
 /**
  * État vivant du cerveau, partagé par toutes les pages de l'application : il vit dans le layout, donc le flux SSE
  * reste ouvert d'une page à l'autre et le cerveau garde ses zones allumées.

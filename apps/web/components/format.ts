@@ -48,15 +48,6 @@ export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-export function initials(name: string): string {
-  return name
-    .split(/[\s-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("")
-}
-
 export function firstName(name: string): string {
   return name.split(" ")[0] ?? name
 }
