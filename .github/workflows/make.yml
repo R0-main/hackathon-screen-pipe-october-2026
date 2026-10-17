@@ -5,9 +5,9 @@ name: Lancement local (make)
 on:
   workflow_dispatch:
   push:
-    paths: [Makefile, .env.example, scripts/local-db.sh, package-lock.json, supabase/**, .github/workflows/make.yml]
+    paths: [Makefile, .env.example, scripts/**, apps/web/app/page.tsx, package-lock.json, supabase/**, .github/workflows/make.yml]
   pull_request:
-    paths: [Makefile, .env.example, scripts/local-db.sh, package-lock.json, supabase/**, .github/workflows/make.yml]
+    paths: [Makefile, .env.example, scripts/**, apps/web/app/page.tsx, package-lock.json, supabase/**, .github/workflows/make.yml]
 
 jobs:
   make-dev:
@@ -31,6 +31,7 @@ jobs:
       - name: make dev
         env:
           LOCAL_DB: ${{ matrix.db }}
+          BRAIN_OPEN: "0"
         run: |
           make dev > dev.log 2>&1 &
           for i in $(seq 1 180); do curl -fsS http://localhost:3100/api/health && break; sleep 2; done
@@ -39,6 +40,10 @@ jobs:
           make db-status
           make migrate | tee migrate.log
           grep -q "déjà appliquée" migrate.log
+          # Cerveau neuf en local : / mène à la création de l'entreprise, pas à la page publique.
+          loc=$(curl -sS -o /dev/null -w '%{redirect_url}' http://localhost:3100/)
+          echo "/ → $loc"
+          case "$loc" in */creer) ;; *) echo "attendu : redirection vers /creer"; exit 1 ;; esac
       - name: make seed (Butine)
         env:
           LOCAL_DB: ${{ matrix.db }}

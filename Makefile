@@ -33,12 +33,14 @@ help: ## Liste des commandes
 	@awk -F':.*## ' '/^[a-z-]+:.*## / { printf "  make %-10s %s\n", $$1, $$2 }' Makefile
 
 dev: setup migrate check-port ## Tout lancer : config, dépendances, Postgres, migrations, dashboard (cerveau vide)
-	@echo "→ Dashboard : http://localhost:$(BRAIN_PORT)  (première fois : /creer pour créer ton entreprise)"
-	@$(RUN) npm run dev
+	@echo "→ http://localhost:$(BRAIN_PORT) s'ouvre dans ton navigateur dès que le serveur est prêt (première fois : création de ton entreprise)."
+	@sh scripts/open-when-ready.sh "http://localhost:$(BRAIN_PORT)" &
+	@$(RUN) BRAIN_LANDING=0 npm run dev
 
 demo: setup migrate check-port ## Comme dev, avec l'entreprise de démonstration Butine (connexion en un clic)
-	@echo "→ Démo : http://localhost:$(BRAIN_PORT)/demo"
-	@$(RUN) BRAIN_DEMO=1 npm run dev
+	@echo "→ Démo : http://localhost:$(BRAIN_PORT)/demo s'ouvre dans ton navigateur dès que le serveur est prêt."
+	@sh scripts/open-when-ready.sh "http://localhost:$(BRAIN_PORT)/demo" &
+	@$(RUN) BRAIN_DEMO=1 BRAIN_LANDING=0 npm run dev
 
 setup: check-node .env node_modules/.installed ## Config (.env) et dépendances npm
 
