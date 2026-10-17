@@ -77,6 +77,10 @@ export interface BrainStore {
   findOrgByJoinCode(code: string): Promise<string | null>
   findJoinRequestOrg(id: string): Promise<string | null>
 
+  /** Petit réglage de cette entreprise (texte, JSON compris), par exemple l'onboarding proposé par un agent ; null l'efface. */
+  getOrgSetting(name: string): Promise<string | null>
+  setOrgSetting(name: string, value: string | null): Promise<void>
+
   /** Code du message d'équipe de cette entreprise (créé au premier appel) ; `rotateJoinCode` invalide l'ancien message. */
   getJoinCode(): Promise<string>
   rotateJoinCode(): Promise<string>

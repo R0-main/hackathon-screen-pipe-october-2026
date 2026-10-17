@@ -6,6 +6,12 @@
 // La première phrase est reconnue par brain-sync (INSTALL_PROMPT_RE, apps/client/src/secrets.ts) : cette session contient
 // le jeton en clair et n'est jamais envoyée au cerveau. Ne pas la reformuler sans mettre à jour le client.
 
+/**
+ * Nos prompts n'ont de sens que sur le poste de la personne (installer le client, lire son historique). Une session
+ * Claude Code dans le cloud (app de bureau en environnement distant) s'arrête au lieu d'installer dans un conteneur.
+ */
+export const LOCAL_ONLY = "Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`)."
+
 /** Le raccourci écrit par install.sh : marche même quand Node.js est une copie privée hors du PATH. */
 export const BRAIN_CLI = "~/.company-brain/brain"
 
@@ -33,7 +39,7 @@ export function buildInstallPrompt(opts: { baseUrl: string; token: string; name:
   const { baseUrl, token, name, orgName, zones, caFingerprint } = opts
   const brain = BRAIN_CLI
   return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}. Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
-Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
+Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY}
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
 2. Lance cette commande telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
@@ -54,7 +60,7 @@ export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: 
   const { baseUrl, code, orgName, caFingerprint } = opts
   const org = deNom(orgName)
   const brain = BRAIN_CLI
-  return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref.
+  return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY}
 
 1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
 2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).

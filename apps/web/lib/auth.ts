@@ -119,6 +119,27 @@ export function verifyLoginCode(code: string | null | undefined): Promise<string
   return verifySigned(code ?? undefined, "link1")
 }
 
+/** Durée de validité du code d'envoi d'un onboarding préparé par Claude Code ou Codex (lecture de l'historique comprise). */
+export const ONBOARDING_CODE_HOURS = 2
+
+/**
+ * Code d'envoi de l'onboarding par un agent : il permet seulement de déposer une proposition (POST
+ * /api/onboarding/import) pour l'entreprise de cet admin, qui la relit avant de l'appliquer. Signé comme un lien de
+ * connexion, avec son propre usage ; préfixé `co_` pour que brain-sync le reconnaisse et le masque.
+ */
+export async function createOnboardingCode(userId: string): Promise<string> {
+  const tokenHash = await tokenHashOf(userId)
+  if (!tokenHash) throw new Error("Membre introuvable.")
+  const exp = String(Date.now() + ONBOARDING_CODE_HOURS * 3600_000)
+  return `co_${Buffer.from(`${userId}.${exp}.${await sign(userId, exp, tokenHash, "onb1")}`).toString("base64url")}`
+}
+
+export async function verifyOnboardingCode(code: string | null | undefined): Promise<string | null> {
+  const m = code?.trim().match(/^co_([A-Za-z0-9_-]{20,400})$/)
+  if (!m) return null
+  return verifySigned(Buffer.from(m[1], "base64url").toString("utf8"), "onb1")
+}
+
 export type Viewer = {
   /** Profil effectif (celui dont on applique les droits). */
   profile: Profile

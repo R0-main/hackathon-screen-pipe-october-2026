@@ -9,6 +9,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import { buildInstallPrompt, buildJoinPrompt } from "../../web/lib/install-prompt"
+import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
@@ -137,6 +138,42 @@ test("install.sh --join : lance join (et non setup) avec les mêmes options", as
   }
 })
 
+test("prompt d'onboarding par un agent : lit l'historique, envoie sans rien appliquer, reconnu et masqué par brain-sync", () => {
+  const code = `co_${"Y".repeat(80)}`
+  const p = buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code, orgName: "Atelier Lumen", zones: [{ id: "dev", name: "Dev" }] })
+  assert.ok(INSTALL_PROMPT_RE.test(p))
+  assert.ok(!maskOwnSecrets(p).text.includes(code))
+  assert.equal(p.split(code).length, 2, "le code n'apparaît qu'une fois, dans la commande")
+  assert.match(p, /~\/\.claude\/projects/)
+  assert.match(p, /~\/\.codex\/sessions/)
+  assert.match(p, /Jamais de secrets/)
+  assert.match(p, /Rien n'est appliqué : je relis et valide/)
+  const ask = p.indexOf("Acceptes-tu de donner accès à ces données à ce site ?")
+  assert.ok(ask > 0 && ask < p.indexOf("Historique : Claude Code"), "l'accord est demandé avant toute lecture")
+  assert.match(p, /Sans un oui clair, arrête-toi sans rien lire ni envoyer/)
+  assert.match(p, /envoyer à cerveau\.example\.com/, "le site qui reçoit est nommé")
+  assert.ok(p.includes(`curl -fsS -X POST https://cerveau.example.com/api/onboarding/import -H "Authorization: Bearer ${code}"`))
+})
+
+test("prompts : une session Claude Code dans le cloud s'arrête au lieu d'agir hors du poste", () => {
+  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
+    assert.match(p, /Si tu ne tournes pas sur mon poste \(session cloud, conteneur distant\), arrête-toi/)
+  }
+})
+
+test("prompt d'onboarding : cadré par ce que l'entreprise fait, pour laisser de côté les conversations sans rapport", () => {
+  const p = buildOnboardingAgentPrompt({
+    baseUrl: "https://cerveau.example.com",
+    code: "co_x",
+    orgName: "Atelier Lumen",
+    description: "Studio de design produit pour les start-up de la santé.",
+    zones: [],
+  })
+  assert.match(p, /L'entreprise, c'est Atelier Lumen : « Studio de design produit pour les start-up de la santé\. »/)
+  assert.match(p, /une conversation sans rapport \(projet perso, autre entreprise ou autre client, question générale\) se laisse de côté/)
+  const sansDescription = buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Orbite", zones: [] })
+  assert.match(sansDescription, /L'entreprise, c'est Orbite\. Ne garde que ce qui la concerne/)
+})
 const FP = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49"
 
 test("prompt d'installation, cerveau auto-hébergé : certificat récupéré, empreinte vérifiée, puis tout passe par lui", () => {
