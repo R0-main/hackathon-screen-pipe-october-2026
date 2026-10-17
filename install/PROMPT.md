@@ -90,6 +90,10 @@ géré. En entreprise, un profil MDM (PPPC) peut pré-accorder l'Accessibilité 
 
 ## Exemple (jeton fictif)
 
+Quand l'entreprise a une description (saisie dans `/creer` ou à l'onboarding), la première ligne la reprend après le
+nom de l'entreprise (`L'entreprise, en deux mots : « … ».`), sur une ligne et coupée à 300 caractères. Le message
+d'équipe fait de même. Sans description, la ligne reste celle de l'exemple.
+
 ```text
 Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Butine. Je suis Jean-Marc Dubois, zones : compta.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi en une phrase de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`). Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire, sans liste ni explication, puis attends.

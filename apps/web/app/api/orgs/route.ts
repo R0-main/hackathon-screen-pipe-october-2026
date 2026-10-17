@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     // La session de l'entreprise d'où l'on vient (s'il y en a une) reste retenue : on y revient en un clic.
     await openSession(profile.id)
 
-    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
+    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, orgDescription: org.description, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
     return json({ org: { id: org.id, name: org.name }, profile: { id: profile.id, name: profile.name }, zones, prompt }, 201)
   } catch (err) {
     return internalError(err)

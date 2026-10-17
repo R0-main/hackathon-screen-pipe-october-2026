@@ -632,7 +632,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
 
   return (
     <div>
-      <h1 className="create-title">Invitez votre équipe.</h1>
+      <h1 className="create-title">Invitez l'équipe {deNom(created.orgName)}.</h1>
       <p className="create-lead">
         Deux façons, au choix : un message par personne, avec son propre jeton, ou un seul message pour toute l'équipe, où chacun demande à entrer. Dans les deux
         cas, il se colle dans Claude Code ou Codex, et le poste apparaît ici dès qu'il est branché au cerveau {deNom(created.orgName)}.
@@ -724,6 +724,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       <div className="mt-3">
         <TeamJoin
           compact
+          orgName={created.orgName}
           zones={created.zones}
           defaultManager={created.meId}
           onAccepted={(p) => props.setInvites((list) => [{ ...p, prompt: "" }, ...list])}

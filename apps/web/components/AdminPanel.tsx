@@ -15,6 +15,7 @@ import { ADMIN_VIEWS, type AdminTab } from "./admin-views"
 import { AutoZones } from "./AutoZones"
 import { Moderation } from "./Moderation"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
+import { deNom } from "@/lib/install-prompt"
 
 type User = Profile & { zones: string[] }
 
@@ -155,7 +156,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
         )}
         {tab === "requests" && (
           <PageScroll width="max-w-[860px]">
-            <TeamJoin zones={zones} people={users.map((u) => ({ id: u.id, name: u.name }))} defaultManager={defaultManager} onAccepted={() => void reload()} />
+            <TeamJoin orgName={props.orgName} zones={zones} people={users.map((u) => ({ id: u.id, name: u.name }))} defaultManager={defaultManager} onAccepted={() => void reload()} />
           </PageScroll>
         )}
         {tab === "zones" && (
@@ -189,8 +190,9 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
       )}
 
       {invite && (
-        <Modal title="Inviter quelqu'un" onClose={() => setInvite(null)}>
+        <Modal title={`Inviter quelqu'un chez ${props.orgName}`} onClose={() => setInvite(null)}>
           <InviteForm
+            orgName={props.orgName}
             zones={zones}
             users={users}
             defaultManager={invite.managerId}
@@ -202,7 +204,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
           />
         </Modal>
       )}
-      {prompt && <PromptModal name={prompt.name} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
+      {prompt && <PromptModal name={prompt.name} orgName={props.orgName} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
     </div>
   )
 }
@@ -506,11 +508,13 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function InviteForm({
+  orgName,
   zones,
   users,
   defaultManager,
   onInvited,
 }: {
+  orgName: string
   zones: Zone[]
   users: User[]
   defaultManager: string | null
@@ -550,8 +554,10 @@ function InviteForm({
 
   return (
     <form onSubmit={submit} className="panel space-y-3 p-4 sm:p-5" aria-busy={busy}>
-      <h2 className="panel-title">Inviter quelqu&apos;un</h2>
-      <p className="text-[13px] text-trace">La personne reçoit un prompt à coller dans Claude Code ou Codex : une commande installe Screenpipe, le MCP et les hooks, puis ouvre le cerveau.</p>
+      <h2 className="panel-title">Inviter quelqu&apos;un chez {orgName}</h2>
+      <p className="text-[13px] text-trace">
+        La personne reçoit un message à coller dans Claude Code ou Codex : il installe tout sur son ordinateur, puis lui ouvre le cerveau {deNom(orgName)}.
+      </p>
       <div className="grid gap-2 sm:grid-cols-2">
         <input className="input" aria-label="Prénom et nom" placeholder="Prénom Nom" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
         <input className="input" aria-label="Poste" placeholder="Poste, par exemple Comptable" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
@@ -718,7 +724,7 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
   )
 }
 
-function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; onClose: () => void }) {
+function PromptModal({ name, orgName, prompt, onClose }: { name: string; orgName: string; prompt: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const [copyErr, setCopyErr] = useState<string | null>(null)
   const copyRef = useRef<HTMLButtonElement>(null)
@@ -767,7 +773,7 @@ function PromptModal({ name, prompt, onClose }: { name: string; prompt: string; 
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="prompt-modal-title" className="panel-title">
-              Prompt d&apos;installation pour {name}
+              Invitation de {name} chez {orgName}
             </h2>
             <p className="mt-1 text-[13px] text-trace">
               À envoyer à {name.split(" ")[0]} par un canal privé : il contient son jeton, affiché une seule fois. Il suffit de le coller dans Claude Code ou Codex, sur son poste.
