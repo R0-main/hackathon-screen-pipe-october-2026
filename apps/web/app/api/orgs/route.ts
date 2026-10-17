@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     // La session de l'entreprise d'où l'on vient (s'il y en a une) reste retenue : on y revient en un clic.
     await openSession(profile.id)
 
-    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
+    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, orgDescription: org.description, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
     // Le jeton (déjà dans le prompt) sert aussi à refaire ce prompt une fois les zones choisies (POST /api/onboarding/zones).
     return json({ org: { id: org.id, name: org.name }, profile: { id: profile.id, name: profile.name }, zones, prompt, token }, 201)
   } catch (err) {

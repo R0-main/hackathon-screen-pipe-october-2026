@@ -540,7 +540,9 @@ export class FileStore implements BrainStore {
     return this.mutate((d) => {
       const before = d.items.length
       d.items = d.items.filter((i) => i.id !== id)
-      return d.items.length < before
+      if (d.items.length === before) return false
+      d.tasks = d.tasks.filter((t) => t.source_item_id !== id || Boolean(t.external_source))
+      return true
     })
   }
   async updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }) {

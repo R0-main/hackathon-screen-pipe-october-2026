@@ -55,8 +55,9 @@ export const POST = withViewer(
 
     const zones = await store.listZones()
     await store.setZoneAccess(viewer.real.id, zones.map((z) => ({ zone_id: z.id, can_write: true })))
-    const org = await store.getOrg()
-    if (!org.description.trim() && body.data.description.trim()) await store.updateOrg({ name: org.name, description: body.data.description.trim() })
+    const current = await store.getOrg()
+    const org =
+      !current.description.trim() && body.data.description.trim() ? await store.updateOrg({ name: current.name, description: body.data.description.trim() }) : current
     const fresh = { ...viewer, access: await getAccess(viewer.real) }
     const inserted = body.data.items.length ? (await ingestItems(fresh, body.data.items, "job")).inserted : 0
     if (inserted) await refreshStatus(fresh)
@@ -66,7 +67,7 @@ export const POST = withViewer(
     const mine = token !== undefined && (await store.getTokenHash(viewer.real.id)) === hashToken(token)
     const prompt =
       token !== undefined && mine
-        ? buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: viewer.real.name, orgName: org.name, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
+        ? buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: viewer.real.name, orgName: org.name, orgDescription: org.description, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
         : null
     return json({ zones, inserted, prompt })
   },

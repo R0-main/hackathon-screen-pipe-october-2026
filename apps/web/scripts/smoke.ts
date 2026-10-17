@@ -285,6 +285,7 @@ async function main() {
   assert(ctx && ctx.zones[0]?.zone === "dev" && ctx.items.length > 0, "contexte de passation de Hugo")
 
   assert(await store.deleteItem(res.ids[0]), "l'auteur peut supprimer une connaissance")
+  assert(!(await store.listTasks({})).some((t) => t.source_item_id === res.ids[0]), "sa tâche disparaît avec elle")
 
   console.log("\n— Skills de l'entreprise : publication sous autorisation, attribution à un cortex")
   const names = async (v: Viewer) => (await listVisibleSkills(v)).map((x) => x.name)
@@ -1299,11 +1300,12 @@ async function main() {
     const tag = `Modération ${run}`
     const posted = await ingestItems(hugo, [
       { ...item("dev", `${tag} : les webhooks Stripe passent par une file Redis`, "decision"), body: "Pour absorber les pics de précommandes." },
-      { ...item("dev", `${tag} : rendez-vous chez le médecin jeudi`), source: { app: "Screenpipe", tool: "agent", at: new Date().toISOString() } },
+      { ...item("dev", `${tag} : rendez-vous chez le médecin jeudi`, "task"), source: { app: "Screenpipe", tool: "agent", at: new Date().toISOString() } },
       { ...item("dev", `${tag} : TVA à déclarer`), body: "Déclaration avant le 19 du mois." },
     ])
     assert(posted.inserted === 3, "trois connaissances arrivent, publiées tout de suite")
     const [good, perso, tva] = posted.ids
+    assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.source_item_id === perso), "le rendez-vous a créé une tâche")
     const material = await moderationInput()
   assert(!("skipped" in material) && [...material.input.items.map((i) => i.id!)].sort().join() === [...posted.ids].sort().join(), "le passage suivant relit exactement ce qui est arrivé")
     assert(!("skipped" in material) && material.input.items[0].author === "Hugo Bernard", "avec le nom de l'auteur")
@@ -1320,6 +1322,9 @@ async function main() {
     const applied = await call(adminModerationRoute.POST, "/api/admin/moderation", { method: "POST", session: claireSession, body: { ids: posted.ids, verdicts } })
     assert(applied.status === 200 && applied.data.reviewed === 3 && applied.data.edited === 1 && applied.data.rejected === 1, "trois relues, une corrigée, une retirée")
     assert((await store.getItem(perso)) === null, "la connaissance personnelle est retirée du cerveau")
+    const boardAfter = await store.listTasks({ zones: ["dev"] })
+    assert(!boardAfter.some((t) => t.source_item_id === perso || t.title.includes("médecin")), "sa tâche quitte le tableau avec elle")
+    assert(boardAfter.some((t) => t.id === ext1a!.id && t.external_source === "linear"), "les tâches importées d'un outil ne sont pas touchées")
     const fixed = await store.getItem(tva)
     assert(fixed?.zone === "compta" && fixed.kind === "procedure" && fixed.title.endsWith("déclarer la TVA avant le 19"), "la correction est appliquée sur place (zone, type, titre)")
     assert((await store.getItem(good))?.title.includes("webhooks Stripe"), "la bonne reste telle quelle")

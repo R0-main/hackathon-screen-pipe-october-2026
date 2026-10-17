@@ -51,7 +51,7 @@ export const POST = withViewer(
     })
     await store.setZoneAccess(profile.id, zones.map((zone_id) => ({ zone_id, can_write: true })))
     const org = await store.getOrg()
-    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones, caFingerprint: caFingerprint() })
+    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, orgDescription: org.description, zones, caFingerprint: caFingerprint() })
     return json({ profile, token, prompt }, 201)
   },
   { admin: true },
