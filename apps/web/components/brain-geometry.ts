@@ -403,7 +403,7 @@ export type BrainNetwork = { points: V3[]; normals: V3[]; zone: number[]; depth:
 
 /** Couches du réseau : la surface, puis deux couches internes, plus diffuses, qui donnent du volume. */
 const LAYERS = [
-  { k: 1, spacing: 0.15 },
+  { k: 1, spacing: 0.135 },
   { k: 0.72, spacing: 0.17 },
   { k: 0.44, spacing: 0.18 },
 ]
@@ -470,8 +470,8 @@ export function brainNetwork(owner: number[]): BrainNetwork {
       .slice(0, count)
   LAYERS.forEach(({ spacing }, d) => {
     for (const i of layerOf[d]) {
-      for (const [j] of nearest(i, layerOf[d], (spacing * 2.1) ** 2, 3)) link(i, j)
-      if (d > 0) for (const [j] of nearest(i, layerOf[d - 1], (spacing * 3) ** 2, 1)) link(i, j)
+      for (const [j] of nearest(i, layerOf[d], (spacing * 2.1) ** 2, 4)) link(i, j)
+      if (d > 0) for (const [j] of nearest(i, layerOf[d - 1], (spacing * 3) ** 2, 2)) link(i, j)
     }
   })
   return { points, normals, zone, depth, edges }
