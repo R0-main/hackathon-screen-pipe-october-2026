@@ -2,11 +2,12 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { slugify } from "@brain/core"
+import { slugify, type McpConnectorPublic } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { AgentLogos } from "./brand-logos"
 import { Brain3D, type BrainPerson } from "./Brain3D"
 import type { ZoneActivity } from "./BrainViz"
+import { McpConnectors } from "./McpConnectors"
 import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
@@ -15,7 +16,7 @@ import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE,
 import { deNom } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
-type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team"
+type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team" | "connectors"
 /** Une personne ajoutée depuis cette page : invitée (son prompt personnel), ou acceptée via le message d'équipe (prompt vide). */
 type Invite = { id: string; name: string; title?: string; zones: string[]; prompt: string }
 /** `token` : le jeton de l'admin (déjà dans `prompt`), renvoyé à l'étape des zones pour refaire ce prompt. */
@@ -40,7 +41,7 @@ type Saved = {
 }
 
 /** Étapes numérotées (barre de progression) : l'intro n'en fait pas partie. */
-const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team"]
+const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team", "connectors"]
 const DEFAULT_PICK = ["dev", "produit", "direction"]
 /**
  * La progression survit à un rechargement, dans cet onglet seulement (sessionStorage, effacé à sa fermeture). Elle
@@ -247,7 +248,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const index = STEPS.indexOf(step)
   const org = created?.orgName ?? (company.trim() || "votre entreprise")
   // Une fois le cerveau créé (après « Et vous ? »), plus de retour vers les questions qui l'ont nommé.
-  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install" }
+  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install", connectors: "team" }
   const people = created
     ? [{ id: created.meId, name, connected: Boolean(team[created.meId]) }, ...invites.map((i) => ({ id: i.id, name: i.name, connected: Boolean(team[i.id]) }))]
     : name.trim()
@@ -297,7 +298,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                   <h1 className="create-title">Créons le cerveau de votre entreprise.</h1>
                   <p className="create-lead">
                     Trois questions pour monter votre dashboard, puis Claude Code ou Codex peut proposer ses zones à partir de vos conversations. Ensuite, un message
-                    branche votre poste, et un message par collègue les fait rejoindre le cerveau. Quelques minutes en tout.
+                    branche votre poste, et un message par collègue les fait rejoindre le cerveau. Pour finir, branchez vos outils (Notion, Linear, GitHub…) en un
+                    clic. Quelques minutes en tout.
                   </p>
                   <div className="mt-9 flex flex-wrap items-center gap-3">
                     <button type="button" className="btn btn-primary btn-lg" onClick={() => go("company")} autoFocus>
@@ -434,10 +436,12 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
               )}
 
               {step === "team" && created && (
-                <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} />
+                <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} onNext={() => go("connectors")} />
               )}
 
-              {(step === "context" || step === "zones" || step === "install" || step === "team") && !created && (
+              {step === "connectors" && created && <ConnectorsStep orgName={created.orgName} meConnected={Boolean(team[created.meId])} />}
+
+              {(step === "context" || step === "zones" || step === "install" || step === "team" || step === "connectors") && !created && (
                 <>
                   <h1 className="create-title">Cette page a perdu votre cerveau.</h1>
                   <p className="create-lead">Il existe toujours : retrouvez-le depuis le dashboard, ou recommencez.</p>
@@ -686,7 +690,7 @@ function ZonesStep(props: {
   )
 }
 
-function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: (i: Invite[]) => Invite[]) => void; team: Record<string, string | null> }) {
+function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: (i: Invite[]) => Invite[]) => void; team: Record<string, string | null>; onNext: () => void }) {
   const { created, invites } = props
   const [name, setName] = useState("")
   const [title, setTitle] = useState("")
@@ -832,12 +836,47 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       </div>
 
       <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <Link href="/dashboard" className="btn btn-lg">
+        <button type="button" className="btn btn-primary btn-lg" onClick={props.onNext}>
+          Brancher vos outils
+        </button>
+        <Link href="/dashboard" className="landing-link text-[15px]">
           Ouvrir le dashboard
         </Link>
         <Presence connected={Boolean(props.team[created.meId])} self compact />
       </div>
     </div>
+  )
+}
+
+/**
+ * Étape 8 : brancher les outils de l'équipe par leur serveur MCP officiel (Notion, Linear, GitHub…). « Se connecter »
+ * passe par la page de connexion du fournisseur, puis revient ici (/creer?brouillon=1 reprend le parcours à cette étape).
+ */
+function ConnectorsStep({ orgName, meConnected }: { orgName: string; meConnected: boolean }) {
+  const [data, setData] = useState<{ connectors: McpConnectorPublic[]; redirect_uri: string } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    api<{ connectors: McpConnectorPublic[]; redirect_uri: string }>("/api/connectors/mcp").then(setData, (e) => setErr(errorMessage(e)))
+  }, [])
+
+  return (
+    <>
+      <h1 className="create-title">Branchez les outils {deNom(orgName)}.</h1>
+      <p className="create-lead">
+        Notion, Linear, GitHub, Slack, Stripe… Cliquez sur « Se connecter » : vous passez par la page de connexion de l&apos;outil, puis revenez ici. Les jetons restent
+        sur le serveur du cerveau. Vous pourrez en ajouter d&apos;autres plus tard, depuis la page Connecteurs.
+      </p>
+      <div className="mt-8">
+        {err ? <ErrorText>{err}</ErrorText> : data ? <McpConnectors initial={data.connectors} redirectUri={data.redirect_uri} returnTo="creer" bare /> : <p className="text-[14px] text-trace">Chargement…</p>}
+      </div>
+      <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <Link href="/dashboard" className="btn btn-primary btn-lg">
+          Ouvrir le dashboard
+        </Link>
+        <Presence connected={meConnected} self compact />
+      </div>
+    </>
   )
 }
 

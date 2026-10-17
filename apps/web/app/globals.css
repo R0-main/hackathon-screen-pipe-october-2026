@@ -65,15 +65,17 @@ body {
   outline-offset: 2px;
 }
 
+/* Longhand text-wrap-style : le raccourci text-wrap remettrait text-wrap-mode à wrap, et ces règles hors couche
+   l'emporteraient sur les utilitaires truncate / whitespace-nowrap. */
 h1,
 h2,
 h3,
 h4 {
-  text-wrap: balance;
+  text-wrap-style: balance;
 }
 
 p {
-  text-wrap: pretty;
+  text-wrap-style: pretty;
 }
 
 .mono {
