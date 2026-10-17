@@ -70,6 +70,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
 
   // Connaissances (et l'événement d'écriture brain-sync correspondant).
   const sorted = [...DEMO_ITEMS].sort((a, b) => b.daysAgo - a.daysAgo)
+  const byTitle = new Map<string, string>()
   for (const it of sorted) {
     const at = localTime(it.daysAgo, 9 + Math.floor(r() * 9), Math.floor(r() * 60))
     const [item] = await store.insertItems([
@@ -85,6 +86,9 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
         created_at: at.toISOString(),
       },
     ])
+    byTitle.set(it.title, item.id)
+    const old = it.supersedes ? byTitle.get(it.supersedes) : undefined
+    const replaced = old ? (await store.markSuperseded([old], item.id, at.toISOString())).length : 0
     if (it.kind === "task") {
       await store.createTasks([
         { title: it.title, zone: it.zone, status: it.done ? "done" : "open", assignee_id: ids[it.author], source_item_id: item.id, created_at: at.toISOString() },
@@ -95,7 +99,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
       agent: "brain-sync",
       type: "write",
       zones: [it.zone],
-      summary: `1 connaissance ajoutée : ${it.title.slice(0, 80)}`,
+      summary: `1 connaissance ajoutée : ${it.title.slice(0, 80)}${replaced ? " (1 ancienne connaissance remplacée)" : ""}`,
       at: new Date(at.getTime() + 15 * 60_000).toISOString(),
     })
   }

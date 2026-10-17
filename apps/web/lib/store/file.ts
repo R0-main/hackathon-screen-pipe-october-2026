@@ -70,6 +70,22 @@ function strip({ token_hash: _t, ...p }: StoredProfile): Profile {
   return p
 }
 
+/** Une connaissance remplacée garde ce poids dans la recherche (elle reste trouvable, derrière la nouvelle). */
+const SUPERSEDED_WEIGHT = 0.35
+
+function clearSuperseded(i: KnowledgeItem) {
+  delete i.superseded_by
+  delete i.superseded_at
+  delete i.superseded_by_title
+}
+
+/** Ajoute le titre de la connaissance qui remplace chaque item remplacé (copies : le fichier n'en garde pas trace). */
+function withSupersededTitles<T extends KnowledgeItem>(items: T[], all: KnowledgeItem[]): T[] {
+  if (!items.some((i) => i.superseded_by)) return items
+  const titles = new Map(all.map((i) => [i.id, i.title]))
+  return items.map((i) => (i.superseded_by ? { ...i, superseded_by_title: titles.get(i.superseded_by) } : i))
+}
+
 export class FileStore implements BrainStore {
   readonly kind = "file" as const
   private dir: string
@@ -275,31 +291,64 @@ export class FileStore implements BrainStore {
         score += s
       }
       if (score === 0) continue
+      // Remplacée : toujours trouvable, mais derrière la connaissance qui la remplace.
+      if (item.superseded_by) score *= SUPERSEDED_WEIGHT
       const ageDays = (now - new Date(item.created_at).getTime()) / 86400_000
       score = score * (hits / q.length) * (1 + 0.15 * Math.max(0, 1 - ageDays / 30))
       scored.push({ ...item, score: Math.round(score * 100) / 100 })
     }
-    return scored.sort((a, b) => b.score - a.score).slice(0, limit)
+    const top = scored.sort((a, b) => b.score - a.score).slice(0, limit)
+    return withSupersededTitles(top, this.load().items)
   }
 
-  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string }) {
+  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; current?: boolean }) {
     const zones = f.zones ? new Set(f.zones) : null
-    return this.load()
-      .items.filter(
-        (i) => (!zones || zones.has(i.zone)) && (!f.authorId || i.author_id === f.authorId) && (!f.sinceIso || i.created_at >= f.sinceIso),
+    const all = this.load().items
+    const list = all
+      .filter(
+        (i) =>
+          (!zones || zones.has(i.zone)) &&
+          (!f.authorId || i.author_id === f.authorId) &&
+          (!f.sinceIso || i.created_at >= f.sinceIso) &&
+          (!f.current || !i.superseded_by),
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, f.limit ?? 1000)
+    return withSupersededTitles(list, all)
   }
   async getItem(id: string) {
-    return this.load().items.find((i) => i.id === id) ?? null
+    const all = this.load().items
+    const item = all.find((i) => i.id === id)
+    return item ? withSupersededTitles([item], all)[0] : null
   }
   async deleteItem(id: string) {
     return this.mutate((d) => {
       const before = d.items.length
       d.items = d.items.filter((i) => i.id !== id)
-      return d.items.length < before
+      if (d.items.length === before) return false
+      for (const i of d.items) if (i.superseded_by === id) clearSuperseded(i)
+      return true
     })
+  }
+  async markSuperseded(ids: string[], by: string, at = new Date().toISOString()) {
+    return this.mutate((d) => {
+      const marked: string[] = []
+      for (const i of d.items) {
+        if (!ids.includes(i.id) || i.id === by || i.superseded_by) continue
+        i.superseded_by = by
+        i.superseded_at = at
+        marked.push(i.id)
+      }
+      return marked
+    })
+  }
+  async restoreItem(id: string) {
+    const ok = this.mutate((d) => {
+      const item = d.items.find((i) => i.id === id)
+      if (item) clearSuperseded(item)
+      return Boolean(item)
+    })
+    return ok ? this.getItem(id) : null
   }
 
   async zoneStats(): Promise<ZoneStat[]> {

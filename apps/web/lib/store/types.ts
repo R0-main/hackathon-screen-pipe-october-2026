@@ -51,9 +51,15 @@ export interface BrainStore {
   insertItems(items: NewItem[]): Promise<KnowledgeItem[]>
   /** `authorId` : inclut aussi les items de cet auteur, quelle que soit leur zone (droit de regard). */
   searchItems(query: string, zones: string[], limit: number, opts?: { authorId?: string }): Promise<ScoredItem[]>
-  listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string }): Promise<KnowledgeItem[]>
+  /** `current` : seulement les connaissances d'actualité (pas remplacées). */
+  listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; current?: boolean }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
+  /** Supprimer une connaissance rend d'actualité celles qu'elle remplaçait. */
   deleteItem(id: string): Promise<boolean>
+  /** Marque `ids` comme remplacées par `by` (celles qui ne l'étaient pas déjà), à la date `at` (maintenant par défaut). */
+  markSuperseded(ids: string[], by: string, at?: string): Promise<string[]>
+  /** Annule le marquage : la connaissance redevient d'actualité. */
+  restoreItem(id: string): Promise<KnowledgeItem | null>
   zoneStats(): Promise<ZoneStat[]>
   topEntities(f: { zones?: string[]; authorId?: string; limit: number }): Promise<EntityStat[]>
 

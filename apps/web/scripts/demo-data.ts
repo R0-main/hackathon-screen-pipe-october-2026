@@ -30,6 +30,8 @@ export type DemoItem = {
   daysAgo: number
   tool?: "claude-code" | "codex" | "chatgpt" | "claude"
   done?: boolean
+  /** Titre d'une connaissance plus ancienne que celle-ci remplace (décision revue). */
+  supersedes?: string
 }
 
 const t = (name: string): Entity => ({ type: "tool", name })
@@ -197,6 +199,19 @@ export const DEMO_ITEMS: DemoItem[] = [
     title: "Déclarer la TVA de septembre avant le 19 octobre",
     body: "Montant estimé : 8 400 €. Vérifier l'autoliquidation sur les achats de matériel SumUp.",
     entities: [t("SumUp")],
+  },
+  {
+    author: "jeanmarc", zone: "compta", kind: "decision", daysAgo: 20, tool: "claude",
+    title: "Les relances de factures impayées partent à la main, par email, à J+30",
+    body: "Sarah relance chaque client depuis Gmail à partir de la liste d'écarts du rapprochement quotidien.",
+    entities: [t("Gmail")],
+  },
+  {
+    author: "jeanmarc", zone: "compta", kind: "decision", daysAgo: 2, tool: "claude",
+    title: "On passe aux relances automatiques de Pennylane pour les factures impayées",
+    body: "Pennylane relance à J+15 puis J+30 avec le modèle validé ; Sarah ne traite plus que les litiges. Fini les relances à la main depuis Gmail.",
+    entities: [t("Pennylane"), t("Gmail")],
+    supersedes: "Les relances de factures impayées partent à la main, par email, à J+30",
   },
   {
     author: "jeanmarc", zone: "compta", kind: "fact", daysAgo: 2, tool: "claude",

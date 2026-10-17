@@ -58,6 +58,24 @@ export function PersonItems({
       setPending(null)
     }
   }
+  async function restore(id: string) {
+    setPending(id)
+    setErr(null)
+    try {
+      await api(`/api/items/${id}`, { method: "PATCH", json: { current: true } })
+      setList((l) =>
+        l.map((i) => {
+          if (i.id !== id) return i
+          const { superseded_by: _by, superseded_at: _at, superseded_by_title: _title, ...rest } = i
+          return rest
+        }),
+      )
+    } catch (e) {
+      setErr(`Modification impossible : ${errorMessage(e)}`)
+    } finally {
+      setPending(null)
+    }
+  }
   return (
     <section className="panel p-5">
       <h2 className="panel-title">
@@ -70,7 +88,18 @@ export function PersonItems({
           <div key={i.id} className="min-w-0">
             <KnowledgeCard item={i} zone={zones.find((z) => z.id === i.zone)} now={now} unreadableNote={unreadable.has(i.zone) ? note : undefined} />
             {canDelete && (
-              <div className="mt-1 pr-2 text-right">
+              <div className="mt-1 flex justify-end gap-3 pr-2">
+                {i.superseded_by && (
+                  <button
+                    type="button"
+                    className="text-[12px] text-trace underline underline-offset-2 hover:text-ink disabled:no-underline"
+                    onClick={() => restore(i.id)}
+                    disabled={pending === i.id}
+                    title="Marquée remplacée à tort : elle redevient d'actualité pour les agents."
+                  >
+                    Toujours d&apos;actualité
+                  </button>
+                )}
                 <button
                   type="button"
                   className="text-[12px] text-trace underline underline-offset-2 hover:text-danger disabled:no-underline"

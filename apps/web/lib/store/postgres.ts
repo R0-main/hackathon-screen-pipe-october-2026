@@ -58,8 +58,14 @@ function toItem(r: Row): KnowledgeItem {
     source: r.source ?? {},
     confidence: Number(r.confidence),
     created_at: iso(r.created_at),
+    ...(r.superseded_by
+      ? { superseded_by: r.superseded_by, superseded_at: isoOrNull(r.superseded_at) ?? undefined, ...(r.superseded_by_title ? { superseded_by_title: r.superseded_by_title } : {}) }
+      : {}),
   }
 }
+
+/** Une connaissance remplacée garde ce poids dans la recherche (elle reste trouvable, derrière la nouvelle). */
+const SUPERSEDED_WEIGHT = 0.35
 function toEvent(r: Row): AgentEvent {
   return {
     id: Number(r.id),
@@ -304,33 +310,56 @@ export class PostgresStore implements BrainStore {
           : sql`k.author_id = ${author}`
     // Score pondéré par la part des termes trouvés, comme le stockage fichier.
     const rows = await sql`
-      select k.*, ts_rank_cd(k.search, q) * (
+      select k.*, n.title as superseded_by_title, ts_rank_cd(k.search, q) * (
           (select count(*) from unnest(${sql.array(terms)}::text[]) t where k.search @@ to_tsquery('simple', t))::float / ${terms.length}
-        ) as score
-      from knowledge_items k, to_tsquery('simple', ${terms.join(" | ")}) q
+        ) * (case when k.superseded_by is null then 1 else ${SUPERSEDED_WEIGHT}::float end) as score
+      from knowledge_items k
+      cross join to_tsquery('simple', ${terms.join(" | ")}) q
+      left join knowledge_items n on n.id = k.superseded_by
       where k.org_id = ${await this.orgId()} and ${scope} and k.search @@ q
       order by score desc, k.created_at desc
       limit ${limit}`
     return rows.map((r) => ({ ...toItem(r), score: Math.round(Number(r.score) * 1000) / 100 }))
   }
 
-  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string }) {
+  async listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; current?: boolean }) {
     if (f.zones && f.zones.length === 0) return []
     const sql = this.sql
     const rows = await sql`
-      select * from knowledge_items
-      where org_id = ${await this.orgId()}
-        ${f.zones ? sql`and zone in ${sql(f.zones)}` : sql``}
-        ${f.authorId ? sql`and author_id = ${f.authorId}` : sql``}
-        ${f.sinceIso ? sql`and created_at >= ${f.sinceIso}` : sql``}
-      order by created_at desc
+      select k.*, n.title as superseded_by_title from knowledge_items k
+      left join knowledge_items n on n.id = k.superseded_by
+      where k.org_id = ${await this.orgId()}
+        ${f.zones ? sql`and k.zone in ${sql(f.zones)}` : sql``}
+        ${f.authorId ? sql`and k.author_id = ${f.authorId}` : sql``}
+        ${f.sinceIso ? sql`and k.created_at >= ${f.sinceIso}` : sql``}
+        ${f.current ? sql`and k.superseded_by is null` : sql``}
+      order by k.created_at desc
       limit ${f.limit ?? 1000}`
     return rows.map(toItem)
   }
   async getItem(id: string) {
     if (!UUID_RE.test(id)) return null
-    const [r] = await this.sql`select * from knowledge_items where id = ${id} and org_id = ${await this.orgId()}`
+    const [r] = await this.sql`
+      select k.*, n.title as superseded_by_title from knowledge_items k
+      left join knowledge_items n on n.id = k.superseded_by
+      where k.id = ${id} and k.org_id = ${await this.orgId()}`
     return r ? toItem(r) : null
+  }
+  async markSuperseded(ids: string[], by: string, at = new Date().toISOString()) {
+    const valid = ids.filter((id) => UUID_RE.test(id) && id !== by)
+    if (valid.length === 0 || !UUID_RE.test(by)) return []
+    const org = await this.orgId()
+    const rows = await this.sql`
+      update knowledge_items set superseded_by = ${by}, superseded_at = ${at}
+      where org_id = ${org} and id in ${this.sql(valid)} and superseded_by is null
+        and exists (select 1 from knowledge_items n where n.id = ${by} and n.org_id = ${org})
+      returning id`
+    return rows.map((r) => r.id as string)
+  }
+  async restoreItem(id: string) {
+    if (!UUID_RE.test(id)) return null
+    await this.sql`update knowledge_items set superseded_by = null, superseded_at = null where id = ${id} and org_id = ${await this.orgId()}`
+    return this.getItem(id)
   }
   async deleteItem(id: string) {
     if (!UUID_RE.test(id)) return false

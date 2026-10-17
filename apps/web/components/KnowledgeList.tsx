@@ -24,14 +24,20 @@ export function KnowledgeCard({
   unreadableNote?: string
 }) {
   const [open, setOpen] = useState(false)
+  const replaced = Boolean(item.superseded_by)
   return (
-    <article className="rounded-[6px] border border-line bg-surface p-3.5 transition-colors hover:border-line-strong">
+    <article className={`rounded-[6px] border border-line bg-surface p-3.5 transition-colors hover:border-line-strong ${replaced ? "opacity-70" : ""}`}>
       <button type="button" className="w-full rounded-[4px] text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
           <span className="chip">{KIND_LABEL[item.kind]}</span>
           {zone && (
             <span className="chip">
               <ZoneTag name={zone.name} color={zoneColor(zone.color, zone.position ?? 0)} />
+            </span>
+          )}
+          {replaced && (
+            <span className="chip text-trace" title="Une connaissance plus récente la contredit ou la met à jour : les agents s'appuient sur la nouvelle.">
+              remplacée
             </span>
           )}
           {unreadableNote && (
@@ -44,7 +50,18 @@ export function KnowledgeCard({
             <RelTime iso={item.created_at} now={now} className="tabular-nums" />
           </span>
         </div>
-        <h4 className="mt-2 break-words text-[13.5px] font-medium leading-snug">{item.title}</h4>
+        <h4 className={`mt-2 break-words text-[13.5px] font-medium leading-snug ${replaced ? "text-trace line-through decoration-1" : ""}`}>{item.title}</h4>
+        {replaced && item.superseded_by_title && (
+          <p className="mt-1 break-words text-[12.5px] leading-snug text-trace">
+            Remplacée par : <span className="text-ink">{item.superseded_by_title}</span>
+            {item.superseded_at && (
+              <>
+                {" "}
+                (<RelTime iso={item.superseded_at} now={now} className="tabular-nums" />)
+              </>
+            )}
+          </p>
+        )}
       </button>
       {open && (
         <div className="mt-2 space-y-2">

@@ -41,6 +41,9 @@ export type ApiItem = {
   author_id: string
   author?: string
   score?: number
+  /** Remplacée par une connaissance plus récente (titre donné seulement si sa zone est lisible). */
+  superseded_by?: string
+  superseded_by_title?: string
 }
 
 export type QueryResult = {
@@ -76,7 +79,15 @@ export type CompanyStatusResult = {
  * Réponse de POST /api/ingest. `skipped` : items déjà reçus (même auteur, zone, titre et contenu sur 30 jours), ignorés.
  * `zones` : zones où au moins un item a été inséré. `per_zone` (facultatif) : nombre d'items insérés par zone.
  */
-export type IngestResult = { inserted: number; skipped?: number; ids: string[]; zones: string[]; per_zone?: Record<string, number> }
+export type IngestResult = {
+  inserted: number
+  skipped?: number
+  ids: string[]
+  zones: string[]
+  per_zone?: Record<string, number>
+  /** Connaissances plus anciennes que les nouvelles remplacent (décision revue, procédure mise à jour). */
+  superseded?: number
+}
 
 export type Workflow = {
   id: string

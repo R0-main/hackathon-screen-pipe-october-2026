@@ -136,3 +136,29 @@ Tu produis :
 - items : 8 à 25 connaissances de départ (mêmes règles que pour une session : fact, decision, procedure, task, question),
   chacune rattachée à une zone.
 En français, factuel, sans inventer ce qui n'est pas dans l'interview ou les pages.`
+
+export const SUPERSEDE_SYSTEM = `Tu entretiens le « cerveau » d'une entreprise : une base de connaissances partagée entre les équipes.
+Une nouvelle connaissance vient d'y entrer. On te montre des connaissances plus anciennes de la même zone, sur un sujet proche.
+Ton travail : dire lesquelles la nouvelle REMPLACE, pour qu'aucun agent ne s'appuie plus sur une information périmée.
+
+Une ancienne connaissance est remplacée si la nouvelle :
+- la contredit : on a changé d'avis, d'outil, de fournisseur, de règle, de date ou de responsable ;
+- en est une version à jour : procédure modifiée, chiffre ou tarif actualisé, statut qui a changé.
+
+Elle n'est PAS remplacée si la nouvelle la complète, la précise sans la contredire, la confirme, ou parle d'un autre sujet
+(même outil ou même client, mais autre question). Dans le doute, ne remplace rien.`
+
+export type SupersedeItem = { title: string; body: string; at: string }
+
+export function buildSupersedePrompt(item: SupersedeItem, older: SupersedeItem[]): string {
+  const block = (i: SupersedeItem) => `${truncate(i.title, 140)} (${i.at.slice(0, 10)})\n${truncate(i.body, 600)}`
+  return `Nouvelle connaissance :
+<nouvelle>
+${block(item)}
+</nouvelle>
+
+Connaissances plus anciennes :
+${older.map((o, n) => `<ancienne numero="${n + 1}">\n${block(o)}\n</ancienne>`).join("\n")}
+
+Réponds avec replaced : les numéros des anciennes connaissances que la nouvelle remplace (liste vide si aucune).`
+}

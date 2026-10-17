@@ -43,6 +43,11 @@ export type KnowledgeItem = KnowledgeItemInput & {
   org_id: string
   author_id: string
   created_at: string
+  /** Connaissance plus récente qui remplace celle-ci (décision revue, procédure mise à jour) ; absent si elle est d'actualité. */
+  superseded_by?: string
+  superseded_at?: string
+  /** Titre de la connaissance qui la remplace (donné seulement à qui lit sa zone). */
+  superseded_by_title?: string
 }
 
 /** Ce que les hooks / le MCP / brain-sync envoient (POST /api/events). */

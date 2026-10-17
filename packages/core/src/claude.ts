@@ -11,12 +11,15 @@ import {
   DISTILL_SYSTEM,
   ONBOARDING_SYSTEM,
   STATUS_SYSTEM,
+  SUPERSEDE_SYSTEM,
   buildExtractionPrompt,
   buildStatusPrompt,
+  buildSupersedePrompt,
   buildTriagePrompt,
   renderZones,
 } from "./prompts"
 import { buildStatusInput, type StatusInput } from "./status"
+import type { SupersedeComparable } from "./supersede"
 import { classifyZones, slugify } from "./zones"
 import { truncate } from "./text"
 
@@ -144,6 +147,31 @@ export async function distillWithClaude(
   if (triage && !triage.useful) return []
   const zone = triage && zones.some((z) => z.id === triage.zone) ? triage.zone : fallbackZone
   return extractKnowledge(client, conv, zones, zone)
+}
+
+const SupersedeSchema = z.object({ replaced: z.array(z.number().int()) })
+
+/**
+ * Parmi `older` (candidates déjà choisies par supersedeCandidates), lesquelles `item` remplace : leurs identifiants.
+ * Null si Claude n'a pas répondu (l'appelant retombe sur l'heuristique).
+ */
+export async function judgeSupersession(client: Anthropic, item: SupersedeComparable, older: SupersedeComparable[]): Promise<string[] | null> {
+  if (older.length === 0) return []
+  const view = (i: SupersedeComparable) => ({ title: i.title, body: i.body, at: i.source?.at || i.created_at })
+  try {
+    const response = await client.messages.parse({
+      model: TRIAGE_MODEL,
+      max_tokens: 2000,
+      system: SUPERSEDE_SYSTEM,
+      messages: [{ role: "user", content: buildSupersedePrompt(view(item), older.map(view)) }],
+      output_config: { effort: "low", format: zodOutputFormat(SupersedeSchema) },
+    })
+    if (response.stop_reason === "refusal" || !response.parsed_output) return null
+    return [...new Set(response.parsed_output.replaced)].filter((n) => n >= 1 && n <= older.length).map((n) => older[n - 1].id)
+  } catch (err) {
+    logError("remplacement", err)
+    return null
+  }
 }
 
 const StatusSchema = z.object({

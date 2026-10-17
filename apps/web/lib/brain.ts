@@ -4,15 +4,18 @@ import {
   DEFAULT_TIMEZONE,
   STATUS_MAX_ITEMS,
   STATUS_WINDOW_DAYS,
+  SUPERSEDABLE_KINDS,
   buildStatusInput,
   classifyZones,
   detectAutomations,
   heuristicStatus,
+  heuristicSupersedes,
   looksPersonal,
   normalize,
   promptFingerprint,
   redactText,
   scoreZones,
+  supersedeCandidates,
   truncate,
   type AgentEvent,
   type AgentEventInput,
@@ -24,7 +27,7 @@ import {
   type Zone,
   type ZoneStatus,
 } from "@brain/core"
-import { summarizeStatus } from "@brain/core/claude"
+import { judgeSupersession, summarizeStatus } from "@brain/core/claude"
 import { getStore } from "./store"
 import type { NewItem } from "./store/types"
 import { canRead, canSeeEventContent, redactEvent } from "./access"
@@ -88,6 +91,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     prepared.push({ ...i, title, body, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
   }
   const inserted = prepared.length ? await store().insertItems(prepared) : []
+  const replaced = await markSuperseded(inserted)
   const tasks = inserted
     .filter((i) => i.kind === "task")
     .map((i) => ({ title: i.title, zone: i.zone, status: "open" as const, assignee_id: authorId, source_item_id: i.id }))
@@ -99,17 +103,86 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     await store().insertEvents(
       touched.map((zone) => {
         const list = inserted.filter((i) => i.zone === zone)
+        const old = list.reduce((n, i) => n + (replaced.get(i.id)?.length ?? 0), 0)
         return {
           user_id: authorId,
           agent,
           type: "write" as const,
           zones: [zone],
-          summary: `${plural(list.length, "connaissance")} ${list.length > 1 ? "ajoutées" : "ajoutée"} : ${truncate(list[0].title, 80)}`,
+          summary:
+            `${plural(list.length, "connaissance")} ${list.length > 1 ? "ajoutées" : "ajoutée"} : ${truncate(list[0].title, 80)}` +
+            (old ? ` (${old > 1 ? `${old} anciennes connaissances remplacées` : "1 ancienne connaissance remplacée"})` : ""),
           at,
         }
       }),
     )
-  return { inserted: inserted.length, skipped, ids: inserted.map((i) => i.id), zones: touched }
+  const superseded = [...replaced.values()].reduce((n, ids) => n + ids.length, 0)
+  return { inserted: inserted.length, skipped, ids: inserted.map((i) => i.id), zones: touched, superseded }
+}
+
+/** Budget du jugement par Claude à l'ingestion : le poste attend la réponse 60 s au plus. */
+const SUPERSEDE_BUDGET_MS = 20_000
+const SUPERSEDE_CONCURRENCY = 4
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), Math.max(0, ms))
+    p.then(
+      (v) => (clearTimeout(timer), resolve(v)),
+      () => (clearTimeout(timer), resolve(null)),
+    )
+  })
+}
+
+/**
+ * Les nouvelles connaissances qui contredisent ou mettent à jour une ancienne de la même zone la marquent comme remplacée
+ * (« on passe de Stripe à Mollie »). Candidates choisies par sujet commun, puis jugées par Claude s'il est configuré
+ * (sinon, ou s'il ne répond pas à temps, par l'heuristique, qui ne remplace qu'à coup sûr). Renvoie, par nouvel item,
+ * les identifiants qu'il remplace. Ne fait jamais échouer l'ingestion.
+ */
+async function markSuperseded(inserted: KnowledgeItem[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  const targets = inserted.filter((i) => SUPERSEDABLE_KINDS.includes(i.kind))
+  if (targets.length === 0) return out
+  try {
+    const fresh = new Set(inserted.map((i) => i.id))
+    const zones = [...new Set(targets.map((i) => i.zone))]
+    const pool = (await store().listItems({ zones, current: true, limit: 2000 })).filter((i) => !fresh.has(i.id))
+    const claude = getClaude()
+    const deadline = Date.now() + SUPERSEDE_BUDGET_MS
+    const verdicts = new Map<string, string[]>()
+    const queue = targets.map((item) => ({ item, candidates: supersedeCandidates(item, pool) })).filter((t) => t.candidates.length)
+    let next = 0
+    const worker = async () => {
+      while (next < queue.length) {
+        const { item, candidates } = queue[next++]
+        const byClaude = claude ? await withDeadline(judgeSupersession(claude, item, candidates), deadline - Date.now()) : null
+        verdicts.set(item.id, byClaude ?? candidates.filter((c) => heuristicSupersedes(item, c)).map((c) => c.id))
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(SUPERSEDE_CONCURRENCY, queue.length) }, worker))
+    // La plus récente d'abord : si deux nouvelles visent la même ancienne, c'est la dernière en date qui la remplace.
+    const when = (i: KnowledgeItem) => i.source.at || i.created_at
+    for (const item of [...targets].sort((a, b) => when(b).localeCompare(when(a)))) {
+      const ids = verdicts.get(item.id)
+      if (!ids?.length) continue
+      const marked = await store().markSuperseded(ids, item.id)
+      if (marked.length) out.set(item.id, marked)
+    }
+  } catch (err) {
+    console.error("[cerveau] marquage des connaissances remplacées :", err instanceof Error ? err.message : err)
+  }
+  return out
+}
+
+/**
+ * Le titre de la connaissance qui en remplace une autre n'est donné qu'à qui lit sa zone (même zone que l'ancienne, mais
+ * un auteur voit aussi ses propres items rangés dans une zone qu'il ne lit pas).
+ */
+function scopeSupersession<T extends KnowledgeItem>(viewer: Viewer, item: T): T {
+  if (!item.superseded_by_title || canRead(viewer.access, item.zone)) return item
+  const { superseded_by_title: _hidden, ...rest } = item
+  return rest as T
 }
 
 /** Agents qui envoient les prompts saisis par l'employé (hooks UserPromptSubmit). */
@@ -189,7 +262,7 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
     zones_hit: hit,
     /** Zones qui auraient pu répondre mais que l'utilisateur ne peut pas lire (on ne dit rien de leur contenu). */
     zones_restricted: restricted,
-    items: results.map((r) => ({ ...r, author: names.get(r.author_id) ?? "?" })),
+    items: results.map((r) => ({ ...scopeSupersession(viewer, r), author: names.get(r.author_id) ?? "?" })),
   }
 }
 
@@ -304,7 +377,7 @@ async function scopedHeadline(zones: Zone[]): Promise<string> {
   const s = store()
   const ids = zones.map((z) => z.id)
   const since = new Date(Date.now() - 30 * 86400_000).toISOString()
-  const [items, tasks, profiles] = await Promise.all([s.listItems({ zones: ids, sinceIso: since, limit: 600 }), s.listTasks({ zones: ids }), s.listProfiles()])
+  const [items, tasks, profiles] = await Promise.all([s.listItems({ zones: ids, sinceIso: since, limit: 600, current: true }), s.listTasks({ zones: ids }), s.listProfiles()])
   let headline = heuristicStatus({ zones, items, tasks, profiles }).headline
   if (zones.length === 1) headline = headline.replace(/\s*Zone la plus active : [^.]*\.$/, "")
   return `${zones.length > 1 ? "Dans vos zones" : "Dans votre zone"} (${zones.map((z) => z.name).join(", ")}) : ${headline}`
@@ -330,7 +403,7 @@ export async function refreshStatus(viewer: Viewer) {
   const since = new Date(Date.now() - 30 * 86400_000).toISOString()
   const [zones, items, tasks, profiles, org] = await Promise.all([
     s.listZones(),
-    s.listItems({ sinceIso: since, limit: 600 }),
+    s.listItems({ sinceIso: since, limit: 600, current: true }),
     s.listTasks({}),
     s.listProfiles(),
     s.getOrg(),
@@ -359,7 +432,7 @@ export async function getStatusInput(): Promise<StatusInput> {
   const [org, zones, items, tasks, profiles] = await Promise.all([
     s.getOrg(),
     s.listZones(),
-    s.listItems({ sinceIso: since, limit: STATUS_MAX_ITEMS }),
+    s.listItems({ sinceIso: since, limit: STATUS_MAX_ITEMS, current: true }),
     s.listTasks({}),
     s.listProfiles(),
   ])
@@ -422,11 +495,12 @@ export async function getPersonContext(viewer: Viewer, personId: string) {
   // dans une zone qu'on ne lit pas (pour pouvoir les relire et les supprimer).
   const own = personId === viewer.profile.id
   const scope = own ? undefined : readable
-  const [items, entities, events] = await Promise.all([
+  const [found, entities, events] = await Promise.all([
     s.listItems({ authorId: personId, zones: scope, limit: 200 }),
     s.topEntities({ authorId: personId, zones: scope, limit: 15 }),
     s.listEvents({ userId: personId, limit: 500 }),
   ])
+  const items = found.map((i) => scopeSupersession(viewer, i))
   const zoneCounts = new Map<string, number>()
   for (const i of items) zoneCounts.set(i.zone, (zoneCounts.get(i.zone) ?? 0) + 1)
   for (const e of events) for (const z of e.zones) if (own || readable.includes(z)) zoneCounts.set(z, (zoneCounts.get(z) ?? 0) + 0.5)
@@ -450,8 +524,9 @@ export async function getPersonContext(viewer: Viewer, personId: string) {
     items: own ? items : items.slice(0, 40),
     /** Zones de ses propres items que la personne ne lit pas (affichées avec un badge « zone non lisible »). */
     unreadable_zones: own ? [...new Set(items.map((i) => i.zone))].filter((z) => !canRead(viewer.access, z)) : [],
-    decisions: items.filter((i) => i.kind === "decision").slice(0, 10),
-    procedures: items.filter((i) => i.kind === "procedure").slice(0, 10),
+    // Passation : seulement ce qui est encore d'actualité.
+    decisions: items.filter((i) => i.kind === "decision" && !i.superseded_by).slice(0, 10),
+    procedures: items.filter((i) => i.kind === "procedure" && !i.superseded_by).slice(0, 10),
   }
 }
 

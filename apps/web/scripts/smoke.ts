@@ -35,6 +35,7 @@ import * as statusRoute from "../app/api/status/route"
 import * as statusInputRoute from "../app/api/status/input/route"
 import * as stateRoute from "../app/api/state/route"
 import * as demoSessionRoute from "../app/api/session/demo/route"
+import * as itemRoute from "../app/api/items/[id]/route"
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`ÉCHEC : ${msg}`)
@@ -56,11 +57,11 @@ function item(zone: string, title: string, kind: KnowledgeItemInput["kind"] = "f
 type Handler = (req: Request, ctx: any) => Promise<Response>
 
 /** Appelle une route de l'API comme le ferait Next (cookie de session du dashboard). */
-async function call(handler: Handler, url: string, opts: { method?: string; session?: string; body?: unknown; raw?: string } = {}) {
+async function call(handler: Handler, url: string, opts: { method?: string; session?: string; body?: unknown; raw?: string; params?: Record<string, string> } = {}) {
   const headers: Record<string, string> = { "content-type": "application/json" }
   if (opts.session) headers.cookie = `brain_session=${opts.session}`
   const body = opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined)
-  const res = await handler(new Request(`http://smoke.test${url}`, { method: opts.method ?? "GET", headers, body }), { params: Promise.resolve({}) })
+  const res = await handler(new Request(`http://smoke.test${url}`, { method: opts.method ?? "GET", headers, body }), { params: Promise.resolve(opts.params ?? {}) })
   return { status: res.status, data: (await res.json().catch(() => null)) as any }
 }
 
@@ -276,6 +277,46 @@ async function main() {
   const partly = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "On a décidé de passer à Pennylane." }, item("produit", `Smoke ${run} idée produit`)])
   created.push(...partly.ids)
   assert(partly.inserted === 1 && partly.skipped === 1 && partly.zones.join() === "produit", "réponse d'ingestion : seules les zones qui ont vraiment reçu un item")
+
+  console.log("\n— Décisions remplacées")
+  {
+    // Titres sans « Smoke ${run} » : les recherches des tests suivants ne doivent pas les trouver.
+    const old = { ...item("compta", `Les acomptes passent par Payflow${run}`, "decision"), entities: [{ type: "tool" as const, name: `Payflow${run}` }] }
+    old.source = { ...old.source, at: new Date(Date.now() - 10 * 86400_000).toISOString() }
+    const first = await ingestItems(hugo, [old])
+    created.push(...first.ids)
+    const fresh = {
+      ...item("compta", `On passe de Payflow${run} à Mollie pour les acomptes`, "decision"),
+      entities: [{ type: "tool" as const, name: `Payflow${run}` }, { type: "tool" as const, name: "Mollie" }],
+    }
+    const second = await ingestItems(jm, [fresh])
+    created.push(...second.ids)
+    const oldId = first.ids[0]
+    const newId = second.ids[0]
+    const replaced = await store.getItem(oldId)
+    assert(second.superseded === 1 && replaced?.superseded_by === newId && replaced.superseded_by_title === fresh.title, "la nouvelle décision marque l'ancienne comme remplacée")
+    const ev = (await store.listEvents({ userId: jm.profile.id, type: "write", limit: 1 }))[0]
+    assert(ev?.summary?.includes("1 ancienne connaissance remplacée"), "l'événement d'écriture le dit")
+    const found = await queryBrain(claire, { query: `acomptes Payflow${run}` })
+    const rank = (id: string) => found.items.findIndex((i) => i.id === id)
+    assert(rank(newId) >= 0 && rank(oldId) > rank(newId), "recherche : la nouvelle passe devant, l'ancienne reste trouvable")
+    assert(found.items[rank(oldId)].superseded_by === newId, "et l'ancienne est signalée comme remplacée")
+    const statusItems = await store.listItems({ zones: ["compta"], current: true })
+    assert(!statusItems.some((i) => i.id === oldId) && statusItems.some((i) => i.id === newId), "état de l'entreprise : seulement ce qui est d'actualité")
+    const again = await ingestItems(ines, [{ ...fresh, title: `${fresh.title} (bis)`, body: "Autre formulation." }])
+    created.push(...again.ids)
+    assert((await store.getItem(oldId))?.superseded_by === newId, "une décision déjà remplacée n'est pas remarquée par une autre")
+
+    const hugoSession = await createSessionValue(hugo.profile.id)
+    const jmSession = await createSessionValue(jm.profile.id)
+    const denied = await call(itemRoute.PATCH, `/api/items/${oldId}`, { method: "PATCH", session: jmSession, body: { current: true }, params: { id: oldId } })
+    assert(denied.status === 403, "« toujours d'actualité » : réservé à l'auteur ou à un admin")
+    const restored = await call(itemRoute.PATCH, `/api/items/${oldId}`, { method: "PATCH", session: hugoSession, body: { current: true }, params: { id: oldId } })
+    assert(restored.status === 200 && restored.data?.current === true && !(await store.getItem(oldId))?.superseded_by, "l'auteur la rend de nouveau d'actualité")
+    await store.markSuperseded([oldId], newId)
+    await store.deleteItem(newId)
+    assert(!(await store.getItem(oldId))?.superseded_by, "supprimer la nouvelle rend l'ancienne d'actualité")
+  }
 
   console.log("\n— Événements d'écriture par zone et résumés (D2)")
   const batch = await ingestItems(claire, [item("compta", `Smoke ${run} trésorerie : 2 mois de cash restants`), item("dev", `Smoke ${run} migration Postgres des précommandes`)])

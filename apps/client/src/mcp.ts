@@ -198,7 +198,11 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
               "comme c'est vous qui l'avez enregistrée, vous la retrouvez dans vos propres recherches et dans « Mon contexte » (où vous pouvez la supprimer). " +
               `Pour la ranger ailleurs, rappelez remember avec \`zone\`${mine ? ` (vos zones : ${mine})` : ""}.`
             : "Elle est maintenant trouvable par search_brain pour les personnes ayant accès à cette zone."
-        return `Connaissance enregistrée dans la zone ${label} — ${how}${where !== chosen ? ` ; le cerveau l'a rangée ici plutôt que dans « ${name(chosen)} »` : ""}.\n« ${cleanTitle} » (${kind}). ${visibility}`
+        const old = r.superseded ?? 0
+        const replaces = old
+          ? ` Elle remplace ${old > 1 ? `${old} connaissances plus anciennes` : "une connaissance plus ancienne"} sur le même sujet, désormais marquée${old > 1 ? "s" : ""} « remplacée » (elle${old > 1 ? "s passent" : " passe"} derrière dans les recherches).`
+          : ""
+        return `Connaissance enregistrée dans la zone ${label} — ${how}${where !== chosen ? ` ; le cerveau l'a rangée ici plutôt que dans « ${name(chosen)} »` : ""}.\n« ${cleanTitle} » (${kind}). ${visibility}${replaces}`
       }),
   )
 

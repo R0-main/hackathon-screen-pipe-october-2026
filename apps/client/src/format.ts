@@ -23,7 +23,11 @@ function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
     .filter(Boolean)
     .join(" · ")
   const ents = i.entities?.length ? `\nEntités : ${i.entities.map((e) => e.name).join(", ")}` : ""
-  return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}`
+  // Remplacée par une connaissance plus récente : l'agent doit le savoir pour ne pas s'appuyer dessus.
+  const replaced = i.superseded_by
+    ? `\nATTENTION : remplacée par une connaissance plus récente${i.superseded_by_title ? ` (« ${i.superseded_by_title} »)` : ""}, ne t'appuie pas dessus.`
+    : ""
+  return `### ${n}. ${i.title}${i.superseded_by ? " (remplacée)" : ""}\n${meta}${replaced}\n\n${i.body.trim()}${ents}`
 }
 
 export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
