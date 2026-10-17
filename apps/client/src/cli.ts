@@ -38,7 +38,8 @@ Commandes :
   setup [--url <url> --token <jeton>] [--ca <pem>] [--audio oui|non] [--wait <secondes>] [--no-open] [--skip-screenpipe]
                      Tout en une commande (c'est ce que lance le prompt d'installation) : config, Screenpipe (installé et lancé
                      en service s'il ne tourne pas, micro coupé par défaut), autorisations macOS (réglages ouverts, reprise dès
-                     qu'elles sont accordées, --wait 300 s par défaut), MCP, hooks, synchro toutes les 15 min (activité à venir
+                     qu'elles sont accordées, --wait 300 s par défaut), le serveur MCP de chaque entreprise dans Claude Code et
+                     Codex (« nos-brainer-<entreprise> », endpoint du cerveau), hooks, synchro toutes les 15 min (activité à venir
                      seulement), néon, puis le cerveau s'ouvre dans le navigateur. Relançable sans paramètres.
                      Codes de sortie : 0 tout est branché ; 3 tout sauf l'autorisation d'enregistrer l'écran (relancer setup une
                      fois cochée) ; 6 tout sauf Screenpipe (pas de version pour ce poste, ou il ne démarre pas : voir doctor).
@@ -69,6 +70,12 @@ Commandes :
                      via le MCP Screenpipe, en lecture seule, et en tire les connaissances utiles. « claude » ou « codex »
                      impose le moteur, « non » coupe l'agent. --agent-model : son modèle (défaut : sonnet pour Claude Code,
                      celui de Codex sinon, avec un effort de raisonnement bas ; « défaut » pour y revenir).
+                     Le jeton d'une AUTRE entreprise (prompt d'installation d'une deuxième entreprise) l'ajoute à côté de la
+                     première au lieu de la remplacer : voir companies.
+  companies [--default <nom|n°>] [--remove <nom|n°>]
+                     Les entreprises de ce poste, chacune avec son serveur MCP dans Claude Code et Codex. La première est celle
+                     par défaut : la synchro, les hooks et les skills restent sur elle. --default change la première, --remove
+                     en retire une (et son serveur MCP).
   hello              Test de bout en bout : vos zones s'allument sur le dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
                      Lit les sessions IA locales, filtre (secrets, perso), distille et envoie au cerveau.
@@ -102,7 +109,8 @@ Commandes :
                      --refresh-status : s'il y avait du nouveau, refait ensuite le résumé « où en est la boîte ».
                      --dry-run : affiche les décisions sans rien appliquer.
   status             État du client en bref : connexion, dernière synchro, Screenpipe, hooks, planification (détail : doctor).
-  mcp                Serveur MCP stdio « company-brain » (branché par setup dans Claude Code, portée utilisateur).
+  mcp                Serveur MCP stdio « company-brain » du poste : le secours de setup quand Claude Code ne peut pas joindre
+                     l'endpoint MCP du cerveau (certificat privé) ; paramètre company s'il y a plusieurs entreprises.
   hook               Gestionnaire des hooks Claude Code (lit le JSON du hook sur l'entrée standard).
   install-hooks      Ajoute les hooks SessionStart, UserPromptSubmit et Stop à ~/.claude/settings.json.
   install-schedule   Planifie « sync » toutes les 15 min (launchd, crontab ou tâche Windows), à partir de maintenant pour
@@ -171,6 +179,10 @@ async function main(argv: string[]): Promise<number> {
     case "connect-claude": {
       const { cmdConnectClaude } = await import("./connect")
       return cmdConnectClaude()
+    }
+    case "companies": {
+      const { cmdCompanies } = await import("./companies")
+      return cmdCompanies(flags)
     }
     case "hello": {
       const { cmdHello } = await import("./commands")

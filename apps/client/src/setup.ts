@@ -9,12 +9,13 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { BrainApi } from "./api"
-import { cmdHello, cmdInit } from "./commands"
+import { cmdHello, initBrain } from "./commands"
 import { fingerprintOfFile, trustInBrowsers } from "./ca"
 import { cmdConnectClaude, hasScheduledClaude } from "./connect"
-import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Config } from "./config"
+import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Company, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
+import { companiesWithIds, mcpSpecs, probeMcp, registerMcpServers } from "./mcp-config"
 import { refreshSkills } from "./skills"
 import {
   installedScreenpipeBin,
@@ -208,8 +209,37 @@ export function ensureMcp(log: Log = console.log): boolean {
   return r.ok
 }
 
+/**
+ * MCP : le serveur de chaque entreprise du poste (endpoint du cerveau, HTTP), branché dans Claude Code et Codex sous
+ * « nos-brainer-<entreprise> » ; le serveur du poste (stdio) ferait alors doublon avec celui de la première entreprise
+ * et il est retiré. Cerveau à certificat privé (inconnu de Claude Code et Codex), ou endpoint injoignable : le serveur
+ * du poste, comme avant.
+ */
+export async function ensureMcpServers(log: Log = console.log): Promise<void> {
+  const cfg = requireConfig()
+  const list = cfg.ca_file ? null : await companiesWithIds(cfg)
+  const specs = list ? mcpSpecs(list) : null
+  const down = specs ? (await Promise.all(specs.map(async (s) => ({ s, err: await probeMcp(s.url) })))).find((p) => p.err) : undefined
+  if (!specs || down) {
+    log(
+      cfg.ca_file
+        ? "MCP : cerveau à certificat privé, que Claude Code et Codex ne connaissent pas : serveur MCP du poste (company-brain)."
+        : `MCP : ${down ? `le serveur MCP de ${down.s.label} ne répond pas (${down.err})` : "ce cerveau ne donne pas l'identifiant de l'entreprise"} : serveur MCP du poste (company-brain) à la place.`,
+    )
+    ensureMcp(log)
+    return
+  }
+  if (!registerMcpServers(specs, log)) return
+  const legacy = readMcpEntry()
+  const claude = findOnPath("claude")
+  if (legacy && claude && runCommand(claude, ["mcp", "remove", MCP_NAME, "--scope", "user"], 30_000).ok) {
+    log(`MCP ${MCP_NAME} (serveur du poste) retiré : chaque entreprise a maintenant son propre serveur MCP.`)
+  }
+  log("Les serveurs MCP sont actifs dès la prochaine session (Claude Code : /mcp ; Codex : codex mcp list).")
+}
+
 /** Ouvre le cerveau, déjà connecté grâce à un lien de connexion à usage court ; à défaut, la page de connexion. */
-async function openBrain(cfg: Config, noOpen: boolean, log: Log) {
+async function openBrain(cfg: Pick<Config, "url" | "token">, noOpen: boolean, log: Log) {
   if (noOpen) return log(`Le cerveau : ${cfg.url}`)
   let target = `${cfg.url}/login`
   try {
@@ -344,11 +374,15 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   const me = selfCommand()
 
   log("[1/6] Connexion au cerveau")
+  // Entreprise ajoutée à côté de la première (jeton d'une autre entreprise) : c'est elle qui s'allume et s'ouvre à la fin.
+  let added: Company | undefined
   if (flags.url || flags.token) {
-    if ((await cmdInit(flags, log)) !== 0) {
+    const init = await initBrain(flags, log)
+    if (init.code !== 0) {
       log("Le cerveau n'a pas accepté la connexion : vérifie l'URL et le jeton, puis relance setup.")
       return 1
     }
+    if (init.added) added = init.company
   }
   let cfg = requireConfig()
   if (!(flags.url || flags.token)) {
@@ -396,8 +430,8 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
     }
   }
 
-  log("[4/6] Claude Code : MCP company-brain, hooks et skills de l'entreprise")
-  ensureMcp(log)
+  log("[4/6] Claude Code et Codex : le serveur MCP de chaque entreprise, hooks et skills")
+  await ensureMcpServers(log)
   installHooks(log)
   await refreshSkills(log)
 
@@ -410,11 +444,11 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
 
   log("[6/6] Ton néon et le cerveau")
   try {
-    await cmdHello(log)
+    await cmdHello(log, added)
   } catch (err) {
     log(`Néon : ${(err as Error).message}`)
   }
-  await openBrain(cfg, Boolean(flags["no-open"]), log)
+  await openBrain(added ?? cfg, Boolean(flags["no-open"]), log)
 
   log("")
   log("C'est branché. Continue à travailler avec Claude Code : chaque session allume ta zone, et les connaissances distillées arrivent dans le cerveau toutes les 15 minutes.")

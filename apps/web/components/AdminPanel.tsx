@@ -7,7 +7,8 @@ import { PageScroll } from "./AppShell"
 import { useBrainLive } from "./BrainLive"
 import { AgentLogos } from "./brand-logos"
 import { OrgChart, type Presence } from "./OrgChart"
-import { AGENT_LABEL, api, errorMessage, initials } from "./format"
+import { AGENT_LABEL, api, errorMessage } from "./format"
+import { PersonAvatar } from "./PersonDot"
 import { RelTime } from "./RelTime"
 import { TeamJoin } from "./TeamJoin"
 import { ADMIN_VIEWS, type AdminTab } from "./admin-views"
@@ -250,8 +251,8 @@ function MemberDrawer(props: {
       aria-busy={props.saving}
     >
       <div className="flex items-start gap-3">
-        <span className="relative grid size-12 shrink-0 place-items-center rounded-full border border-line-strong bg-bone text-[14px] font-medium">
-          {initials(u.name)}
+        <span className="relative shrink-0">
+          <PersonAvatar id={u.id} size={48} />
           <span className={`absolute bottom-0 right-0 size-3 rounded-full border border-ink ${p?.active ? "bg-phosphor" : "bg-surface"}`} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">

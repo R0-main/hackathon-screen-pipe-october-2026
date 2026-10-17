@@ -100,8 +100,104 @@ async function verifySigned(value: string | undefined, purpose: string): Promise
   return userId
 }
 
-function verifySession(value: string | undefined): Promise<string | null> {
+/** Le compte d'une valeur de cookie de session, si elle est valable (signature, expiration, jeton non régénéré). */
+export function sessionUserId(value: string | undefined): Promise<string | null> {
   return verifySigned(value, "v2")
+}
+const verifySession = sessionUserId
+
+/**
+ * Entreprises retenues par ce navigateur (séparées par `~`), la plus récente d'abord : une entrée signée par entreprise,
+ * d'un usage à part (« acct1 », qui ne vaut pas session), valable un an et renouvelée à chaque ouverture. Elles
+ * permettent de revenir à une entreprise, ou de passer de l'une à l'autre, sans ressaisir son jeton ; quand la session
+ * expire, la plus récente est rouverte toute seule. Protection : httpOnly (aucun script ne lit le jeton ni l'entrée),
+ * signature, et invalidation quand le jeton est régénéré.
+ */
+export const ACCOUNTS_COOKIE = "brain_accounts"
+/** Posé par la déconnexion : pas de reconnexion automatique tant qu'on n'a pas rouvert une entreprise soi-même. */
+export const SIGNED_OUT_COOKIE = "brain_signed_out"
+const MAX_ACCOUNTS = 8
+const REMEMBER_DAYS = 365
+
+export const accountsCookieOptions = { ...sessionCookieOptions, maxAge: REMEMBER_DAYS * 86400 }
+
+async function createRememberValue(userId: string): Promise<string> {
+  const tokenHash = await tokenHashOf(userId)
+  if (!tokenHash) throw new Error("Membre introuvable.")
+  const exp = String(Date.now() + REMEMBER_DAYS * 86400_000)
+  return `${userId}.${exp}.${await sign(userId, exp, tokenHash, "acct1")}`
+}
+
+export type RememberedAccount = {
+  userId: string
+  name: string
+  title?: string
+  role: Profile["role"]
+  org: { id: string; name: string; description: string }
+}
+
+/** `value` : l'entrée telle quelle ; `remembered` : faux pour une session (à convertir en entrée d'un an). */
+type Remembered = RememberedAccount & { value: string; remembered: boolean }
+
+/**
+ * Les entrées encore valables, avec leur compte et leur entreprise ; une seule par entreprise (la première). Une session
+ * (cookie de session, ou entrée retenue avant les entrées d'un an) est acceptée aussi.
+ */
+async function readRemembered(value: string | undefined): Promise<Remembered[]> {
+  const out: Remembered[] = []
+  for (const v of (value ?? "").split("~").filter(Boolean).slice(0, MAX_ACCOUNTS + 2)) {
+    if (out.length >= MAX_ACCOUNTS) break
+    const kept = await verifySigned(v, "acct1")
+    const userId = kept ?? (await verifySession(v))
+    if (!userId || out.some((a) => a.userId === userId)) continue
+    const profile = await (await storeForUser(userId))?.getProfile(userId)
+    if (!profile || out.some((a) => a.org.id === profile.org_id)) continue
+    const org = await storeForOrg(profile.org_id).getOrg()
+    out.push({
+      value: v,
+      remembered: kept !== null,
+      userId,
+      name: profile.name,
+      title: profile.title,
+      role: profile.role,
+      org: { id: org.id, name: org.name, description: org.description },
+    })
+  }
+  return out
+}
+
+/** Les entreprises retenues par ce navigateur, sans les entrées signées (pour l'affichage). */
+export async function listRememberedAccounts(value: string | undefined): Promise<RememberedAccount[]> {
+  return (await readRemembered(value)).map(({ value: _v, remembered: _r, ...account }) => account)
+}
+
+/**
+ * Nouvelle valeur du cookie des entreprises : les comptes donnés, dans l'ordre (le plus récent d'abord), sans les
+ * entrées expirées ni un second compte de la même entreprise. Chaque argument est une session, une entrée ou une liste
+ * `~` ; une session devient une entrée d'un an (celle qu'on vient d'ouvrir repart donc pour un an).
+ */
+export async function rememberAccounts(...values: (string | undefined)[]): Promise<string> {
+  const out: string[] = []
+  for (const a of await readRemembered(values.filter(Boolean).join("~"))) out.push(a.remembered ? a.value : await createRememberValue(a.userId))
+  return out.join("~")
+}
+
+/** La liste des entreprises retenues, sans le compte `userId`. */
+export async function forgetAccount(value: string | undefined, userId: string): Promise<string> {
+  return (await readRemembered(value))
+    .filter((a) => a.userId !== userId)
+    .map((a) => a.value)
+    .join("~")
+}
+
+/** Le compte de l'entreprise retenue la plus récente (reconnexion automatique), ou null. */
+export async function latestRemembered(value: string | undefined): Promise<string | null> {
+  return (await readRemembered(value))[0]?.userId ?? null
+}
+
+/** Vrai si ce navigateur retient encore ce compte. */
+export async function isRemembered(value: string | undefined, userId: string): Promise<boolean> {
+  return (await readRemembered(value)).some((a) => a.userId === userId)
 }
 
 /**

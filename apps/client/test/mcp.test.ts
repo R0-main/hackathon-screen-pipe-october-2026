@@ -44,6 +44,13 @@ test("MCP : liste des outils", async () => {
   const search = tools.find((t) => t.name === "search_brain")!
   assert.match(search.description ?? "", /décisions, procédures/)
   assert.deepEqual(search.inputSchema.required, ["query"])
+  // Une seule entreprise : rien à choisir, ni paramètre `company` ni consigne du serveur.
+  assert.ok(tools.every((t) => !("company" in (t.inputSchema.properties ?? {}))))
+  assert.equal(client.getInstructions(), undefined)
+})
+
+test("MCP, une seule entreprise : pas d'en-tête « Entreprise : » dans les réponses", async () => {
+  assert.doesNotMatch(text(await client.callTool({ name: "company_status", arguments: {} })), /^Entreprise :/)
 })
 
 test("MCP search_brain : résultats en markdown, puis « rien trouvé » + zones restreintes", async () => {

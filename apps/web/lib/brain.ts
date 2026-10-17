@@ -136,8 +136,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
   for (const s of supersedes) {
     const next = inserted[s.index]
     if (!next) continue
-    await store().markSuperseded(s.oldId, next.id)
-    replaced++
+    if (await store().markSuperseded(s.oldId, next.id)) replaced++
   }
   const tasks = inserted
     .filter((i) => i.kind === "task")
@@ -292,6 +291,13 @@ export async function listEntitiesFor(viewer: Viewer, limit = 200) {
   return store().topEntities({ zones: viewer.access.readable, limit })
 }
 
+/** Page Connaissances : les connaissances en vigueur des zones lisibles, des plus récentes aux plus anciennes. */
+export const KNOWLEDGE_PAGE_LIMIT = 500
+
+export async function listKnowledgeFor(viewer: Viewer, limit = KNOWLEDGE_PAGE_LIMIT) {
+  return store().listItems({ zones: viewer.access.readable, limit, excludeSuperseded: true })
+}
+
 /** Tout ce qui concerne une entité : les connaissances lisibles qui la citent, et les entités citées avec elle. */
 export async function getEntityContext(viewer: Viewer, type: string, name: string) {
   const s = store()
@@ -403,6 +409,12 @@ export async function getState(viewer: Viewer) {
   )
 
   const names = Object.fromEntries(profiles.map((p) => [p.id, p.name]))
+  // Avancement par zone, sur toutes les tâches lisibles (la liste `tasks` envoyée est tronquée).
+  const task_counts: Record<string, { open: number; done: number }> = {}
+  for (const t of tasks) {
+    const c = (task_counts[t.zone] ??= { open: 0, done: 0 })
+    c[t.status === "done" ? "done" : "open"]++
+  }
   const since24h = Date.now() - 86400_000
   const activeUsers = new Set(events.filter((e) => Date.parse(e.at) > since24h).map((e) => e.user_id))
 
@@ -419,6 +431,7 @@ export async function getState(viewer: Viewer) {
     status: await statusForViewer(viewer, status, zones),
     automations: automations.filter((a) => access.isAdmin || a.user_id === profile.id),
     tasks: tasks.slice(0, 40),
+    task_counts,
     items: recentItems,
     can_publish_skills: canPublishSkills(viewer),
     totals: {

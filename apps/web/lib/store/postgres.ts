@@ -235,6 +235,7 @@ export class PostgresStore implements BrainStore {
   private listen: ListenState
   /** Les colonnes de la migration « qualité » (superseded_by, embedding) existent-elles ? Vérifié une fois. */
   private qualityColumns: boolean | null = null
+  private qualityWarned = false
 
   constructor(url: string | { sql: Sql; orgId: string; listen: ListenState; url: string | null }) {
     if (typeof url !== "string") {
@@ -732,11 +733,20 @@ export class PostgresStore implements BrainStore {
   }
 
   async markSuperseded(oldId: string, newId: string) {
-    if (!UUID_RE.test(oldId) || !UUID_RE.test(newId)) return
-    if (!(await this.hasQuality())) throw new StoreSetupError(QUALITY_MISSING_MESSAGE)
+    if (!UUID_RE.test(oldId) || !UUID_RE.test(newId)) return false
+    // Migration « qualité » pas encore appliquée : la nouvelle connaissance est déjà enregistrée, on ne fait pas échouer
+    // l'ingestion pour autant (le poste verrait une synchro en échec) ; l'ancienne reste simplement proposée.
+    if (!(await this.hasQuality())) {
+      if (!this.qualityWarned) {
+        this.qualityWarned = true
+        console.error(`[store] ${QUALITY_MISSING_MESSAGE} Les connaissances remplacées restent proposées en attendant.`)
+      }
+      return false
+    }
     const org = await this.orgId()
-    await this.sql`update knowledge_items set superseded_by = ${newId} where id = ${oldId} and org_id = ${org}
-      and exists (select 1 from knowledge_items n where n.id = ${newId} and n.org_id = ${org})`
+    const rows = await this.sql`update knowledge_items set superseded_by = ${newId} where id = ${oldId} and org_id = ${org}
+      and exists (select 1 from knowledge_items n where n.id = ${newId} and n.org_id = ${org}) returning id`
+    return rows.length > 0
   }
 
   async listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }) {

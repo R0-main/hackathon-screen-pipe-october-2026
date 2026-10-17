@@ -4,9 +4,10 @@ import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify } from "@brain/core"
 import { AgentLogos } from "./brand-logos"
+import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
-import { api, errorMessage, initials } from "./format"
+import { api, errorMessage } from "./format"
 import { BrainIcon, CheckIcon, CloseIcon, Dot, ErrorText, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
 import { deNom } from "@/lib/install-prompt"
 
@@ -241,7 +242,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     maxLength={80}
                     autoFocus
                     aria-label="Nom de l'entreprise"
-                    placeholder="Fournil"
+                    placeholder="Butine"
                     onChange={(e) => setCompany(e.target.value)}
                   />
                 </Question>
@@ -262,7 +263,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     rows={2}
                     autoFocus
                     aria-label="Activité de l'entreprise"
-                    placeholder="Un logiciel de caisse et de commandes pour les boulangeries indépendantes."
+                    placeholder="Des balances connectées pour ruches : l'apiculteur suit ses abeilles depuis son téléphone."
                     onChange={(e) => setDescription(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -682,10 +683,11 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
         <ul className="mt-6 divide-y divide-line border-y border-line" aria-label="Personnes invitées">
           {invites.map((i) => {
             const connected = Boolean(props.team[i.id])
+            const first = i.zones.length > 0 ? zone(i.zones[0]) : undefined
             return (
               <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5">
-                <span className="relative grid size-9 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-[12px] font-medium">
-                  {initials(i.name)}
+                <span className="relative shrink-0">
+                  <PersonAvatar id={i.id} size={36} bg="surface" color={first ? zoneColor(first.color, first.position) : undefined} />
                   <span className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-ink ${connected ? "bg-phosphor" : "bg-surface"}`} aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">

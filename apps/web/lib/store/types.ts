@@ -133,8 +133,11 @@ export interface BrainStore {
    * le job d'embeddings) et ses tâches suivent la zone. Faux si elle n'existe plus.
    */
   updateItem(id: string, patch: { title: string; body: string; kind: KnowledgeItem["kind"]; zone: string }): Promise<boolean>
-  /** Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). */
-  markSuperseded(oldId: string, newId: string): Promise<void>
+  /**
+   * Marque `oldId` comme remplacée par `newId` (une connaissance plus récente sur le même sujet). Faux si rien n'a été
+   * marqué, notamment en Postgres tant que la migration « qualité » n'est pas appliquée : l'ingestion n'échoue jamais pour ça.
+   */
+  markSuperseded(oldId: string, newId: string): Promise<boolean>
   /** Connaissances (non remplacées) qui citent une entité, dans les zones données (ou de cet auteur). */
   listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }): Promise<KnowledgeItem[]>
   /** Vecteurs sémantiques des connaissances non remplacées des zones données (les plus récentes d'abord), pour le classement. */

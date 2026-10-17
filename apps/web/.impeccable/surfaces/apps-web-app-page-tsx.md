@@ -11,7 +11,7 @@ Scope : `/` pour un visiteur non connecté (le dashboard reste sur `/` une fois 
 
 - Audience : dirigeants de PME et startups, jury du hackathon Screenpipe.
 - Action : « Ouvrir la démo » (vers `/login`, connexion en un clic en mode démo ; « Se connecter » sinon).
-- Preuve : le cerveau de Fournil (entreprise fictive, 34 connaissances, 6 zones), le prompt d'installation réel, la suggestion d'automatisation réelle de la démo. Aucun client ni chiffre inventé.
+- Preuve : le cerveau de Butine (entreprise fictive de balances connectées pour ruches, 34 connaissances, 6 zones), le prompt d'installation réel, la suggestion d'automatisation réelle de la démo. Aucun client ni chiffre inventé.
 - Contraintes : DESIGN.md (bone, encre, phosphore seulement quand un agent touche une zone, billes et traits, Space Grotesk). Concept imposé par le brief : le cerveau, qui passe en plein écran et tourne dès qu'on scrolle, puis la page passe à la suite.
 
 ## Direction contract

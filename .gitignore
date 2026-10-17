@@ -25,3 +25,4 @@ apps/web/.impeccable/review/
 
 # Worktrees des agents Claude Code (temporaires)
 .claude/worktrees/
+.local/

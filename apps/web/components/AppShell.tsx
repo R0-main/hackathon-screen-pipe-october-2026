@@ -3,13 +3,34 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState, type ComponentType, type ReactNode } from "react"
+import type { RememberedAccount } from "@/lib/auth"
 import { fmt, plural } from "@/lib/i18n"
 import { useBrainLive } from "./BrainLive"
-import { api, errorMessage, initials } from "./format"
+import { api, errorMessage } from "./format"
 import { LanguageSwitch, useT } from "./I18n"
+import { PersonAvatar } from "./PersonDot"
 import { usePendingJoins } from "./TeamJoin"
 import { ADMIN_VIEWS } from "./admin-views"
-import { BoltIcon, BrainIcon, ChatIcon, CloseIcon, DocIcon, LinkIcon, LogoutIcon, MenuIcon, NavBrainIcon, SkillIcon, StackIcon, TagIcon, TaskIcon, UsersIcon, WatchIcon } from "./ui"
+import {
+  BoltIcon,
+  BrainIcon,
+  ChatIcon,
+  CheckIcon,
+  ChevronsIcon,
+  CloseIcon,
+  DocIcon,
+  LinkIcon,
+  LogoutIcon,
+  MenuIcon,
+  NavBrainIcon,
+  PlusIcon,
+  SkillIcon,
+  StackIcon,
+  TagIcon,
+  TaskIcon,
+  UsersIcon,
+  WatchIcon,
+} from "./ui"
 
 type SubItem = { href: string; label: string; count?: number }
 type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number; children?: SubItem[] }
@@ -18,7 +39,7 @@ type NavItem = { href: string; label: string; icon: ComponentType<{ size?: numbe
  * Gabarit de l'application : la barre latérale à gauche, la page à droite. La fenêtre ne défile jamais :
  * le cerveau occupe toute la hauteur, les autres pages défilent dans leur propre colonne.
  */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, accounts = [], signup = false }: { children: ReactNode; accounts?: RememberedAccount[]; signup?: boolean }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   useEffect(() => setOpen(false), [pathname])
@@ -26,7 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-dvh overflow-hidden">
       <div className={`fixed inset-0 z-40 bg-ink/20 md:hidden ${open ? "" : "hidden"}`} onClick={() => setOpen(false)} aria-hidden />
-      <Sidebar open={open} onClose={() => setOpen(false)} />
+      <Sidebar open={open} onClose={() => setOpen(false)} accounts={accounts} signup={signup} />
       <div className="flex min-w-0 flex-1 flex-col">
         <MobileBar onMenu={() => setOpen(true)} />
         <main className="relative min-h-0 flex-1">{children}</main>
@@ -58,7 +79,7 @@ function MobileBar({ onMenu }: { onMenu: () => void }) {
   )
 }
 
-function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: () => void; accounts: RememberedAccount[]; signup: boolean }) {
   const { state, live, activeAgents } = useBrainLive()
   const { t } = useT()
   const pathname = usePathname()
@@ -130,15 +151,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       }`}
       aria-label={t.shell.sidebar}
     >
-      <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-[6px]">
-          <BrainIcon size={26} className="shrink-0" />
-          <span className="min-w-0 truncate text-[14px] font-medium leading-tight">{fmt(t.shell.brainOf, { name: state.org.name })}</span>
-        </Link>
-        <button type="button" className="btn btn-icon btn-sm ml-auto md:hidden" aria-label={t.shell.closeMenu} onClick={onClose}>
-          <CloseIcon size={14} />
-        </button>
-      </div>
+      <CompanySwitcher accounts={accounts} signup={signup} onClose={onClose} />
 
       <div className="mx-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line pb-3 text-[12px] text-trace">
         <span className={`live-dot ${live ? "is-live" : ""}`} aria-hidden />
@@ -192,7 +205,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             title={t.shell.myContextHint}
             aria-current={isActive(meHref) ? "page" : undefined}
           >
-            <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-[10px] font-medium">{initials(state.me.name)}</span>
+            <PersonAvatar id={state.me.id} size={28} bg="surface" />
             <span className="min-w-0">
               <span className="block truncate text-[13px] font-medium leading-tight">{state.me.name}</span>
               <span className="block truncate text-[12px] leading-tight text-trace">{t.shell.myContext}</span>
@@ -271,6 +284,107 @@ function SubNav({ items, open, current }: { items: SubItem[]; open: boolean; cur
           })}
         </ul>
       </div>
+    </div>
+  )
+}
+
+/**
+ * En-tête de la barre latérale : l'entreprise ouverte. Un clic déroule les entreprises retenues par ce navigateur
+ * (un clic de plus pour passer de l'une à l'autre), puis de quoi en ajouter une (son jeton) ou en créer une.
+ */
+function CompanySwitcher({ accounts, signup, onClose }: { accounts: RememberedAccount[]; signup: boolean; onClose: () => void }) {
+  const { state } = useBrainLive()
+  const { t } = useT()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  // Session ouverte avant que le navigateur ne retienne les entreprises : elle figure quand même dans la liste.
+  const here = accounts.some((a) => a.org.id === state.org.id)
+  const companies: RememberedAccount[] = here
+    ? accounts
+    : [{ userId: state.real.id, name: state.real.name, title: state.real.title, role: state.real.role, org: { id: state.org.id, name: state.org.name, description: state.org.description } }, ...accounts]
+
+  async function switchTo(a: RememberedAccount) {
+    setBusy(a.userId)
+    setErr(null)
+    try {
+      await api("/api/session/accounts", { method: "POST", json: { userId: a.userId } })
+      // Navigation complète : rien du cerveau de l'entreprise précédente ne reste dans le cache du routeur.
+      window.location.assign("/dashboard")
+    } catch (e) {
+      setErr(fmt(t.shell.switchError, { error: errorMessage(e) }))
+      setBusy(null)
+    }
+  }
+
+  const row = "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left text-[13px] transition-colors duration-150 ease-out hover:bg-bone"
+
+  return (
+    <div className="px-2 pb-3 pt-3" onKeyDown={(e) => e.key === "Escape" && open && setOpen(false)}>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-surface"
+          aria-expanded={open}
+          aria-controls="company-switcher"
+          title={t.shell.switchCompany}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <BrainIcon size={26} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-tight">{fmt(t.shell.brainOf, { name: state.org.name })}</span>
+          <ChevronsIcon size={14} className="shrink-0 text-trace" />
+        </button>
+        <button type="button" className="btn btn-icon btn-sm md:hidden" aria-label={t.shell.closeMenu} onClick={onClose}>
+          <CloseIcon size={14} />
+        </button>
+      </div>
+      {open && (
+        <div id="company-switcher" className="panel mt-1.5 p-1" aria-busy={busy !== null}>
+          <p className="px-2.5 pb-1 pt-1.5 text-[12px] text-trace">{t.shell.companies}</p>
+          <ul>
+            {companies.map((a) => {
+              const current = a.org.id === state.org.id
+              return (
+                <li key={a.userId}>
+                  <button
+                    type="button"
+                    className={`${row} disabled:cursor-default`}
+                    aria-current={current ? "true" : undefined}
+                    aria-label={current ? fmt(t.shell.currentCompany, { name: a.org.name }) : fmt(t.shell.openCompany, { name: a.org.name })}
+                    title={a.org.description || undefined}
+                    disabled={busy !== null}
+                    onClick={() => (current ? setOpen(false) : switchTo(a))}
+                  >
+                    <PersonAvatar id={a.userId} size={24} bg="surface" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium leading-tight">{a.org.name}</span>
+                      <span className="block truncate text-[12px] leading-tight text-trace">{a.name}</span>
+                    </span>
+                    {current && <CheckIcon size={14} className="shrink-0" />}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {err && (
+            <p role="alert" className="px-2.5 py-1.5 text-[12px] text-danger">
+              {err}
+            </p>
+          )}
+          <div className="mt-1 border-t border-line pt-1">
+            <Link href="/login?ajouter=1" className={row}>
+              <PlusIcon size={14} className="shrink-0" />
+              {t.shell.addCompany}
+            </Link>
+            {signup && (
+              <Link href="/creer" className={`${row} text-trace hover:text-ink`}>
+                <BrainIcon size={14} className="shrink-0" />
+                {t.shell.createCompany}
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
