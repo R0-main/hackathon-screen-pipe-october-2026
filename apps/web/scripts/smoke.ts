@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
 import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput } from "@brain/core"
-import { getStore, isStoreSetupError, type BrainStore } from "../lib/store"
+import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
 import { getAccess, redactEvent } from "../lib/access"
@@ -27,7 +27,7 @@ import {
   statusForViewer,
   streamStartId,
 } from "../lib/brain"
-import { createLoginCode, createSessionValue, hashToken, newToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
+import { createLoginCode, createOnboardingCode, createSessionValue, hashToken, newToken, profileFromToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -35,6 +35,20 @@ import * as statusRoute from "../app/api/status/route"
 import * as statusInputRoute from "../app/api/status/input/route"
 import * as stateRoute from "../app/api/state/route"
 import * as demoSessionRoute from "../app/api/session/demo/route"
+import * as adminUsersRoute from "../app/api/admin/users/route"
+import * as adminTeamRoute from "../app/api/admin/team/route"
+import * as itemRoute from "../app/api/items/[id]/route"
+import * as joinRoute from "../app/api/join/route"
+import * as onboardingAgentRoute from "../app/api/onboarding/agent/route"
+import * as onboardingImportRoute from "../app/api/onboarding/import/route"
+import * as onboardingApplyRoute from "../app/api/onboarding/apply/route"
+import * as joinStatusRoute from "../app/api/join/status/route"
+import * as adminJoinRoute from "../app/api/admin/join/route"
+import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
+import * as skillsRoute from "../app/api/skills/route"
+import * as skillRoute from "../app/api/skills/[id]/route"
+import { DEMO_VISITOR_TITLE, demoVisitorManager, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
+import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`ÉCHEC : ${msg}`)
@@ -240,6 +254,95 @@ async function main() {
   assert(ctx && ctx.zones[0]?.zone === "dev" && ctx.items.length > 0, "contexte de passation de Hugo")
 
   assert(await store.deleteItem(res.ids[0]), "l'auteur peut supprimer une connaissance")
+
+  console.log("\n— Skills de l'entreprise : publication sous autorisation, attribution à un cortex")
+  const names = async (v: Viewer) => (await listVisibleSkills(v)).map((x) => x.name)
+  const jmSkills = await names(jm)
+  assert(jmSkills.includes("ton-fournil") && jmSkills.includes("rapprochement-qonto-pennylane"), "Jean-Marc reçoit les skills de toute l'entreprise et du cortex compta")
+  assert(!jmSkills.includes("deployer-fournil"), "mais pas celui du cortex dev")
+  assert((await names(hugo)).includes("deployer-fournil") && !(await names(hugo)).includes("rapprochement-qonto-pennylane"), "Hugo reçoit le skill dev, pas celui de la compta")
+  assert((await names(claire)).length >= 5, "l'admin voit tous les skills")
+  assert(canPublishSkills(claire) && canPublishSkills(hugo) && !canPublishSkills(ines), "publier : admins et membres autorisés seulement")
+  const refused = async (p: Promise<unknown>, status: number) => {
+    try {
+      await p
+      return false
+    } catch (err) {
+      return err instanceof SkillError && err.status === status
+    }
+  }
+  const skillName = `smoke-${run}`
+  const files = [
+    { path: "SKILL.md", content: "# Test de fumée\n\nLancer scripts/run.py." },
+    { path: "scripts/run.py", content: "import os\nprint(os.environ['PENNYLANE_TOKEN'])\n" },
+  ]
+  assert(await refused(publishSkill(ines, { name: skillName, description: "Test", zone: null, files }), 403), "Inès (sans autorisation) ne peut pas publier")
+  assert(await refused(publishSkill(jm, { name: skillName, description: "Test", zone: "dev", files }), 403), "Jean-Marc ne peut pas attribuer un skill au cortex dev, qu'il ne lit pas")
+  const leak = [...files, { path: "scripts/leak.sh", content: `curl -H "Authorization: Bearer ${["sk-ant-", "api03-", "z".repeat(40)].join("")}" https://api.example` }]
+  try {
+    await publishSkill(jm, { name: skillName, description: "Test", zone: "compta", files: leak })
+    throw new Error("ÉCHEC : un skill avec un secret aurait dû être refusé")
+  } catch (err) {
+    assert(err instanceof SkillError && err.status === 400 && err.details?.some((d) => d.startsWith("scripts/leak.sh")), "un script qui contient un secret est refusé, en nommant le fichier")
+  }
+  assert(await refused(publishSkill(jm, { name: skillName, description: "Test", zone: "compta", files: [...files, { path: "../../.bashrc", content: "x" }] }), 400), "un chemin qui sort du skill est refusé")
+  const v1 = await publishSkill(jm, { name: skillName, description: "Test de fumée des skills", zone: "compta", files })
+  assert(v1.created && v1.skill.version === 1 && v1.skill.zone === "compta", "Jean-Marc publie un skill dans le cortex compta")
+  assert(v1.skill.files[0].content.startsWith(`---\nname: ${skillName}\ndescription: "Test de fumée des skills"\n---`), "SKILL.md reçoit l'en-tête que Claude Code attend")
+  assert((await store.listEvents({ limit: 5 })).some((e) => e.type === "write" && e.zones.join() === "compta" && e.summary?.includes(skillName)), "la publication allume le cortex compta")
+  const v2 = await publishSkill(jm, { name: skillName, description: "", files })
+  assert(!v2.created && v2.skill.version === 2 && v2.skill.zone === "compta" && v2.skill.description === "Test de fumée des skills", "même nom : version 2, cortex et description gardés")
+  assert(await refused(publishSkill(hugo, { name: skillName, description: "x", zone: "dev", files }), 409), "un nom pris dans un cortex illisible est refusé sans rien en dire")
+  assert(await refused(setSkillZone(hugo, v1.skill.id, null), 404), "Hugo ne voit pas le skill de la compta (404)")
+  await setSkillZone(jm, v1.skill.id, null)
+  assert((await names(hugo)).includes(skillName), "attribué à toute l'entreprise, Hugo le reçoit")
+  assert(await refused(setSkillZone(hugo, v1.skill.id, "dev"), 403), "seul l'auteur ou un admin change son cortex")
+  await setSkillZone(claire, v1.skill.id, "dev")
+  assert(!(await names(jm)).includes(skillName) && (await names(hugo)).includes(skillName), "l'admin l'attribue au cortex dev : Jean-Marc ne le reçoit plus")
+  assert((await getState(jm)).totals.skills === (await names(jm)).length, "le compteur de l'onglet Skills suit les droits")
+  const ineSession = await createSessionValue(ines.profile.id)
+  const listed = await call(skillsRoute.GET, "/api/skills", { session: ineSession })
+  assert(listed.status === 200 && listed.data.can_publish === false && listed.data.skills.every((x: { zone: string | null }) => x.zone === null || ines.access.readable.includes(x.zone)), "GET /api/skills : les skills d'Inès, sans droit de publier")
+  const denied = await call(skillsRoute.POST, "/api/skills", { method: "POST", session: ineSession, body: { name: `${skillName}-b`, description: "x", files } })
+  assert(denied.status === 403 && /autorisation/.test(denied.data.error), "POST /api/skills sans autorisation : 403")
+  const jmSession = await createSessionValue(jm.profile.id)
+  const patched = await skillRoute.PATCH(
+    new Request(`http://smoke.test/api/skills/${v1.skill.id}`, { method: "PATCH", headers: { cookie: `brain_session=${jmSession}`, "content-type": "application/json" }, body: JSON.stringify({ zone: null }) }),
+    { params: Promise.resolve({ id: v1.skill.id }) },
+  )
+  assert(patched.status === 404, "PATCH d'un skill hors de ses cortex : 404")
+  await removeSkill(claire, v1.skill.id)
+  assert(!(await store.getSkill(v1.skill.id)), "l'admin retire le skill")
+
+  console.log("\n— Démo remplie par une version antérieure : complétée sans rien effacer")
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "brain-upgrade-"))
+    try {
+      const old = new FileStore(tmp)
+      await seedDemoBrain(old)
+      // Avant les rattachements et les skills : organigramme à plat, aucun skill, personne n'a le droit de publier.
+      const team = await old.listProfiles()
+      for (const p of team) await old.updateProfile(p.id, { manager_id: null, can_publish_skills: false })
+      for (const sk of await old.listSkills()) await old.deleteSkill(sk.id)
+      const visitor = await old.createProfile({ name: "Visiteur 1234", title: DEMO_VISITOR_TITLE, role: "member", token_hash: hashToken(newToken()) })
+      const itemsBefore = (await old.listItems({})).length
+      const res = await upgradeDemoBrain(old)
+      const after = new Map((await old.listProfiles()).map((p) => [p.name, p]))
+      const id = (n: string) => team.find((p) => p.name.startsWith(n))!.id
+      assert(after.get("Inès Lefèvre")?.manager_id === id("Hugo") && after.get("Jean-Marc Dubois")?.manager_id === id("Claire"), "l'organigramme à plat retrouve ses rattachements")
+      assert(after.get("Claire Martin")?.manager_id == null, "la CEO reste en tête")
+      assert(after.get("Visiteur 1234")?.manager_id === id("Hugo"), "les visiteurs rejoignent l'équipe du lead dev")
+      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deployer-fournil")?.version === 3, "les skills de démo sont ajoutés")
+      assert(after.get("Hugo Bernard")?.can_publish_skills === true && after.get("Inès Lefèvre")?.can_publish_skills === false, "Hugo et Jean-Marc reçoivent le droit de publier")
+      assert((await old.listItems({})).length === itemsBefore && visitor.id === after.get("Visiteur 1234")?.id, "rien n'est effacé")
+      await old.updateProfile(id("Inès"), { manager_id: id("Claire") })
+      const again = await upgradeDemoBrain(old)
+      assert(again.managers === 0 && again.skills === 0 && (await old.getProfile(id("Inès")))?.manager_id === id("Claire"), "relancé : ne touche plus aux choix d'un admin")
+      assert((await demoVisitorManager(old)) === id("Hugo"), "un nouveau visiteur est rattaché au lead dev")
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
 
   console.log("\n— Écriture libre, droit de regard de l'auteur (D1)")
   const jmDev = await ingestItems(jm, [item("dev", `Smoke ${run} déploiement Vercel par la compta`, "procedure")])
@@ -611,6 +714,138 @@ async function main() {
       assert((await copy.listItems({ limit: 100_000 })).length === itemsBefore + 3 * Math.ceil(n / 10), "aucun item perdu")
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  console.log("\n— Créer son entreprise (/creer) : un cerveau à part")
+  {
+    const root = getRootStore()
+    const fournil = await root.getOrg()
+    const tenantsBefore = await root.countTenantOrgs()
+    const acme = await root.createTenantOrg({
+      name: `Acme ${run}`,
+      description: "Test de fumée",
+      zones: [{ id: "ops", name: "Ops", description: "", color: "#2a78d6", keywords: ["ops", "astreinte"], position: 0 }],
+    })
+    const acmeStore = storeForOrg(acme.id)
+    try {
+      assert((await root.countTenantOrgs()) === tenantsBefore + 1, "une entreprise créée est comptée")
+      assert((await root.getOrg()).id === fournil.id && !(await root.isEmpty()), "le cerveau de la base reste celui de Fournil")
+      assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops", "la nouvelle entreprise n'a que ses zones")
+      const token = newToken()
+      const boss = await acmeStore.createProfile({ name: `Alice ${run}`, role: "admin", manager_id: null, token_hash: hashToken(token) })
+      assert(boss.org_id === acme.id, "son premier compte lui appartient")
+      assert((await profileFromToken(token))?.id === boss.id, "son jeton est reconnu (connexion du poste)")
+      const cookie = await createSessionValue(boss.id)
+      const alice = await viewerFromCookies(cookie, claire.profile.id)
+      assert(alice?.real.id === boss.id && alice.profile.id === boss.id, "sa session est reconnue ; « voir en tant que » ne sort pas de son entreprise")
+      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Fournil ne voit pas ce compte")
+
+      const st = await call(stateRoute.GET, "/api/state", { session: cookie })
+      assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "son dashboard ne montre que son entreprise")
+      const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
+      assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviter un collègue : prompt à son nom, zones de l'entreprise seulement")
+      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "le collègue rejoint l'entreprise, pas Fournil")
+
+      const bob = (await profileFromToken(inv.data.token))!
+      const bobViewer: Viewer = { profile: bob, real: bob, access: await getAccess(bob) }
+      const team0 = await call(adminTeamRoute.GET, "/api/admin/team", { session: cookie })
+      assert(team0.status === 200 && team0.data.users.every((u: { last_at: string | null }) => u.last_at === null), "équipe : personne n'est encore branché")
+      await runInOrg(acme.id, () => recordEvents(bobViewer, [{ agent: "claude-code", type: "started" }]))
+      const team1 = await call(adminTeamRoute.GET, "/api/admin/team", { session: cookie })
+      assert(team1.data.users.find((u: { id: string }) => u.id === bob.id)?.last_at, "équipe : le poste de Bob apparaît branché")
+
+      const ing = await runInOrg(acme.id, () => ingestItems(bobViewer, [item("ops", `Procédure d'astreinte Acme (${run})`)]))
+      assert((await acmeStore.getItem(ing.ids[0]))?.zone === "ops", "une connaissance du poste de Bob arrive dans l'entreprise")
+      const fromFournil = await queryBrain(claire, { query: `astreinte Acme ${run}` })
+      assert(fromFournil.items.every((i) => i.org_id === fournil.id), "Fournil n'en voit rien")
+      const fromAcme = await runInOrg(acme.id, () => queryBrain(alice!, { query: "déployer en production" }))
+      assert(fromAcme.items.length === 0, "et l'entreprise ne voit rien de Fournil")
+      const fournilItem = created[0]
+      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${fournilItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
+        params: Promise.resolve({ id: fournilItem }),
+      })
+      assert(del.status === 404 && (await store.getItem(fournilItem)), "une connaissance de Fournil est introuvable (et intacte) depuis l'entreprise")
+      console.log("\n— Message d'équipe : demander à rejoindre, un admin accepte")
+      const decide = (id: string, session: string, body: unknown) =>
+        adminJoinIdRoute.POST(new Request(`http://smoke.test/api/admin/join/${id}`, { method: "POST", headers: { cookie: `brain_session=${session}`, "content-type": "application/json" }, body: JSON.stringify(body) }), {
+          params: Promise.resolve({ id }),
+        })
+      const team = await call(adminJoinRoute.GET, "/api/admin/join", { session: cookie })
+      assert(team.status === 200 && team.data.prompt.includes(team.data.code) && team.data.prompt.includes("Tu vas demander à rejoindre NOS Brainer"), "un message d'équipe par entreprise, avec son code")
+      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: cookie })).data.code === team.data.code, "le code reste le même d'une ouverture à l'autre")
+      const leaToken = newToken()
+      const unknown = await call(joinRoute.POST, "/api/join", { method: "POST", body: { code: `cj_${"x".repeat(24)}`, token_hash: hashToken(leaToken) } })
+      assert(unknown.status === 404, "un code inconnu ne crée rien")
+      const asked = await call(joinRoute.POST, "/api/join", {
+        method: "POST",
+        body: { code: team.data.code, name: "Léa Test", title: "<poste>", email: "pas un email", hostname: "mac-lea", token_hash: hashToken(leaToken) },
+      })
+      assert(asked.status === 201 && asked.data.org === acme.name, "la demande arrive dans l'entreprise du code")
+      const [pending] = await acmeStore.listJoinRequests({ status: "pending" })
+      assert(pending?.name === "Léa Test" && pending.title === null && pending.email === null && pending.hostname === "mac-lea", "ce que son Claude ne savait pas reste vide (gabarit « <poste> » compris)")
+      assert((await profileFromToken(leaToken)) === null, "aucun accès avant l'acceptation")
+      const status0 = await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: leaToken } })
+      assert(status0.status === 200 && status0.data.status === "pending", "le poste suit sa demande : en attente")
+      assert((await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: newToken() } })).status === 404, "personne d'autre ne peut suivre la demande")
+      const fournilAdmin = await createSessionValue(claire.profile.id)
+      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: fournilAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Fournil ne voit pas la demande")
+      assert((await decide(asked.data.id, fournilAdmin, { action: "accept", name: "Intrus" })).status === 404, "ni ne peut l'accepter")
+      const accepted = await decide(asked.data.id, cookie, { action: "accept", name: "Léa Bernard", title: "Designer", zones: ["ops"], manager_id: boss.id })
+      assert(accepted.status === 200, "un admin de l'entreprise complète et accepte")
+      const lea = await profileFromToken(leaToken)
+      assert(lea?.name === "Léa Bernard" && lea.title === "Designer" && lea.org_id === acme.id && lea.manager_id === boss.id, "le jeton du poste ouvre son compte, tel que l'admin l'a réglé")
+      assert((await acmeStore.listZoneAccess(lea!.id)).map((a) => a.zone_id).join() === "ops", "avec les zones choisies")
+      const status1 = await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: leaToken } })
+      assert(status1.data.status === "accepted", "le poste voit l'acceptation (et enchaîne sur setup)")
+      assert((await decide(asked.data.id, cookie, { action: "reject" })).status === 409, "une demande se traite une seule fois")
+      const noName = newToken()
+      const anon = await call(joinRoute.POST, "/api/join", { method: "POST", body: { code: team.data.code, token_hash: hashToken(noName) } })
+      assert((await decide(anon.data.id, cookie, { action: "reject" })).status === 200, "une demande se refuse")
+      assert((await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: anon.data.id, token: noName } })).data.status === "rejected", "et le poste le sait")
+      const rotated = await call(adminJoinRoute.POST, "/api/admin/join", { method: "POST", session: cookie, body: { rotate: true } })
+      assert(rotated.status === 200 && rotated.data.code !== team.data.code, "changer le code")
+      const stale = await call(joinRoute.POST, "/api/join", { method: "POST", body: { code: team.data.code, token_hash: hashToken(newToken()) } })
+      assert(stale.status === 404, "l'ancien message ne marche plus")
+
+      console.log("\n— Onboarding préparé par Claude Code ou Codex")
+      const agent = await call(onboardingAgentRoute.POST, "/api/onboarding/agent", { method: "POST", session: cookie })
+      const sendCode = agent.data.prompt.match(/Bearer (co_[A-Za-z0-9_-]+)/)?.[1] as string
+      assert(agent.status === 200 && sendCode && agent.data.prompt.includes("~/.codex/sessions"), "prompt d'onboarding avec un code d'envoi")
+      const upload = (code: string, body: unknown) =>
+        onboardingImportRoute.POST(new Request("http://smoke.test/api/onboarding/import", { method: "POST", headers: { authorization: `Bearer ${code}`, "content-type": "application/json" }, body: JSON.stringify(body) }))
+      const proposal = {
+        source: "codex",
+        company_name: `Acme ${run}`,
+        description: "Studio de design. Contact : alice@acme.example",
+        zones: [{ id: "ops", name: "Ops", description: "Exploitation", keywords: ["astreinte"] }, { id: "design", name: "Design", description: "Maquettes", keywords: ["figma"] }],
+        items: [{ zone: "design", kind: "procedure", title: `Livrer une maquette (${run})`, body: "Export Figma puis revue. Clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz", entities: [{ type: "tool", name: "Figma" }], source: { app: "onboarding", tool: "onboarding" }, confidence: 0.8 }],
+      }
+      assert((await upload(`co_${"A".repeat(40)}`, proposal)).status === 401, "un code inventé est refusé")
+      assert((await upload(await createOnboardingCode(bob.id), proposal)).status === 401, "le code d'un membre (non admin) est refusé")
+      assert((await upload(sendCode, { ...proposal, items: [{ zone: "x" }] })).status === 400, "une proposition mal formée est refusée")
+      const sent = await upload(sendCode, proposal)
+      assert(sent.status === 201, "l'agent dépose sa proposition")
+      const pendingDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft
+      assert(pendingDraft?.source === "codex" && pendingDraft.items.length === 1, "la page Onboarding la retrouve (elle se remplit toute seule)")
+      assert(!JSON.stringify(pendingDraft).includes("sk-ant") && !JSON.stringify(pendingDraft).includes("alice@"), "secrets et emails masqués dès la réception")
+      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: fournilAdmin })).data.draft === null, "Fournil ne la voit pas")
+      assert((await acmeStore.listZones()).every((z) => z.id !== "design"), "rien n'est appliqué avant validation")
+      const { source: _src, ...validated } = pendingDraft
+      const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
+      assert(applied.status === 200 && (await acmeStore.listZones()).some((z) => z.id === "design"), "validée : zones et connaissances appliquées")
+      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft === null, "et la proposition est écartée")
+
+      const demoList = await call(demoSessionRoute.GET, "/api/session/demo")
+      assert(demoList.status === 404 || !demoList.data.users.some((u: { id: string }) => u.id === boss.id), "les comptes de l'entreprise ne sont pas proposés dans la démo")
+    } finally {
+      if (store.kind === "file") fs.rmSync(path.resolve(process.env.BRAIN_DATA_DIR ?? ".brain", "orgs", acme.id), { recursive: true, force: true })
+      else {
+        const sql = pgClient(process.env.DATABASE_URL!)
+        await sql`delete from orgs where id = ${acme.id}`
+        await sql`delete from brain_settings where key in (${`tenant:${acme.id}`}, ${`join:${acme.id}`}) or key like ${`org:%:${acme.id}`}`
+        await sql.end()
+      }
     }
   }
 

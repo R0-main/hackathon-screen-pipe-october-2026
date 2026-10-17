@@ -65,5 +65,19 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 | `--no-open` | N'ouvre pas le navigateur. |
 | `--skip-screenpipe` | Sans Screenpipe : brain-sync lit seulement les sessions Claude Code et Codex. |
 
-Tout retirer : `node ~/.company-brain/brain.mjs uninstall` (hooks, MCP, synchro, service Screenpipe ; `--purge` efface aussi
+Tout retirer : `node ~/.company-brain/brain.mjs uninstall` (hooks, MCP, skills de l'entreprise, synchro, service Screenpipe ; `--purge` efface aussi
 `~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
+
+## Le message d'équipe (rejoindre sur demande)
+
+Second moyen d'ajouter quelqu'un, à côté du prompt personnel : un message unique par entreprise (`/admin` → Demandes,
+ou la dernière étape de `/creer`), source `buildJoinPrompt` dans [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts).
+Il contient un code d'équipe (`cj_…`), pas de jeton : à envoyer aux collègues seulement, il ne permet que de demander.
+
+1. Le Claude du demandeur remplit `--name`, `--title`, `--email` avec ce qu'il sait déjà (git config, mémoire, CLAUDE.md),
+   sans poser de question ni rien inventer : une valeur inconnue est omise, l'admin la complétera.
+2. `install.sh --join` lance `brain join` (`apps/client/src/join.ts`) : le jeton du poste est créé localement, la demande
+   part avec son empreinte seulement, puis la commande attend l'acceptation (8 min).
+3. Un admin complète et accepte la demande : le compte est créé avec cette empreinte, et `join` enchaîne sur `setup`.
+   Code 5 : toujours en attente (`brain join` reprend la même demande, état dans `~/.company-brain/join.json`) ; 6 : refusée.
+

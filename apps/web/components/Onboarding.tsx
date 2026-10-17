@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { KnowledgeItemInput } from "@brain/core"
 import { PageScroll } from "./AppShell"
-import { KIND_LABEL, api, errorMessage } from "./format"
+import { PromptActions } from "./PromptActions"
+import { KIND_LABEL, api, errorMessage, relativeTime } from "./format"
 import { BrainIcon, CheckIcon, CloseIcon, ErrorText } from "./ui"
 
 type Question = { id: string; question: string }
@@ -14,9 +15,17 @@ type Draft = {
   description: string
   zones: { id: string; name: string; description: string; keywords: string[] }[]
   items: KnowledgeItemInput[]
-  generator: "claude" | "heuristic"
+  generator: "claude" | "heuristic" | "agent"
   pages: { url: string; title: string; truncated: boolean; error?: string }[]
+  /** Proposition déposée par un agent (Claude Code ou Codex) depuis l'historique du poste. */
+  source?: "claude-code" | "codex" | "autre"
+  received_at?: string
 }
+
+const AGENT_LABEL = { "claude-code": "Claude Code", codex: "Codex", autre: "votre agent" } as const
+const POLL_MS = 4000
+
+const GENERATOR_LABEL = (d: Draft) => (d.generator === "agent" ? `de ${AGENT_LABEL[d.source ?? "autre"]}` : d.generator === "claude" ? "de Claude" : "heuristique")
 
 /** Une zone par identifiant (la synthèse peut en renvoyer deux identiques) : clés React et zones appliquées uniques. */
 function withUniqueZones(d: Draft): Draft {
@@ -36,7 +45,44 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
   const [busy, setBusy] = useState<"draft" | "apply" | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const agentPrompt = useRef<Promise<string> | null>(null)
+  const [waiting, setWaiting] = useState(false)
   const done = step >= questions.length
+
+  // La proposition de Claude Code ou Codex arrive par l'API : la page la relit et se remplit toute seule.
+  useEffect(() => {
+    if (draft) return
+    let stop = false
+    const tick = async () => {
+      try {
+        const r = await api<{ draft: (Omit<Draft, "generator" | "pages"> & { received_at: string }) | null }>("/api/onboarding/import")
+        if (stop || !r.draft) return
+        const d = withUniqueZones({ ...r.draft, generator: "agent", pages: [] })
+        setDraft(d)
+        setKeep(d.items.map(() => true))
+        setWaiting(false)
+      } catch {}
+    }
+    void tick()
+    const id = setInterval(tick, POLL_MS)
+    return () => {
+      stop = true
+      clearInterval(id)
+    }
+  }, [draft])
+
+  // Un code d'envoi neuf par visite (valable 2 h), demandé au premier clic.
+  const getAgentPrompt = () => {
+    agentPrompt.current ??= api<{ prompt: string }>("/api/onboarding/agent", { method: "POST" }).then((r) => r.prompt)
+    agentPrompt.current.catch(() => (agentPrompt.current = null))
+    setWaiting(true)
+    return agentPrompt.current
+  }
+
+  async function discard() {
+    if (draft?.generator === "agent") await api("/api/onboarding/import", { method: "DELETE" }).catch(() => {})
+    setDraft(null)
+  }
 
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [step, draft])
 
@@ -87,8 +133,31 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
           5 à 10 minutes pour donner au cerveau de {orgName} sa première mémoire, {claude ? "avec une synthèse par Claude" : "en mode sans Claude (synthèse heuristique)"}.
         </p>
       </header>
+      {!draft && (
+        <section className="panel mb-6 px-5 py-5" aria-labelledby="agent-fill">
+          <h2 id="agent-fill" className="panel-title">
+            Le faire remplir par Claude Code ou Codex
+          </h2>
+          <p className="mt-1.5 max-w-[46em] text-[13px] leading-relaxed text-trace">
+            Collez ce prompt dans l&apos;agent de votre poste : il lit vos anciennes conversations (Claude Code et Codex) et les README de vos projets, en tire
+            les zones et les premières connaissances de {orgName}, et les envoie au cerveau. La proposition s&apos;affiche ici toute seule ; rien n&apos;est
+            appliqué avant que vous l&apos;ayez relue et validée.
+          </p>
+          <div className="mt-4">
+            <PromptActions getPrompt={getAgentPrompt} size="md" />
+          </div>
+          <p className="text-[12px] text-trace">Avec Codex : copiez le prompt et collez-le dans codex. Le code d&apos;envoi qu&apos;il contient vaut 2 heures.</p>
+          {waiting && (
+            <p className="mt-3 flex items-center gap-2 text-[13px]" aria-live="polite">
+              <span className="live-dot" aria-hidden /> En attente de la proposition de votre agent. Cette page se remplira toute seule.
+            </p>
+          )}
+        </section>
+      )}
+      {!draft && <h2 className="mb-3 text-[15px] font-medium">Ou répondez à l&apos;interview</h2>}
       <div className="space-y-3">
-        {questions.slice(0, Math.min(step + 1, questions.length)).map((q, i) => (
+        {draft?.generator !== "agent" &&
+          questions.slice(0, Math.min(step + 1, questions.length)).map((q, i) => (
           <div key={q.id} className="space-y-2">
             <div className="flex gap-3">
               <span className="mt-1 shrink-0" aria-hidden>
@@ -111,7 +180,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
           </div>
         ))}
 
-        {!done && (
+        {!done && draft?.generator !== "agent" && (
           <form onSubmit={answer} className="panel sticky bottom-4 flex gap-2 p-3">
             <textarea
               className="input min-h-[60px] flex-1"
@@ -142,7 +211,13 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
         {draft && (
           <div className="panel space-y-4 p-5">
             <div>
-              <h2 className="panel-title">Proposition {draft.generator === "claude" ? "de Claude" : "heuristique"}</h2>
+              <h2 className="panel-title">Proposition {GENERATOR_LABEL(draft)}</h2>
+              {draft.generator === "agent" && (
+                <p className="mt-1 text-[12px] text-trace">
+                  Tirée de vos anciennes conversations{draft.received_at ? `, reçue ${relativeTime(draft.received_at)}` : ""}. Relisez, décochez ce qui ne doit pas
+                  entrer, puis validez : rien n&apos;est appliqué avant.
+                </p>
+              )}
               <input
                 className="input mt-2 text-[18px] font-medium"
                 aria-label="Nom de l'entreprise"
@@ -198,8 +273,8 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button type="button" className="btn" onClick={() => setDraft(null)}>
-                Recommencer la synthèse
+              <button type="button" className="btn" onClick={discard}>
+                {draft.generator === "agent" ? "Écarter la proposition" : "Recommencer la synthèse"}
               </button>
               <button type="button" className="btn btn-primary" onClick={apply} disabled={busy === "apply"}>
                 {busy === "apply" ? "Création en cours" : "Valider et allumer le cerveau"}

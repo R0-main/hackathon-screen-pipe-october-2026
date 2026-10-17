@@ -3,15 +3,18 @@
 
 import {
   DEFAULT_TIMEZONE,
+  SKILL_MAIN_FILE,
   detectAutomations,
   heuristicStatus,
   promptFingerprint,
+  withSkillFrontmatter,
   type AgentEvent,
+  type Profile,
 } from "@brain/core"
 import { hashToken, isDemoMode, newToken } from "./auth"
 import { getStore, type BrainStore } from "./store"
 import type { NewEvent } from "./store/types"
-import { DEMO_ITEMS, DEMO_ORG, DEMO_PROMPTS, DEMO_USERS, JEANMARC_DAILY_PROMPT } from "../scripts/demo-data"
+import { DEMO_ITEMS, DEMO_ORG, DEMO_PROMPTS, DEMO_SKILLS, DEMO_USERS, JEANMARC_DAILY_PROMPT } from "../scripts/demo-data"
 
 const TZ = process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE
 
@@ -39,6 +42,79 @@ function rand(seed: number) {
   }
 }
 
+/** Titre des comptes créés depuis la page d'accueil : c'est lui qui les compte et les distingue de l'équipe Fournil. */
+export const DEMO_VISITOR_TITLE = "Visiteur de la démo"
+/** Les visiteurs ont les zones Dev et Produit : ils rejoignent l'équipe du lead dev dans l'organigramme. */
+const VISITOR_MANAGER = "hugo"
+
+/** Publie les skills de démo (une publication par version) ; renvoie le néon de chaque publication. */
+async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, allZoneIds: string[]): Promise<NewEvent[]> {
+  const events: NewEvent[] = []
+  for (const sk of [...DEMO_SKILLS].sort((a, b) => b.daysAgo - a.daysAgo)) {
+    const files = sk.files.map((f) => (f.path === SKILL_MAIN_FILE ? { ...f, content: withSkillFrontmatter(f.content, sk.name, sk.description) } : f))
+    for (let v = 0; v < (sk.version ?? 1); v++)
+      await store.publishSkill({ name: sk.name, description: sk.description, zone: sk.zone, files, publisher_id: ids[sk.author] })
+    events.push({
+      user_id: ids[sk.author],
+      agent: "dashboard",
+      type: "write",
+      zones: sk.zone ? [sk.zone] : allZoneIds,
+      summary: `Skill publié : ${sk.name}`,
+      at: localTime(sk.daysAgo, 11, 30).toISOString(),
+    })
+  }
+  return events
+}
+
+/** Comptes de l'équipe Fournil retrouvés par leur email (null s'il en manque un : ce n'est pas le cerveau de démo). */
+function demoTeam(profiles: Profile[]): Record<string, string> | null {
+  const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [p.email, p.id]))
+  const ids: Record<string, string> = {}
+  for (const u of DEMO_USERS) {
+    const id = byEmail.get(u.email)
+    if (!id) return null
+    ids[u.key] = id
+  }
+  return ids
+}
+
+/** Responsable d'un nouveau visiteur de la démo dans l'organigramme (null hors du cerveau de démo). */
+export async function demoVisitorManager(store: BrainStore = getStore()): Promise<string | null> {
+  return demoTeam(await store.listProfiles())?.[VISITOR_MANAGER] ?? null
+}
+
+/**
+ * Cerveau de démo rempli par une version antérieure : complète ce qui lui manque, sans rien effacer.
+ * - Organigramme entièrement à plat (rempli avant les rattachements) : l'équipe Fournil est rattachée comme dans la démo,
+ *   les visiteurs à l'équipe du lead dev. Dès qu'un rattachement existe, on n'y touche plus (choix d'un admin).
+ * - Aucun skill : les skills de démo sont publiés et les membres prévus reçoivent le droit de publier.
+ */
+export async function upgradeDemoBrain(store: BrainStore = getStore()) {
+  const out = { managers: 0, skills: 0 }
+  if ((await store.getOrg()).name !== DEMO_ORG.name) return out
+  const profiles = await store.listProfiles()
+  const ids = demoTeam(profiles)
+  if (!ids) return out
+  if (profiles.every((p) => !p.manager_id)) {
+    for (const u of DEMO_USERS) {
+      if (!u.manager) continue
+      await store.updateProfile(ids[u.key], { manager_id: ids[u.manager] })
+      out.managers++
+    }
+    for (const v of profiles.filter((p) => p.title === DEMO_VISITOR_TITLE)) {
+      await store.updateProfile(v.id, { manager_id: ids[VISITOR_MANAGER] })
+      out.managers++
+    }
+  }
+  if ((await store.listSkills()).length === 0) {
+    for (const u of DEMO_USERS) if (u.publishSkills) await store.updateProfile(ids[u.key], { can_publish_skills: true })
+    const events = await seedDemoSkills(store, ids, (await store.listZones()).map((z) => z.id))
+    await store.insertEvents(events)
+    out.skills = DEMO_SKILLS.length
+  }
+  return out
+}
+
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
 
 /** Vide le cerveau et le remplit avec Fournil. Renvoie les jetons des comptes (affichés une seule fois). */
@@ -57,6 +133,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
       title: u.title,
       role: u.role,
       manager_id: u.manager ? ids[u.manager] : null,
+      can_publish_skills: u.publishSkills ?? false,
       token_hash: hashToken(token),
     })
     const zonesFor = u.role === "admin" ? allZoneIds : u.zones
@@ -99,6 +176,8 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
       at: new Date(at.getTime() + 15 * 60_000).toISOString(),
     })
   }
+
+  events.push(...(await seedDemoSkills(store, ids, allZoneIds)))
 
   // Historique de sessions et de prompts sur 10 jours.
   for (let d = 10; d >= 0; d--) {
@@ -147,21 +226,21 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
   const autos = detectAutomations(inserted, profiles, { timeZone: TZ })
   if (autos.length) await store.upsertAutomations(autos)
 
-  return { tokens, counts: { users: DEMO_USERS.length, items: items.length, tasks: tasks.length, events: inserted.length, automations: autos.length } }
+  return { tokens, counts: { users: DEMO_USERS.length, skills: DEMO_SKILLS.length, items: items.length, tasks: tasks.length, events: inserted.length, automations: autos.length } }
 }
 
 const g = globalThis as unknown as { __demoBootstrap?: Promise<void> }
 
 /**
  * Mode démo uniquement : un cerveau sans aucun compte (base neuve d'un déploiement) est amorcé avec Fournil.
- * Ne touche jamais un cerveau qui contient déjà des comptes.
+ * Un cerveau Fournil déjà rempli n'est jamais effacé : il est seulement complété (upgradeDemoBrain).
  */
 export async function ensureDemoBrain(): Promise<void> {
   if (!isDemoMode()) return
   if (!g.__demoBootstrap) {
     g.__demoBootstrap = (async () => {
       const store = getStore()
-      if (!(await store.isEmpty())) return
+      if (!(await store.isEmpty())) return upgradeOnce(store)
       // Plusieurs instances peuvent recevoir les premières visites en même temps : une seule amorce la démo.
       // Les autres attendent le marqueur « terminé » sans toucher aux données (lire les comptes créerait une org vide).
       if (!(await store.claimOnce("demo-bootstrap"))) {
@@ -182,4 +261,18 @@ export async function ensureDemoBrain(): Promise<void> {
     })
   }
   return g.__demoBootstrap
+}
+
+/** Une seule instance complète le cerveau de démo (les autres passent leur chemin : rien ne presse). */
+async function upgradeOnce(store: BrainStore) {
+  const key = "demo-upgrade-skills-org"
+  if (!(await store.claimOnce(key))) return
+  try {
+    const res = await upgradeDemoBrain(store)
+    await store.finishClaim(key)
+    if (res.managers || res.skills) console.log(`[démo] cerveau complété : ${res.managers} rattachement(s), ${res.skills} skill(s).`)
+  } catch (err) {
+    await store.releaseClaim(key).catch(() => {})
+    throw err
+  }
 }

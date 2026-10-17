@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import type { z } from "zod"
 import { viewerFromRequest, type Viewer } from "./auth"
-import { isStoreSetupError } from "./store"
+import { isStoreSetupError, runInOrg } from "./store"
 
 export function json(data: unknown, init?: number | ResponseInit) {
   return NextResponse.json(data, typeof init === "number" ? { status: init } : init)
@@ -13,14 +13,15 @@ export function error(status: number, message: string, details?: unknown) {
 
 type Handler<C> = (req: Request, viewer: Viewer, ctx: C) => Promise<Response>
 
-/** Exige un utilisateur authentifié (jeton Bearer ou session). `admin` : vérifie le rôle réel. */
+/** Exige un utilisateur authentifié (jeton Bearer ou session), dans le contexte de son entreprise. `admin` : vérifie le rôle réel. */
 export function withViewer<C = unknown>(handler: Handler<C>, opts: { admin?: boolean } = {}) {
   return async (req: Request, ctx: C) => {
     try {
       const viewer = await viewerFromRequest(req)
       if (!viewer) return error(401, "Non authentifié : jeton manquant ou invalide.")
       if (opts.admin && viewer.real.role !== "admin") return error(403, "Réservé aux admins.")
-      return await handler(req, viewer, ctx)
+      // Tout ce que fait la route vise l'entreprise du compte connecté (getStore()).
+      return await runInOrg(viewer.real.org_id, () => handler(req, viewer, ctx))
     } catch (err) {
       return internalError(err)
     }

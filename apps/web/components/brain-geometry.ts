@@ -249,18 +249,367 @@ export function neuronPositions(cell: ZoneCell, count: number): Pt[] {
   return pts.map(roundPt)
 }
 
-// --- Cerveau 3D : positions sur la coque (partagées par le dashboard et la page d'accueil) ---
+// --- Cerveau 3D : forme, réseau de liaisons et places des zones (partagés par le dashboard et la page d'accueil) ---
+// Repère : x d'arrière en avant (front en +x), y de bas en haut, z de gauche à droite. Vu le long de z, on a le profil.
 
-/** Direction de la i-ème zone sur la coque (spirale de Fibonacci, aplatie en hauteur comme un cerveau). */
-export function zoneDirection(i: number, n: number): [number, number, number] {
-  const phi = Math.acos(1 - (2 * (i + 0.5)) / n)
-  const theta = Math.PI * (1 + Math.sqrt(5)) * i + Math.PI / 2
-  const v: [number, number, number] = [Math.sin(phi) * Math.cos(theta), Math.cos(phi) * 0.75, Math.sin(phi) * Math.sin(theta)]
-  const len = Math.hypot(v[0], v[1], v[2]) || 1
-  return [v[0] / len, v[1] / len, v[2] / len]
+export type V3 = [number, number, number]
+type Ellipsoid = { c: V3; r: V3 }
+type Part = "cortex" | "cerebellum" | "stem"
+export type SurfacePoint = { p: V3; n: V3; part: Part }
+
+/** Demi-longueur du cerveau une fois mis à l'échelle (même encombrement que l'ancienne coque). */
+const HALF_LENGTH = 1.6
+const FISSURE = 0.035
+const SAMPLES = 2600
+
+/** Un hémisphère : masse, lobe frontal, lobe occipital, lobe temporal qui descend sur le côté. */
+const hemisphere = (s: number): Ellipsoid[] => [
+  { c: [0.0, 0.22, s * 0.46], r: [1.15, 0.72, 0.5] },
+  { c: [0.6, 0.14, s * 0.43], r: [0.66, 0.6, 0.45] },
+  { c: [-0.86, 0.12, s * 0.41], r: [0.5, 0.55, 0.41] },
+  { c: [0.12, -0.36, s * 0.55], r: [0.7, 0.32, 0.36] },
+]
+const HEMI_PARTS = [hemisphere(-1), hemisphere(1)]
+const CEREBELLUM: Ellipsoid = { c: [-0.74, -0.5, 0], r: [0.44, 0.27, 0.7] }
+const STEM: Ellipsoid = { c: [-0.24, -0.82, 0], r: [0.17, 0.46, 0.17] }
+
+/** Distance signée approchée à un ellipsoïde. */
+function ellipsoidDist(p: V3, e: Ellipsoid): number {
+  const x = p[0] - e.c[0]
+  const y = p[1] - e.c[1]
+  const z = p[2] - e.c[2]
+  const k0 = Math.hypot(x / e.r[0], y / e.r[1], z / e.r[2])
+  const k1 = Math.hypot(x / e.r[0] ** 2, y / e.r[1] ** 2, z / e.r[2] ** 2)
+  return k1 > 1e-9 ? (k0 * (k0 - 1)) / k1 : -Math.min(...e.r)
 }
 
-/** Direction voisine, pour disperser les billes d'une zone autour de son centre. */
+/** Union adoucie : les lobes se fondent l'un dans l'autre. */
+function smin(a: number, b: number, k: number): number {
+  const h = Math.max(k - Math.abs(a - b), 0) / k
+  return Math.min(a, b) - h * h * k * 0.25
+}
+
+/** Champ du cerveau : négatif dedans, nul sur la surface. Les hémisphères restent séparés par la scissure. */
+function brainField(p: V3): { d: number; part: Part } {
+  let cortex = Infinity
+  HEMI_PARTS.forEach((parts, i) => {
+    const s = i === 0 ? -1 : 1
+    let h = Infinity
+    for (const e of parts) h = smin(h, ellipsoidDist(p, e), 0.2)
+    cortex = Math.min(cortex, Math.max(h, FISSURE - s * p[2]))
+  })
+  const cb = ellipsoidDist(p, CEREBELLUM)
+  const st = ellipsoidDist(p, STEM)
+  const part: Part = cortex <= cb && cortex <= st ? "cortex" : cb <= st ? "cerebellum" : "stem"
+  return { d: smin(smin(cortex, cb, 0.1), st, 0.12), part }
+}
+
+function gradient(p: V3): V3 {
+  const e = 1e-3
+  const f = (q: V3) => brainField(q).d
+  return [
+    (f([p[0] + e, p[1], p[2]]) - f([p[0] - e, p[1], p[2]])) / (2 * e),
+    (f([p[0], p[1] + e, p[2]]) - f([p[0], p[1] - e, p[2]])) / (2 * e),
+    (f([p[0], p[1], p[2] + e]) - f([p[0], p[1], p[2] - e])) / (2 * e),
+  ]
+}
+
+const dist2 = (a: V3, b: V3) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
+
+let surfaceCache: SurfacePoint[] | null = null
+
+/** Points répartis sur la surface du cerveau, centrés et mis à l'échelle. Calculés une fois, déterministes. */
+export function brainSurface(): SurfacePoint[] {
+  if (surfaceCache) return surfaceCache
+  const rand = seeded(29)
+  const raw: SurfacePoint[] = []
+  let guard = 0
+  while (raw.length < SAMPLES && guard++ < SAMPLES * 4) {
+    // Un point au hasard, ramené sur la surface par quelques pas de Newton le long du gradient.
+    let p: V3 = [(rand() - 0.5) * 3, (rand() - 0.55) * 2.8, (rand() - 0.5) * 2.2]
+    for (let k = 0; k < 12; k++) {
+      const d = brainField(p).d
+      const g = gradient(p)
+      const g2 = g[0] ** 2 + g[1] ** 2 + g[2] ** 2
+      if (g2 < 1e-9) break
+      p = [p[0] - (d * g[0]) / g2, p[1] - (d * g[1]) / g2, p[2] - (d * g[2]) / g2]
+    }
+    const { d, part } = brainField(p)
+    if (Math.abs(d) > 2e-3) continue
+    // La face interne d'un hémisphère (contre la scissure) ne se voit pas : on n'y met rien.
+    if (part === "cortex" && Math.abs(p[2]) < FISSURE + 0.02) continue
+    const g = gradient(p)
+    const len = Math.hypot(g[0], g[1], g[2]) || 1
+    raw.push({ p, n: [g[0] / len, g[1] / len, g[2] / len], part })
+  }
+  const lo: V3 = [Infinity, Infinity, Infinity]
+  const hi: V3 = [-Infinity, -Infinity, -Infinity]
+  for (const { p } of raw) for (let a = 0; a < 3; a++) {
+    lo[a] = Math.min(lo[a], p[a])
+    hi[a] = Math.max(hi[a], p[a])
+  }
+  const mid: V3 = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, 0]
+  const k = (2 * HALF_LENGTH) / (hi[0] - lo[0])
+  surfaceCache = raw.map((s) => ({ ...s, p: [(s.p[0] - mid[0]) * k, (s.p[1] - mid[1]) * k, s.p[2] * k] as V3 }))
+  return surfaceCache
+}
+
+/** Place de chaque zone sur le cortex (indices dans la surface), aussi éloignées que possible les unes des autres. */
+export function zoneAnchors(n: number): number[] {
+  const surface = brainSurface()
+  // Le dessus et les flancs du cortex, pas le dessous : c'est ce qu'on voit.
+  const eligible = surface.map((s, i) => i).filter((i) => surface[i].part === "cortex" && surface[i].n[1] > -0.45 && Math.abs(surface[i].n[2]) < 0.97)
+  if (n <= 0 || eligible.length === 0) return []
+  const start: V3 = [HALF_LENGTH * 0.55, HALF_LENGTH * 0.45, HALF_LENGTH * 0.35]
+  const first = eligible.reduce((best, i) => (dist2(surface[i].p, start) < dist2(surface[best].p, start) ? i : best), eligible[0])
+  const anchors = [first]
+  const near = eligible.map((i) => dist2(surface[i].p, surface[first].p))
+  while (anchors.length < n) {
+    let far = 0
+    for (let j = 1; j < eligible.length; j++) if (near[j] > near[far]) far = j
+    anchors.push(eligible[far])
+    for (let j = 0; j < eligible.length; j++) near[j] = Math.min(near[j], dist2(surface[eligible[j]].p, surface[eligible[far]].p))
+  }
+  return anchors
+}
+
+/** Zone la plus proche de chaque point de surface (-1 hors du cortex) : découpe le cortex en territoires. */
+export function territories(anchors: number[]): number[] {
+  const surface = brainSurface()
+  return surface.map((s) => {
+    if (s.part !== "cortex" || anchors.length === 0) return -1
+    let best = 0
+    for (let z = 1; z < anchors.length; z++) if (dist2(s.p, surface[anchors[z]].p) < dist2(s.p, surface[anchors[best]].p)) best = z
+    return best
+  })
+}
+
+/** Billes d'une zone : des points de son territoire autour de sa place, espacés, à l'écart du centre de zone. */
+export function zoneNodes(anchors: number[], owner: number[], zone: number, count: number): number[] {
+  const surface = brainSurface()
+  const a = surface[anchors[zone]].p
+  const order = surface.map((_, i) => i).filter((i) => owner[i] === zone && dist2(surface[i].p, a) > 0.06 ** 2)
+  order.sort((i, j) => dist2(surface[i].p, a) - dist2(surface[j].p, a))
+  const out: number[] = []
+  for (const i of order) {
+    if (out.length >= count) break
+    if (out.some((j) => dist2(surface[i].p, surface[j].p) < 0.075 ** 2)) continue
+    out.push(i)
+  }
+  return out
+}
+
+export type BrainNetwork = { points: V3[]; normals: V3[]; zone: number[]; depth: number[]; edges: [number, number][] }
+
+/** Couches du réseau : la surface, puis deux couches internes, plus diffuses, qui donnent du volume. */
+const LAYERS = [
+  { k: 1, spacing: 0.135 },
+  { k: 0.72, spacing: 0.17 },
+  { k: 0.44, spacing: 0.18 },
+]
+
+/**
+ * Le réseau qui dessine le cerveau : des neurones espacés sur la surface et sur deux couches internes
+ * (la surface rétrécie vers le cœur de chaque partie), chacun relié à ses plus proches voisins de la même
+ * couche, et chaque neurone interne relié au plus proche de la couche au-dessus. Aucune liaison ne
+ * traverse la scissure, pour que les deux hémisphères se lisent.
+ */
+export function brainNetwork(owner: number[]): BrainNetwork {
+  const surface = brainSurface()
+  // Cœur de chaque partie (chaque hémisphère, cervelet, tronc) : les couches internes s'y resserrent.
+  const keyOf = (s: SurfacePoint) => (s.part === "cortex" ? (s.p[2] < 0 ? "left" : "right") : s.part)
+  const sums = new Map<string, { c: V3; n: number }>()
+  for (const s of surface) {
+    const acc = sums.get(keyOf(s)) ?? { c: [0, 0, 0] as V3, n: 0 }
+    acc.c = [acc.c[0] + s.p[0], acc.c[1] + s.p[1], acc.c[2] + s.p[2]]
+    acc.n++
+    sums.set(keyOf(s), acc)
+  }
+  const core = (s: SurfacePoint): V3 => {
+    const { c, n } = sums.get(keyOf(s))!
+    return [c[0] / n, c[1] / n, c[2] / n]
+  }
+
+  const points: V3[] = []
+  const normals: V3[] = []
+  const zone: number[] = []
+  const depth: number[] = []
+  const part: Part[] = []
+  const layerOf: number[][] = []
+  LAYERS.forEach(({ k, spacing }, d) => {
+    const mine: number[] = []
+    for (let i = 0; i < surface.length; i++) {
+      const s = surface[i]
+      const c = core(s)
+      const p: V3 = [c[0] + (s.p[0] - c[0]) * k, c[1] + (s.p[1] - c[1]) * k, c[2] + (s.p[2] - c[2]) * k]
+      if (mine.some((j) => dist2(p, points[j]) < spacing ** 2)) continue
+      mine.push(points.length)
+      points.push(p)
+      normals.push(s.n)
+      zone.push(owner[i] ?? -1)
+      depth.push(d)
+      part.push(s.part)
+    }
+    layerOf.push(mine)
+  })
+
+  const seen = new Set<string>()
+  const edges: [number, number][] = []
+  const link = (i: number, j: number) => {
+    const key = i < j ? `${i}-${j}` : `${j}-${i}`
+    if (seen.has(key)) return
+    seen.add(key)
+    edges.push(i < j ? [i, j] : [j, i])
+  }
+  const crosses = (i: number, j: number) => part[i] === "cortex" && part[j] === "cortex" && points[i][2] * points[j][2] < 0
+  const nearest = (i: number, among: number[], reach: number, count: number) =>
+    among
+      .map((j) => [j, dist2(points[i], points[j])] as const)
+      .filter(([j, d]) => j !== i && d < reach && !crosses(i, j))
+      .sort((x, y) => x[1] - y[1])
+      .slice(0, count)
+  LAYERS.forEach(({ spacing }, d) => {
+    for (const i of layerOf[d]) {
+      for (const [j] of nearest(i, layerOf[d], (spacing * 2.1) ** 2, 4)) link(i, j)
+      if (d > 0) for (const [j] of nearest(i, layerOf[d - 1], (spacing * 3) ** 2, 2)) link(i, j)
+    }
+  })
+  return { points, normals, zone, depth, edges }
+}
+
+export type Curves = { positions: Float32Array; a: Uint32Array; b: Uint32Array; t: Float32Array }
+
+/**
+ * Les liaisons en courbes : chaque liaison est un arc de Bézier qui se bombe le long de la surface
+ * (il l'épouse au lieu de la couper) et s'incline un peu de côté, pour un tracé arrondi, organique.
+ * Rendu en segments : pour chaque sommet, les deux neurones de la liaison et la position t le long de l'arc.
+ */
+export function curveNetwork(net: BrainNetwork, steps = 10): Curves {
+  const n = net.edges.length * steps * 2
+  const positions = new Float32Array(n * 3)
+  const a = new Uint32Array(n)
+  const b = new Uint32Array(n)
+  const t = new Float32Array(n)
+  let v = 0
+  net.edges.forEach(([i, j], e) => {
+    const A = net.points[i]
+    const B = net.points[j]
+    const d: V3 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]]
+    const len = Math.hypot(d[0], d[1], d[2]) || 1
+    const nm: V3 = [net.normals[i][0] + net.normals[j][0], net.normals[i][1] + net.normals[j][1], net.normals[i][2] + net.normals[j][2]]
+    const nl = Math.hypot(nm[0], nm[1], nm[2]) || 1
+    // De côté : perpendiculaire à la liaison, dans le plan de la surface ; le sens alterne d'une liaison à l'autre.
+    const side: V3 = [d[1] * nm[2] - d[2] * nm[1], d[2] * nm[0] - d[0] * nm[2], d[0] * nm[1] - d[1] * nm[0]]
+    const sl = Math.hypot(side[0], side[1], side[2]) || 1
+    const bulge = len * 0.2
+    const sway = len * (e % 2 === 0 ? 0.16 : -0.16)
+    const C: V3 = [0, 1, 2].map((k) => (A[k] + B[k]) / 2 + (nm[k] / nl) * bulge + (side[k] / sl) * sway) as V3
+    const at = (u: number): V3 => [0, 1, 2].map((k) => (1 - u) ** 2 * A[k] + 2 * (1 - u) * u * C[k] + u ** 2 * B[k]) as V3
+    for (let s = 0; s < steps; s++) {
+      for (const u of [s / steps, (s + 1) / steps]) {
+        positions.set(at(u), v * 3)
+        a[v] = i
+        b[v] = j
+        t[v] = u
+        v++
+      }
+    }
+  })
+  return { positions, a, b, t }
+}
+
+/**
+ * Couleur de chaque sommet des courbes : dégradé entre les couleurs de ses deux neurones (`base`, 3 valeurs par
+ * neurone), pâli vers le fond `bg` sur la face cachée (`fade` × `back`).
+ */
+export function shadeCurves(c: Curves, base: Float32Array, fade: Float32Array, back: number, bg: V3, out: Float32Array): void {
+  for (let v = 0; v < c.t.length; v++) {
+    const i = c.a[v]
+    const j = c.b[v]
+    const u = c.t[v]
+    const f = (fade[i] * (1 - u) + fade[j] * u) * back
+    for (let k = 0; k < 3; k++) {
+      const col = base[i * 3 + k] * (1 - u) + base[j * 3 + k] * u
+      out[v * 3 + k] = col + (bg[k] - col) * f
+    }
+  }
+}
+
+/**
+ * Arc entre deux zones : une courbe de Bézier bombée vers l'extérieur, plus marquée pour les zones
+ * éloignées, mais dont le sommet ne dépasse jamais la surface : l'arc reste dans la silhouette.
+ */
+export function arcBetween(a: V3, b: V3, steps = 40): V3[] {
+  const mid: V3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]
+  const m = Math.hypot(mid[0], mid[1], mid[2])
+  const dir: V3 = m > 1e-3 ? [mid[0] / m, mid[1] / m, mid[2] / m] : [0, 1, 0]
+  const chord = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])
+  const peak = Math.min(0.9 * Math.max(Math.hypot(a[0], a[1], a[2]), Math.hypot(b[0], b[1], b[2])), m + chord * 0.3)
+  // Le sommet d'une Bézier quadratique est à mi-chemin entre le milieu de la corde et le point de contrôle.
+  const C: V3 = [dir[0] * (2 * peak - m), dir[1] * (2 * peak - m), dir[2] * (2 * peak - m)]
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps
+    return [0, 1, 2].map((k) => (1 - u) ** 2 * a[k] + 2 * (1 - u) * u * C[k] + u ** 2 * b[k]) as V3
+  })
+}
+
+/** Liens entre connaissances : chacune reliée à ses plus proches voisines, quelle que soit leur zone. */
+export function knowledgeLinks(points: V3[], count = 2, reach = 0.75): [number, number][] {
+  const seen = new Set<string>()
+  const out: [number, number][] = []
+  points.forEach((p, i) => {
+    const near = points
+      .map((q, j) => [j, dist2(p, q)] as const)
+      .filter(([j, d]) => j !== i && d < reach ** 2)
+      .sort((x, y) => x[1] - y[1])
+      .slice(0, count)
+    for (const [j] of near) {
+      const key = i < j ? `${i}-${j}` : `${j}-${i}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(i < j ? [i, j] : [j, i])
+    }
+  })
+  return out
+}
+
+/** Des lignes (droites ou courbes) en segments, chacune en dégradé de `from` à `to` : positions et couleurs prêtes pour un LineSegments. */
+export function gradientSegments(lines: { pts: V3[]; from: number[]; to: number[] }[]): { positions: Float32Array; colors: Float32Array } {
+  const n = lines.reduce((sum, l) => sum + (l.pts.length - 1) * 2, 0)
+  const positions = new Float32Array(n * 3)
+  const colors = new Float32Array(n * 3)
+  let v = 0
+  for (const { pts, from, to } of lines) {
+    for (let k = 0; k < pts.length - 1; k++) {
+      for (const m of [k, k + 1]) {
+        const u = m / (pts.length - 1)
+        positions.set(pts[m], v * 3)
+        colors.set([0, 1, 2].map((c) => from[c] + (to[c] - from[c]) * u), v * 3)
+        v++
+      }
+    }
+  }
+  return { positions, colors }
+}
+
+/**
+ * Estompe de la face cachée : 0 pour un neurone tourné vers la caméra, 1 pour un neurone de dos.
+ * `cam` est la position de la caméra dans le repère du cerveau.
+ */
+export function backFade(net: BrainNetwork, cam: V3, out: Float32Array): void {
+  for (let i = 0; i < net.points.length; i++) {
+    const p = net.points[i]
+    const n = net.normals[i]
+    const vx = cam[0] - p[0]
+    const vy = cam[1] - p[1]
+    const vz = cam[2] - p[2]
+    const facing = (n[0] * vx + n[1] * vy + n[2] * vz) / (Math.hypot(vx, vy, vz) || 1)
+    const t = Math.min(1, Math.max(0, (0.3 - facing) / 0.45))
+    out[i] = t * t * (3 - 2 * t)
+  }
+}
+
+/** Direction voisine, pour disperser des points autour d'une direction. */
 export function scatter(dir: [number, number, number], rand: () => number, spread: number): [number, number, number] {
   const v: [number, number, number] = [dir[0] + (rand() - 0.5) * spread, dir[1] + (rand() - 0.5) * spread, dir[2] + (rand() - 0.5) * spread]
   const len = Math.hypot(v[0], v[1], v[2]) || 1

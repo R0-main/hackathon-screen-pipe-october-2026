@@ -1,5 +1,6 @@
 import { viewerFromRequest, type Viewer } from "@/lib/auth"
 import { createEventPoller, streamStartId, visibleEvent } from "@/lib/brain"
+import { runInOrg } from "@/lib/store"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -24,6 +25,11 @@ function parseId(raw: string | null): number | null {
 export async function GET(req: Request) {
   const initial = await viewerFromRequest(req)
   if (!initial) return new Response("Non authentifié", { status: 401 })
+  // Le lecteur d'événements et ses minuteries héritent du contexte : ils ne lisent que l'entreprise du compte.
+  return runInOrg(initial.real.org_id, () => stream(req, initial))
+}
+
+async function stream(req: Request, initial: Viewer) {
   let viewer: Viewer = initial
   const url = new URL(req.url)
   const poller = createEventPoller(await streamStartId(parseId(req.headers.get("last-event-id")) ?? parseId(url.searchParams.get("after"))))

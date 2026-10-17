@@ -34,7 +34,7 @@ const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!
  * il passe en plein écran et tourne pendant trois chapitres, puis la page reprend son cours.
  * Sans JavaScript ou sous `prefers-reduced-motion`, les chapitres se lisent à la suite, cerveau immobile.
  */
-export function Landing({ demo, signedIn = false }: { demo: boolean; signedIn?: boolean }) {
+export function Landing({ demo, signup, signedIn = false }: { demo: boolean; signup: boolean; signedIn?: boolean }) {
   const rootRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLElement>(null)
   const heroRef = useRef<HTMLDivElement>(null)
@@ -116,8 +116,11 @@ export function Landing({ demo, signedIn = false }: { demo: boolean; signedIn?: 
     lenis.scrollTo(st.start + (st.end - st.start) * 0.2, { duration: 1.6 })
   }
 
-  // Déjà connecté : droit au dashboard. Sinon la démo (mode démo) ou la connexion par jeton.
-  const cta = signedIn ? { href: "/dashboard", label: "Ouvrir le dashboard" } : demo ? { href: "/demo", label: "Ouvrir la démo" } : { href: "/login", label: "Se connecter" }
+  // Déjà connecté : droit au dashboard. Sinon créer son entreprise, et à côté la démo (mode démo) ou la connexion par jeton.
+  const visit = demo ? { href: "/demo", label: "Ouvrir la démo" } : { href: "/login", label: "Se connecter" }
+  const create = { href: "/creer", label: "Créer mon entreprise" }
+  const cta = signedIn ? { href: "/dashboard", label: "Ouvrir le dashboard" } : signup ? create : visit
+  const second = !signedIn && signup ? visit : null
   const primary = cta.label
 
   return (
@@ -136,6 +139,11 @@ export function Landing({ demo, signedIn = false }: { demo: boolean; signedIn?: 
                 {demo && !signedIn && (
                   <Link href="/login" className="btn btn-ghost hidden sm:inline-flex">
                     Se connecter
+                  </Link>
+                )}
+                {second && demo && (
+                  <Link href={second.href} className="btn btn-ghost hidden md:inline-flex">
+                    {second.label}
                   </Link>
                 )}
                 <Link href={cta.href} className="btn btn-primary">
@@ -157,6 +165,11 @@ export function Landing({ demo, signedIn = false }: { demo: boolean; signedIn?: 
                 <Link href={cta.href} className="btn btn-primary btn-lg">
                   {primary}
                 </Link>
+                {second && (
+                  <Link href={second.href} className="btn btn-lg">
+                    {second.label}
+                  </Link>
+                )}
                 <a href="#chapitres" onClick={toChapters} className="landing-link text-[15px]">
                   Voir comment ça marche
                 </a>
@@ -209,9 +222,9 @@ export function Landing({ demo, signedIn = false }: { demo: boolean; signedIn?: 
       <div data-after className="relative">
         <span data-thread className="landing-thread" aria-hidden />
         <Dashboard />
-        <Install demo={demo} />
+        <Install demo={demo} signup={signup} />
         <Privacy />
-        <Close cta={cta} demo={demo} />
+        <Close cta={cta} second={second} demo={demo} signup={signup && !signedIn} />
       </div>
     </main>
   )
@@ -283,7 +296,7 @@ function Dashboard() {
   )
 }
 
-function Install({ demo }: { demo: boolean }) {
+function Install({ demo, signup }: { demo: boolean; signup: boolean }) {
   return (
     <section className="landing-section relative border-t border-line" aria-labelledby="installer">
       <Bead />
@@ -300,7 +313,7 @@ function Install({ demo }: { demo: boolean }) {
             <p className="mt-4">Aucun historique n'est envoyé : le cerveau apprend à partir de l'installation. Ensuite, il n'y a plus rien à faire.</p>
           </div>
           <div data-reveal="panel">
-            <InstallActions demo={demo} />
+            <InstallActions demo={demo} signup={signup} />
           </div>
         </div>
       </div>
@@ -344,21 +357,32 @@ function Privacy() {
   )
 }
 
-function Close({ cta, demo }: { cta: { href: string; label: string }; demo: boolean }) {
+type Cta = { href: string; label: string }
+
+function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; demo: boolean; signup: boolean }) {
   return (
     <section data-close className="landing-section relative !pb-10 border-t border-line" aria-labelledby="fin">
       <Bead />
       <div className="landing-wrap">
         <h2 id="fin" data-reveal="title" className="landing-display max-w-[10em]">
-          Ouvrez le cerveau de Fournil.
+          {signup ? "Donnez un cerveau à votre entreprise." : "Ouvrez le cerveau de Fournil."}
         </h2>
         <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-          {demo ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta." : "Connectez-vous avec le jeton que votre admin vous a remis."}
+          {signup
+            ? "Quatre questions pour créer votre dashboard, un prompt à coller dans Claude Code pour brancher votre poste, puis un prompt par collègue pour les inviter."
+            : demo
+              ? "Connexion en un clic avec l'un des six comptes de la démo, de la CEO à la compta."
+              : "Connectez-vous avec le jeton que votre admin vous a remis."}
         </p>
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap gap-3">
           <Link href={cta.href} className="btn btn-primary btn-lg">
             {cta.label}
           </Link>
+          {second && (
+            <Link href={second.href} className="btn btn-lg">
+              {second.label}
+            </Link>
+          )}
         </div>
       </div>
       <footer className="landing-wrap mt-[clamp(96px,12vw,160px)] flex flex-col gap-2 border-t border-line pt-6 text-[13px] text-trace sm:flex-row sm:justify-between">

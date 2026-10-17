@@ -16,7 +16,7 @@ Prérequis : Node.js ≥ 20.
 
 ```bash
 npm install
-npm run seed                 # entreprise fictive « Fournil » : 6 comptes, 34 connaissances, 10 jours d'activité
+npm run seed                 # entreprise fictive « Fournil » : 6 comptes, 5 skills, 34 connaissances, 10 jours d'activité
 BRAIN_DEMO=1 npm run dev     # http://localhost:3000/demo → connexion en un clic (mode démo)
 npm run simulate             # dans un 2e terminal : des agents travaillent, le cerveau s'allume
 ```
@@ -46,9 +46,11 @@ demo/                 Script de démo
 |---|---|---|
 | **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »). Pages séparées : agents en direct (`/activite`), « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
 | **Équipe & accès** | `/admin` | Organigramme (qui est rattaché à qui, agents actifs, zones de chacun ; cliquer une carte pour régler rattachement, rôle et zones), matrice membres × zones, invitation → prompt d'installation avec jeton personnel. |
+| **Skills** | `/skills` | Les skills Claude Code de l'entreprise (SKILL.md et les scripts qu'ils utilisent), regroupés par cortex. Publier demande un droit accordé dans `/admin` (les admins l'ont toujours) ; un skill attribué à un cortex (une zone) n'est donné qu'à ceux qui lisent cette zone. Un script qui contient un secret est refusé. |
 | **Onboarding** | `/onboarding` | Interview guidée de 7 questions + lecture des liens → zones et premières connaissances, validées avant application. |
 | **Passation** | `/people/:id` | Zones, sujets, prompts fréquents et connaissances d'un poste (et droit de regard : l'employé supprime ses items). |
 | **brain-sync** | `brain.mjs sync` | Lit les logs Claude Code / Codex et l'API locale de Screenpipe, filtre (liste blanche d'apps, secrets, données perso), distille avec Claude, envoie. `--dry-run --full` montre tout ce qui partirait, `--confirm` envoie exactement ce qui a été relu. |
+| **Skills sur le poste** | `brain.mjs skills` | Installe dans `~/.claude/skills` les skills attribués au poste (après chaque synchro et au `setup`), retire ceux qui ne le sont plus, ne touche jamais un skill personnel. `skills push <dossier> --cortex <zone>` publie un dossier. |
 | **État par Claude** | `brain.mjs refresh-status` | Admins : rédige « où en est la boîte » sur le poste avec Claude (abonnement) et l'envoie au dashboard. |
 | **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. |
 | **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
@@ -67,8 +69,48 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET | `/api/stream` | Flux SSE des événements, filtré selon les droits. |
 | GET/POST | `/api/status` | État de l'entreprise (titre global réservé à qui lit toutes les zones). POST admin : sans corps, recalcul côté serveur ; avec `{status}`, résumé rédigé sur un poste. |
 | GET | `/api/status/input` | Admin : matière du résumé (30 derniers jours) pour `refresh-status`. |
+| GET/POST | `/api/skills` | Skills reçus par la personne (toute l'entreprise + ses cortex), fichiers compris. POST `{name, description, zone?, files: [{path, content}]}` : publie (droit requis), même nom → version suivante. |
+| PATCH/DELETE | `/api/skills/:id` | `{zone}` : attribue le skill à un cortex (`null` : toute l'entreprise). Auteur ou admin. |
 | GET/POST/PATCH | `/api/automations…` | Suggestions (heuristique + workflows Screenpipe), validation par un admin. |
+| POST | `/api/orgs` | Public (sauf `BRAIN_SIGNUP=0`) : crée une entreprise et son admin, ouvre la session, renvoie son prompt d'installation. |
+| POST | `/api/join`, `/api/join/status` | Public : demande pour rejoindre avec le code du message d'équipe (empreinte du jeton du poste), puis son état (pour qui détient le jeton). |
+| GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin : message d'équipe et demandes en attente, changer le code ; accepter (compte créé tel que réglé) ou refuser. |
+| GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
+
+## Créer son entreprise à partir de zéro
+
+Sur la page d'accueil, **Créer mon entreprise** (`/creer`) : quatre questions, une par écran (nom, activité, qui
+vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en êtes l'admin. Ensuite :
+
+1. **Votre poste** : copiez le prompt (ou « Ouvrir dans Claude Code ») et collez-le dans Claude Code. Il installe tout
+   comme la démo de la page d'accueil ; la page passe à « Votre poste est connecté » dès le premier signe de son agent.
+2. **Votre équipe**, de deux façons (sur cette page, puis dans Équipe et accès) :
+   - **un message par personne** : un nom, les zones qu'elle lit, et son prompt (avec son propre jeton) est copié.
+     Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté ;
+   - **un seul message pour toute l'équipe** (Équipe et accès, puis Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
+     collègues. Le Claude de chacun remplit la demande avec ce qu'il sait déjà (nom, poste, email ; rien d'inventé,
+     le reste reste vide), et `brain join` l'envoie puis attend. Un admin la complète (poste, rôle, zones,
+     rattachement) et l'accepte : le poste termine alors son installation tout seul. Le code ne donne accès à rien ;
+     le jeton est créé sur le poste et seule son empreinte part avec la demande. « Changer le code » invalide
+     l'ancien message. Code de sortie 5 : toujours en attente (`~/.company-brain/brain join` reprend la même
+     demande) ; 6 : refusée.
+
+Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
+Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
+organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_settings`, sans migration ; fichier :
+`<BRAIN_DATA_DIR>/orgs/<id>/`). Un jeton ou une session désigne son entreprise, et chaque route lit la sienne.
+`BRAIN_SIGNUP=0` ferme la création, `BRAIN_MAX_ORGS` la plafonne (200 par défaut).
+
+### Remplir le cerveau depuis ses anciennes conversations
+
+Page **Onboarding** (admins) : « Le faire remplir par Claude Code ou Codex ». Le prompt copié fait lire à l'agent
+l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README des projets, en tirer les zones et
+10 à 40 premières connaissances (jamais de secrets ni de données perso), puis les envoyer avec un code d'envoi
+valable 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin seulement). La page se remplit toute seule avec la
+proposition, masquée à nouveau côté serveur ; rien n'est appliqué avant que l'admin l'ait relue et validée.
+L'interview en 7 questions reste disponible en dessous. Le lien est aussi proposé à la fin de `/creer`, et la page
+`/demo` propose « Créer mon dashboard ».
 
 ## Brancher un vrai poste
 
@@ -113,6 +155,7 @@ Variables : voir [apps/web/.env.example](apps/web/.env.example).
 - Côté serveur : nouveau masquage à l'ingestion, lecture filtrée par zone sur **toutes** les routes (même règle que les politiques RLS SQL), jetons stockés hachés, secret de session aléatoire conservé en base et lié au jeton, protection SSRF vérifiée à la connexion sur le scraping d'onboarding.
 - Activité : une zone s'allume pour tout le monde, mais le contenu d'un événement (résumé, empreinte) n'est visible que de la personne concernée, des admins, ou de qui lit **toutes** ses zones. Une recherche ne garde son texte que si elle ne touche aucune zone illisible pour la personne qui cherche et n'a rien de personnel.
 - Écriture : tout le monde nourrit le cerveau, dans n'importe quelle zone existante ; seule la lecture est restreinte (`zone_access.can_write` est réservé). Doublons écartés (même auteur, même zone, même titre et même contenu sur 30 jours).
+- Skills : publication réservée aux admins et aux membres autorisés, vers un cortex qu'ils lisent ; distribution limitée aux lecteurs du cortex (même règle que la politique RLS « skills par cortex ») ; fichiers texte aux chemins relatifs vérifiés, refusés s'ils contiennent un secret ; le client n'écrit que dans les dossiers qu'il a créés.
 - Droit de regard : chaque personne voit et supprime les connaissances issues de son poste, y compris celles rangées dans une zone qu'elle ne peut pas lire.
 - À trancher avant une vraie mise en production : consentement des salariés et information CSE, durée de conservation, hébergement UE, audit des accès.
 
