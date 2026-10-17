@@ -103,8 +103,8 @@ private_start() {
     printf 'CREATE DATABASE "%s";\n' "$PG_DB" | "$PRIVATE/bin/postgres" --single -D "$PRIVATE/data" postgres >/dev/null 2>&1 \
       || fail "Création de la base « $PG_DB » impossible."
   fi
-  mkdir -p "$PRIVATE/run"
-  pg_ctl_ -l "$PRIVATE/postgres.log" -w -t 60 -o "-p $PG_PORT -k $PRIVATE/run -c listen_addresses=127.0.0.1" start >/dev/null \
+  # Connexion en TCP seulement : pas de socket Unix, dont le chemin ne doit pas dépasser 107 caractères (dossiers profonds).
+  pg_ctl_ -l "$PRIVATE/postgres.log" -w -t 60 -o "-p $PG_PORT -k '' -c listen_addresses=127.0.0.1" start >/dev/null \
     || fail "Postgres privé ne démarre pas : $PRIVATE/postgres.log"
   say "Postgres privé prêt sur le port $PG_PORT (données : $PRIVATE/data)."
 }
