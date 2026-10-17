@@ -98,3 +98,8 @@ export async function api<T = unknown>(path: string, init?: RequestInit & { json
   }
   return data as T
 }
+
+/** Lien vers la page d'une entité (tout ce qui la concerne). Hors de KnowledgeList (« use client ») : les pages serveur l'appellent aussi. */
+export function entityHref(type: string, name: string): string {
+  return `/entites/${encodeURIComponent(type)}/${encodeURIComponent(name)}`
+}

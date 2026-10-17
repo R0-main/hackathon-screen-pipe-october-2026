@@ -32,7 +32,7 @@ test("prompt d'installation : une seule commande par système (install.sh ou ins
   assert.equal(prompt.split(EXAMPLE.token).length, 3)
   assert.match(prompt, /Code 3 \(« EN ATTENTE »\)/)
   assert.match(prompt, /Code 5 : réseau ou adresse, relance la même commande/)
-  assert.match(prompt, /brain doctor --json`, explique simplement chaque point KO et lance les corrections marquées « safe » \(même délai\)/)
+  assert.match(prompt, /brain doctor --json` et les corrections marquées « safe » \(même délai\), puis dis-moi en une phrase ce qui reste à faire/)
   assert.match(prompt, /délai de 10 minutes/)
   // Ni prérequis à vérifier à la main ni étapes séparées : les scripts et setup s'en chargent.
   assert.ok(!/node -v|winget|install-schedule|install-hooks|claude mcp add/.test(prompt))
@@ -94,7 +94,7 @@ test("message d'équipe : une commande par système (install.sh ou install.ps1 -
   assert.match(joinPrompt, /Code 5 : réseau ou adresse, relance la même commande/)
   assert.match(joinPrompt, /brain doctor --json`/)
   assert.match(joinPrompt, /d'entreprise d'Atelier Lumen/, "élision")
-  assert.ok(joinPrompt.length < 3000, `message court (${joinPrompt.length} caractères)`)
+  assert.ok(joinPrompt.length < 3200, `message court (${joinPrompt.length} caractères)`)
 })
 
 test("codes de sortie : un code, un sens, pour les scripts, setup et join", () => {
@@ -137,6 +137,13 @@ test("prompt d'onboarding par un agent : lit l'historique, envoie sans rien appl
 test("prompts : une session Claude Code dans le cloud s'arrête au lieu d'agir hors du poste", () => {
   for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
     assert.match(p, /Si tu ne tournes pas sur mon poste \(session cloud, conteneur distant\), arrête-toi/)
+  }
+})
+
+test("prompts : une action bloquée se règle en une phrase, sans contourner ni lister d'options", () => {
+  for (const p of [prompt, joinPrompt, buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code: "co_x", orgName: "Fournil", zones: [] })]) {
+    assert.match(p, /Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire/)
+    assert.match(p, /sans liste ni explication/)
   }
 })
 
