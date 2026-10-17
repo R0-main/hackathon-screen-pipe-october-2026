@@ -106,9 +106,31 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 | `--wait <secondes>` | Attente des autorisations macOS (300 par défaut). |
 | `--no-open` | N'ouvre pas le navigateur. |
 | `--skip-screenpipe` | Sans Screenpipe : brain-sync lit seulement les sessions Claude Code et Codex. |
+| `--ca <pem>` | Cerveau auto-hébergé en HTTPS local : certificat de son autorité privée, auquel le client fait confiance (voir ci-dessous). |
 
 Tout retirer : `~/.company-brain/brain uninstall` (hooks, MCP, skills de l'entreprise, synchro, service Screenpipe ; `--purge` efface aussi
 `~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
+
+## Cerveau auto-hébergé (HTTPS sur le réseau local)
+
+Quand le cerveau tourne sur une machine de l'entreprise ([docs/LOCAL.md](../docs/LOCAL.md)), il est servi en HTTPS par une
+autorité privée que les postes ne connaissent pas encore. Le prompt change alors d'une seule ligne : la commande récupère
+d'abord le certificat (`/ca.crt`), vérifie son empreinte SHA-256 (épinglée dans le prompt, calculée par le serveur depuis
+`BRAIN_CA_FILE`), et ne continue que si elle correspond ; `install.sh` télécharge ensuite `brain.mjs` avec ce certificat
+et `setup --ca` l'enregistre pour le client (synchro, MCP, hooks) et l'installe pour les navigateurs du poste.
+Un certificat public (cloud) : rien de tout cela n'apparaît.
+
+```text
+Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois, zones : compta.
+Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`).
+
+1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
+2. Lance cette commande telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
+   mkdir -p ~/.company-brain && curl -ksSL https://192.168.1.20/ca.crt -o ~/.company-brain/ca.crt && [ "$(openssl x509 -in ~/.company-brain/ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "57A3ACBF1A89EFD08B67BFA91AB261072FB73EC1C5A0102D2B6BF584C7201C49" ] && curl -fsSL --cacert ~/.company-brain/ca.crt https://192.168.1.20/install.sh -o ~/.company-brain/install.sh && sh ~/.company-brain/install.sh --url https://192.168.1.20 --token cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX --ca ~/.company-brain/ca.crt
+   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; si cette vérification échoue, arrête-toi et préviens-moi.)
+3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. Code 3 (« EN ATTENTE ») : redis-moi où cocher, puis relance `~/.company-brain/brain setup`. Autre erreur : explique-la simplement et relance `~/.company-brain/brain setup`, qui reprend où il s'était arrêté (`~/.company-brain/brain status` donne l'état).
+4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (`~/.company-brain/brain uninstall`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord `~/.company-brain/brain sync --dry-run --full --since 24h` en entier ; rien ne part avant mon accord explicite, puis `~/.company-brain/brain sync --confirm` envoie exactement ce que j'ai relu.
+```
 
 ## Le message d'équipe (rejoindre sur demande)
 

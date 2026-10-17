@@ -1,0 +1,64 @@
+# Cerveau d'entreprise sur une machine de l'entreprise, joignable sur le réseau local en HTTPS.
+# Lancement : sh deploy/local/brain-local.sh up   (écrit .env, construit, démarre, affiche l'adresse). Doc : docs/LOCAL.md
+name: company-brain
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: brain
+      POSTGRES_USER: brain
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Définissez POSTGRES_PASSWORD dans .env (sh deploy/local/brain-local.sh up le fait)}
+    volumes:
+      - brain-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brain -d brain"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  brain:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://brain:${POSTGRES_PASSWORD}@postgres:5432/brain
+      # Postgres du réseau Docker, sans TLS (le trafic ne quitte pas la machine).
+      DATABASE_SSL: disable
+      BRAIN_PUBLIC_URL: https://${BRAIN_HOST:-localhost}
+      # Certificat racine de l'autorité privée de Caddy (volume partagé, lecture seule) : servi sur /ca.crt, épinglé dans les prompts.
+      BRAIN_CA_FILE: ${BRAIN_CA_FILE:-/caddy/caddy/pki/authorities/local/root.crt}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      BRAIN_DEMO: ${BRAIN_DEMO:-}
+      BRAIN_SIGNUP: ${BRAIN_SIGNUP:-}
+      BRAIN_TIMEZONE: ${BRAIN_TIMEZONE:-Europe/Paris}
+    volumes:
+      - caddy-data:/caddy:ro
+      - ./deploy/local/certs:/certs:ro
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - brain
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Noms et adresses du cerveau sur le réseau local, tous dans le certificat : « localhost, 192.168.1.20, poste-compta.local »
+      BRAIN_HOSTS: ${BRAIN_HOSTS:-localhost}
+      # « internal » (autorité privée de Caddy) ou vos fichiers : « /certs/cert.pem /certs/key.pem » (dossier deploy/local/certs)
+      BRAIN_TLS: ${BRAIN_TLS:-internal}
+    volumes:
+      - ./deploy/local/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/local/certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  brain-postgres:
+  caddy-data:
+  caddy-config:

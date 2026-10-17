@@ -3,6 +3,8 @@
 #
 #   sh install.sh --url https://cerveau.example.com --token cb_…        (prompt personnel, jeton remis par un admin)
 #   sh install.sh --url https://cerveau.example.com --join cj_… --name …  (message d'équipe : demande à rejoindre)
+#   … --ca ~/.company-brain/ca.crt   (cerveau auto-hébergé en HTTPS local : certificat de son autorité, déjà vérifié par
+#                                     son empreinte dans le prompt ; sert au téléchargement puis au client)
 #
 # 1. Node.js : la copie privée ~/.company-brain/node si elle est à la version figée ci-dessous ; sinon un Node.js ≥ 20
 #    installé à demeure sur le système ; sinon installe la copie privée (macOS, Linux), sans droits administrateur, en
@@ -58,15 +60,19 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# --url (ou --url=…) : l'adresse du cerveau, d'où viennent le client et install.ps1. Toutes les options passent ensuite
-# telles quelles à setup, ou à join avec --join (message d'équipe).
+# --url (ou --url=…) : l'adresse du cerveau, d'où viennent le client et install.ps1. --ca : certificat (PEM) d'un cerveau
+# auto-hébergé, utilisé pour les téléchargements depuis le cerveau. Toutes les options passent ensuite telles quelles à
+# setup, ou à join avec --join (message d'équipe).
 url=""
+ca=""
 command="setup"
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--url" ]; then url="$arg"; fi
+  if [ "$prev" = "--ca" ]; then ca="$arg"; fi
   case "$arg" in
     --url=*) url="${arg#--url=}" ;;
+    --ca=*) ca="${arg#--ca=}" ;;
     --join | --join=*) command="join" ;;
   esac
   prev="$arg"
@@ -88,13 +94,28 @@ if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" = 0 ]; then
   fail 2 "Lance la commande sans sudo : l'installation se fait dans ta session, sans droits administrateur."
 fi
 command -v curl >/dev/null 2>&1 || fail 4 "curl est introuvable : installe-le (par exemple sudo apt install curl), puis relance la même commande."
+if [ -n "$ca" ] && [ ! -f "$ca" ]; then fail 2 "Certificat introuvable : $ca (option --ca)."; fi
 
 # Téléchargement : 3 nouvelles tentatives sur les erreurs passagères, délais bornés (jamais bloqué plus de 15 min).
-fetch() { curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 900 -o "$2" "$1"; }
+# Cerveau auto-hébergé (--ca) : son certificat ne sert qu'aux téléchargements depuis le cerveau, pas à nodejs.org.
+fetch() {
+  f_url="$1"
+  f_out="$2"
+  case "$f_url" in
+    "$url"/*)
+      if [ -n "$ca" ]; then
+        curl -fsSL --cacert "$ca" --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 900 -o "$f_out" "$f_url"
+        return
+      fi
+      ;;
+  esac
+  curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 900 -o "$f_out" "$f_url"
+}
 
 # Windows (Git Bash, MSYS2, Cygwin) : install.ps1 fait le travail (Node.js pour Windows, raccourci brain.cmd), dans le
 # dossier de l'utilisateur Windows (%USERPROFILE%, celui que lit Node.js), pas dans le HOME de Git Bash.
 run_windows() {
+  [ -z "$ca" ] || fail 4 "Cerveau auto-hébergé en HTTPS local (--ca) : pas encore pris en charge sous Windows (install.ps1 ne connaît pas le certificat privé)."
   command -v cygpath >/dev/null 2>&1 || fail 4 "Shell Windows sans cygpath : lance install.ps1 depuis PowerShell (powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 --url … --token …)."
   if [ -n "${COMPANY_BRAIN_HOME:-}" ]; then
     win_home="$(cygpath -u "$COMPANY_BRAIN_HOME")"

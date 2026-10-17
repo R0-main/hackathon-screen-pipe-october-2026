@@ -1,6 +1,7 @@
 import { getStore } from "@/lib/store"
 import { hashToken, isDemoMode, newToken } from "@/lib/auth"
 import { DEMO_VISITOR_TITLE, demoVisitorManager, ensureDemoBrain } from "@/lib/demo-seed"
+import { caFingerprint } from "@/lib/ca"
 import { buildInstallPrompt } from "@/lib/install-prompt"
 import { error, internalError, json, publicBaseUrl } from "@/lib/http"
 
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
     })
     await store.setZoneAccess(profile.id, zones.map((zone_id) => ({ zone_id, can_write: true })))
     const org = await store.getOrg()
-    return json({ prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones }) }, 201)
+    return json({ prompt: buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones, caFingerprint: caFingerprint() }) }, 201)
   } catch (err) {
     return internalError(err)
   }

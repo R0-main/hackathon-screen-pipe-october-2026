@@ -31,9 +31,21 @@ export const EXIT = { permissions: 3, download: 5, noScreenpipe: 6, joinPending:
  * « curl: (6) » serait lu comme « branché sans Screenpipe ») ; sous Windows, `exit $LASTEXITCODE` rend le code de setup
  * même quand la ligne est passée à `powershell -Command`.
  */
-export function installCommands(baseUrl: string, options = ""): { posix: string; windows: string } {
+export function installCommands(baseUrl: string, options = "", caFingerprint?: string): { posix: string; windows: string | null } {
   const dir = '"$env:USERPROFILE\\.company-brain'
   const args = `--url ${baseUrl}${options ? ` ${options}` : ""}`
+  if (caFingerprint) {
+    // Cerveau auto-hébergé en HTTPS local : son certificat est d'abord récupéré (sans vérification, il n'y a encore rien
+    // pour le vérifier), puis contrôlé par son empreinte SHA-256 donnée ici ; tout le reste passe par lui. Windows :
+    // install.ps1 ne connaît pas encore le certificat privé.
+    const check = `[ "$(openssl x509 -in ${CA_FILE} -noout -fingerprint -sha256 | cut -d= -f2 | tr -d :)" = "${caFingerprint}" ]`
+    return {
+      posix:
+        `mkdir -p ~/.company-brain && (curl -ksSL ${baseUrl}/ca.crt -o ${CA_FILE} || exit ${EXIT.download}) && ${check} && ` +
+        `(curl -fsSL --cacert ${CA_FILE} ${baseUrl}/install.sh -o ~/.company-brain/install.sh || exit ${EXIT.download}) && sh ~/.company-brain/install.sh ${args} --ca ${CA_FILE}`,
+      windows: null,
+    }
+  }
   return {
     posix: `(curl -fsSL --create-dirs ${baseUrl}/install.sh -o ~/.company-brain/install.sh || exit ${EXIT.download}) && sh ~/.company-brain/install.sh ${args}`,
     windows:
@@ -41,6 +53,11 @@ export function installCommands(baseUrl: string, options = ""): { posix: string;
       `try { Invoke-WebRequest -UseBasicParsing ${baseUrl}/install.ps1 -OutFile ${dir}\\install.ps1" -ErrorAction Stop } catch { exit ${EXIT.download} }; ` +
       `powershell -NoProfile -ExecutionPolicy Bypass -File ${dir}\\install.ps1" ${args}; exit $LASTEXITCODE`,
   }
+}
+
+/** Les deux lignes « système : commande » du prompt ; sans commande Windows (certificat privé), une phrase le dit. */
+function commandLines(cmd: { posix: string; windows: string | null }): string {
+  return `   macOS, Linux, Git Bash : ${cmd.posix}\n` + (cmd.windows ? `   Windows, PowerShell : ${cmd.windows}` : "   Windows : pas encore pris en charge pour un cerveau auto-hébergé en HTTPS local (utilise un Mac ou Linux).")
 }
 
 /** Ce que Claude fait des codes communs (setup, et join une fois la demande acceptée). */
@@ -53,23 +70,27 @@ function commonCodes(brain: string): string {
   )
 }
 
+/** Où install.sh et le client gardent le certificat d'un cerveau auto-hébergé. */
+export const CA_FILE = "~/.company-brain/ca.crt"
+
+const CA_NOTE = "   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; si cette vérification échoue, arrête-toi et préviens-moi.)\n"
+
 /** « de Fournil », « d'Atelier Lumen » : l'élision devant une voyelle ou un h. */
 export function deNom(name: string): string {
   return /^[aeiouyhàâäéèêëîïôöùûüœæ]/i.test(name.trim()) ? `d'${name.trim()}` : `de ${name.trim()}`
 }
 
-export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; zones: string[] }): string {
-  const { baseUrl, token, name, orgName, zones } = opts
+export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; zones: string[]; caFingerprint?: string }): string {
+  const { baseUrl, token, name, orgName, zones, caFingerprint } = opts
   const brain = BRAIN_CLI
-  const cmd = installCommands(baseUrl, `--token ${token}`)
+  const cmd = installCommands(baseUrl, `--token ${token}`, caFingerprint)
   return `Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise ${deNom(orgName)}. Je suis ${name}, zones : ${zones.join(", ") || "aucune pour l'instant"}.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY}
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
 2. Lance la commande de mon système telle quelle, en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée) :
-   macOS, Linux, Git Bash : ${cmd.posix}
-   Windows, PowerShell : ${cmd.windows}
-3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. ${commonCodes(brain)}
+${commandLines(cmd)}
+${caFingerprint ? CA_NOTE : ""}3. Code 0 : c'est fini, le cerveau s'est ouvert dans mon navigateur. ${commonCodes(brain)}
 4. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (\`${brain} uninstall\`). Propose enfin de faire apprendre au cerveau mes dernières 24 h : montre-moi d'abord \`${brain} sync --dry-run --full --since 24h\` en entier ; rien ne part avant mon accord explicite, puis \`${brain} sync --confirm\` envoie exactement ce que j'ai relu.`
 }
 
@@ -81,18 +102,17 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 /** Codes de sortie propres à `brain join` (apps/client/src/join.ts). */
 export const JOIN_EXIT = { pending: EXIT.joinPending, rejected: EXIT.joinRejected } as const
 
-export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string }): string {
-  const { baseUrl, code, orgName } = opts
+export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: string; caFingerprint?: string }): string {
+  const { baseUrl, code, orgName, caFingerprint } = opts
   const org = deNom(orgName)
   const brain = BRAIN_CLI
-  const cmd = installCommands(baseUrl, `--join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"`)
+  const cmd = installCommands(baseUrl, `--join ${code} --name "<prénom nom>" --title "<poste>" --email "<email>"`, caFingerprint)
   return `Tu vas demander à rejoindre NOS Brainer, le cerveau d'entreprise ${org}. Ce message d'équipe contient le code d'accès ${org} : ne l'affiche jamais en entier et ne le transmets pas hors de l'entreprise (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. ${LOCAL_ONLY}
 
 1. Sans me poser de question, prépare ma demande avec ce que tu sais déjà de moi : prénom et nom (\`git config user.name\`, nom du compte de la machine), poste ou métier (ta mémoire, CLAUDE.md ou AGENTS.md, nos échanges), email pro (\`git config user.email\`). N'invente rien : une valeur que tu n'as pas, retire son option, un admin la complétera.
 2. Préviens-moi en une phrase : un admin ${org} doit accepter ma demande ; la commande l'attend, puis installe tout (sur Mac, il faudra activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité »).
 3. Lance la commande de mon système en un seul appel, avec un délai de 10 minutes (hors du bac à sable si elle y est bloquée), en remplaçant les valeurs entre chevrons :
-   macOS, Linux, Git Bash : ${cmd.posix}
-   Windows, PowerShell : ${cmd.windows}
-4. Code 0 : demande acceptée et poste branché, le cerveau s'est ouvert dans mon navigateur. Code ${JOIN_EXIT.pending} (« EN ATTENTE D'ACCEPTATION ») : dis-moi que ma demande attend un admin et propose de relancer \`${brain} join\`, qui reprend la même demande. Code ${JOIN_EXIT.rejected} : la demande a été refusée, rien n'est installé. ${commonCodes(brain)}
+${commandLines(cmd)}
+${caFingerprint ? CA_NOTE : ""}4. Code 0 : demande acceptée et poste branché, le cerveau s'est ouvert dans mon navigateur. Code ${JOIN_EXIT.pending} (« EN ATTENTE D'ACCEPTATION ») : dis-moi que ma demande attend un admin et propose de relancer \`${brain} join\`, qui reprend la même demande. Code ${JOIN_EXIT.rejected} : la demande a été refusée, rien n'est installé. ${commonCodes(brain)}
 5. Termine en trois lignes : ce qui tourne, ce qui part (des connaissances distillées, jamais l'écran brut ; aucun historique n'est envoyé) et comment tout retirer (\`${brain} uninstall\`).`
 }

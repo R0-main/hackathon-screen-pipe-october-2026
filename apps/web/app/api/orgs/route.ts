@@ -3,6 +3,7 @@ import { z } from "zod"
 import { DEFAULT_ZONES, normalize, slugify, tokenize, zoneColor, type Zone } from "@brain/core"
 import { getRootStore, storeForOrg } from "@/lib/store"
 import { createSessionValue, hashToken, newToken, SESSION_COOKIE, sessionCookieOptions, signupOpen, VIEW_AS_COOKIE } from "@/lib/auth"
+import { caFingerprint } from "@/lib/ca"
 import { buildInstallPrompt } from "@/lib/install-prompt"
 import { error, internalError, json, parseBody, publicBaseUrl } from "@/lib/http"
 
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
     jar.set(SESSION_COOKIE, await createSessionValue(profile.id), sessionCookieOptions)
     jar.delete(VIEW_AS_COOKIE)
 
-    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones: zones.map((z) => z.id) })
+    const prompt = buildInstallPrompt({ baseUrl: publicBaseUrl(req), token, name: profile.name, orgName: org.name, zones: zones.map((z) => z.id), caFingerprint: caFingerprint() })
     return json({ org: { id: org.id, name: org.name }, profile: { id: profile.id, name: profile.name }, zones, prompt }, 201)
   } catch (err) {
     return internalError(err)
