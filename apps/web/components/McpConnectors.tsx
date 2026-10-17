@@ -12,6 +12,8 @@ import { ErrorText } from "./ui"
 type Props = { initial: McpConnectorPublic[]; redirectUri: string }
 
 const CUSTOM_COLOR = "#52525B"
+/** Serveurs du catalogue montrés avant « Voir les … autres ». */
+const PREVIEW = 9
 
 /** Serveurs MCP : ceux déjà branchés, puis le catalogue (recherche, catégories) et l'ajout d'un serveur quelconque. */
 export function McpConnectors({ initial, redirectUri }: Props) {
@@ -21,6 +23,7 @@ export function McpConnectors({ initial, redirectUri }: Props) {
   const [query, setQuery] = useState("")
   const [category, setCategory] = useState<McpCategory | null>(null)
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+  const [showAll, setShowAll] = useState(false)
 
   // Retour de la page de connexion du fournisseur (?mcp=connected&id=… ou ?mcp=error&reason=…).
   useEffect(() => {
@@ -47,6 +50,8 @@ export function McpConnectors({ initial, redirectUri }: Props) {
   const catalog = MCP_CATALOG.filter((e) => !added.has(e.id))
     .filter((e) => !category || e.category === category)
     .filter((e) => !needle || `${e.name} ${e.description.fr} ${e.description.en} ${e.id}`.toLowerCase().includes(needle))
+  // Sans recherche ni catégorie, un aperçu (la liste complète fait plusieurs écrans sur mobile).
+  const collapsed = !showAll && !needle && !category && catalog.length > PREVIEW + 3
 
   return (
     <div className="space-y-4">
@@ -66,7 +71,7 @@ export function McpConnectors({ initial, redirectUri }: Props) {
       {items.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-[13px] font-medium text-trace">{k.added}</h3>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid items-start gap-3 md:grid-cols-2">
             {items.map((c) => (
               <AddedCard key={c.id} connector={c} redirectUri={redirectUri} onChange={upsert} onRemoved={drop} />
             ))}
@@ -92,11 +97,18 @@ export function McpConnectors({ initial, redirectUri }: Props) {
         {catalog.length === 0 ? (
           <p className="text-[13px] text-trace">{k.noResult}</p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {catalog.map((e) => (
-              <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
-            ))}
-          </div>
+          <>
+            <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {(collapsed ? catalog.slice(0, PREVIEW) : catalog).map((e) => (
+                <CatalogTile key={e.id} entry={e} redirectUri={redirectUri} onAdded={upsert} />
+              ))}
+            </div>
+            {collapsed && (
+              <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>
+                {fmt(k.showAll, { n: catalog.length - PREVIEW })}
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -301,9 +313,9 @@ function ManualSetup({ id, entry, redirectUri, hasClient, onSaved }: { id: strin
         </a>
       )}
       <label className="block text-[12px] font-medium">{k.redirectUri}</label>
-      <div className="flex gap-2">
-        <input className="input input-sm mono !w-full" readOnly value={redirectUri} onFocus={(e) => e.currentTarget.select()} />
-        <button type="button" className="btn btn-sm" onClick={copy}>
+      <div className="flex items-start gap-2">
+        <code className="mono min-w-0 flex-1 select-all break-all rounded-[6px] border border-line bg-bone px-2 py-1.5 text-[12px]">{redirectUri}</code>
+        <button type="button" className="btn btn-sm shrink-0" onClick={copy}>
           {copied ? k.copied : k.copy}
         </button>
       </div>

@@ -53,6 +53,24 @@ async function probe(serverUrl: string, deps: NetDeps): Promise<{ status: number
   return { status: res.status, www: parseWwwAuthenticate(res.headers["www-authenticate"]) }
 }
 
+/** Au-delà, une liste scopes_supported décrit tout ce que sait faire le fournisseur (écritures comprises), pas un besoin. */
+export const MAX_DEFAULT_SCOPES = 12
+
+/**
+ * Portées demandées : celles du défi WWW-Authenticate, sinon scopes_supported des métadonnées de ressource si la liste
+ * est courte ; une longue liste (PagerDuty, Ramp…) n'est pas demandée en bloc : le fournisseur applique ses portées par
+ * défaut, au lieu d'un écran de consentement démesuré ou d'un refus invalid_scope.
+ */
+export function pickScopes(challenge: string | undefined, supported: unknown): string[] | undefined {
+  const list = challenge
+    ? challenge.split(/\s+/).filter(Boolean)
+    : Array.isArray(supported)
+      ? supported.filter((s): s is string => typeof s === "string" && s !== "none")
+      : []
+  if (!list.length || (!challenge && list.length > MAX_DEFAULT_SCOPES)) return undefined
+  return list
+}
+
 export async function discover(serverUrl: string, deps: NetDeps = DEFAULT_DEPS): Promise<Discovery> {
   const { status, www } = await probe(serverUrl, deps)
   const open = status >= 200 && status < 300
@@ -66,12 +84,7 @@ export async function discover(serverUrl: string, deps: NetDeps = DEFAULT_DEPS):
     prm = null
   }
   const resource = typeof prm?.resource === "string" && prm.resource ? prm.resource : canonicalResource(serverUrl)
-  const scopeList = www.scope
-    ? www.scope.split(/\s+/).filter(Boolean)
-    : Array.isArray(prm?.scopes_supported)
-      ? (prm.scopes_supported as unknown[]).filter((s): s is string => typeof s === "string")
-      : undefined
-  const scopes = scopeList?.length ? scopeList : undefined
+  const scopes = pickScopes(www.scope, prm?.scopes_supported)
 
   // Serveur d'autorisation : celui annoncé, sinon (spec 2025-03-26) l'origine du serveur MCP.
   const issuer = prm ? String((prm.authorization_servers as unknown[])[0]) : new URL(serverUrl).origin

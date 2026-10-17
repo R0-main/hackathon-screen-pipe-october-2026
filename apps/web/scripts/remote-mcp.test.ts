@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net"
 import { buildAuthorizeUrl } from "@brain/core"
 import { listTools, McpAuthError } from "../lib/remote-mcp/client"
 import { guardedRequest, type NetDeps } from "../lib/remote-mcp/net"
-import { discover, exchangeCode, pkcePair, refreshTokens, registerClient } from "../lib/remote-mcp/oauth"
+import { MAX_DEFAULT_SCOPES, discover, exchangeCode, pickScopes, pkcePair, refreshTokens, registerClient } from "../lib/remote-mcp/oauth"
 
 const deps: NetDeps = { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: () => false }
 
@@ -174,4 +174,13 @@ test("MCP distant : adresses internes refusées sans dépendances de test (SSRF)
   await assert.rejects(guardedRequest(`${base}/mcp`, { method: "POST", body: "{}" }), /adresse interne refusée/)
   await assert.rejects(guardedRequest("http://localhost:1/x"), /adresse interne refusée/)
   await assert.rejects(discover("http://169.254.169.254/latest/meta-data"), /adresse interne refusée/)
+})
+
+test("portées : celles du défi, sinon une liste courte annoncée ; une longue liste n'est pas demandée en bloc", () => {
+  const many = Array.from({ length: MAX_DEFAULT_SCOPES + 1 }, (_, i) => `scope${i}:write`)
+  assert.deepEqual(pickScopes("read write", many), ["read", "write"])
+  assert.deepEqual(pickScopes(undefined, ["read", "none", 3]), ["read"])
+  assert.equal(pickScopes(undefined, many), undefined)
+  assert.equal(pickScopes(undefined, []), undefined)
+  assert.equal(pickScopes(undefined, undefined), undefined)
 })
