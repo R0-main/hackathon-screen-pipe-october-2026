@@ -83,7 +83,7 @@ export function eventForHook(input: HookInput, cache: Cache | null, opts: HookOp
       const secrets = opts.secrets ?? []
       // Prompt d'installation ou jeton collé : on signale juste l'activité.
       if (isBrainSetupText(prompt, secrets) || maskOwnSecrets(prompt, secrets).count > 0) return { agent: "claude-code", type: "query", zones: [], session_id }
-      // Contenu perso : ni zone, ni empreinte, ni résumé.
+      // Contenu perso ou hors travail (prix d'une console…) : ni zone, ni empreinte, ni résumé.
       if (looksPersonal(prompt)) return { agent: "claude-code", type: "query", zones: [], session_id }
       const zones = cache?.zones?.length ? classifyZones(prompt, cache.zones, 2) : []
       const event: AgentEventInput = { agent: "claude-code", type: "query", zones, fingerprint: promptFingerprint(prompt), session_id }

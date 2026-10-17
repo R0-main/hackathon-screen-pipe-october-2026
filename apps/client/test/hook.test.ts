@@ -116,6 +116,7 @@ test("eventForHook : prompt perso → ni résumé, ni empreinte, ni zone (même 
   for (const p of [
     "REVIEWPRIV3 écris un message whatsapp à ma femme : je serai en retard ce soir",
     "réserve-moi un rdv doctolib pour mon fils, et vérifie la facture de la cantine",
+    "Combien coûte une PS5 Pro ?",
   ]) {
     const ev = eventForHook(prompt(p), CACHE)!
     assert.deepEqual(ev, { agent: "claude-code", type: "query", zones: [], session_id: "s" }, p)

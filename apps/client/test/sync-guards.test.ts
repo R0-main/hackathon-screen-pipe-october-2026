@@ -6,6 +6,7 @@ import { appendFileSync, chmodSync, mkdirSync, readFileSync, writeFileSync } fro
 import { join } from "node:path"
 import { test } from "node:test"
 import { ZoneTally, applyPrivacy, insertedByZone, runSync } from "../src/sync"
+import { finalizeItems } from "../src/distill"
 import { prepareSchedule } from "../src/install"
 import { fakeClaude, withPath } from "./fake-claude"
 import { mockServer, tempDir } from "./helpers"
@@ -315,6 +316,37 @@ test("H-personal-signals : indices montrés en simulation ; indices faibles d'un
   } finally {
     await brain.close()
   }
+})
+
+test("OFF-TOPIC : une conversation hors travail (prix d'une PS5 Pro) n'est ni envoyée ni citée dans les logs", async () => {
+  const brain = await mockBrain()
+  try {
+    const ws = workstation(brain.url)
+    const ps5 = join(ws.proj, "ps5.jsonl")
+    const work = join(ws.proj, "work.jsonl")
+    writeFileSync(ps5, user("ps5sess", "Combien coûte une PS5 Pro ? Et où l'acheter moins cher ?", 300) + assistant("ps5sess", "La PS5 Pro coûte environ 799 € chez Fnac et Darty.", 299))
+    writeFileSync(work, user("worksess", "On déploie l'API en production avec la migration SQL ?", 20) + assistant("worksess", "On a décidé de déployer la migration SQL en staging avant la production.", 19))
+    for (const opts of [{ dryRun: true }, { dryRun: true, verbose: true }, { verbose: true }]) {
+      const out = capture()
+      await runSync({ distiller: "heuristic", since: "24h", ...opts }, out.io)
+      assert.match(out.text(), /1 conversation hors travail ignorée/)
+      assert.doesNotMatch(out.text(), /ps5|799|fnac|ps5sess/i, out.text())
+    }
+    assert.ok(ws.state().claude.files[ps5], "conversation inactive : traitée (écartée pour de bon)")
+    assert.ok(brain.received.length > 0)
+    assert.doesNotMatch(JSON.stringify(brain.received), /ps5|799/i)
+  } finally {
+    await brain.close()
+  }
+})
+
+test("OFF-TOPIC : finalizeItems retire un item hors travail retenu par le LLM dans une session mixte", () => {
+  const source = { app: "Claude Code", tool: "claude-code" as const, at: new Date().toISOString() }
+  const items = finalizeItems([
+    { zone: "dev", kind: "fact", title: "Prix de la PS5 Pro", body: "La PS5 Pro coûte 799 € chez Fnac.", entities: [], source, confidence: 0.6 },
+    { zone: "dev", kind: "decision", title: "Migration SQL en staging d'abord", body: "On déploie la migration en staging avant la production.", entities: [], source, confidence: 0.8 },
+  ])
+  assert.deepEqual(items.map((i) => i.title), ["Migration SQL en staging d'abord"])
 })
 
 test("H-redact-literals : les secrets du poste (jeton Claude Code compris) sont masqués tels quels, ou la session est écartée", async () => {

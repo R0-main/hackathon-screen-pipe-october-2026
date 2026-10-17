@@ -21,7 +21,10 @@ Ton travail : en extraire uniquement la connaissance RÉUTILISABLE par l'entrepr
 - question : une question ouverte importante restée sans réponse.
 
 À ignorer absolument :
-- tout contenu personnel ou sans rapport avec le travail ;
+- tout contenu personnel ou sans rapport avec le travail : achats et prix pour soi (le prix d'une PS5 Pro, d'un téléphone,
+  d'un billet pour ses vacances), loisirs, jeux, sport, cuisine, sorties, actualité ou culture générale sans lien avec
+  l'activité de l'entreprise. Dans une session mixte, ignore ces passages et garde le reste ; si toute la session est hors
+  travail, ne renvoie aucun item (pas même un item pour dire qu'elle a été ignorée) ;
 - secrets, mots de passe, clés, emails, numéros de téléphone (même masqués) ;
 - le bavardage, les tâtonnements, les erreurs corrigées, le code brut (résume ce qu'il fait plutôt que de le recopier).
 
@@ -43,6 +46,8 @@ export function buildTriagePrompt(conv: Conversation, zones: ZoneHint[]): string
 ${renderZones(zones)}
 
 Cette session contient-elle de la connaissance réutilisable par l'entreprise (décision, procédure, fait durable, tâche) ?
+Une session hors travail (achat ou prix d'un produit pour soi, comme une PS5 Pro, loisirs, sport, cuisine, vacances…) n'est
+jamais utile : useful = faux, et la raison dit seulement « hors travail », sans en citer le contenu.
 Réponds avec useful (vrai/faux), la zone la plus concernée (identifiant exact) et une raison en une phrase.
 
 <session>

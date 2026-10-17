@@ -109,7 +109,7 @@ L'admin invite quelqu'un → la personne reçoit **un prompt à coller dans Clau
 
 ### 3. Capture → cerveau (`brain-sync`, toutes les 15-30 min)
 1. `GET /search?content_type=parsed&start_time=<dernier checkpoint>` filtré sur les apps IA (Claude, Terminal/iTerm pour Claude Code, Codex, onglets ChatGPT/Claude du navigateur), avec un fallback `accessibility`.
-2. **Filtre vie privée** : liste blanche d'apps, suppression des contenus perso, masquage des secrets/emails/numéros.
+2. **Filtre vie privée** : liste blanche d'apps, suppression des contenus perso **et hors travail** (le prix d'une PS5 Pro, un match, une recette : écartés sans laisser de trace, ni dans le cerveau ni dans les logs), masquage des secrets/emails/numéros.
 3. Haiku : « est-ce que ça contient de la connaissance réutilisable ? » + zone.
 4. Sonnet : extraction en `KnowledgeItem[]` + entités.
 5. `POST /ingest`, puis on avance le checkpoint. Un `AgentEvent{agent:"brain-sync", type:"write"}` est émis.

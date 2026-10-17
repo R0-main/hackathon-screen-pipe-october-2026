@@ -6,7 +6,8 @@ import {
   DISTILL_MARKER,
   chunkConversation,
   classifyZones,
-  looksPersonal,
+  looksOffTopic,
+  looksPrivate,
   personalSignals,
   redact,
   redactText,
@@ -145,20 +146,23 @@ async function mapPool<T, R>(items: T[], n: number, fn: (item: T, i: number) => 
 }
 
 
-/** Conversation écartée par le filtre vie privée (raison, et pour le contenu perso : les indices trouvés). */
+/**
+ * Conversation écartée par le filtre vie privée (raison, et pour le contenu perso : les indices trouvés).
+ * « hors travail » (prix d'une PS5 Pro, match, recette…) : jamais d'indice, et jamais citée dans les logs, même en --verbose.
+ */
 export type DroppedConversation = {
   id: string
   reason: string
   ended_at?: string
   /** Contenu personnel : indices trouvés par personalSignals (affichés en simulation et en --verbose). */
   signals?: PersonalSignals
-  /** Contenu personnel sur indices faibles seulement : réexaminé tant que la conversation se poursuit. */
+  /** Contenu personnel sur indices faibles seulement, ou hors travail : réexaminé tant que la conversation se poursuit. */
   weakOnly?: boolean
 }
 
 /**
  * Masque secrets et données perso dans chaque message (y compris les secrets du poste, pris tels quels) ;
- * écarte les conversations perso, vides, internes, ou la session d'installation du cerveau.
+ * écarte les conversations perso, hors travail, vides, internes, ou la session d'installation du cerveau.
  */
 export function applyPrivacy(
   convs: Conversation[],
@@ -189,13 +193,16 @@ export function applyPrivacy(
     if (!messages.length || !all.trim()) dropped.push({ id: c.id, reason: "vide" })
     else if (all.includes(DISTILL_MARKER)) dropped.push({ id: c.id, reason: "session interne de distillation" })
     else if (setup) dropped.push({ id: c.id, reason: "session d'installation du cerveau" })
-    else if (looksPersonal(text)) {
+    else if (looksPrivate(text)) {
       const signals = personalSignals(text)
       dropped.push({ id: c.id, reason: "contenu personnel", ended_at: c.ended_at, signals, weakOnly: signals.strong.length === 0 })
-    } else kept.push({ ...c, title: c.title ? truncate(maskOwnSecrets(redactText(c.title, { literals: secrets }), secrets).text, 120) : undefined, messages })
+    } else if (looksOffTopic(text)) dropped.push({ id: c.id, reason: OFF_TOPIC, ended_at: c.ended_at, weakOnly: true })
+    else kept.push({ ...c, title: c.title ? truncate(maskOwnSecrets(redactText(c.title, { literals: secrets }), secrets).text, 120) : undefined, messages })
   }
   return { kept, dropped, redactions }
 }
+
+export const OFF_TOPIC = "hors travail"
 
 /** « contenu personnel : divorce, médecin » ou « contenu personnel, indices faibles : whatsapp (vocabulaire pro : 1) ». */
 export function describeDrop(d: DroppedConversation): string {
@@ -505,14 +512,17 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   const privacy = applyPrivacy(all, secrets)
   const totalRedactions = Object.values(privacy.redactions).reduce((a, b) => a + b, 0)
   const personalDrops = privacy.dropped.filter((d) => d.reason === "contenu personnel")
-  // Indices faibles seulement, conversation encore active : pas marquée comme traitée, elle sera réexaminée en entier.
-  const retry = new Set(personalDrops.filter((d) => d.weakOnly && d.ended_at && now - Date.parse(d.ended_at) < PERSONAL_RETRY_MS).map((d) => d.id))
+  const offTopic = privacy.dropped.filter((d) => d.reason === OFF_TOPIC).length
+  // Indices faibles seulement (ou hors travail), conversation encore active : pas marquée comme traitée, elle sera réexaminée en entier.
+  const retry = new Set(privacy.dropped.filter((d) => d.weakOnly && d.ended_at && now - Date.parse(d.ended_at) < PERSONAL_RETRY_MS).map((d) => d.id))
   io.log(
     `Vie privée : ${plural(totalRedactions, "élément masqué", "éléments masqués")}` +
       (verbose && totalRedactions ? ` (${Object.entries(privacy.redactions).map(([k, v]) => `${k} : ${v}`).join(", ")})` : "") +
-      `, ${plural(personalDrops.length, "conversation perso écartée", "conversations perso écartées")}`,
+      `, ${plural(personalDrops.length, "conversation perso écartée", "conversations perso écartées")}` +
+      (offTopic ? `, ${plural(offTopic, "conversation hors travail ignorée", "conversations hors travail ignorées")}` : ""),
   )
-  const shownDrops = verbose ? privacy.dropped : opts.dryRun ? personalDrops.slice(0, 20) : []
+  // Hors travail : un simple total, jamais l'identifiant ni le contenu.
+  const shownDrops = verbose ? privacy.dropped.filter((d) => d.reason !== OFF_TOPIC) : opts.dryRun ? personalDrops.slice(0, 20) : []
   for (const d of shownDrops) io.log(`    écartée : ${d.id} (${describeDrop(d)}${retry.has(d.id) ? " ; réexaminée à la prochaine synchro tant qu'elle se poursuit" : ""})`)
   if (!verbose && opts.dryRun && personalDrops.length > shownDrops.length) io.log(`    … et ${personalDrops.length - shownDrops.length} autre(s) (--verbose pour tout voir)`)
 
@@ -582,7 +592,9 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       outageStreak = 0
       distilled[i] = res.items
     }
-    if (verbose) io.log(`    ${conv.tool} ${truncate(conv.title ?? conv.id, 60)} → ${res.failed ? `échec (${truncate(res.error ?? "?", 120)})` : plural(res.items.length, "item")} (${DISTILLER_LABELS[res.used]})`)
+    // Une conversation dont le LLM n'a rien retenu (souvent hors travail) n'est pas nommée : ni titre ni identifiant.
+    if (verbose && !res.failed && res.items.length === 0) io.log(`    ${conv.tool} : conversation sans connaissance utile, ignorée (${DISTILLER_LABELS[res.used]})`)
+    else if (verbose) io.log(`    ${conv.tool} ${truncate(conv.title ?? conv.id, 60)} → ${res.failed ? `échec (${truncate(res.error ?? "?", 120)})` : plural(res.items.length, "item")} (${DISTILLER_LABELS[res.used]})`)
   })
   for (const id of untried) if (failedConvs.has(id)) untried.delete(id)
   const notDistilled = new Set([...failedConvs.keys(), ...untried])

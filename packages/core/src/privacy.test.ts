@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { isAiBrowserWindow, isAllowedApp, isSecretKey, looksPersonal, personalSignals, redact, redactText } from "./index"
+import { isAiBrowserWindow, isAllowedApp, isSecretKey, looksOffTopic, looksPersonal, looksPrivate, personalSignals, redact, redactText } from "./index"
 
 // Les faux secrets sont assemblés à l'exécution : le texte source ne doit pas ressembler à un vrai jeton
 // (sinon la protection anti-secrets de GitHub refuse le push).
@@ -915,4 +915,37 @@ test("contenu personnel (5e passe) : « entreprise », « fournisseur », « sal
   // « rapprochement bancaire », « paie fournisseur », « virement fournisseur » : deux points (plus « fournisseur »).
   assert.equal(personalSignals("le rapprochement bancaire").work, 2)
   assert.equal(personalSignals("Virement fournisseur rejeté").work, 3)
+})
+
+// --- Hors travail -------------------------------------------------------------------------------------------------------
+
+const OFF_TOPIC = [
+  "Combien coûte une PS5 Pro ?",
+  "Quel est le prix de la PS5 Pro en France, et où l'acheter moins cher ?",
+  "La PS5 Pro vaut-elle le coup par rapport à la PS5 slim ?",
+  "Je voudrais m'acheter un iPhone 17 reconditionné, quel modèle choisir ?",
+  "Idées de cadeau pour Noël : des Lego ou des AirPods ?",
+  "Une recette facile pour ce soir avec des courgettes",
+  "Qui a gagné le match hier soir en Ligue des champions ?",
+  "Que visiter à Lisbonne pour mes vacances en mai ?",
+  "Mon horoscope de la semaine",
+]
+const ON_TOPIC = [
+  "Quel est le prix du plan Pro de Supabase pour notre projet ? On compare avant de migrer la base de données.",
+  "Le build PS5 crashe au lancement : regarde le bug dans le code du renderer",
+  "Combien coûte l'API Claude par million de tokens pour notre backend ?",
+  "Ajoute un bandeau Black Friday sur le site et une promo de 20 % sur nos produits",
+  "Prépare la recette fonctionnelle du sprint avant la mise en production",
+  "Analyse les ventes de la boutique : les clients achètent surtout des baskets en soldes",
+  "Planifie les vacances de l'équipe en août dans le planning RH",
+  "Corrige le bug de l'API, et au fait combien coûte une PS5 Pro ? Ensuite on déploie le backend en staging avec la migration SQL.",
+]
+
+test("hors travail : achats pour soi et loisirs écartés, sans indice ; le travail est gardé", () => {
+  const missed = OFF_TOPIC.filter((t) => !looksOffTopic(t) || !looksPersonal(t))
+  const dropped = [...ON_TOPIC, ...MUST_KEEP_WORK].filter((t) => looksOffTopic(t))
+  assert.deepEqual({ missed, dropped }, { missed: [], dropped: [] })
+  // Pas un sujet de vie privée : aucun indice exposé (rien ne finit dans les logs).
+  assert.ok(!looksPrivate(OFF_TOPIC[0]))
+  assert.deepEqual(personalSignals(OFF_TOPIC[0]), { strong: [], weak: [], work: 0 })
 })

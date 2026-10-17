@@ -11,6 +11,7 @@ import {
   buildCliExtractionPrompt,
   classifyZones,
   distillHeuristic,
+  looksOffTopic,
   redactText,
   truncate,
   type Conversation,
@@ -422,14 +423,15 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
 }
 
 /**
- * Dernier filet de sécurité avant envoi : re-masquage (avec les secrets du poste, pris tels quels) et validation du contrat.
- * `seen` : dédoublonnage partagé entre appels.
+ * Dernier filet de sécurité avant envoi : re-masquage (avec les secrets du poste, pris tels quels), validation du contrat,
+ * et item hors travail retiré (le LLM a retenu « le prix de la PS5 Pro » d'une session mixte). `seen` : dédoublonnage
+ * partagé entre appels.
  */
 export function finalizeItems(items: KnowledgeItemInput[], seen = new Set<string>(), literals: string[] = []): KnowledgeItemInput[] {
   const out: KnowledgeItemInput[] = []
   for (const i of items) {
     const parsed = KnowledgeItemInputSchema.safeParse({ ...i, title: redactText(i.title, { literals }), body: redactText(i.body, { literals }) })
-    if (!parsed.success) continue
+    if (!parsed.success || looksOffTopic(`${parsed.data.title}\n${parsed.data.body}`)) continue
     const key = `${parsed.data.zone}:${parsed.data.kind}:${parsed.data.title.toLowerCase()}`
     if (seen.has(key)) continue
     seen.add(key)

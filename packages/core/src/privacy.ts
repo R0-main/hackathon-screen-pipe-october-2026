@@ -227,15 +227,63 @@ export function personalSignals(text: string): PersonalSignals {
 }
 
 /**
- * Vrai si le texte ressemble à du contenu personnel qu'on préfère ignorer entièrement.
- * Un sujet de vie privée (santé, couple, divorce…) suffit. Un signal faible (app grand public, arrêt maladie, famille,
- * compte bancaire…) ne compte que sans vrai contexte de travail : 2 points de vocabulaire pro, un de plus par sujet
- * faible distinct au-delà du premier (« malade » et « arrêt maladie » sont un seul sujet).
+ * Vrai si le texte touche à la vie privée (santé, couple, banque perso…). Un sujet de vie privée suffit. Un signal
+ * faible (app grand public, arrêt maladie, famille, compte bancaire…) ne compte que sans vrai contexte de travail :
+ * 2 points de vocabulaire pro, un de plus par sujet faible distinct au-delà du premier (« malade » et « arrêt maladie »
+ * sont un seul sujet).
  */
-export function looksPersonal(text: string): boolean {
+export function looksPrivate(text: string): boolean {
   const s = signals(text)
   if (s.strong.length > 0) return true
   return s.topics > 0 && s.work < Math.max(2, s.topics + 1)
+}
+
+// Hors travail : ce n'est pas secret, ça n'a juste rien à faire dans le cerveau (le prix d'une PS5 Pro, un match, une recette).
+
+/** Produits qu'on s'achète pour soi : hors travail seulement avec une intention d'achat (« prix », « acheter »…). */
+const CONSUMER_PRODUCT_RE =
+  /\b(?:ps5|ps4|playstation|xbox|nintendo|switch (?:2|oled|lite)|steam deck|iphone|ipad|airpods|apple watch|galaxy s\d{1,2}|pixel \d{1,2}|macbook|imac|tele|televiseur|television|tv (?:oled|qled|4k)|barre de son|casque (?:audio|bluetooth|gaming|sans fil)|aspirateur|robot (?:cuiseur|aspirateur|patissier)|thermomix|cookeo|air ?fryer|machine a cafe|lave[- ](?:linge|vaisselle)|frigo|refrigerateur|canape|matelas|trottinette|velo (?:electrique|de route)|voiture|baskets|sneakers|parfum|lego)\b/g
+/** Intention d'achat pour soi. Seule, elle ne dit rien (« le prix du plan Pro » est une question de travail). */
+const PURCHASE_INTENT_RE =
+  /\b(?:combien (?:coute|coutent|vaut|valent|ca coute)|prix (?:d'une?|de la|du|des|de l')|a quel prix|moins chere?|pas chere?|meilleur prix|bons? plans?|en promo|soldes|black friday|cyber monday|french days|prime day|code promo|reconditionnee?|d'occasion|vaut[- ](?:il|elle) le coup|vaut le coup|ou (?:l'|les |la |le )?acheter|(?:je veux|j'aimerais|je voudrais|je vais|dois-je|faut-il|devrais-je) (?:m')?acheter|m'acheter|idees? (?:de )?cadeaux?|cadeau (?:pour|de noel|d'anniversaire)|liste de noel|sur amazon|fnac|darty|cdiscount|aliexpress|temu|shein|back market|zalando)\b/g
+
+/** Loisirs et vie courante : chaque famille est un sujet hors travail, qu'un vrai contexte de travail excuse. */
+const LEISURE: RegExp[] = [
+  // jeux vidéo
+  /\b(?:(?:quel|meilleurs?) jeux? (?:video|ps5|xbox|switch|a acheter)|jeux? video (?:a|pour) (?:jouer|offrir)|soluce|astuces? pour (?:battre|finir)|boss final)\b/g,
+  // sport (résultats, paris)
+  /\b(?:ligue 1|ligue des champions|champions league|premier league|coupe du monde|ballon d'or|roland[- ]garros|tour de france|formule 1|grand prix de f1|resultats? du match|score du match|qui a gagne (?:le match|hier soir)|paris sportifs?|pronostic (?:du|pour le) match|winamax|betclic|unibet)\b/g,
+  // cuisine
+  /\b(?:recette (?:de cuisine|facile|rapide|de grand-mere|du gateau|de gateau|de crepes|de pates|vegetarienne)|idees? (?:de )?(?:repas|recettes?|diner)|temps de cuisson|menu de la semaine|quoi manger ce soir)\b/g,
+  // séries, films, musique
+  /\b(?:prime video|series? a regarder|films? a (?:voir|regarder)|quel film|bande[- ]annonce|au cinema|playlist pour|concert de)\b/g,
+  // voyages et sorties
+  /\b(?:mes vacances|nos vacances|vacances (?:en|a|au|aux|d'ete|d'hiver|de noel)|billets? d'avion pas chers?|airbnb|week-end (?:a|en|au)|road trip|que (?:faire|visiter) (?:a|en|au|ce week-end)|bon resto)\b/g,
+  // astrologie, météo du week-end
+  /\b(?:horoscope|signe astrologique|meteo (?:de|du|pour|ce) (?:demain|week-end|weekend|samedi|dimanche))\b/g,
+]
+
+/** Nombre de sujets hors travail distincts (achat pour soi, chaque famille de loisirs). */
+function offTopicCount(t: string): number {
+  const shopping = matchesAll(CONSUMER_PRODUCT_RE, t).length > 0 && matchesAll(PURCHASE_INTENT_RE, t).length > 0
+  return Number(shopping) + LEISURE.filter((re) => matchesAll(re, t).length > 0).length
+}
+
+/**
+ * Vrai si le texte n'a rien à voir avec le travail : achat pour soi (« combien coûte une PS5 Pro ? »), loisirs, sport,
+ * cuisine, vacances… Même règle que les signaux faibles de vie privée : un vrai contexte de travail l'excuse (une
+ * session de code qui demande au passage le prix d'une console est gardée, le LLM en ignore ce passage).
+ * Aucun indice n'est exposé : une conversation hors travail est écartée sans laisser de trace de son contenu.
+ */
+export function looksOffTopic(text: string): boolean {
+  const t = plainText(text)
+  const n = offTopicCount(t)
+  return n > 0 && workScore(t) < Math.max(2, n + 1)
+}
+
+/** Vrai si le texte est à ignorer entièrement : vie privée (looksPrivate) ou hors travail (looksOffTopic). */
+export function looksPersonal(text: string): boolean {
+  return looksPrivate(text) || looksOffTopic(text)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
