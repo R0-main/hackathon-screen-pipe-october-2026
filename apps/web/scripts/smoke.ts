@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
 import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type StatusInput } from "@brain/core"
-import { getStore, isStoreSetupError, type BrainStore } from "../lib/store"
+import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
 import { getAccess, redactEvent } from "../lib/access"
@@ -27,7 +27,7 @@ import {
   statusForViewer,
   streamStartId,
 } from "../lib/brain"
-import { createLoginCode, createSessionValue, hashToken, newToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
+import { createLoginCode, createSessionValue, hashToken, newToken, profileFromToken, verifyLoginCode, viewerFromCookies, type Viewer } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -35,6 +35,13 @@ import * as statusRoute from "../app/api/status/route"
 import * as statusInputRoute from "../app/api/status/input/route"
 import * as stateRoute from "../app/api/state/route"
 import * as demoSessionRoute from "../app/api/session/demo/route"
+import * as adminUsersRoute from "../app/api/admin/users/route"
+import * as adminTeamRoute from "../app/api/admin/team/route"
+import * as itemRoute from "../app/api/items/[id]/route"
+import * as joinRoute from "../app/api/join/route"
+import * as joinStatusRoute from "../app/api/join/status/route"
+import * as adminJoinRoute from "../app/api/admin/join/route"
+import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
 import * as skillsRoute from "../app/api/skills/route"
 import * as skillRoute from "../app/api/skills/[id]/route"
 import { DEMO_VISITOR_TITLE, demoVisitorManager, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
@@ -704,6 +711,110 @@ async function main() {
       assert((await copy.listItems({ limit: 100_000 })).length === itemsBefore + 3 * Math.ceil(n / 10), "aucun item perdu")
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  console.log("\n— Créer son entreprise (/creer) : un cerveau à part")
+  {
+    const root = getRootStore()
+    const fournil = await root.getOrg()
+    const tenantsBefore = await root.countTenantOrgs()
+    const acme = await root.createTenantOrg({
+      name: `Acme ${run}`,
+      description: "Test de fumée",
+      zones: [{ id: "ops", name: "Ops", description: "", color: "#2a78d6", keywords: ["ops", "astreinte"], position: 0 }],
+    })
+    const acmeStore = storeForOrg(acme.id)
+    try {
+      assert((await root.countTenantOrgs()) === tenantsBefore + 1, "une entreprise créée est comptée")
+      assert((await root.getOrg()).id === fournil.id && !(await root.isEmpty()), "le cerveau de la base reste celui de Fournil")
+      assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops", "la nouvelle entreprise n'a que ses zones")
+      const token = newToken()
+      const boss = await acmeStore.createProfile({ name: `Alice ${run}`, role: "admin", manager_id: null, token_hash: hashToken(token) })
+      assert(boss.org_id === acme.id, "son premier compte lui appartient")
+      assert((await profileFromToken(token))?.id === boss.id, "son jeton est reconnu (connexion du poste)")
+      const cookie = await createSessionValue(boss.id)
+      const alice = await viewerFromCookies(cookie, claire.profile.id)
+      assert(alice?.real.id === boss.id && alice.profile.id === boss.id, "sa session est reconnue ; « voir en tant que » ne sort pas de son entreprise")
+      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Fournil ne voit pas ce compte")
+
+      const st = await call(stateRoute.GET, "/api/state", { session: cookie })
+      assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "son dashboard ne montre que son entreprise")
+      const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
+      assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviter un collègue : prompt à son nom, zones de l'entreprise seulement")
+      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "le collègue rejoint l'entreprise, pas Fournil")
+
+      const bob = (await profileFromToken(inv.data.token))!
+      const bobViewer: Viewer = { profile: bob, real: bob, access: await getAccess(bob) }
+      const team0 = await call(adminTeamRoute.GET, "/api/admin/team", { session: cookie })
+      assert(team0.status === 200 && team0.data.users.every((u: { last_at: string | null }) => u.last_at === null), "équipe : personne n'est encore branché")
+      await runInOrg(acme.id, () => recordEvents(bobViewer, [{ agent: "claude-code", type: "started" }]))
+      const team1 = await call(adminTeamRoute.GET, "/api/admin/team", { session: cookie })
+      assert(team1.data.users.find((u: { id: string }) => u.id === bob.id)?.last_at, "équipe : le poste de Bob apparaît branché")
+
+      const ing = await runInOrg(acme.id, () => ingestItems(bobViewer, [item("ops", `Procédure d'astreinte Acme (${run})`)]))
+      assert((await acmeStore.getItem(ing.ids[0]))?.zone === "ops", "une connaissance du poste de Bob arrive dans l'entreprise")
+      const fromFournil = await queryBrain(claire, { query: `astreinte Acme ${run}` })
+      assert(fromFournil.items.every((i) => i.org_id === fournil.id), "Fournil n'en voit rien")
+      const fromAcme = await runInOrg(acme.id, () => queryBrain(alice!, { query: "déployer en production" }))
+      assert(fromAcme.items.length === 0, "et l'entreprise ne voit rien de Fournil")
+      const fournilItem = created[0]
+      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${fournilItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
+        params: Promise.resolve({ id: fournilItem }),
+      })
+      assert(del.status === 404 && (await store.getItem(fournilItem)), "une connaissance de Fournil est introuvable (et intacte) depuis l'entreprise")
+      console.log("\n— Message d'équipe : demander à rejoindre, un admin accepte")
+      const decide = (id: string, session: string, body: unknown) =>
+        adminJoinIdRoute.POST(new Request(`http://smoke.test/api/admin/join/${id}`, { method: "POST", headers: { cookie: `brain_session=${session}`, "content-type": "application/json" }, body: JSON.stringify(body) }), {
+          params: Promise.resolve({ id }),
+        })
+      const team = await call(adminJoinRoute.GET, "/api/admin/join", { session: cookie })
+      assert(team.status === 200 && team.data.prompt.includes(team.data.code) && team.data.prompt.includes("Tu vas demander à rejoindre NOS Brainer"), "un message d'équipe par entreprise, avec son code")
+      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: cookie })).data.code === team.data.code, "le code reste le même d'une ouverture à l'autre")
+      const leaToken = newToken()
+      const unknown = await call(joinRoute.POST, "/api/join", { method: "POST", body: { code: `cj_${"x".repeat(24)}`, token_hash: hashToken(leaToken) } })
+      assert(unknown.status === 404, "un code inconnu ne crée rien")
+      const asked = await call(joinRoute.POST, "/api/join", {
+        method: "POST",
+        body: { code: team.data.code, name: "Léa Test", title: "<poste>", email: "pas un email", hostname: "mac-lea", token_hash: hashToken(leaToken) },
+      })
+      assert(asked.status === 201 && asked.data.org === acme.name, "la demande arrive dans l'entreprise du code")
+      const [pending] = await acmeStore.listJoinRequests({ status: "pending" })
+      assert(pending?.name === "Léa Test" && pending.title === null && pending.email === null && pending.hostname === "mac-lea", "ce que son Claude ne savait pas reste vide (gabarit « <poste> » compris)")
+      assert((await profileFromToken(leaToken)) === null, "aucun accès avant l'acceptation")
+      const status0 = await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: leaToken } })
+      assert(status0.status === 200 && status0.data.status === "pending", "le poste suit sa demande : en attente")
+      assert((await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: newToken() } })).status === 404, "personne d'autre ne peut suivre la demande")
+      const fournilAdmin = await createSessionValue(claire.profile.id)
+      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: fournilAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Fournil ne voit pas la demande")
+      assert((await decide(asked.data.id, fournilAdmin, { action: "accept", name: "Intrus" })).status === 404, "ni ne peut l'accepter")
+      const accepted = await decide(asked.data.id, cookie, { action: "accept", name: "Léa Bernard", title: "Designer", zones: ["ops"], manager_id: boss.id })
+      assert(accepted.status === 200, "un admin de l'entreprise complète et accepte")
+      const lea = await profileFromToken(leaToken)
+      assert(lea?.name === "Léa Bernard" && lea.title === "Designer" && lea.org_id === acme.id && lea.manager_id === boss.id, "le jeton du poste ouvre son compte, tel que l'admin l'a réglé")
+      assert((await acmeStore.listZoneAccess(lea!.id)).map((a) => a.zone_id).join() === "ops", "avec les zones choisies")
+      const status1 = await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: leaToken } })
+      assert(status1.data.status === "accepted", "le poste voit l'acceptation (et enchaîne sur setup)")
+      assert((await decide(asked.data.id, cookie, { action: "reject" })).status === 409, "une demande se traite une seule fois")
+      const noName = newToken()
+      const anon = await call(joinRoute.POST, "/api/join", { method: "POST", body: { code: team.data.code, token_hash: hashToken(noName) } })
+      assert((await decide(anon.data.id, cookie, { action: "reject" })).status === 200, "une demande se refuse")
+      assert((await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: anon.data.id, token: noName } })).data.status === "rejected", "et le poste le sait")
+      const rotated = await call(adminJoinRoute.POST, "/api/admin/join", { method: "POST", session: cookie, body: { rotate: true } })
+      assert(rotated.status === 200 && rotated.data.code !== team.data.code, "changer le code")
+      const stale = await call(joinRoute.POST, "/api/join", { method: "POST", body: { code: team.data.code, token_hash: hashToken(newToken()) } })
+      assert(stale.status === 404, "l'ancien message ne marche plus")
+
+      const demoList = await call(demoSessionRoute.GET, "/api/session/demo")
+      assert(demoList.status === 404 || !demoList.data.users.some((u: { id: string }) => u.id === boss.id), "les comptes de l'entreprise ne sont pas proposés dans la démo")
+    } finally {
+      if (store.kind === "file") fs.rmSync(path.resolve(process.env.BRAIN_DATA_DIR ?? ".brain", "orgs", acme.id), { recursive: true, force: true })
+      else {
+        const sql = pgClient(process.env.DATABASE_URL!)
+        await sql`delete from orgs where id = ${acme.id}`
+        await sql`delete from brain_settings where key in (${`tenant:${acme.id}`}, ${`join:${acme.id}`})`
+        await sql.end()
+      }
     }
   }
 

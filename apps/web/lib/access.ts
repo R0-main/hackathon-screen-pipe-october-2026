@@ -6,13 +6,13 @@
 // En contrepartie, l'auteur d'une connaissance la voit et peut la supprimer même s'il ne lit pas sa zone (droit de regard).
 
 import type { AgentEvent, Profile } from "@brain/core"
-import { getStore } from "./store"
+import { storeForOrg } from "./store"
 
 /** `writable` est informatif (réservé) : l'écriture n'est pas restreinte par zone. */
 export type Access = { isAdmin: boolean; readable: string[]; writable: string[] }
 
 export async function getAccess(profile: Profile): Promise<Access> {
-  const store = getStore()
+  const store = storeForOrg(profile.org_id)
   if (profile.role === "admin") {
     const zones = (await store.listZones()).map((z) => z.id)
     return { isAdmin: true, readable: zones, writable: zones }

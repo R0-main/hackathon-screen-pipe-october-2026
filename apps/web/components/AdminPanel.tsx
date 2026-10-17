@@ -8,16 +8,11 @@ import { useBrainLive } from "./BrainLive"
 import { OrgChart, type Presence } from "./OrgChart"
 import { AGENT_LABEL, api, errorMessage, initials } from "./format"
 import { RelTime } from "./RelTime"
+import { TeamJoin } from "./TeamJoin"
+import { ADMIN_VIEWS, type AdminTab } from "./admin-views"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 
 type User = Profile & { zones: string[] }
-type Tab = "org" | "access" | "zones"
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: "org", label: "Organigramme" },
-  { id: "access", label: "Accès par zone" },
-  { id: "zones", label: "Zones" },
-]
 
 const ACTIVE_MS = 15 * 60_000
 
@@ -37,9 +32,10 @@ function teamOf(id: string, users: User[]): Set<string> {
   return out
 }
 
-export function AdminPanel(props: { orgName: string; meId: string; initialUsers: User[]; initialZones: Zone[]; storeKind: string }) {
+export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string; initialUsers: User[]; initialZones: Zone[]; storeKind: string }) {
   const { feed, now } = useBrainLive()
-  const [tab, setTab] = useState<Tab>("org")
+  const tab = props.tab
+  const view = ADMIN_VIEWS.find((v) => v.id === tab)!
   const [users, setUsers] = useState(props.initialUsers)
   const [zones, setZones] = useState(props.initialZones)
   const [selected, setSelected] = useState<string | null>(null)
@@ -115,32 +111,15 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-end gap-x-6 gap-y-3 border-b border-line bg-bone px-4 pt-5 sm:px-8 sm:pt-6">
-        <div className="min-w-0 pb-3">
-          <h1 className="text-[22px] font-medium leading-tight">
-            Équipe et accès <span className="font-normal text-trace">{props.orgName}</span>
-          </h1>
+      <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-line bg-bone px-4 py-4 sm:px-8 sm:py-5">
+        <div className="min-w-0">
+          <h1 className="text-[22px] font-medium leading-tight">{view.label}</h1>
           <p className="mt-1 text-[13px] text-trace">
-            <span className="tabular-nums">{users.length}</span> personne{users.length > 1 ? "s" : ""}, <span className="tabular-nums">{zones.length}</span> zone
-            {zones.length > 1 ? "s" : ""}
+            {view.lead} Chez {props.orgName} : <span className="tabular-nums">{users.length}</span> personne{users.length > 1 ? "s" : ""},{" "}
+            <span className="tabular-nums">{zones.length}</span> zone{zones.length > 1 ? "s" : ""}.
           </p>
         </div>
-        <nav className="-mb-px flex gap-1 self-end" aria-label="Vues de l'équipe">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              aria-current={tab === t.id ? "page" : undefined}
-              onClick={() => setTab(t.id)}
-              className={`border-b-2 px-3 pb-2.5 pt-1 text-[13px] font-medium transition-colors duration-150 ease-out ${
-                tab === t.id ? "border-ink text-ink" : "border-transparent text-trace hover:text-ink"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <button type="button" className="btn btn-primary mb-3 ml-auto" onClick={() => setInvite({ managerId: selected ?? defaultManager })}>
+        <button type="button" className="btn btn-primary ml-auto" onClick={() => setInvite({ managerId: selected ?? defaultManager })}>
           Inviter quelqu&apos;un
         </button>
       </header>
@@ -168,6 +147,11 @@ export function AdminPanel(props: { orgName: string; meId: string; initialUsers:
               onPublishSkills={(u, on) => patch(u, { can_publish_skills: on }, { can_publish_skills: on })}
               onPrompt={regenerate}
             />
+          </PageScroll>
+        )}
+        {tab === "requests" && (
+          <PageScroll width="max-w-[860px]">
+            <TeamJoin zones={zones} people={users.map((u) => ({ id: u.id, name: u.name }))} defaultManager={defaultManager} onAccepted={() => void reload()} />
           </PageScroll>
         )}
         {tab === "zones" && (

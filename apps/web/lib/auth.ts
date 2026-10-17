@@ -5,7 +5,7 @@
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import type { Profile } from "@brain/core"
-import { getStore, isStoreSetupError } from "./store"
+import { getRootStore, isStoreSetupError, storeForOrg, type BrainStore } from "./store"
 import { getAccess, type Access } from "./access"
 
 export const SESSION_COOKIE = "brain_session"
@@ -33,7 +33,7 @@ async function sessionSecret(): Promise<string> {
     }
     return env
   }
-  return getStore().getSessionSecret()
+  return getRootStore().getSessionSecret()
 }
 
 /**
@@ -44,11 +44,21 @@ async function sign(userId: string, exp: string, tokenHash: string, purpose = "v
   return createHmac("sha256", await sessionSecret()).update(`${purpose}.${userId}.${exp}.${tokenHash.slice(0, 16)}`).digest("base64url")
 }
 
+/** Le stockage de l'entreprise d'un compte (les comptes de toutes les entreprises se connectent au même endroit). */
+async function storeForUser(userId: string): Promise<BrainStore | null> {
+  const orgId = await getRootStore().findUserOrg({ id: userId })
+  return orgId ? storeForOrg(orgId) : null
+}
+
+async function tokenHashOf(userId: string): Promise<string | null> {
+  return (await (await storeForUser(userId))?.getTokenHash(userId)) ?? null
+}
+
 /** Durée de validité d'un lien de connexion ouvert par `brain.mjs setup`. */
 export const LOGIN_LINK_SECONDS = 120
 
 export async function createSessionValue(userId: string): Promise<string> {
-  const tokenHash = await getStore().getTokenHash(userId)
+  const tokenHash = await tokenHashOf(userId)
   if (!tokenHash) throw new Error("Membre introuvable.")
   const exp = String(Date.now() + SESSION_DAYS * 86400_000)
   return `${userId}.${exp}.${await sign(userId, exp, tokenHash)}`
@@ -70,7 +80,7 @@ async function verifySigned(value: string | undefined, purpose: string): Promise
   if (parts.length !== 3) return null
   const [userId, exp, sig] = parts
   if (!/^\d{10,16}$/.test(exp) || Number(exp) < Date.now()) return null
-  const tokenHash = await getStore().getTokenHash(userId)
+  const tokenHash = await tokenHashOf(userId)
   if (!tokenHash) return null
   let expected: string
   try {
@@ -99,7 +109,7 @@ function verifySession(value: string | undefined): Promise<string | null> {
  * jeton personnel dans une URL (historique du navigateur, journaux). Expire au bout de LOGIN_LINK_SECONDS.
  */
 export async function createLoginCode(userId: string): Promise<string> {
-  const tokenHash = await getStore().getTokenHash(userId)
+  const tokenHash = await tokenHashOf(userId)
   if (!tokenHash) throw new Error("Membre introuvable.")
   const exp = String(Date.now() + LOGIN_LINK_SECONDS * 1000)
   return `${userId}.${exp}.${await sign(userId, exp, tokenHash, "link1")}`
@@ -120,19 +130,21 @@ export type Viewer = {
 async function buildViewer(real: Profile | null, viewAs?: string): Promise<Viewer | null> {
   if (!real) return null
   let profile = real
-  if (viewAs && real.role === "admin" && viewAs !== real.id) profile = (await getStore().getProfile(viewAs)) ?? real
+  if (viewAs && real.role === "admin" && viewAs !== real.id) profile = (await storeForOrg(real.org_id).getProfile(viewAs)) ?? real
   return { profile, real, access: await getAccess(profile) }
 }
 
 export async function profileFromToken(token: string): Promise<Profile | null> {
-  return getStore().getProfileByTokenHash(hashToken(token.trim()))
+  const hash = hashToken(token.trim())
+  const orgId = await getRootStore().findUserOrg({ tokenHash: hash })
+  return orgId ? storeForOrg(orgId).getProfileByTokenHash(hash) : null
 }
 
 /** Pour les pages (server components) : à partir des valeurs de cookies. */
 export async function viewerFromCookies(session: string | undefined, viewAs: string | undefined): Promise<Viewer | null> {
   const userId = await verifySession(session)
   if (!userId) return null
-  return buildViewer(await getStore().getProfile(userId), viewAs)
+  return buildViewer((await (await storeForUser(userId))?.getProfile(userId)) ?? null, viewAs)
 }
 
 function readCookie(header: string | null, name: string): string | undefined {
@@ -155,4 +167,9 @@ export async function viewerFromRequest(req: Request): Promise<Viewer | null> {
 /** Mode démo : connexion en un clic sur /login. À n'activer qu'avec des données fictives. */
 export function isDemoMode(): boolean {
   return process.env.BRAIN_DEMO === "1" || process.env.BRAIN_DEMO === "true"
+}
+
+/** Création d'entreprise depuis la page d'accueil (/creer). `BRAIN_SIGNUP=0` la ferme : cerveau sur invitation seulement. */
+export function signupOpen(): boolean {
+  return process.env.BRAIN_SIGNUP !== "0" && process.env.BRAIN_SIGNUP !== "false"
 }

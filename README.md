@@ -72,7 +72,35 @@ Authentification : `Authorization: Bearer cb_…` (jeton personnel, haché en SH
 | GET/POST | `/api/skills` | Skills reçus par la personne (toute l'entreprise + ses cortex), fichiers compris. POST `{name, description, zone?, files: [{path, content}]}` : publie (droit requis), même nom → version suivante. |
 | PATCH/DELETE | `/api/skills/:id` | `{zone}` : attribue le skill à un cortex (`null` : toute l'entreprise). Auteur ou admin. |
 | GET/POST/PATCH | `/api/automations…` | Suggestions (heuristique + workflows Screenpipe), validation par un admin. |
+| POST | `/api/orgs` | Public (sauf `BRAIN_SIGNUP=0`) : crée une entreprise et son admin, ouvre la session, renvoie son prompt d'installation. |
+| POST | `/api/join`, `/api/join/status` | Public : demande pour rejoindre avec le code du message d'équipe (empreinte du jeton du poste), puis son état (pour qui détient le jeton). |
+| GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin : message d'équipe et demandes en attente, changer le code ; accepter (compte créé tel que réglé) ou refuser. |
+| GET | `/api/admin/team` | Admin : l'équipe et le dernier signe de chaque poste (`last_at`, null tant qu'il n'est pas branché). |
 | … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Comptes, accès, zones, onboarding, connexion. |
+
+## Créer son entreprise à partir de zéro
+
+Sur la page d'accueil, **Créer mon entreprise** (`/creer`) : quatre questions, une par écran (nom, activité, qui
+vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en êtes l'admin. Ensuite :
+
+1. **Votre poste** : copiez le prompt (ou « Ouvrir dans Claude Code ») et collez-le dans Claude Code. Il installe tout
+   comme la démo de la page d'accueil ; la page passe à « Votre poste est connecté » dès le premier signe de son agent.
+2. **Votre équipe**, de deux façons (sur cette page, puis dans Équipe et accès) :
+   - **un message par personne** : un nom, les zones qu'elle lit, et son prompt (avec son propre jeton) est copié.
+     Envoyez-le-lui : elle le colle dans Claude Code, son poste rejoint le cerveau et apparaît connecté ;
+   - **un seul message pour toute l'équipe** (Équipe et accès, puis Demandes) : le même pour tout le monde, à n'envoyer qu'à ses
+     collègues. Le Claude de chacun remplit la demande avec ce qu'il sait déjà (nom, poste, email ; rien d'inventé,
+     le reste reste vide), et `brain join` l'envoie puis attend. Un admin la complète (poste, rôle, zones,
+     rattachement) et l'accepte : le poste termine alors son installation tout seul. Le code ne donne accès à rien ;
+     le jeton est créé sur le poste et seule son empreinte part avec la demande. « Changer le code » invalide
+     l'ancien message. Code de sortie 5 : toujours en attente (`~/.company-brain/brain join` reprend la même
+     demande) ; 6 : refusée.
+
+Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
+Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
+organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_settings`, sans migration ; fichier :
+`<BRAIN_DATA_DIR>/orgs/<id>/`). Un jeton ou une session désigne son entreprise, et chaque route lit la sienne.
+`BRAIN_SIGNUP=0` ferme la création, `BRAIN_MAX_ORGS` la plafonne (200 par défaut).
 
 ## Brancher un vrai poste
 
