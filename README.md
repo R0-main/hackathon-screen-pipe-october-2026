@@ -44,7 +44,7 @@ demo/                 Script de démo
 
 | Brique | Où | Rôle |
 |---|---|---|
-| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »). Pages séparées : agents en direct (`/activite`), « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
+| **Dashboard** | `apps/web` | Barre latérale à gauche, cerveau 3D en plein écran à droite (zones qui s'allument en néon via SSE, molette pour zoomer, recherche « en tant que »), avec le fil « Agents en direct » posé à côté : on lit l'événement pendant que sa zone s'allume, et une zone du fil ouvre son tiroir. Pages séparées : « où en est la boîte » (`/etat`), connaissances, tâches, automatisations. |
 | **Équipe & accès** | `/admin` | Organigramme (qui est rattaché à qui, agents actifs, zones de chacun ; cliquer une carte pour régler rattachement, rôle et zones), matrice membres × zones, invitation → prompt d'installation avec jeton personnel. |
 | **Skills** | `/skills` | Les skills Claude Code de l'entreprise (SKILL.md et les scripts qu'ils utilisent), regroupés par cortex. Publier demande un droit accordé dans `/admin` (les admins l'ont toujours) ; un skill attribué à un cortex (une zone) n'est donné qu'à ceux qui lisent cette zone. Un script qui contient un secret est refusé. |
 | **Onboarding** | `/onboarding` | Interview guidée de 7 questions + lecture des liens → zones et premières connaissances, validées avant application. |
