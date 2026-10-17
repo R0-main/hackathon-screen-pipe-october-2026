@@ -8,7 +8,7 @@ import { BrainIcon, ErrorText } from "./ui"
 
 type DemoUser = { id: string; name: string; title?: string; role: string }
 
-/** Entrée de la démo : un clic sur un compte de Fournil ouvre le dashboard avec ses droits. À côté, créer le sien. */
+/** Entrée de la démo : un clic sur un compte de Butine ouvre le dashboard avec ses droits. À côté, créer le sien. */
 export function DemoPicker({ signup = false }: { signup?: boolean }) {
   const router = useRouter()
   const [users, setUsers] = useState<DemoUser[] | null>(null)
@@ -46,9 +46,9 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
           <Link href="/" className="rounded-[6px]" aria-label="Page d'accueil">
             <BrainIcon size={56} />
           </Link>
-          <h1 className="mt-3 text-[24px] font-medium leading-tight">La démo : le cerveau de Fournil</h1>
+          <h1 className="mt-3 text-[24px] font-medium leading-tight">La démo : le cerveau de Butine</h1>
           <p className="mt-1 text-[13px] text-trace">
-            Fournil est une entreprise fictive de six personnes. Choisissez qui vous êtes : chacun ne voit que les zones auxquelles il a accès.
+            Butine fabrique des balances connectées pour ruches : l'apiculteur voit sur son téléphone si ses abeilles vont bien, sans ouvrir la ruche. Une entreprise fictive de six personnes. Choisissez qui vous êtes : chacun ne voit que les zones auxquelles il a accès.
           </p>
         </div>
         <section className="panel p-5" aria-busy={busy || users === null}>
@@ -74,7 +74,7 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
         {signup && (
           <section className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1 py-3">
             <span className="min-w-0">
-              <span className="block text-[14px] font-medium">Votre entreprise, plutôt que Fournil ?</span>
+              <span className="block text-[14px] font-medium">Votre entreprise, plutôt que Butine ?</span>
               <span className="block text-[13px] text-trace">Quatre questions, puis un prompt à coller dans Claude Code ou Codex.</span>
             </span>
             <Link href="/creer" className="btn">

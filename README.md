@@ -16,7 +16,7 @@ Prérequis : Node.js ≥ 20 et `make`. Docker est facultatif.
 
 ```bash
 make dev      # première fois : .env, npm install, Postgres, migrations, puis http://localhost:3000
-make demo     # la même chose avec l'entreprise fictive Fournil : http://localhost:3000/demo
+make demo     # la même chose avec l'entreprise fictive Butine : http://localhost:3000/demo
 make help     # toutes les commandes (db-stop, db-reset, seed, simulate, test…)
 ```
 
@@ -38,7 +38,7 @@ packages/core/        Contrats partagés (KnowledgeItem, AgentEvent), zones, fil
                       distillation (Claude + heuristique), détection d'automatisations, résumé d'état
 apps/web/             Le cerveau : dashboard Next.js + API (/api/ingest, /api/query, /api/events, /api/stream…)
   lib/store/          Stockage : fichier JSON (zéro config) ou Postgres/Supabase (DATABASE_URL)
-  scripts/            seed (Fournil), simulate (activité en direct), smoke (tests), migrate (SQL)
+  scripts/            seed (Butine), simulate (activité en direct), smoke (tests), migrate (SQL)
 apps/client/          Le client poste, livré en UN fichier (brain.mjs, servi par le dashboard sur /brain.mjs) :
                       brain-sync, serveur MCP company-brain, hooks Claude Code, installation
 supabase/migrations/  Schéma Postgres + politiques RLS par zone
@@ -60,8 +60,9 @@ demo/                 Script de démo
 | **État par Claude** | `brain.mjs refresh-status` | Admins : rédige « où en est la boîte » sur le poste avec Claude (abonnement) et l'envoie au dashboard. |
 | **Nouvelles zones** | `brain.mjs refresh-zones` | Admins : passage « nouvelles zones » fait par Claude Code (abonnement), sur un poste ou dans la CI de l'entreprise (GitHub Actions). |
 | **Diagnostic** | `brain.mjs doctor` | Passe le poste en revue sans rien modifier (Node, raccourci, cerveau, Screenpipe, MCP, hooks, synchro, distillation) et donne la commande qui répare chaque point KO ; `--json` pour Claude Code. |
-| **MCP company-brain** | `brain.mjs mcp` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`. Chaque requête allume la zone trouvée. Poste branché sur plusieurs entreprises : chaque outil prend `company` (par défaut la première), guidé par le nom et la description de chacune. |
-| **Plusieurs entreprises** | `brain.mjs companies`, `/login` | Le prompt d'installation d'une deuxième entreprise l'ajoute à côté de la première au lieu de la remplacer (la synchro, les hooks et les skills restent sur la première ; `companies --default` en change). Le navigateur retient chaque entreprise ouverte : la connexion propose de revenir dans l'une d'elles en un clic, et l'en-tête de la barre latérale passe de l'une à l'autre. |
+| **MCP de l'entreprise** | `/api/mcp/<entreprise>/<jeton>` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`, servis par le cerveau (HTTP, sans état) avec les droits du jeton. `brain setup` l'enregistre dans Claude Code et Codex sous `nos-brainer-<entreprise>` : il y apparaît connecté, une entrée par entreprise. Chaque requête allume la zone trouvée. |
+| **MCP du poste** | `brain.mjs mcp` | Les mêmes outils en stdio (`@brain/core/mcp`) : le secours quand Claude Code ne peut pas joindre l'endpoint (cerveau à certificat privé) ; paramètre `company` s'il y a plusieurs entreprises. |
+| **Plusieurs entreprises** | `brain.mjs companies`, `/login` | Le prompt d'installation d'une deuxième entreprise l'ajoute à côté de la première au lieu de la remplacer, avec son propre serveur MCP (la synchro, les hooks et les skills restent sur la première ; `companies --default` en change, `--remove` en retire une et son serveur MCP). Le navigateur retient chaque entreprise ouverte : la connexion propose de revenir dans l'une d'elles en un clic, et l'en-tête de la barre latérale passe de l'une à l'autre. |
 | **Hooks Claude Code** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → événements : néons fiables, et détection des prompts répétitifs par empreinte. Un court résumé masqué n'est envoyé que si le prompt concerne une zone et n'a rien de personnel (`init --share-prompt-summaries non` le supprime). |
 
 ## Supervision, connecteurs, langues
@@ -82,7 +83,7 @@ demo/                 Script de démo
 - **Qualité du cerveau** : synonymes FR/EN dans la recherche, recherche sémantique optionnelle (`VOYAGE_API_KEY` ou un
   point de terminaison compatible OpenAI, Ollama compris : `npm run embed` pour l'existant), remplacement automatique
   d'une décision ou procédure revue (l'ancienne sort des recherches), pages Entités (`/entites`), et `npm run eval`
-  qui mesure la recherche sur la démo Fournil.
+  qui mesure la recherche sur la démo Butine.
 
 ## API du cerveau
 
@@ -134,7 +135,7 @@ vous êtes, zones du cerveau), et le dashboard de l'entreprise existe, vous en �
      demande) ; 8 : refusée. Les autres codes sont ceux de l'installation ([docs/CLI.md](docs/CLI.md)).
 
 Chaque entreprise a son cerveau à part : comptes, zones, connaissances et activité ne se croisent jamais, et la démo
-Fournil n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
+Butine n'est pas touchée (un reseed la remplace sans effacer les entreprises créées). Côté stockage : une
 organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_settings`, sans migration ; fichier :
 `<BRAIN_DATA_DIR>/orgs/<id>/`). Un jeton ou une session désigne son entreprise, et chaque route lit la sienne.
 `BRAIN_SIGNUP=0` ferme la création, `BRAIN_MAX_ORGS` la plafonne (200 par défaut).
@@ -188,7 +189,7 @@ Le cerveau tourne sur **Vercel Hobby** (toujours en ligne) avec **Neon** (Postgr
    - Build Command : `npm run build` (construit aussi `brain.mjs`, servi sur `/brain.mjs`)
    - Région des fonctions : la même que la base (`fra1` pour Neon Francfort)
    - Désactivez « Vercel Authentication » : les postes appellent l'API avec leur jeton personnel.
-3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Fournil au premier passage sur `/login`. Le secret de session est généré tout seul et conservé dans la base.
+3. **Variables** : `DATABASE_URL` (Neon, connexion « pooled »), `BRAIN_PUBLIC_URL` (l'URL publique, utilisée dans le prompt d'installation), `BRAIN_DEMO=1` pour la démo. Avec `BRAIN_DEMO=1`, une base vide est automatiquement remplie avec l'entreprise fictive Butine au premier passage sur `/login` (une base restée sur l'ancienne démo, Fournil, est remplacée une fois par Butine, en gardant les comptes visiteurs et leurs jetons). Le secret de session est généré tout seul et conservé dans la base.
 
 4. **Job quotidien « nouvelles zones »** : définissez `CRON_SECRET` (une longue chaîne aléatoire, `openssl rand -hex 32`) et
    `BRAIN_SECRET_KEY` (idem, chiffre les clés Claude des entreprises). `apps/web/vercel.json` déclare le cron. La clé Claude,
@@ -256,5 +257,5 @@ de suite, sans validation**. Aucun PC n'a besoin d'être allumé. L'admin choisi
 npm test                 # tests unitaires (core + client)
 npm run typecheck
 npm run smoke            # bout en bout sur le stockage courant (fichier, ou Postgres si DATABASE_URL)
-npm run eval             # qualité de la recherche sur la démo Fournil (après npm run seed)
+npm run eval             # qualité de la recherche sur la démo Butine (après npm run seed)
 ```

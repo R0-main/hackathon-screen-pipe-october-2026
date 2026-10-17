@@ -221,6 +221,16 @@ export function companiesOf(cfg: Pick<Config, "url" | "token" | "org" | "compani
   return [{ url: cfg.url, token: cfg.token, ...cfg.org }, ...(cfg.companies ?? [])]
 }
 
+/** Nom affichable d'une entreprise : son nom, à défaut l'adresse de son cerveau. */
+export function companyLabel(c: Company): string {
+  if (c.name) return c.name
+  try {
+    return new URL(c.url).host
+  } catch {
+    return c.url
+  }
+}
+
 /** La config avec ces entreprises, dans cet ordre (la première devient celle par défaut). */
 export function withCompanies<T extends Partial<Config>>(cfg: T, list: Company[]): T {
   const [first, ...rest] = list

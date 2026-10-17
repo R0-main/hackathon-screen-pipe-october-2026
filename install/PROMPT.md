@@ -26,7 +26,11 @@ notre CLI (pourquoi : [docs/CLI.md](../docs/CLI.md)) :
    captures effacées après 14 jours (le texte reste). Le jeton d'API local est lu et enregistré tout seul.
 3. **Autorisations** (macOS) : ouvre le bon panneau des Réglages, puis surveille `GET /health` et continue dès que la
    capture démarre. Personne n'a à revenir dans le terminal pour dire « c'est fait ».
-4. **Claude Code** : MCP `company-brain` (portée utilisateur) et hooks `SessionStart` / `UserPromptSubmit` / `Stop`.
+4. **Claude Code et Codex** : le serveur MCP de l'entreprise, `nos-brainer-<entreprise>`, branché directement sur le
+   cerveau (`<cerveau>/api/mcp/<id de l'entreprise>/<jeton>`, HTTP) : `claude mcp add --transport http` (portée
+   utilisateur) et `~/.codex/config.toml` si Codex est là. Il apparaît « Connected » dans `/mcp` et `claude mcp list`, et
+   dans `codex mcp list`. Une deuxième entreprise installée sur le poste a le sien à côté. Cerveau à certificat privé :
+   le serveur MCP du poste (`company-brain`, stdio) à la place. Puis les hooks `SessionStart` / `UserPromptSubmit` / `Stop`.
 5. **Synchro** toutes les 15 minutes, à partir de maintenant : seule l'activité à venir part, jamais l'historique.
 6. **Néon et navigateur** : `hello` allume les zones de la personne, puis le cerveau s'ouvre **déjà connecté** grâce à un
    lien de connexion valable 2 minutes (`POST /api/session/link`, sans le jeton dans l'URL), avec un bandeau de bienvenue.
@@ -58,7 +62,8 @@ modifier** et donne, pour chaque point KO, la commande qui répare :
 | Poste | Node.js (version, gestionnaire de versions qui cassera les chemins, Rosetta), raccourci (il démarre et lance ce client), dossier privé |
 | Cerveau | Config, connexion et jeton (révoqué ?), client à jour par rapport à celui que sert le cerveau (`/brain.mjs.sha256`) |
 | Screenpipe | Répond, capture l'écran (autorisation refusée, capture bloquée, économie d'énergie), Accessibilité, jeton d'API local, données « parsed » |
-| Claude Code | CLI `claude`, MCP `company-brain` (enregistré et il démarre), hooks (les trois, sans doublon, sur le client actuel, lançables sans Git Bash sous Windows), erreurs récentes des hooks |
+| Claude Code | CLI `claude`, serveur MCP de chaque entreprise (enregistré à la bonne adresse et il répond ; sinon `company-brain`, enregistré et il démarre), hooks (les trois, sans doublon, sur le client actuel, lançables sans Git Bash sous Windows), erreurs récentes des hooks |
+| Codex | Serveur MCP de chaque entreprise déclaré dans `~/.codex/config.toml` (si Codex est installé) |
 | Synchro | Planification (et ce qu'elle lance vraiment), dernière synchro, dernière erreur du journal, verrou orphelin, conversations en attente, simulation non confirmée |
 | Distillation | Claude Code ou clé API, `claude` trouvable par la synchro planifiée, connexion Claude perdue (jeton expiré) |
 
@@ -86,7 +91,7 @@ géré. En entreprise, un profil MDM (PPPC) peut pré-accorder l'Accessibilité 
 ## Exemple (jeton fictif)
 
 ```text
-Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois, zones : compta.
+Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Butine. Je suis Jean-Marc Dubois, zones : compta.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi en une phrase de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`). Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire, sans liste ni explication, puis attends.
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.
@@ -121,7 +126,7 @@ et `setup --ca` l'enregistre pour le client (synchro, MCP, hooks) et l'installe 
 Un certificat public (cloud) : rien de tout cela n'apparaît.
 
 ```text
-Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Fournil. Je suis Jean-Marc Dubois, zones : compta.
+Tu vas connecter ce poste à NOS Brainer, le cerveau d'entreprise de Butine. Je suis Jean-Marc Dubois, zones : compta.
 Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-sync reconnaît cette conversation et ne l'envoie jamais au cerveau). Sois bref. Si tu ne tournes pas sur mon poste (session cloud, conteneur distant), arrête-toi et dis-moi en une phrase de recoller ce message dans Claude Code ou Codex en local (terminal `claude` ou `codex`). Action bloquée ou refusée : ne contourne rien, dis-moi en une phrase quoi faire, sans liste ni explication, puis attends.
 
 1. Préviens-moi en une phrase : sur Mac, les Réglages Système vont s'ouvrir et je devrai activer « screenpipe » dans « Enregistrement de l'écran » puis dans « Accessibilité » ; la commande attend et reprend toute seule.

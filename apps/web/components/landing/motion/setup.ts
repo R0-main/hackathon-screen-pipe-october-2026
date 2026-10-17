@@ -10,7 +10,7 @@ gsap.registerPlugin(ScrollTrigger, SplitText)
   Le balisage porte des attributs que ce module anime :
   - data-hero="nav|title|sub|cta|note"  premier écran ;
   - data-reveal="title|text|panel|cards" titres, paragraphes, panneaux et cartes (hébergement, tarifs) des sections ;
-  - data-rows, data-type                 lignes de « Où en est Fournil » et prompt de Jean-Marc ;
+  - data-rows, data-type                 lignes de « Où en est Butine » et prompt de Jean-Marc ;
   - data-privacy (+ data-pf-*)           le parcours des captures, du poste au cerveau (PrivacyFlow) ;
   - data-rule, data-facts                trait encre et trois engagements ;
   - data-after, data-thread, data-bead   fil de billes qui relie les sections ;
@@ -185,7 +185,7 @@ function thread(root: HTMLElement) {
 
 /**
  * On lit la page comme on lit le cerveau. Les titres passent de pâle à encre et les textes montent au rythme du
- * scroll ; le panneau « Où en est Fournil » et le schéma vie privée se jouent pendant l'arrêt de leur section :
+ * scroll ; le panneau « Où en est Butine » et le schéma vie privée se jouent pendant l'arrêt de leur section :
  * la page tient, l'histoire avance sous les yeux.
  */
 function sections(root: HTMLElement, holds: Holds) {

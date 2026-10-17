@@ -1,4 +1,4 @@
-// Évaluation de la recherche sur l'entreprise de démo Fournil : npm run eval (après npm run seed).
+// Évaluation de la recherche sur l'entreprise de démo Butine : npm run eval (après npm run seed).
 // Pour chaque question, on attend qu'une connaissance donnée (reconnue par un morceau de son titre) sorte dans les
 // 3 premiers résultats. Affiche précision@1, succès@3 et MRR, avec ou sans embeddings selon la configuration.
 // Ajouter un cas : une ligne dans CASES. Un cas qui régresse se voit tout de suite.
@@ -11,9 +11,9 @@ type Case = { query: string; expect: string; zones?: string[] }
 
 /** Formulations volontairement différentes des titres (synonymes, anglais, fautes légères). */
 export const CASES: Case[] = [
-  { query: "comment déployer en production ?", expect: "Déployer Fournil en production" },
-  { query: "how do we ship a release", expect: "Déployer Fournil en production" },
-  { query: "mise en prod", expect: "Déployer Fournil en production" },
+  { query: "comment déployer en production ?", expect: "Déployer Butine en production" },
+  { query: "how do we ship a release", expect: "Déployer Butine en production" },
+  { query: "mise en prod", expect: "Déployer Butine en production" },
   { query: "rapprochement Qonto", expect: "Rapprochement bancaire quotidien" },
   { query: "reconciliation bancaire", expect: "Rapprochement bancaire quotidien" },
   { query: "clôture mensuelle export cabinet", expect: "Clôture mensuelle" },
@@ -22,19 +22,21 @@ export const CASES: Case[] = [
   { query: "webhook invoice.paid", expect: "webhook Stripe" },
   { query: "restaurer une sauvegarde", expect: "Restaurer une sauvegarde Supabase" },
   { query: "backup restore staging", expect: "Restaurer une sauvegarde Supabase" },
-  { query: "terminaux sumup se déconnectent", expect: "SumUp" },
-  { query: "isolation des données par boulangerie", expect: "RLS Supabase" },
-  { query: "prix par boutique", expect: "49 €" },
-  { query: "pricing mensuel", expect: "49 €" },
+  { query: "dérive des balances par grand froid", expect: "nuit de gel" },
+  { query: "isolation des données par apiculteur", expect: "RLS Supabase" },
+  { query: "prix par ruche", expect: "4 € par ruche" },
+  { query: "pricing mensuel", expect: "4 € par ruche" },
   { query: "pipeline commercial octobre", expect: "Pipeline d'octobre" },
-  { query: "La Mie Dorée export comptable", expect: "La Mie Dorée" },
-  { query: "imprimante de tickets en panne", expect: "imprimante de tickets" },
+  { query: "Miellerie Roussel export des pesées", expect: "Miellerie Roussel" },
+  { query: "balance muette qui n'envoie plus rien", expect: "Réveiller une balance" },
+  { query: "fausses alertes essaimage à la récolte", expect: "fausses alertes d'essaimage" },
   { query: "burn et runway", expect: "Burn mensuel" },
-  { query: "objectif fin d'année clients", expect: "120 boulangeries" },
+  { query: "objectif fin d'année ruches", expect: "4 500 ruches" },
   { query: "notes de frais", expect: "Swile" },
-  { query: "offline first PWA caisse", expect: "offline-first" },
-  { query: "recruter un dev mobile", expect: "développeur·se mobile" },
-  { query: "salon Europain leads", expect: "Europain" },
+  { query: "mémoire tampon hors réseau", expect: "le réseau LoRa tombe" },
+  { query: "frelon asiatique", expect: "frelon" },
+  { query: "recruter un dev embarqué", expect: "embarqué" },
+  { query: "congrès Miel & Ruches leads", expect: "40 % des leads" },
 ]
 
 async function main() {

@@ -136,8 +136,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
   for (const s of supersedes) {
     const next = inserted[s.index]
     if (!next) continue
-    await store().markSuperseded(s.oldId, next.id)
-    replaced++
+    if (await store().markSuperseded(s.oldId, next.id)) replaced++
   }
   const tasks = inserted
     .filter((i) => i.kind === "task")

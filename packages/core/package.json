@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./claude": "./src/claude.ts"
+    "./claude": "./src/claude.ts",
+    "./mcp": "./src/mcp.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

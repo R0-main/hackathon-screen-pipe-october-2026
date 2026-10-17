@@ -39,7 +39,7 @@ jobs:
           make db-status
           make migrate | tee migrate.log
           grep -q "déjà appliquée" migrate.log
-      - name: make seed (Fournil)
+      - name: make seed (Butine)
         env:
           LOCAL_DB: ${{ matrix.db }}
         run: make seed

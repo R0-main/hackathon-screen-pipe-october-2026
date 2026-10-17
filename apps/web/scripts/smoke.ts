@@ -47,6 +47,7 @@ import {
 } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
+import * as zoneRoute from "../app/api/zones/[id]/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
@@ -71,7 +72,9 @@ import * as adminJoinRoute from "../app/api/admin/join/route"
 import * as adminJoinIdRoute from "../app/api/admin/join/[id]/route"
 import * as skillsRoute from "../app/api/skills/route"
 import * as skillRoute from "../app/api/skills/[id]/route"
-import { DEMO_VISITOR_TITLE, demoVisitorManager, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
+import * as mcpRoute from "../app/api/mcp/[orgId]/[token]/route"
+import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceLegacyDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
+import { DEMO_ITEMS, DEMO_ORG, LEGACY_DEMO_NAMES } from "./demo-data"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
@@ -243,20 +246,20 @@ async function main() {
   assert(devForJm.items.length === 0, "RLS : la compta ne voit rien de la zone dev")
   assert(devForJm.zones_restricted.includes("dev"), "la zone dev est signalée comme restreinte")
   const devForHugo = await queryBrain(hugo, { query: "déployer en production" })
-  assert(devForHugo.items.some((i) => i.title.includes("Déployer Fournil")), "Hugo trouve la procédure de déploiement")
+  assert(devForHugo.items.some((i) => i.title.includes("Déployer Butine")), "Hugo trouve la procédure de déploiement")
   const compta = await queryBrain(jm, { query: "rapprochement Qonto Pennylane" })
   assert(compta.items[0]?.zone === "compta" && compta.zones_hit.includes("compta"), "Jean-Marc trouve le rapprochement, la zone compta s'allume")
 
   const before = (await store.zoneStats()).find((z) => z.zone === "dev")?.count ?? 0
   const res = await ingestItems(hugo, [
     {
-      zone: "inconnue", kind: "task", title: `Ajouter un index sur les précommandes (${run})`, body: "TODO avant la mise en prod. Contact : hugo@fournil.example, clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+      zone: "inconnue", kind: "task", title: `Ajouter un index sur les alertes essaimage (${run})`, body: "TODO avant la mise en prod. Contact : hugo@butine.example, clé sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
       entities: [{ type: "tool", name: "Postgres" }], source: { app: "Terminal", tool: "claude-code", at: new Date().toISOString() }, confidence: 0.7,
     },
   ])
   const it = await store.getItem(res.ids[0])
   assert(it && it.zone === "dev", "une zone inconnue est reclassée (dev)")
-  assert(it && !it.body.includes("sk-ant") && !it.body.includes("@fournil"), "secrets et emails masqués côté serveur")
+  assert(it && !it.body.includes("sk-ant") && !it.body.includes("@butine"), "secrets et emails masqués côté serveur")
   assert(((await store.zoneStats()).find((z) => z.zone === "dev")?.count ?? 0) === before + 1, "le compteur de la zone dev augmente")
   assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.source_item_id === res.ids[0]), "une tâche est créée depuis l'item")
 
@@ -282,9 +285,9 @@ async function main() {
   console.log("\n— Skills de l'entreprise : publication sous autorisation, attribution à un cortex")
   const names = async (v: Viewer) => (await listVisibleSkills(v)).map((x) => x.name)
   const jmSkills = await names(jm)
-  assert(jmSkills.includes("ton-fournil") && jmSkills.includes("rapprochement-qonto-pennylane"), "Jean-Marc reçoit les skills de toute l'entreprise et du cortex compta")
-  assert(!jmSkills.includes("deployer-fournil"), "mais pas celui du cortex dev")
-  assert((await names(hugo)).includes("deployer-fournil") && !(await names(hugo)).includes("rapprochement-qonto-pennylane"), "Hugo reçoit le skill dev, pas celui de la compta")
+  assert(jmSkills.includes("ton-butine") && jmSkills.includes("rapprochement-qonto-pennylane"), "Jean-Marc reçoit les skills de toute l'entreprise et du cortex compta")
+  assert(!jmSkills.includes("deployer-butine"), "mais pas celui du cortex dev")
+  assert((await names(hugo)).includes("deployer-butine") && !(await names(hugo)).includes("rapprochement-qonto-pennylane"), "Hugo reçoit le skill dev, pas celui de la compta")
   assert((await names(claire)).length >= 5, "l'admin voit tous les skills")
   assert(canPublishSkills(claire) && canPublishSkills(hugo) && !canPublishSkills(ines), "publier : admins et membres autorisés seulement")
   const refused = async (p: Promise<unknown>, status: number) => {
@@ -356,13 +359,43 @@ async function main() {
       assert(after.get("Inès Lefèvre")?.manager_id === id("Hugo") && after.get("Jean-Marc Dubois")?.manager_id === id("Claire"), "l'organigramme à plat retrouve ses rattachements")
       assert(after.get("Claire Martin")?.manager_id == null, "la CEO reste en tête")
       assert(after.get("Visiteur 1234")?.manager_id === id("Hugo"), "les visiteurs rejoignent l'équipe du lead dev")
-      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deployer-fournil")?.version === 3, "les skills de démo sont ajoutés")
+      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deployer-butine")?.version === 3, "les skills de démo sont ajoutés")
       assert(after.get("Hugo Bernard")?.can_publish_skills === true && after.get("Inès Lefèvre")?.can_publish_skills === false, "Hugo et Jean-Marc reçoivent le droit de publier")
       assert((await old.listItems({})).length === itemsBefore && visitor.id === after.get("Visiteur 1234")?.id, "rien n'est effacé")
       await old.updateProfile(id("Inès"), { manager_id: id("Claire") })
       const again = await upgradeDemoBrain(old)
       assert(again.managers === 0 && again.skills === 0 && (await old.getProfile(id("Inès")))?.manager_id === id("Claire"), "relancé : ne touche plus aux choix d'un admin")
       assert((await demoVisitorManager(old)) === id("Hugo"), "un nouveau visiteur est rattaché au lead dev")
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  console.log("\n— Démo restée sur l'ancienne entreprise fictive : remplacée, visiteurs gardés")
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "brain-legacy-"))
+    try {
+      const old = new FileStore(tmp)
+      await seedDemoBrain(old)
+      assert((await replaceLegacyDemoBrain(old)) === null, "la démo actuelle n'est jamais remplacée")
+      await old.updateOrg({ name: LEGACY_DEMO_NAMES[0] })
+      const token = newToken()
+      const visitor = await old.createProfile({ name: "Visiteur 4321", title: DEMO_VISITOR_TITLE, role: "member", token_hash: hashToken(token) })
+      await old.setZoneAccess(visitor.id, [{ zone_id: "dev", can_write: true }, { zone_id: "produit", can_write: false }])
+      await old.insertItems([{ ...item("dev", `Smoke ${run} ancienne démo`), author_id: visitor.id }])
+      const res = await replaceLegacyDemoBrain(old)
+      const kept = await old.getProfileByTokenHash(hashToken(token))
+      const hugoNow = (await old.listProfiles()).find((p) => p.name === "Hugo Bernard")
+      assert(res?.visitors === 1 && (await old.getOrg()).name === DEMO_ORG.name, `l'ancienne démo devient ${DEMO_ORG.name}`)
+      assert(kept?.name === "Visiteur 4321" && kept.title === DEMO_VISITOR_TITLE && kept.manager_id === hugoNow?.id, "le visiteur garde son jeton et rejoint l'équipe du lead dev")
+      assert(
+        (await old.listZoneAccess(kept!.id)).map((a) => `${a.zone_id}:${a.can_write}`).sort().join() === "dev:true,produit:false",
+        "et garde ses zones",
+      )
+      assert(
+        (await old.listItems({})).length === DEMO_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deployer-butine"),
+        "connaissances et skills de la nouvelle démo, sans ceux de l'ancienne",
+      )
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }
@@ -393,7 +426,7 @@ async function main() {
   const dup = await ingestItems(hugo, [item("dev", `Smoke ${run} doublon`), item("dev", `smoke ${run} doublon`), item("produit", `Smoke ${run} doublon`)])
   created.push(...dup.ids)
   assert(dup.inserted === 2 && dup.skipped === 1, "doublon dans un même lot ignoré, même titre dans une autre zone gardé")
-  const sameTitle = `Smoke ${run} claude — fournil`
+  const sameTitle = `Smoke ${run} claude — butine`
   const fact1 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "On a décidé de passer à Pennylane." }])
   const fact2 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "On a aussi décidé de garder Qonto pour la trésorerie." }])
   created.push(...fact1.ids, ...fact2.ids)
@@ -457,7 +490,7 @@ async function main() {
   assert(persoEvent.zones.includes("dev") && !persoEvent.summary, "recherche personnelle : zone allumée, texte non conservé")
   await queryBrain(hugo, { query: `Smoke ${run} déployer en production` })
   assert((await lastEvent(hugo)).summary === `Smoke ${run} déployer en production`, "recherche dans ses zones, sans rien de personnel : texte conservé")
-  const both = `Smoke ${run} imprimante de tickets du support et déploiement`
+  const both = `Smoke ${run} tickets de balances du support et déploiement`
   await queryBrain(hugo, { query: both })
   const bothEvent = await lastEvent(hugo)
   assert(bothEvent.summary === both && bothEvent.zones.includes("dev") && bothEvent.zones.includes("support"), "texte conservé : l'événement porte toutes les zones touchées (dev + support)")
@@ -708,6 +741,39 @@ async function main() {
     }
     assert((await viewerFromCookies(oldCookie, undefined))?.real.id === hugo.profile.id, "table rétablie : la session redevient valide")
 
+    console.log("\n— Postgres : migration « qualité » absente, l'ingestion d'une décision revue ne plante pas")
+    {
+      const ddlQ = pgClient(url, 1)
+      const legacy = new PostgresStore(url)
+      const gq = globalThis as unknown as { __brainStore?: BrainStore }
+      const currentQ = gq.__brainStore
+      const qtagM = `Smoke ${run} sans migration`
+      const dec = (body: string, at: number): KnowledgeItemInput => ({
+        zone: "dev",
+        kind: "decision",
+        title: `${qtagM} : les exports comptables passent par un bucket S3 chiffré`,
+        body,
+        entities: [],
+        source: { app: "Terminal", tool: "claude-code", at: new Date(at).toISOString() },
+        confidence: 0.8,
+      })
+      await ddlQ`alter table knowledge_items rename column superseded_by to superseded_by_smoke`
+      gq.__brainStore = legacy
+      let ids: string[] = []
+      try {
+        const a = await ingestItems(hugo, [dec(`Les exports partent dans un bucket S3 chiffré (${run}).`, Date.now() - 60_000)])
+        const b = await ingestItems(hugo, [dec(`Finalement les exports restent sur le serveur de fichiers, le bucket S3 est abandonné (${run}).`, Date.now() + 5_000)])
+        ids = [...a.ids, ...b.ids]
+        assert(a.inserted === 1 && b.inserted === 1 && b.replaced === 0, "décision revue insérée, rien de marqué, aucune erreur (pas de 503 pour le poste)")
+      } finally {
+        gq.__brainStore = currentQ
+        await legacy.end()
+        await ddlQ`alter table knowledge_items rename column superseded_by_smoke to superseded_by`
+        await ddlQ.end({ timeout: 5 })
+      }
+      for (const id of ids) await store.deleteItem(id)
+    }
+
     console.log("\n— Postgres : reset atomique, jamais d'organisation parasite (E3)")
     await orgRaceTest(url, run)
   }
@@ -744,7 +810,7 @@ async function main() {
   console.log("\n— Créer son entreprise (/creer) : un cerveau à part")
   {
     const root = getRootStore()
-    const fournil = await root.getOrg()
+    const butine = await root.getOrg()
     const tenantsBefore = await root.countTenantOrgs()
     const acme = await root.createTenantOrg({
       name: `Acme ${run}`,
@@ -754,7 +820,7 @@ async function main() {
     const acmeStore = storeForOrg(acme.id)
     try {
       assert((await root.countTenantOrgs()) === tenantsBefore + 1, "une entreprise créée est comptée")
-      assert((await root.getOrg()).id === fournil.id && !(await root.isEmpty()), "le cerveau de la base reste celui de Fournil")
+      assert((await root.getOrg()).id === butine.id && !(await root.isEmpty()), "le cerveau de la base reste celui de Butine")
       assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops", "la nouvelle entreprise n'a que ses zones")
       const token = newToken()
       const boss = await acmeStore.createProfile({ name: `Alice ${run}`, role: "admin", manager_id: null, token_hash: hashToken(token) })
@@ -763,17 +829,47 @@ async function main() {
       const cookie = await createSessionValue(boss.id)
       const alice = await viewerFromCookies(cookie, claire.profile.id)
       assert(alice?.real.id === boss.id && alice.profile.id === boss.id, "sa session est reconnue ; « voir en tant que » ne sort pas de son entreprise")
-      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Fournil ne voit pas ce compte")
+      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Butine ne voit pas ce compte")
 
       const st = await call(stateRoute.GET, "/api/state", { session: cookie })
       assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "son dashboard ne montre que son entreprise")
 
+      console.log("\n— Serveur MCP de l'entreprise (/api/mcp/<entreprise>/<jeton>) : ce que Claude Code et Codex branchent")
+      const rpc = async (orgId: string, tok: string, body: unknown, method = "POST") => {
+        const res = await mcpRoute.POST(
+          new Request(`http://smoke.test/api/mcp/${orgId}/${tok}`, {
+            method,
+            headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18" },
+            body: method === "POST" ? JSON.stringify(body) : undefined,
+          }),
+          { params: Promise.resolve({ orgId, token: tok }) },
+        )
+        return { status: res.status, data: (await res.json().catch(() => null)) as any }
+      }
+      const hello = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "0" } } }
+      const mcpInit = await rpc(acme.id, token, hello)
+      assert(
+        mcpInit.status === 200 && mcpInit.data.result.instructions.includes(`Acme ${run} : Test de fumée`) && mcpInit.data.result.instructions.includes(`Alice ${run}`),
+        "MCP : poignée de main, consigne au nom et à la description de l'entreprise, pour cette personne",
+      )
+      const mcpTools = await rpc(acme.id, token, { jsonrpc: "2.0", id: 2, method: "tools/list" })
+      assert(
+        mcpTools.data.result.tools.map((t: { name: string }) => t.name).join() === "search_brain,get_zone_summary,list_zones,whoami_context,company_status,remember",
+        "MCP : les six outils du cerveau, sans paramètre company (une entreprise par serveur)",
+      )
+      assert(!JSON.stringify(mcpTools.data).includes('"company"'), "MCP : pas de paramètre company")
+      const mcpZones = await rpc(acme.id, token, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_zones", arguments: {} } })
+      assert(mcpZones.data.result.content[0].text.includes("**Ops** (`ops`)"), "MCP : un outil répond, avec les zones de l'entreprise")
+      assert((await rpc(butine.id, token, hello)).status === 401, "MCP : le jeton d'une entreprise n'ouvre pas le serveur d'une autre")
+      assert((await rpc(acme.id, newToken(), hello)).status === 401, "MCP : jeton inconnu refusé")
+      assert((await rpc(acme.id, token, null, "GET")).status === 405, "MCP : GET refusé (serveur sans état)")
+
       console.log("\n— Entreprises retenues par le navigateur : revenir à l'une, passer de l'une à l'autre")
-      const fournilSession = await createSessionValue(claire.profile.id)
-      const both = await rememberAccounts(cookie, fournilSession)
+      const butineSession = await createSessionValue(claire.profile.id)
+      const both = await rememberAccounts(cookie, butineSession)
       const listed = await listRememberedAccounts(both)
       assert(
-        listed.map((a) => a.org.id).join() === `${acme.id},${fournil.id}` && listed[0].org.name === `Acme ${run}` && listed[0].org.description === "Test de fumée",
+        listed.map((a) => a.org.id).join() === `${acme.id},${butine.id}` && listed[0].org.name === `Acme ${run}` && listed[0].org.description === "Test de fumée",
         "deux entreprises retenues, la plus récente d'abord, avec leur nom et leur description",
       )
       const sameOrg = await listRememberedAccounts(await rememberAccounts(await createSessionValue(hugo.profile.id), both))
@@ -784,10 +880,10 @@ async function main() {
       assert((await isRemembered(both, boss.id)) && !(await isRemembered(both, hugo.profile.id)), "seuls les comptes retenus se rouvrent sans jeton")
       const stretched = `${boss.id}.${Date.now() + 86400_000}.${cookie.split(".")[2]}`
       assert(
-        (await listRememberedAccounts(`${stretched}~pas-une-session~${fournilSession}`)).map((a) => a.userId).join() === claire.profile.id,
+        (await listRememberedAccounts(`${stretched}~pas-une-session~${butineSession}`)).map((a) => a.userId).join() === claire.profile.id,
         "une session retenue modifiée ou illisible est écartée",
       )
-      assert((await listRememberedAccounts(await forgetAccount(both, boss.id))).map((a) => a.org.id).join() === fournil.id, "oublier une entreprise la retire de la liste")
+      assert((await listRememberedAccounts(await forgetAccount(both, boss.id))).map((a) => a.org.id).join() === butine.id, "oublier une entreprise la retire de la liste")
       const [entry] = both.split("~")
       assert(!(await viewerFromCookies(entry, undefined)), "une entreprise retenue ne vaut pas cookie de session (usage à part)")
       assert(Number(entry.split(".")[1]) > Date.now() + 300 * 86400_000, "une entreprise retenue vaut un an, pas les 14 jours d'une session")
@@ -802,7 +898,7 @@ async function main() {
       }
       const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
       assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviter un collègue : prompt à son nom, zones de l'entreprise seulement")
-      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "le collègue rejoint l'entreprise, pas Fournil")
+      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "le collègue rejoint l'entreprise, pas Butine")
 
       const bob = (await profileFromToken(inv.data.token))!
       const bobViewer: Viewer = { profile: bob, real: bob, access: await getAccess(bob) }
@@ -814,15 +910,15 @@ async function main() {
 
       const ing = await runInOrg(acme.id, () => ingestItems(bobViewer, [item("ops", `Procédure d'astreinte Acme (${run})`)]))
       assert((await acmeStore.getItem(ing.ids[0]))?.zone === "ops", "une connaissance du poste de Bob arrive dans l'entreprise")
-      const fromFournil = await queryBrain(claire, { query: `astreinte Acme ${run}` })
-      assert(fromFournil.items.every((i) => i.org_id === fournil.id), "Fournil n'en voit rien")
+      const fromButine = await queryBrain(claire, { query: `astreinte Acme ${run}` })
+      assert(fromButine.items.every((i) => i.org_id === butine.id), "Butine n'en voit rien")
       const fromAcme = await runInOrg(acme.id, () => queryBrain(alice!, { query: "déployer en production" }))
-      assert(fromAcme.items.length === 0, "et l'entreprise ne voit rien de Fournil")
-      const fournilItem = created[0]
-      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${fournilItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
-        params: Promise.resolve({ id: fournilItem }),
+      assert(fromAcme.items.length === 0, "et l'entreprise ne voit rien de Butine")
+      const butineItem = created[0]
+      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${butineItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
+        params: Promise.resolve({ id: butineItem }),
       })
-      assert(del.status === 404 && (await store.getItem(fournilItem)), "une connaissance de Fournil est introuvable (et intacte) depuis l'entreprise")
+      assert(del.status === 404 && (await store.getItem(butineItem)), "une connaissance de Butine est introuvable (et intacte) depuis l'entreprise")
       console.log("\n— Message d'équipe : demander à rejoindre, un admin accepte")
       const decide = (id: string, session: string, body: unknown) =>
         adminJoinIdRoute.POST(new Request(`http://smoke.test/api/admin/join/${id}`, { method: "POST", headers: { cookie: `brain_session=${session}`, "content-type": "application/json" }, body: JSON.stringify(body) }), {
@@ -845,9 +941,9 @@ async function main() {
       const status0 = await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: leaToken } })
       assert(status0.status === 200 && status0.data.status === "pending", "le poste suit sa demande : en attente")
       assert((await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: newToken() } })).status === 404, "personne d'autre ne peut suivre la demande")
-      const fournilAdmin = await createSessionValue(claire.profile.id)
-      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: fournilAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Fournil ne voit pas la demande")
-      assert((await decide(asked.data.id, fournilAdmin, { action: "accept", name: "Intrus" })).status === 404, "ni ne peut l'accepter")
+      const butineAdmin = await createSessionValue(claire.profile.id)
+      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: butineAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Butine ne voit pas la demande")
+      assert((await decide(asked.data.id, butineAdmin, { action: "accept", name: "Intrus" })).status === 404, "ni ne peut l'accepter")
       const accepted = await decide(asked.data.id, cookie, { action: "accept", name: "Léa Bernard", title: "Designer", zones: ["ops"], manager_id: boss.id })
       assert(accepted.status === 200, "un admin de l'entreprise complète et accepte")
       const lea = await profileFromToken(leaToken)
@@ -886,7 +982,7 @@ async function main() {
       const pendingDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft
       assert(pendingDraft?.source === "codex" && pendingDraft.items.length === 1, "la page Onboarding la retrouve (elle se remplit toute seule)")
       assert(!JSON.stringify(pendingDraft).includes("sk-ant") && !JSON.stringify(pendingDraft).includes("alice@"), "secrets et emails masqués dès la réception")
-      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: fournilAdmin })).data.draft === null, "Fournil ne la voit pas")
+      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: butineAdmin })).data.draft === null, "Butine ne la voit pas")
       assert((await acmeStore.listZones()).every((z) => z.id !== "design"), "rien n'est appliqué avant validation")
       const { source: _src, ...validated } = pendingDraft
       const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
@@ -955,7 +1051,7 @@ async function main() {
             const res = await cron({ authorization: `Bearer secret-${run}` }, "?force=1")
             const body = (await res.json()) as { ran: boolean; orgs: { org_id: string; status: string; reason?: string }[] }
             const acmeRun = body.orgs.find((o) => o.org_id === acme.id)
-            assert(res.status === 200 && body.orgs[0].org_id === fournil.id && acmeRun?.reason === "no_claude", "cron : toutes les entreprises sont passées en revue ; sans clé API, rien n'est créé")
+            assert(res.status === 200 && body.orgs[0].org_id === butine.id && acmeRun?.reason === "no_claude", "cron : toutes les entreprises sont passées en revue ; sans clé API, rien n'est créé")
           }
         } finally {
           if (prevSecret === undefined) delete process.env.CRON_SECRET
@@ -975,7 +1071,7 @@ async function main() {
         assert((await getOrgClaudeKey(acmeStore)) === fakeKey && (await getClaude(acmeStore)) !== null, "le serveur la relit pour les appels de l'entreprise")
         const info = await claudeRoute("GET", cookie)
         assert(info.status === 200 && info.data.source === "org" && info.data.last4 === "AbCd" && !JSON.stringify(info.data).includes(fakeKey), "l'admin n'en voit que les 4 derniers caractères")
-        assert(!(await getOrgClaudeKey(store)), "Fournil n'a pas la clé d'Acme")
+        assert(!(await getOrgClaudeKey(store)), "Butine n'a pas la clé d'Acme")
         const removed = await claudeRoute("DELETE", cookie)
         assert(removed.status === 200 && removed.data.source !== "org" && !(await getOrgClaudeKey(acmeStore)), "l'admin peut la retirer")
       }
@@ -1009,7 +1105,7 @@ async function main() {
   const server = http.createServer((req, res) => {
     if (req.url === "/page") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-encoding": "gzip" })
-      return res.end(zlib.gzipSync("<html><head><title>Fournil</title></head><body><p>Logiciel pour boulangeries</p></body></html>"))
+      return res.end(zlib.gzipSync("<html><head><title>Butine</title></head><body><p>Balances connectées pour ruches</p></body></html>"))
     }
     if (req.url === "/big") {
       res.writeHead(200, { "content-type": "text/plain" })
@@ -1031,7 +1127,7 @@ async function main() {
   const fakeBlocked = (ip: string) => ip !== "127.0.0.1" && isBlockedAddress(ip)
   try {
     const okPage = await scrapeUrlWith(`http://public.test:${port}/page`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
-    assert(okPage.title === "Fournil" && okPage.text.includes("boulangeries"), "une page publique (gzip) est lue")
+    assert(okPage.title === "Butine" && okPage.text.includes("ruches"), "une page publique (gzip) est lue")
     const big = await scrapeUrlWith(`http://public.test:${port}/big`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
     assert(!big.error && big.truncated && big.text.length <= 20000, "taille de page bornée")
     const viaIp = await scrapeUrlWith(`http://public.test:${port}/redirect-ip`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
@@ -1108,6 +1204,14 @@ async function main() {
   const redis = await getEntityContext(hugo, "tool", "redis")
   assert(redis !== null && redis.items.some((i) => i.id === revised.ids[0]) && !redis.items.some((i) => i.id === firstDecision.ids[0]), "la page d'une entité ne cite que les connaissances à jour")
   assert(redis !== null && redis.name === "Redis", "le nom affiché garde sa casse d'origine")
+  const zoneRes = await zoneRoute.GET(new Request("http://smoke.test/api/zones/dev", { headers: { cookie: `brain_session=${hugoSession}` } }), {
+    params: Promise.resolve({ id: "dev" }),
+  })
+  const zoneItems = ((await zoneRes.json()) as { items: { id: string }[] }).items
+  assert(
+    zoneRes.status === 200 && zoneItems.some((i) => i.id === revised.ids[0]) && !zoneItems.some((i) => i.id === firstDecision.ids[0]),
+    "résumé de zone (MCP get_zone_summary, volet de zone) : seulement la version à jour",
+  )
   // Nettoyage : un passage suivant sur le même stockage ne doit pas retrouver ces décisions comme quasi-doublons.
   for (const id of [firstDecision.ids[0], revised.ids[0]]) assert(await store.deleteItem(id), "décision de test supprimée")
 

@@ -103,7 +103,7 @@ export const CA_FILE = "~/.company-brain/ca.crt"
 
 const CA_NOTE = "   (cerveau auto-hébergé en HTTPS local : la commande récupère son certificat et vérifie son empreinte avant de s'en servir ; code 9 = empreinte différente, arrête-toi et préviens-moi. Sous Windows, une boîte de dialogue demande de confirmer l'ajout du certificat : accepter.)\n"
 
-/** « de Fournil », « d'Atelier Lumen » : l'élision devant une voyelle ou un h. */
+/** « de Butine », « d'Atelier Lumen » : l'élision devant une voyelle ou un h. */
 export function deNom(name: string): string {
   return /^[aeiouyhàâäéèêëîïôöùûüœæ]/i.test(name.trim()) ? `d'${name.trim()}` : `de ${name.trim()}`
 }

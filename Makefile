@@ -36,7 +36,7 @@ dev: setup migrate check-port ## Tout lancer : config, dépendances, Postgres, m
 	@echo "→ Dashboard : http://localhost:$(BRAIN_PORT)  (première fois : /creer pour créer ton entreprise)"
 	@$(RUN) npm run dev
 
-demo: setup migrate check-port ## Comme dev, avec l'entreprise de démonstration Fournil (connexion en un clic)
+demo: setup migrate check-port ## Comme dev, avec l'entreprise de démonstration Butine (connexion en un clic)
 	@echo "→ Démo : http://localhost:$(BRAIN_PORT)/demo"
 	@$(RUN) BRAIN_DEMO=1 npm run dev
 
@@ -70,7 +70,7 @@ db-reset: ## Effacer toutes les données de la base locale (demande confirmation
 migrate: setup db ## Appliquer les migrations SQL (chacune une seule fois)
 	@$(RUN) npm run --silent db:migrate
 
-seed: migrate ## Charger Fournil dans la base (FORCE=1 pour écraser un cerveau existant)
+seed: migrate ## Charger Butine dans la base (FORCE=1 pour écraser un cerveau existant)
 	@$(RUN) npm run seed -- $(if $(FORCE),--force,)
 
 simulate: ## Faire travailler des agents fictifs (avec make demo lancé dans un autre terminal)

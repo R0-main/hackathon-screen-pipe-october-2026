@@ -174,6 +174,7 @@ test("init : le jeton d'une autre entreprise l'ajoute à côté de la première 
   assert.equal(cfg.url, fournil.url)
   assert.deepEqual(cfg.companies, [{ url: acme.url, token: ACME_TOKEN, id: "org-acme", name: "Acme", description: "Agence web : sites et applis pour des clients" }])
   assert.match(out.join("\n"), /Entreprise ajoutée sur ce poste : Acme, à côté de Fournil, qui reste celle par défaut/)
+  assert.match(out.join("\n"), /setup branche le serveur MCP de chaque entreprise dans Claude Code et Codex/)
   assert.equal(loadCache()?.whoami?.org, "Fournil", "le cache des hooks reste celui de la première")
 
   // Autre compte de la même entreprise (Acme) : il remplace l'entrée d'Acme, à sa place.
