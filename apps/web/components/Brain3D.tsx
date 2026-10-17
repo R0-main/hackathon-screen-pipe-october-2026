@@ -6,7 +6,7 @@ import type * as THREE from "three"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
 import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes } from "./brain-geometry"
-import { AgentDot, LOOKS, dotLook, type DotLook } from "./AgentDot"
+import { LOOKS, dotKit, dotLook, type DotLook } from "./dot-model"
 import { firstName } from "./format"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
@@ -23,6 +23,7 @@ export type BrainPerson = {
   live?: boolean
   me?: boolean
 }
+type PlacedPerson = BrainPerson & { look: DotLook }
 
 export type Brain3DProps = {
   zones: ZoneView[]
@@ -56,8 +57,11 @@ const SYNAPSE_R = 0.0045
 
 const CENTER_R = 0.042
 /** Dots des personnes : écart à la silhouette du cerveau et entre deux dots voisins, en pixels (avant zoom). */
-const DOT_GAP = 30
-const DOT_SPACING = 46
+const DOT_GAP = 26
+const DOT_SPACING = 30
+/** Rayon d'un dot dans la scène : une dizaine de pixels au zoom de départ. */
+const DOT_R = 0.034
+const TETHER = 0x9a9a92
 const ZOOM = { min: 2.6, max: 9, start: 6, step: 0.6 }
 const IDLE_MS = 5000
 const RIPPLE_MS = 2400
@@ -98,6 +102,7 @@ export function Brain3D(props: Brain3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const labelsRef = useRef(new Map<string, HTMLButtonElement>())
   const dotsRef = useRef(new Map<string, HTMLAnchorElement>())
+  const peopleRef = useRef(new Map<string, BrainPerson>())
   const activityRef = useRef(activity)
   const ripplesRef = useRef(ripples)
   const selectedRef = useRef(selected)
@@ -124,6 +129,7 @@ export function Brain3D(props: Brain3DProps) {
     const free = LOOKS.map((_, k) => LOOKS[(start + k) % LOOKS.length]).find((l) => !taken.has(l))
     looks.set(p.id, free ?? dotLook(p.id))
   }
+  peopleRef.current = new Map(placed.map((p) => [p.id, p]))
 
   useEffect(() => {
     if (fallback) return
@@ -136,7 +142,7 @@ export function Brain3D(props: Brain3DProps) {
       .then((T) => {
         if (disposed) return
         try {
-          dispose = build(T, container, canvas, zones, synapses, placed, { labelsRef, dotsRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef })
+          dispose = build(T, container, canvas, zones, synapses, placed.map((p) => ({ ...p, look: looks.get(p.id)! })), { labelsRef, dotsRef, peopleRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef })
         } catch {
           setFallback(true)
         }
@@ -163,7 +169,7 @@ export function Brain3D(props: Brain3DProps) {
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-surface">
       <canvas ref={canvasRef} className="block h-full w-full cursor-grab touch-none active:cursor-grabbing" aria-hidden />
 
-      {/* Dots : un par personne, à l'extérieur du cerveau, au bord de sa zone. Positionnés chaque image comme les libellés. */}
+      {/* Dots : modèles 3D dans la scène. Ici, leur zone cliquable et leur prénom, posés chaque image au même endroit. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {placed.map((p) => {
           const zone = zones.find((z) => z.id === p.zone)!
@@ -176,15 +182,12 @@ export function Brain3D(props: Brain3DProps) {
                 else dotsRef.current.delete(p.id)
               }}
               className="brain-dot pointer-events-auto absolute left-0 top-0"
-              data-working={p.working ? "1" : undefined}
               data-live={p.live ? "1" : undefined}
               data-me={p.me ? "1" : undefined}
               aria-label={`${p.name}${p.me ? " (vous)" : ""}, ${zone.name}`}
               title={`${p.name} · ${zone.name}`}
             >
-              <span className="brain-dot-body">
-                <AgentDot id={p.id} look={looks.get(p.id)} color={zone.locked ? "#b8b8b8" : zoneColor(zone.color, zone.position)} />
-              </span>
+              <span className="brain-dot-hit" aria-hidden />
               <span className="brain-dot-name">{p.me ? "Vous" : firstName(p.name)}</span>
             </Link>
           )
@@ -252,6 +255,7 @@ export function Brain3D(props: Brain3DProps) {
 type Refs = {
   labelsRef: React.RefObject<Map<string, HTMLButtonElement>>
   dotsRef: React.RefObject<Map<string, HTMLAnchorElement>>
+  peopleRef: React.RefObject<Map<string, BrainPerson>>
   activityRef: React.RefObject<Record<string, ZoneActivity>>
   ripplesRef: React.RefObject<Ripple[]>
   selectedRef: React.RefObject<string | null | undefined>
@@ -261,7 +265,7 @@ type Refs = {
 }
 
 /** Construit la scène et lance la boucle de rendu. Renvoie la fonction de nettoyage. */
-function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: BrainPerson[], refs: Refs): () => void {
+function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], refs: Refs): () => void {
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   renderer.setClearColor(0x000000, 0)
@@ -434,6 +438,31 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     .filter((g) => g.members.length > 0)
   /** Position affichée de chaque dot, lissée d'une image à l'autre (une zone qui passe face caméra ne le fait pas sauter). */
   const dotPos = new Map<string, { x: number; y: number }>()
+  // Les dots vivent hors du cerveau (dans la scène, pas dans le groupe qui tourne) : ils font toujours face à
+  // l'écran. Seuls eux sont éclairés, en feutrine ; un fil en pointillé relie chacun au centre de sa zone.
+  const kit = dotKit(T)
+  const dots = new Map<string, { model: THREE.Group; line: THREE.Line<THREE.BufferGeometry, THREE.LineDashedMaterial>; zone: ZoneGfx; phase: number }>()
+  for (const { zone, members } of dotGroups)
+    for (const p of members) {
+      const model = kit.make(zone.locked ? NEUTRAL : zone.color, p.look)
+      model.scale.setScalar(DOT_R)
+      model.visible = false
+      const lineGeo = new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3()])
+      const lineMat = new T.LineDashedMaterial({ color: TETHER, dashSize: 0.028, gapSize: 0.022, transparent: true, opacity: 0.9 })
+      const line = new T.Line(lineGeo, lineMat)
+      line.frustumCulled = false
+      scene.add(model, line)
+      geometries.push(lineGeo)
+      materials.push(lineMat)
+      dots.set(p.id, { model, line, zone, phase: (hashString(p.id) % 1000) / 160 })
+    }
+  if (dots.size) {
+    const key = new T.DirectionalLight(0xffffff, 1.6)
+    key.position.set(-2, 3, 5)
+    scene.add(new T.HemisphereLight(0xffffff, 0xd8d4ca, 2.4), key)
+  }
+  const dotWorld = new T.Vector3()
+  const zoneWorld = new T.Vector3()
 
   // Taille : le canvas suit son conteneur.
   const size = { w: 1, h: 1 }
@@ -633,7 +662,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       el.style.visibility = "visible"
     }
 
-    placeDots(dt)
+    placeDots(dt, t / 1000)
   }
 
   /**
@@ -641,7 +670,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
    * on s'arrête juste après le bord de la silhouette dans cette direction. Les membres d'une même zone se rangent
    * côte à côte le long du bord ; deux groupes qui se chevauchent s'écartent.
    */
-  const placeDots = (dt: number) => {
+  const placeDots = (dt: number, time: number) => {
     if (dotGroups.length === 0) return
     const scale = clamp(ZOOM.start / camera.position.z, 0.7, 1.7)
     outline.forEach((p, i) => {
@@ -693,16 +722,40 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         }
     const ease = Math.min(1, dt * 6)
     const margin = 24
+    // Profondeur du centre du cerveau : les dots sont posés à cette distance de la caméra.
+    const depth = tmp.set(0, 0, 0).project(camera).z
     for (const t of targets) {
-      const el = refs.dotsRef.current.get(t.id)
-      if (!el) continue
+      const d = dots.get(t.id)
+      if (!d) continue
       const x = clamp(t.x, margin, size.w - margin)
-      const y = clamp(t.y, margin + 30 * scale, size.h - margin)
+      const y = clamp(t.y, margin + 20 * scale, size.h - margin)
       const cur = dotPos.get(t.id)
       const pos = cur ? { x: cur.x + (x - cur.x) * ease, y: cur.y + (y - cur.y) * ease } : { x, y }
       dotPos.set(t.id, pos)
-      // Ancré par son centre, un peu plus bas que le milieu : le dot « repose » sur le bord.
-      el.style.transform = `translate(${pos.x.toFixed(1)}px, ${pos.y.toFixed(1)}px) scale(${scale.toFixed(3)}) translate(-50%, -60%)`
+
+      // Le modèle : centre du corps au point visé, face à l'écran, tourné un peu vers sa zone.
+      dotWorld.set((pos.x / size.w) * 2 - 1, -(pos.y / size.h) * 2 + 1, depth).unproject(camera)
+      zoneWorld.setFromMatrixPosition(d.zone.center.matrixWorld)
+      const who = refs.peopleRef.current.get(t.id)
+      const hop = who?.live && !reduced ? Math.abs(Math.sin(time * 7 + d.phase)) * DOT_R * 0.9 : 0
+      const breathe = who?.working && !reduced ? Math.sin(time * 2.4 + d.phase) * 0.05 : 0
+      d.model.position.set(dotWorld.x, dotWorld.y - DOT_R * 0.79 + hop, dotWorld.z)
+      d.model.quaternion.copy(camera.quaternion)
+      d.model.rotateY(clamp((zoneWorld.x - dotWorld.x) * 1.2, -0.6, 0.6))
+      d.model.scale.set(DOT_R * (1 - breathe * 0.5), DOT_R * (1 + breathe), DOT_R * (1 - breathe * 0.5))
+      d.model.visible = true
+
+      // Le fil : du dessous du dot au centre de sa zone, à l'encre quand son agent touche le cerveau.
+      const pts = d.line.geometry.attributes.position as THREE.BufferAttribute
+      pts.setXYZ(0, dotWorld.x, dotWorld.y - DOT_R * 0.6 + hop, dotWorld.z)
+      pts.setXYZ(1, zoneWorld.x, zoneWorld.y, zoneWorld.z)
+      pts.needsUpdate = true
+      d.line.computeLineDistances()
+      d.line.material.color.setHex(who?.live ? INK : TETHER)
+
+      const el = refs.dotsRef.current.get(t.id)
+      if (!el) continue
+      el.style.transform = `translate(${pos.x.toFixed(1)}px, ${pos.y.toFixed(1)}px) scale(${scale.toFixed(3)}) translate(-50%, -50%)`
       el.style.visibility = "visible"
     }
   }
@@ -746,6 +799,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
     neurons.dispose()
+    kit.dispose()
     renderer.dispose()
   }
 }

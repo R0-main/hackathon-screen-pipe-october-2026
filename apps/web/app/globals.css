@@ -337,45 +337,27 @@ button.chip:hover:not(.chip-on) {
   flex-direction: row-reverse;
 }
 
-/* Dots des personnes autour du cerveau 3D : posés hors de la silhouette, du côté de leur zone (transform posé par le JS).
-   Le prénom n'apparaît qu'au survol, sauf le vôtre. Un agent qui a travaillé récemment respire ; un agent qui touche
-   le cerveau à l'instant sautille, cerclé de phosphore. */
+/* Dots des personnes autour du cerveau 3D : les modèles sont dans la scène ; ici, leur zone cliquable et leur prénom,
+   posés par le JS au même endroit. Le prénom n'apparaît qu'au survol, sauf le vôtre et ceux qui travaillent à l'instant. */
 .brain-dot {
   visibility: hidden;
   transform-origin: 0 0;
   display: block;
 }
-.brain-dot-body {
+.brain-dot-hit {
   display: block;
-  transform-origin: 50% 100%;
-  transition: transform 0.15s ease-out;
-}
-.brain-dot:hover .brain-dot-body,
-.brain-dot:focus-visible .brain-dot-body {
-  transform: scale(1.15);
-}
-.brain-dot[data-working] .brain-dot-body {
-  animation: dot-breathe 2.8s ease-in-out infinite;
-}
-.brain-dot[data-live] .brain-dot-body {
-  animation: dot-hop 0.7s ease-in-out infinite;
-}
-.brain-dot[data-live]::after {
-  content: "";
-  position: absolute;
-  right: -2px;
-  top: 2px;
-  width: 8px;
-  height: 8px;
+  width: 26px;
+  height: 26px;
   border-radius: 9999px;
-  border: 1px solid var(--color-ink);
-  background: var(--color-phosphor);
+}
+.brain-dot:focus-visible .brain-dot-hit {
+  outline: 1px solid var(--color-ink);
+  outline-offset: 2px;
 }
 .brain-dot-name {
   position: absolute;
   left: 50%;
   top: 100%;
-  margin-top: 2px;
   transform: translateX(-50%);
   white-space: nowrap;
   border-radius: 4px;
@@ -392,29 +374,6 @@ button.chip:hover:not(.chip-on) {
 .brain-dot[data-me] .brain-dot-name,
 .brain-dot[data-live] .brain-dot-name {
   opacity: 1;
-}
-@keyframes dot-breathe {
-  0%,
-  100% {
-    transform: scale(1, 1);
-  }
-  50% {
-    transform: scale(1.04, 0.95);
-  }
-}
-@keyframes dot-hop {
-  0%,
-  100% {
-    transform: translateY(0) scale(1.04, 0.94);
-  }
-  50% {
-    transform: translateY(-5px) scale(0.97, 1.04);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .brain-dot .brain-dot-body {
-    animation: none !important;
-  }
 }
 }
 
