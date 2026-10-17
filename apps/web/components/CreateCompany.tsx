@@ -333,6 +333,13 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     </p>
                   </div>
                   <Presence connected={Boolean(team[created.meId])} self />
+                  <p className="mt-3 max-w-[40em] text-[14px] text-trace">
+                    Pour que le cerveau ne parte pas de zéro :{" "}
+                    <Link href="/onboarding" className="landing-link text-ink">
+                      faites-lui lire vos anciennes conversations
+                    </Link>{" "}
+                    avec Claude Code ou Codex.
+                  </p>
                   <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
                     <button type="button" className="btn btn-lg" onClick={() => go("team")}>
                       Inviter mon équipe

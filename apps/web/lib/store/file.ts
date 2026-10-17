@@ -42,6 +42,7 @@ type Data = {
   /** Ajoutés avec le message d'équipe : absents des fichiers plus anciens. */
   join_code?: string
   join_requests?: StoredJoinRequest[]
+  settings?: Record<string, string>
 }
 
 const MAX_EVENTS = 20000
@@ -263,6 +264,18 @@ export class FileStore implements BrainStore {
     if (has(root)) return root.org.id
     for (const org of this.tenantIds()) if (has((this.forOrg(org) as FileStore).load())) return org
     return null
+  }
+
+  async getOrgSetting(name: string) {
+    return this.load().settings?.[name] ?? null
+  }
+
+  async setOrgSetting(name: string, value: string | null) {
+    this.mutate((d) => {
+      d.settings ??= {}
+      if (value === null) delete d.settings[name]
+      else d.settings[name] = value
+    })
   }
 
   async getJoinCode() {

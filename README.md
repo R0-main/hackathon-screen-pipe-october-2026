@@ -102,6 +102,16 @@ organisation par entreprise (Postgres : marquée `tenant:<id>` dans `brain_setti
 `<BRAIN_DATA_DIR>/orgs/<id>/`). Un jeton ou une session désigne son entreprise, et chaque route lit la sienne.
 `BRAIN_SIGNUP=0` ferme la création, `BRAIN_MAX_ORGS` la plafonne (200 par défaut).
 
+### Remplir le cerveau depuis ses anciennes conversations
+
+Page **Onboarding** (admins) : « Le faire remplir par Claude Code ou Codex ». Le prompt copié fait lire à l'agent
+l'historique du poste (`~/.claude/projects`, `~/.codex/sessions`) et les README des projets, en tirer les zones et
+10 à 40 premières connaissances (jamais de secrets ni de données perso), puis les envoyer avec un code d'envoi
+valable 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin seulement). La page se remplit toute seule avec la
+proposition, masquée à nouveau côté serveur ; rien n'est appliqué avant que l'admin l'ait relue et validée.
+L'interview en 7 questions reste disponible en dessous. Le lien est aussi proposé à la fin de `/creer`, et la page
+`/demo` propose « Créer mon dashboard ».
+
 ## Brancher un vrai poste
 
 1. Dans `/admin`, invitez la personne et choisissez ses zones : le dashboard génère son prompt (voir [install/PROMPT.md](install/PROMPT.md)).

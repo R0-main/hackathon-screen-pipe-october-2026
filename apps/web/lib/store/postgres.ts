@@ -331,6 +331,18 @@ export class PostgresStore implements BrainStore {
     return r ? (r.org_id as string) : null
   }
 
+  async getOrgSetting(name: string) {
+    const key = `org:${name}:${await this.orgId()}`
+    const [r] = await this.settings(() => this.sql`select value from brain_settings where key = ${key}`)
+    return r ? (r.value as string) : null
+  }
+
+  async setOrgSetting(name: string, value: string | null) {
+    const key = `org:${name}:${await this.orgId()}`
+    if (value === null) await this.settings(() => this.sql`delete from brain_settings where key = ${key}`)
+    else await this.settings(() => this.sql`insert into brain_settings (key, value) values (${key}, ${value}) on conflict (key) do update set value = excluded.value`)
+  }
+
   async getJoinCode() {
     const key = JOIN_PREFIX + (await this.orgId())
     // Insertion « une seule fois » : deux admins qui ouvrent la page ensemble voient le même code.

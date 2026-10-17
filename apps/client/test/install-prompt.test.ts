@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import { buildInstallPrompt, buildJoinPrompt } from "../../web/lib/install-prompt"
+import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
@@ -134,4 +135,17 @@ test("install.sh --join : lance join (et non setup) avec les mêmes options", as
     server.close()
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+test("prompt d'onboarding par un agent : lit l'historique, envoie sans rien appliquer, reconnu et masqué par brain-sync", () => {
+  const code = `co_${"Y".repeat(80)}`
+  const p = buildOnboardingAgentPrompt({ baseUrl: "https://cerveau.example.com", code, orgName: "Atelier Lumen", zones: [{ id: "dev", name: "Dev" }] })
+  assert.ok(INSTALL_PROMPT_RE.test(p))
+  assert.ok(!maskOwnSecrets(p).text.includes(code))
+  assert.equal(p.split(code).length, 2, "le code n'apparaît qu'une fois, dans la commande")
+  assert.match(p, /~\/\.claude\/projects/)
+  assert.match(p, /~\/\.codex\/sessions/)
+  assert.match(p, /Jamais de secrets/)
+  assert.match(p, /Rien n'est appliqué tout de suite/)
+  assert.ok(p.includes(`curl -fsS -X POST https://cerveau.example.com/api/onboarding/import -H "Authorization: Bearer ${code}"`))
 })

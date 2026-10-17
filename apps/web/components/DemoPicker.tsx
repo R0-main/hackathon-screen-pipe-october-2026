@@ -8,8 +8,8 @@ import { BrainIcon, ErrorText } from "./ui"
 
 type DemoUser = { id: string; name: string; title?: string; role: string }
 
-/** Entrée de la démo : un clic sur un compte de Fournil ouvre le dashboard avec ses droits. */
-export function DemoPicker() {
+/** Entrée de la démo : un clic sur un compte de Fournil ouvre le dashboard avec ses droits. À côté, créer le sien. */
+export function DemoPicker({ signup = false }: { signup?: boolean }) {
   const router = useRouter()
   const [users, setUsers] = useState<DemoUser[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -35,7 +35,12 @@ export function DemoPicker() {
   }
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4 py-10">
+    <main className="relative grid min-h-dvh place-items-center px-4 py-10">
+      {signup && (
+        <Link href="/creer" className="btn btn-primary absolute right-4 top-4 sm:right-6 sm:top-5">
+          Créer mon dashboard
+        </Link>
+      )}
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
           <Link href="/" className="rounded-[6px]" aria-label="Page d'accueil">
@@ -66,6 +71,17 @@ export function DemoPicker() {
           </div>
           {err && <ErrorText className="mt-3">{err}</ErrorText>}
         </section>
+        {signup && (
+          <section className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1 py-3">
+            <span className="min-w-0">
+              <span className="block text-[14px] font-medium">Votre entreprise, plutôt que Fournil ?</span>
+              <span className="block text-[13px] text-trace">Quatre questions, puis un prompt à coller dans Claude Code.</span>
+            </span>
+            <Link href="/creer" className="btn">
+              Créer mon dashboard
+            </Link>
+          </section>
+        )}
         <p className="mt-4 text-center text-[13px] text-trace">
           Vous avez un jeton personnel ?{" "}
           <Link href="/login" className="underline underline-offset-2 hover:text-ink">
