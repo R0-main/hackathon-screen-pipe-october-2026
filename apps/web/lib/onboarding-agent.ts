@@ -140,7 +140,8 @@ export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string
 1. You look ONLY for the projects and conversations of ${scope}. First spot those that match this name and these topics, and learn nothing else: a personal project, another company, another customer, a general question or another subject is not read in detail and does not go into the proposal, even if recent. When in doubt, leave it aside.
    History: Claude Code (~/.claude/projects/**/*.jsonl, one folder per project) and Codex (~/.codex/sessions/**/*.jsonl). Sort by project and first messages, then read the company's sessions in detail, from most recent to oldest, along with the README, CLAUDE.md and AGENTS.md of those projects.
    Report progress at each finding ("3 projects found", "Sales zone: 6 knowledge items"), ten times at most.
-   If you find no clear trace of the company, make nothing up and send no proposal: report error ("No trace of the company on this computer"), tell me so and stop.
+   If neither the conversations nor the tools (1b) show a clear trace of the company, make nothing up and send no proposal: report error ("No trace of the company on this computer"), tell me so and stop.
+1b. Tools I connect while you read (Notion, Linear…): after the conversations, list them: curl -fsS ${baseUrl}/api/onboarding/tools ${auth}. Explore each with read-only calls (curl -fsS -X POST ${baseUrl}/api/onboarding/tools/call ${auth} -d '{"connector":"…","tool":"…","arguments":{}}', 25 max): they shape the zones and give items ("source": {"app": "<tool>", "tool": "connector"}).
 2. Keep what a newcomer must know: what the company does and for whom, teams, customers and partners, tools, goals, procedures, decisions (with their reason). Never any secrets, personal data (emails, phone numbers, addresses) or anything private.
 3. Write ~/.company-brain/onboarding.json:
    {"source": "claude-code" or "codex", "company_name": "…", "description": "2 or 3 sentences", "zones": [{"id": "…", "name": "…", "description": "…", "keywords": ["…"]}], "items": [{"zone": "<id>", "kind": "${KNOWLEDGE_KINDS.join(" | ")}", "title": "…", "body": "…", "entities": [{"type": "${ENTITY_TYPES.join(" | ")}", "name": "…"}]}]}
@@ -148,6 +149,6 @@ export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string
 4. Send a first version as soon as you have the zones and a few items, without waiting for the end:
    curl -fsS -X POST ${baseUrl}/api/onboarding/import ${auth} --data @"$HOME/.company-brain/onboarding.json"
    Then go back to your creation: keep reading, complete the file and send it again (each upload replaces the previous one, the page updates).
-5. At the end, report done ("Done: 5 zones, 24 knowledge items"), delete the file and tell me how many zones and items were sent. Nothing is applied: I review and validate the proposal on screen. If it fails, report error with the reason.`
+5. Before the end, check the tools again (1b) and send the completed file. Then report done ("Done: 5 zones, 24 knowledge items"), delete the file and tell me how many zones and items were sent. Nothing is applied: I review and validate the proposal on screen. If it fails, report error with the reason.`
 }
 

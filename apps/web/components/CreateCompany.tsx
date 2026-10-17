@@ -17,7 +17,7 @@ import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE,
 import { possessive } from "@/lib/install-prompt"
 
 type ZoneOption = { id: string; name: string; description: string; color: string; position: number }
-type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team" | "connectors"
+type Step = "intro" | "company" | "about" | "you" | "context" | "zones" | "install" | "team"
 /** A person added from this page: invited (their personal prompt), or accepted through the team message (empty prompt). */
 type Invite = { id: string; name: string; title?: string; zones: string[]; prompt: string }
 /** `token`: the admin's token (already in `prompt`), sent back at the zones step to remake this prompt. */
@@ -42,7 +42,7 @@ type Saved = {
 }
 
 /** Numbered steps (progress bar): the intro is not one of them. */
-const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team", "connectors"]
+const STEPS: Step[] = ["company", "about", "you", "context", "zones", "install", "team"]
 const DEFAULT_PICK = ["dev", "product", "leadership"]
 /**
  * Progress survives a reload, in this tab only (sessionStorage, cleared when it closes). It
@@ -127,7 +127,8 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
     }
     const s = load()
     if (s) {
-      if (s.step) setStep(s.step)
+      // A draft saved by an older version may point to a step that no longer exists (the former "connectors" step).
+      if (s.step) setStep(s.step === "intro" || STEPS.includes(s.step) ? s.step : "team")
       setCompany(s.company ?? "")
       setDescription(s.description ?? "")
       setName(s.name ?? "")
@@ -266,7 +267,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const index = STEPS.indexOf(step)
   const org = created?.orgName ?? (company.trim() || "your company")
   // Once the brain is created (after "And you?"), no going back to the questions that named it.
-  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install", connectors: "team" }
+  const back: Partial<Record<Step, Step>> = { company: "intro", about: "company", you: "about", zones: "context", team: "install" }
   const people = created
     ? [{ id: created.meId, name, connected: Boolean(team[created.meId]) }, ...invites.map((i) => ({ id: i.id, name: i.name, connected: Boolean(team[i.id]) }))]
     : name.trim()
@@ -318,9 +319,9 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <>
                   <h1 className="create-title">Let&apos;s build your company&apos;s brain.</h1>
                   <p className="create-lead">
-                    Three questions to set up your dashboard, then Claude Code or Codex can propose its zones from your conversations. Then, a message
-                    connects your computer, and one message per colleague brings them into the brain. To finish, connect your tools (Notion, Linear, GitHub…) in one
-                    click. A few minutes in all.
+                    Three questions to set up your dashboard, then Claude Code or Codex proposes its zones from your conversations and the tools you connect
+                    (Notion, Linear, GitHub…). Then, a message connects your computer, and one message per colleague brings them into the brain. A few
+                    minutes in all.
                   </p>
                   <div className="mt-9 flex flex-wrap items-center gap-3">
                     <button type="button" className="btn btn-primary btn-lg" onClick={() => go("company")} autoFocus>
@@ -458,12 +459,10 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
               )}
 
               {step === "team" && created && (
-                <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} onNext={() => go("connectors")} />
+                <TeamStep created={created} invites={invites} setInvites={setInvites} team={team} />
               )}
 
-              {step === "connectors" && created && <ConnectorsStep orgName={created.orgName} meConnected={Boolean(team[created.meId])} />}
-
-              {(step === "context" || step === "zones" || step === "install" || step === "team" || step === "connectors") && !created && (
+              {(step === "context" || step === "zones" || step === "install" || step === "team") && !created && (
                 <>
                   <h1 className="create-title">This page lost your brain.</h1>
                   <p className="create-lead">It still exists: find it from the dashboard, or start over.</p>
@@ -532,8 +531,9 @@ function ContextStep(props: { orgName: string; run: AgentEvent[]; state: RunStat
     <>
       <h1 className="create-title">Let Claude propose the zones.</h1>
       <p className="create-lead">
-        Open this message in Claude Code or Codex. It rereads your conversations on this computer about {orgName}, and only those, then proposes the
-        brain&apos;s zones and its first knowledge. It asks for your consent before reading anything, and you review everything at the next step.
+        Open this message in Claude Code or Codex. It rereads your conversations on this computer about {orgName}, and only those, along with the tools
+        you connect below, then proposes the brain&apos;s zones and its first knowledge. It asks for your consent before reading anything, and you review
+        everything at the next step.
       </p>
       <div className="panel mt-8 px-5 py-5">
         <PromptActions getPrompt={getPrompt} sends />
@@ -559,6 +559,7 @@ function ContextStep(props: { orgName: string; run: AgentEvent[]; state: RunStat
         </p>
       )}
       <AgentRun run={run} className="mt-4" />
+      <ContextTools />
       <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
         {received && (
           <button type="button" className="btn btn-primary btn-lg" onClick={() => onNext(received)}>
@@ -730,7 +731,7 @@ function ZonesStep(props: {
   )
 }
 
-function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: (i: Invite[]) => Invite[]) => void; team: Record<string, string | null>; onNext: () => void }) {
+function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: (i: Invite[]) => Invite[]) => void; team: Record<string, string | null> }) {
   const { created, invites } = props
   const [name, setName] = useState("")
   const [title, setTitle] = useState("")
@@ -876,10 +877,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
       </div>
 
       <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <button type="button" className="btn btn-primary btn-lg" onClick={props.onNext}>
-          Connect your tools
-        </button>
-        <Link href="/dashboard" className="landing-link text-[15px]">
+        <Link href="/dashboard" className="btn btn-primary btn-lg">
           Open the dashboard
         </Link>
         <Presence connected={Boolean(props.team[created.meId])} self compact />
@@ -889,10 +887,11 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
 }
 
 /**
- * Step 8: connect the team's tools through their official MCP server (Notion, Linear, GitHub…). "Connect" goes
- * through the provider's sign-in page, then comes back here (/create?draft=1 resumes the flow at this step).
+ * The tools connected while Claude reads (step "context"): "Connect" goes through the tool's sign-in page, then comes
+ * back here (/create?draft=1 resumes the flow at this step). The agent lists them through the upload code and uses their
+ * read-only tools to shape the zones and the first knowledge.
  */
-function ConnectorsStep({ orgName, meConnected }: { orgName: string; meConnected: boolean }) {
+function ContextTools() {
   const [data, setData] = useState<{ connectors: McpConnectorPublic[]; redirect_uri: string } | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -901,22 +900,19 @@ function ConnectorsStep({ orgName, meConnected }: { orgName: string; meConnected
   }, [])
 
   return (
-    <>
-      <h1 className="create-title">Connect {possessive(orgName)} tools.</h1>
-      <p className="create-lead">
-        Notion, Linear, GitHub, Slack, Stripe… Click &quot;Connect&quot;: you go through the tool&apos;s sign-in page, then come back here. Tokens stay on the
-        brain&apos;s server. You can add others later, from the Connectors page.
+    <section className="mt-12" aria-labelledby="context-tools">
+      <h2 id="context-tools" className="text-[19px] font-medium">
+        While Claude reads, connect your tools
+      </h2>
+      <p className="mt-2 text-[14px] leading-relaxed text-trace">
+        Notion, Linear, GitHub, Slack, Stripe… Claude explores them read-only, alongside your conversations, to name the zones and write the first
+        knowledge. Each one goes through its own sign-in page, then you come back here; tokens stay on the brain&apos;s server. You can add others later,
+        from the Connectors page.
       </p>
-      <div className="mt-8">
+      <div className="mt-5">
         {err ? <ErrorText>{err}</ErrorText> : data ? <McpConnectors initial={data.connectors} redirectUri={data.redirect_uri} returnTo="create" bare /> : <p className="text-[14px] text-trace">Loading…</p>}
       </div>
-      <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <Link href="/dashboard" className="btn btn-primary btn-lg">
-          Open the dashboard
-        </Link>
-        <Presence connected={meConnected} self compact />
-      </div>
-    </>
+    </section>
   )
 }
 

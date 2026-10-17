@@ -335,31 +335,24 @@ function visibleTo(c: McpConnectorConfig, viewer: Viewer): boolean {
   return !c.zone || viewer.access.readable.includes(c.zone)
 }
 
-/** Tools of the connectors visible to this member (cache reread when needed, in parallel). */
-export async function agentConnectors(viewer: Viewer): Promise<AgentConnector[]> {
-  const cfg = await load()
-  const visible = Object.values(cfg)
-    .filter((c) => visibleTo(c, viewer))
-    .sort((a, b) => a.added_at.localeCompare(b.added_at))
-  if (!visible.length) return []
+/** Tools of the given connectors under their rule (cache reread when needed, in parallel). */
+async function connectorTools(list: McpConnectorConfig[], modeOf: (c: McpConnectorConfig) => McpAgentsMode): Promise<AgentConnector[]> {
+  if (!list.length) return []
+  const sorted = [...list].sort((a, b) => a.added_at.localeCompare(b.added_at))
   const cache = await loadToolCache()
-  const stale = visible.filter((c) => !cache[c.id] || Date.now() - Date.parse(cache[c.id].at) > TOOLS_TTL_MS)
+  const stale = sorted.filter((c) => !cache[c.id] || Date.now() - Date.parse(cache[c.id].at) > TOOLS_TTL_MS)
   if (stale.length) {
     await Promise.allSettled(stale.map((c) => checkMcp(c.id)))
     Object.assign(cache, await loadToolCache())
   }
-  return visible.map((c) => {
-    const mode = c.agents ?? "read"
+  return sorted.map((c) => {
+    const mode = modeOf(c)
     return { id: c.id, name: c.name, mode, tools: toolsForAgents(cache[c.id]?.tools ?? [], mode) }
   })
 }
 
-/** A member's agent calls a tool, within the limits the admin chose. Throws McpUserError (400/403/404). */
-export async function callAgentTool(viewer: Viewer, connectorId: string, tool: string, args: Record<string, unknown>): Promise<{ text: string; is_error: boolean }> {
-  const cfg = await load()
-  const c = cfg[connectorId] ?? Object.values(cfg).find((x) => x.name.toLowerCase() === connectorId.toLowerCase())
-  if (!c || !visibleTo(c, viewer)) throw new McpUserError(`Connector "${connectorId}" not found or not shared with agents.`, 404)
-  const mode = c.agents ?? "read"
+/** Calls `tool` on connector `c` if the rule allows it. Throws McpUserError (403/404). */
+async function callConnectorTool(c: McpConnectorConfig, mode: McpAgentsMode, tool: string, args: Record<string, unknown>): Promise<{ text: string; is_error: boolean }> {
   let defs = (await loadToolCache())[c.id]?.tools
   if (!defs?.some((d) => d.name === tool)) {
     // Tool that appeared since it was cached: reread the list once.
@@ -367,9 +360,46 @@ export async function callAgentTool(viewer: Viewer, connectorId: string, tool: s
     defs = (await loadToolCache())[c.id]?.tools
   }
   const def = defs?.find((d) => d.name === tool)
-  if (!def) throw new McpUserError(`Tool "${tool}" unknown to ${c.name}: call connected_tools for the list.`, 404)
-  if (!toolsForAgents([def], mode).length) throw new McpUserError(`"${tool}" changes data in ${c.name}: the admin only opened read-only tools to agents.`, 403)
+  if (!def) throw new McpUserError(`Tool "${tool}" unknown to ${c.name}: list the tools again.`, 404)
+  if (!toolsForAgents([def], mode).length) throw new McpUserError(`"${tool}" changes data in ${c.name}: only read-only tools are open here.`, 403)
   return callResultText(await withBearer(c, (bearer) => callTool(c.url, bearer, tool, args)))
+}
+
+async function findConnector(idOrName: string): Promise<McpConnectorConfig | undefined> {
+  const cfg = await load()
+  return cfg[idOrName] ?? Object.values(cfg).find((x) => x.name.toLowerCase() === idOrName.toLowerCase())
+}
+
+/** Tools of the connectors visible to this member. */
+export async function agentConnectors(viewer: Viewer): Promise<AgentConnector[]> {
+  return connectorTools(
+    Object.values(await load()).filter((c) => visibleTo(c, viewer)),
+    (c) => c.agents ?? "read",
+  )
+}
+
+/** A member's agent calls a tool, within the limits the admin chose. Throws McpUserError (400/403/404). */
+export async function callAgentTool(viewer: Viewer, connectorId: string, tool: string, args: Record<string, unknown>): Promise<{ text: string; is_error: boolean }> {
+  const c = await findConnector(connectorId)
+  if (!c || !visibleTo(c, viewer)) throw new McpUserError(`Connector "${connectorId}" not found or not shared with agents.`, 404)
+  return callConnectorTool(c, c.agents ?? "read", tool, args)
+}
+
+/**
+ * For the onboarding agent (upload code of an admin): every connected server, read-only tools only, whatever the
+ * agents rule. The admin connects them on the creation page while the agent reads the conversations.
+ */
+export async function onboardingConnectors(): Promise<AgentConnector[]> {
+  return connectorTools(
+    Object.values(await load()).filter((c) => c.enabled && hasAccess(c)),
+    () => "read",
+  )
+}
+
+export async function callOnboardingTool(connectorId: string, tool: string, args: Record<string, unknown>): Promise<{ text: string; is_error: boolean }> {
+  const c = await findConnector(connectorId)
+  if (!c || !c.enabled || !hasAccess(c)) throw new McpUserError(`Connector "${connectorId}" not found or not connected.`, 404)
+  return callConnectorTool(c, "read", tool, args)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

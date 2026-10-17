@@ -183,8 +183,11 @@ the computer's history (`~/.claude/projects`, `~/.codex/sessions`) and the READM
 and 10 to 40 first knowledge items from them (never any secrets or personal data), then sends them with an upload code
 valid for 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin only). It reports its start as soon as it has
 consent, then its findings and its end (`POST /api/onboarding/progress`, same code): the page says "it's started, you
-can move on" and each report arrives as a notification. It sends a first version early then completes it (each upload
-replaces the previous one); a proposal that arrives during the zones step is added to it. The page fills in on its own
+can move on" and each report arrives as a notification. While it reads, the admin connects the company's tools on the
+same step (MCP catalog: Notion, Linear, GitHub…): the agent lists them and calls their read-only tools with the same code
+(`GET /api/onboarding/tools`, `POST /api/onboarding/tools/call`, 25 calls at most, write tools refused), so that their
+spaces, projects and recent documents shape the zones and give first knowledge. It sends a first version early then
+completes it (each upload replaces the previous one); a proposal that arrives during the zones step is added to it. The page fills in on its own
 with the proposal, redacted again on the server; nothing is applied before the admin has reviewed and validated it (at
 the zones step of `/create`, or on the Onboarding page). The 7-question interview stays available below, and the
 `/demo` page offers "Create my dashboard".
