@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { test } from "node:test"
 import { buildModerationInput } from "@brain/core"
-import { cmdModerate } from "../src/moderate"
+import { cmdModerate, scheduledModeration } from "../src/moderate"
 import { fakeClaude, withPath } from "./fake-claude"
 import { mockServer, tempDir } from "./helpers"
 
@@ -82,5 +82,29 @@ test("moderate : rien à relire, ou modérateur coupé → aucun appel à Claude
     } finally {
       await srv.close()
     }
+  }
+})
+
+test("synchro planifiée : seul le poste d'un admin fait le passage du modérateur", async () => {
+  const input = buildModerationInput({ companyName: "Fournil", zones, items: [item("a1", "Webhooks Stripe en file Redis")], published: [] })
+  const { srv, posted } = await brain({ input, remaining: 0 })
+  const cli = fakeClaude()
+  try {
+    const cache = (role: string) =>
+      writeFileSync(
+        join(process.env.COMPANY_BRAIN_HOME!, "cache.json"),
+        JSON.stringify({ updated_at: new Date().toISOString(), whoami: { name: "Claire", org: "Fournil", role, readable: [], writable: [] } }),
+      )
+    cache("member")
+    await withPath(cli.bin, () => scheduledModeration(() => {}))
+    assert.equal(posted.length, 0)
+    cache("admin")
+    const out: string[] = []
+    await withPath(cli.bin, () => scheduledModeration((s) => out.push(s)))
+    assert.equal(posted.length, 1)
+    // Résumé ensuite : la route du résumé manque sur ce faux cerveau, l'erreur reste dans le journal.
+    assert.match(out.join("\n"), /Modérateur : 3 relue/)
+  } finally {
+    await srv.close()
   }
 })

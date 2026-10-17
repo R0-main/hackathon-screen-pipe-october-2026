@@ -819,8 +819,8 @@ function checkDistiller(ctx: Ctx) {
       group: "Distillation",
       status: "fail",
       detail: `à la dernière synchro${run.at ? ` (${ago(ctx.now - run.at)})` : ""}, Claude n'était plus connecté : rien n'a été distillé (rien n'est perdu, tout repart une fois reconnecté)`,
-      fix: "Lance `claude setup-token` dans un terminal (connexion dans le navigateur), puis enregistre le jeton affiché.",
-      command: `${ctx.me} init --claude-token <jeton>`,
+      fix: "Dans un terminal : connexion à Claude dans le navigateur, puis colle le jeton affiché.",
+      command: `${ctx.me} connect-claude`,
       safe: false,
     })
   else if (cfg.claude_oauth_token) add(ctx, { id: "claude-connexion", group: "Distillation", status: "ok", detail: "jeton Claude Code longue durée enregistré pour la synchro planifiée" })

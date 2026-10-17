@@ -1,10 +1,11 @@
-// `moderate` : un passage du modérateur du cerveau fait par le Claude Code de l'entreprise (`claude -p`, Sonnet, son
-// abonnement : en CI toutes les 15 min avec le jeton `claude setup-token` du CEO). La CI lit ce qui est arrivé depuis le
-// passage précédent, Claude décide ici, le cerveau applique. Le jeton Claude ne quitte jamais le poste ou la CI.
+// `moderate` : un passage du modérateur du cerveau fait par Claude Code sur le poste d'un admin (`claude -p`, Sonnet, son
+// abonnement). La synchro planifiée d'un poste admin le lance toutes les 15 min, avec le jeton enregistré à l'installation
+// (`connect-claude`). Le poste lit ce qui est arrivé depuis le passage précédent, Claude décide ici, le cerveau applique.
+// Le jeton Claude ne quitte jamais le poste.
 
 import { MODERATION_REASON_LABELS, buildCliModerationPrompt, parseModerationJson, truncate, type ModerationVerdict } from "@brain/core"
 import { ApiError, BrainApi } from "./api"
-import { UserError, requireConfig } from "./config"
+import { UserError, loadCache, requireConfig } from "./config"
 import { claudeAuthHelp, claudeCliOptions, cliFailure, findOnPath, runClaudeCli } from "./distill"
 import { maskOwnSecrets, ownSecrets } from "./secrets"
 
@@ -95,4 +96,17 @@ export async function cmdModerate(opts: { dryRun?: boolean; refreshStatus?: bool
     return cmdRefreshStatus({}, log)
   }
   return 0
+}
+
+/**
+ * Synchro planifiée d'un poste admin : un passage du modérateur, puis le résumé s'il y avait du nouveau. Une erreur
+ * (Claude déconnecté, cerveau sans modérateur) est écrite dans le journal de la synchro, jamais remontée.
+ */
+export async function scheduledModeration(log: Log = console.log): Promise<void> {
+  if (loadCache()?.whoami?.role !== "admin") return
+  try {
+    await cmdModerate({ refreshStatus: true }, log)
+  } catch (err) {
+    log(`Modérateur : ${(err as Error).message}`)
+  }
 }

@@ -11,6 +11,7 @@ import { join } from "node:path"
 import { BrainApi } from "./api"
 import { cmdHello, cmdInit } from "./commands"
 import { fingerprintOfFile, trustInBrowsers } from "./ca"
+import { cmdConnectClaude, hasScheduledClaude } from "./connect"
 import { brainHome, loadPartialConfig, loadState, maskSecret, requireConfig, saveConfig, saveState, selfCommand, UserError, type Config } from "./config"
 import { findOnPath } from "./distill"
 import { MCP_NAME, installHooks, installSchedule, mcpAddCommand, mcpArgs, mcpUpToDate, readMcpEntry, refreshSchedule, scheduleInstalled } from "./install"
@@ -315,6 +316,27 @@ export function trustCaForBrowsers(file: string, log: Log) {
   if (t.ok && fp) saveState({ ...state, ca_trusted: fp })
 }
 
+/**
+ * Jeton Claude Code du poste, demandé à l'installation : dans un terminal, `connect-claude` tout de suite ; lancé par
+ * Claude Code (pas de terminal à soi), une ligne « À FAIRE » que le prompt d'installation fait répéter. Rien à demander
+ * avec un jeton déjà enregistré, une clé API, ou sans Claude Code. Renvoie la ligne « À FAIRE », ou null.
+ */
+async function askClaudeToken(log: Log): Promise<string | null> {
+  if (hasScheduledClaude() || !findOnPath("claude")) {
+    if (hasScheduledClaude()) log("Jeton Claude Code : déjà enregistré pour la synchro planifiée.")
+    return null
+  }
+  const todo = `À FAIRE (une fois, 1 min) : dans un terminal, lance \`${selfCommand()} connect-claude\` (connexion à Claude dans le navigateur, puis colle le jeton affiché). Sans lui, la synchro des 15 min ne peut pas lancer Claude quand aucune session n'est ouverte.`
+  if (!(process.stdin.isTTY && process.stdout.isTTY)) return todo
+  try {
+    await cmdConnectClaude(log)
+    return null
+  } catch (err) {
+    log(`Jeton Claude Code : ${(err as Error).message}`)
+    return todo
+  }
+}
+
 export async function cmdSetup(flags: Record<string, string | boolean>, log: Log = console.log): Promise<number> {
   const audio = yesNo(flags.audio, "audio")
   const waitS = typeof flags.wait === "string" ? Number.parseInt(flags.wait, 10) : DEFAULT_WAIT_S
@@ -383,6 +405,8 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   // Déjà planifiée : chemins remis à jour, sans nouveau point de départ (ce qui attend d'être envoyé n'est pas sauté).
   if (scheduleInstalled()) refreshSchedule(log)
   else installSchedule(log)
+  // Jeton Claude Code : sans lui, la synchro des 15 min (sans session ouverte) ne peut pas lancer Claude.
+  const claudeToDo = await askClaudeToken(log)
 
   log("[6/6] Ton néon et le cerveau")
   try {
@@ -395,6 +419,10 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
   log("")
   log("C'est branché. Continue à travailler avec Claude Code : chaque session allume ta zone, et les connaissances distillées arrivent dans le cerveau toutes les 15 minutes.")
   log(`Voir ce qui partirait : ${me} sync --dry-run --full — diagnostic : ${me} doctor — tout retirer : ${me} uninstall`)
+  if (claudeToDo) {
+    log("")
+    log(claudeToDo)
+  }
   if (capture && !capture.up) {
     log("")
     log(`EN ATTENTE : Screenpipe ne répond plus sur ${cfg.screenpipe_url}. Relance : ${me} setup`)

@@ -51,6 +51,9 @@ Commandes :
                      Screenpipe (capture, autorisations, jeton), Claude Code (MCP, hooks), synchro planifiée, distillation.
                      Chaque point KO donne la commande qui répare. --json : le même rapport pour Claude Code (champ « safe »
                      sur les commandes qui ne font que rebrancher le poste). Code de sortie 1 s'il reste un point KO.
+  connect-claude     Jeton Claude Code du poste (demandé à l'installation) : lance \`claude setup-token\` (connexion dans le
+                     navigateur), on colle le jeton affiché, il est essayé puis gardé sur le poste (config.json, mode 600).
+                     La synchro des 15 min s'en sert sans session ouverte : distillation, agent Screenpipe, modérateur.
   init --url <url> --token <jeton> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
        [--claude-token <jeton>] [--share-prompt-summaries oui|non] [--screenpipe-meetings oui|non]
        [--screenpipe-agent oui|non|claude|codex] [--agent-model <modèle>] [--ca <pem>]
@@ -94,8 +97,8 @@ Commandes :
                      et y range leurs connaissances. --dry-run : affiche les propositions sans rien envoyer.
   moderate [--dry-run] [--refresh-status]
                      Admins : passage du modérateur fait ici par Claude Code (\`claude -p\`, Sonnet, votre abonnement ;
-                     en CI toutes les 15 min, CLAUDE_CODE_OAUTH_TOKEN du CEO). Claude relit ce qui est arrivé depuis le
-                     passage précédent, puis le cerveau garde, corrige ou retire chaque connaissance.
+                     fait tout seul toutes les 15 min par la synchro planifiée d'un poste admin). Claude relit ce qui est
+                     arrivé depuis le passage précédent, puis le cerveau garde, corrige ou retire chaque connaissance.
                      --refresh-status : s'il y avait du nouveau, refait ensuite le résumé « où en est la boîte ».
                      --dry-run : affiche les décisions sans rien appliquer.
   status             État du client en bref : connexion, dernière synchro, Screenpipe, hooks, planification (détail : doctor).
@@ -165,6 +168,10 @@ async function main(argv: string[]): Promise<number> {
       const { cmdInit } = await import("./commands")
       return cmdInit(flags)
     }
+    case "connect-claude": {
+      const { cmdConnectClaude } = await import("./connect")
+      return cmdConnectClaude()
+    }
     case "hello": {
       const { cmdHello } = await import("./commands")
       return cmdHello()
@@ -213,6 +220,11 @@ async function main(argv: string[]): Promise<number> {
       if (!flags["dry-run"]) {
         const { refreshSkills } = await import("./skills")
         await refreshSkills(console.log, { quiet: true })
+      }
+      // Poste d'un admin : la synchro planifiée fait aussi le passage du modérateur (avec son jeton Claude Code).
+      if (flags.scheduled && !summary.skipped) {
+        const { scheduledModeration } = await import("./moderate")
+        await scheduledModeration(console.log)
       }
       return 0
     }

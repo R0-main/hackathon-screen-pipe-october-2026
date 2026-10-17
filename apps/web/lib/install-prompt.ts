@@ -94,7 +94,8 @@ function commonCodes(brain: string): string {
     `Code ${EXIT.permissions} (« EN ATTENTE ») : redis-moi où cocher, puis relance \`${brain} setup\` (même délai). ` +
     `Code ${EXIT.download} : réseau ou adresse, relance la même commande. ` +
     `Autre code (${EXIT.noScreenpipe} : branché sans Screenpipe) : lance \`${brain} doctor --json\` et les corrections marquées « safe » (même délai), puis dis-moi en une phrase ce qui reste à faire. ` +
-    `Sous Windows, le client est \`${BRAIN_CLI_WINDOWS}\`.`
+    `Sous Windows, le client est \`${BRAIN_CLI_WINDOWS}\`. ` +
+    `Ligne « À FAIRE » en sortie : répète-la-moi telle quelle.`
   )
 }
 

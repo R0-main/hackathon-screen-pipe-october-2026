@@ -3,16 +3,16 @@ import { MODERATION_DECISIONS, MODERATION_REASONS, KNOWLEDGE_KINDS } from "@brai
 import { claudeKeyInfo } from "@/lib/claude-key"
 import { applyModerationVerdicts, loadModerationLog, loadModerationRuns, moderationEnabled, runModeration, setModerationEnabled } from "@/lib/moderation"
 import { getStore } from "@/lib/store"
-import { error, json, parseBody, publicBaseUrl, withViewer } from "@/lib/http"
+import { error, json, parseBody, withViewer } from "@/lib/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
 /** Admins : modérateur actif ou non, d'où vient Claude côté serveur, derniers passages et décisions (sans le texte retiré). */
-export const GET = withViewer(async (req) => {
+export const GET = withViewer(async () => {
   const [enabled, runs, log, claude] = await Promise.all([moderationEnabled(), loadModerationRuns(), loadModerationLog(), claudeKeyInfo(getStore())])
-  return json({ enabled, claude: claude.source, runs, log, base_url: publicBaseUrl(req) })
+  return json({ enabled, claude: claude.source, runs, log })
 }, { admin: true })
 
 const ToggleSchema = z.object({ enabled: z.boolean() })
@@ -48,8 +48,8 @@ const VerdictsSchema = z.object({
 
 /**
  * Admins. Sans corps : le serveur fait un passage tout de suite, avec la clé API de l'entreprise.
- * Avec `{ids, verdicts}` : applique le passage fait par le Claude Code de l'entreprise (`brain moderate`, abonnement du
- * CEO en CI). Le jeton Claude ne quitte jamais la CI : le cerveau ne reçoit que les décisions.
+ * Avec `{ids, verdicts}` : applique le passage fait par Claude Code sur le poste d'un admin (`brain moderate`, lancé
+ * par sa synchro toutes les 15 min). Le jeton Claude ne quitte jamais le poste : le cerveau ne reçoit que les décisions.
  */
 export const POST = withViewer(
   async (req) => {

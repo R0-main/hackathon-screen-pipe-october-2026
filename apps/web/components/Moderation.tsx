@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { MODERATION_REASON_LABELS } from "@brain/core"
 import type { ModerationLogEntry, ModerationRun } from "@/lib/moderation"
 import { api, errorMessage } from "./format"
 import { RelTime } from "./RelTime"
 import { ErrorText } from "./ui"
 
-type State = { enabled: boolean; claude: "org" | "server" | null; runs: ModerationRun[]; log: ModerationLogEntry[]; base_url: string }
+type State = { enabled: boolean; claude: "org" | "server" | null; runs: ModerationRun[]; log: ModerationLogEntry[]; }
 
 const KINDS: Record<string, string> = { fact: "fait", decision: "décision", task: "tâche", procedure: "procédure", question: "question" }
 
@@ -29,48 +29,11 @@ function decisionLine(e: ModerationLogEntry): string {
   return `Retirée : ${what}, ${MODERATION_REASON_LABELS[e.category ?? "autre"]}${e.reason ? ` — ${e.reason}` : ""}`
 }
 
-/**
- * Workflow GitHub Actions de l'entreprise : toutes les 15 min, son Claude Code (jeton d'abonnement du CEO) relit ce qui
- * est arrivé dans le cerveau, puis refait le résumé « où en est la boîte » s'il y avait du nouveau.
- */
-export function moderationWorkflow(baseUrl: string): string {
-  return `name: Cerveau — modérateur et résumé
-on:
-  schedule:
-    - cron: "*/15 * * * *"
-  workflow_dispatch:
-concurrency:
-  group: cerveau-moderateur
-  cancel-in-progress: false
-jobs:
-  moderate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Claude Code et le client du cerveau
-        run: |
-          npm install -g @anthropic-ai/claude-code
-          curl -fsSL ${baseUrl}/brain.mjs -o "$RUNNER_TEMP/brain.mjs"
-      - name: Modérateur, puis résumé
-        env:
-          BRAIN_TOKEN: \${{ secrets.BRAIN_TOKEN }}
-          CLAUDE_CODE_OAUTH_TOKEN: \${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: |
-          node "$RUNNER_TEMP/brain.mjs" init --home "$RUNNER_TEMP/brain" --url ${baseUrl} --token "$BRAIN_TOKEN"
-          node "$RUNNER_TEMP/brain.mjs" moderate --refresh-status --home "$RUNNER_TEMP/brain"
-`
-}
-
-/** Modérateur du cerveau : qui le fait tourner (Claude Code du CEO en CI), interrupteur, derniers passages et décisions. */
+/** Modérateur du cerveau : où il tourne (poste d'un admin), interrupteur, derniers passages et décisions. */
 export function Moderation() {
   const [state, setState] = useState<State | null>(null)
   const [busy, setBusy] = useState<"toggle" | "run" | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-  const preRef = useRef<HTMLPreElement>(null)
 
   const load = () =>
     api<State>("/api/admin/moderation")
@@ -107,25 +70,6 @@ export function Moderation() {
     }
   }
 
-  async function copy() {
-    if (!state) return
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error("presse-papiers indisponible")
-      await navigator.clipboard.writeText(moderationWorkflow(state.base_url))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      const sel = window.getSelection()
-      if (preRef.current && sel) {
-        const range = document.createRange()
-        range.selectNodeContents(preRef.current)
-        sel.removeAllRanges()
-        sel.addRange(range)
-      }
-      setErr("Copie automatique impossible ici : le fichier est sélectionné, copiez-le avec Ctrl+C (⌘C sur Mac).")
-    }
-  }
-
   return (
     <section className="panel space-y-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -144,35 +88,11 @@ export function Moderation() {
         )}
       </div>
 
-      {state && (
-        <div className="space-y-3">
-          <p className="text-[13px]">
-            Il tourne dans votre CI GitHub, avec le Claude Code du CEO et son abonnement (Sonnet) : aucune clé API, aucun PC allumé, et le jeton Claude ne
-            quitte jamais la CI.
-          </p>
-          <ol className="list-decimal space-y-1.5 pl-5 text-[13px]">
-            <li>
-              Sur le poste du CEO : <code className="mono">claude setup-token</code>, et copiez le jeton affiché.
-            </li>
-            <li>
-              Dans un repo GitHub de l&apos;entreprise, deux secrets : <code className="mono">CLAUDE_CODE_OAUTH_TOKEN</code> (ce jeton) et{" "}
-              <code className="mono">BRAIN_TOKEN</code> (le jeton du cerveau du CEO, champ <code className="mono">token</code> de{" "}
-              <code className="mono">~/.company-brain/config.json</code>).
-            </li>
-            <li>
-              Ce fichier sous <code className="mono">.github/workflows/cerveau-moderateur.yml</code> (GitHub peut décaler un passage de quelques minutes).
-            </li>
-          </ol>
-          <div className="relative">
-            <pre ref={preRef} className="scroll-thin mono inset max-h-[320px] overflow-auto p-3 text-[12px] leading-relaxed">
-              {moderationWorkflow(state.base_url)}
-            </pre>
-            <button type="button" className="btn btn-sm absolute right-2 top-2" onClick={copy}>
-              {copied ? "Copié" : "Copier"}
-            </button>
-          </div>
-        </div>
-      )}
+      <p className="text-[13px]">
+        Il tourne sur le poste d&apos;un admin, avec son Claude Code (Sonnet, son abonnement) : à chaque synchro (toutes les 15 min), son poste relit ce
+        qui est arrivé, puis refait le résumé. Le jeton Claude, demandé à l&apos;installation du poste, ne quitte jamais ce poste. S&apos;il manque :{" "}
+        <code className="mono">~/.company-brain/brain connect-claude</code> dans un terminal.
+      </p>
 
       {err && <ErrorText>{err}</ErrorText>}
 

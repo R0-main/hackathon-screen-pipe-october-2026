@@ -1,7 +1,7 @@
-// Modérateur du cerveau, dans le cloud : toutes les 15 min, Claude relit ce qui est arrivé depuis le passage précédent
-// et garde, corrige ou retire chaque connaissance. Le passage est fait par le Claude Code de l'entreprise (jeton
-// d'abonnement du CEO, dans sa CI : `brain moderate`), ou par le serveur avec la clé API de l'entreprise (« Lancer
-// maintenant »). Un curseur (date d'arrivée) retient où le dernier passage s'est arrêté.
+// Modérateur du cerveau : toutes les 15 min, Claude relit ce qui est arrivé depuis le passage précédent et garde,
+// corrige ou retire chaque connaissance. Le passage est fait par Claude Code sur le poste d'un admin (`brain moderate`,
+// lancé par sa synchro planifiée, avec son jeton d'abonnement), ou par le serveur avec la clé API de l'entreprise
+// (« Lancer maintenant »). Un curseur (date d'arrivée) retient où le dernier passage s'est arrêté.
 // Le journal des admins ne garde que des métadonnées (zone, type, motif), jamais le texte retiré.
 
 import {
@@ -21,7 +21,7 @@ import { moderateKnowledge } from "@brain/core/claude"
 import { getClaude } from "./ai"
 import { getStore } from "./store"
 
-/** `claude-code` : le Claude Code de l'entreprise (abonnement, en CI) ; `server` : la clé API de l'entreprise. */
+/** `claude-code` : Claude Code sur le poste d'un admin (son abonnement) ; `server` : la clé API de l'entreprise. */
 export type ModerationVia = "claude-code" | "server"
 
 export type ModerationLogEntry = {
