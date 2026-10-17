@@ -247,8 +247,8 @@ export function OrgChart({
                     <span className="relative shrink-0">
                       <PersonAvatar id={u.id} size={40} />
                       <span
-                        className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-ink ${p?.active ? "bg-phosphor" : "bg-surface"}`}
-                        title={p?.active ? "Agent actif ces 15 dernières minutes" : "Pas d'agent actif"}
+                        className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-ink ${p?.active && !u.uninstalled_at ? "bg-phosphor" : "bg-surface"}`}
+                        title={u.uninstalled_at ? "Client désinstallé de son poste" : p?.active ? "Agent actif ces 15 dernières minutes" : "Pas d'agent actif"}
                       />
                     </span>
                     <span className="min-w-0 flex-1">

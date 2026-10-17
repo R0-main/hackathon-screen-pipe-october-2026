@@ -166,8 +166,9 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
 /** Agents qui envoient les prompts saisis par l'employé (hooks UserPromptSubmit). */
 const PROMPT_AGENTS = new Set<AgentName>(["claude-code", "codex"])
 
-/** POST /api/events — hooks Claude Code, MCP, brain-sync. */
+/** POST /api/events — hooks Claude Code, MCP, brain-sync. Un poste noté désinstallé qui se manifeste est rebranché. */
 export async function recordEvents(viewer: Viewer, inputs: AgentEventInput[]) {
+  if (viewer.real.uninstalled_at) await store().updateProfile(viewer.real.id, { uninstalled_at: null })
   const zones = await store().listZones()
   const known = new Set(zones.map((z) => z.id))
   const events = inputs.map((e) => {

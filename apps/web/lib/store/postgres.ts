@@ -45,6 +45,7 @@ function toProfile(r: Row): Profile {
     role: r.role,
     manager_id: r.manager_id ?? null,
     can_publish_skills: Boolean(r.can_publish_skills),
+    uninstalled_at: isoOrNull(r.uninstalled_at),
     created_at: iso(r.created_at),
   }
 }
@@ -614,7 +615,8 @@ export class PostgresStore implements BrainStore {
         name = ${patch.name ?? c.name}, email = ${patch.email ?? c.email}, title = ${patch.title ?? c.title},
         role = ${patch.role ?? c.role}, token_hash = ${patch.token_hash ?? c.token_hash},
         manager_id = ${patch.manager_id === undefined ? c.manager_id : patch.manager_id},
-        can_publish_skills = ${patch.can_publish_skills ?? c.can_publish_skills}
+        can_publish_skills = ${patch.can_publish_skills ?? c.can_publish_skills},
+        uninstalled_at = ${patch.uninstalled_at === undefined ? c.uninstalled_at : patch.uninstalled_at}
       where id = ${id} returning *`
     return toProfile(r)
   }

@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic"
 
 /**
  * L'équipe et l'état de chaque poste : `last_at` est le dernier signe de son agent (le premier est le `hello` lancé à
- * la fin de l'installation), null tant que le poste n'est pas branché. Le parcours /creer le relit pour montrer qui
- * s'est connecté.
+ * la fin de l'installation), null tant que le poste n'est pas branché ou depuis qu'il a été désinstallé
+ * (`uninstalled_at`). Le parcours /creer le relit pour montrer qui s'est connecté.
  */
 export const GET = withViewer(
   async () => {
@@ -22,7 +22,8 @@ export const GET = withViewer(
           title: p.title,
           role: p.role,
           zones: access.filter((a) => a.user_id === p.id).map((a) => a.zone_id),
-          last_at: last?.at ?? null,
+          last_at: p.uninstalled_at ? null : (last?.at ?? null),
+          uninstalled_at: p.uninstalled_at ?? null,
         }
       }),
     )

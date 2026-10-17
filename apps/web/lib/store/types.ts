@@ -31,7 +31,7 @@ export type NewProfile = {
   can_publish_skills?: boolean
   token_hash: string
 }
-export type ProfilePatch = Partial<NewProfile>
+export type ProfilePatch = Partial<NewProfile> & { uninstalled_at?: string | null }
 export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: string; embedding?: number[]; embedding_model?: string }
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">
 export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created_at?: string }

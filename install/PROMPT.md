@@ -109,7 +109,8 @@ Ce message contient mon jeton personnel : ne l'affiche jamais en entier (brain-s
 | `--ca <pem>` | Cerveau auto-hébergé en HTTPS local : certificat de son autorité privée, auquel le client fait confiance (voir ci-dessous). |
 
 Tout retirer : `~/.company-brain/brain uninstall` (hooks, MCP, skills de l'entreprise, synchro, service Screenpipe ; `--purge` efface aussi
-`~/.company-brain`). Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
+`~/.company-brain`). Le cerveau est prévenu : le poste y apparaît « désinstallé » et le jeton est révoqué (sauf pour le
+dernier admin branché) ; un « Nouveau prompt » le rebranche. Les enregistrements de Screenpipe restent dans `~/.screenpipe`.
 
 ## Cerveau auto-hébergé (HTTPS sur le réseau local)
 

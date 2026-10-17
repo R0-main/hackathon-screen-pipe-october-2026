@@ -199,6 +199,10 @@ export class BrainApi {
   publishSkill(skill: SkillPush) {
     return this.request<Skill>("POST", "/api/skills", { ...skill, agent: "brain-sync" }, 60000)
   }
+  /** `uninstall` : le poste est noté désinstallé et le jeton révoqué (sauf celui du dernier admin branché). */
+  uninstall() {
+    return this.request<{ uninstalled: boolean; revoked: boolean; at: string }>("POST", "/api/uninstall", undefined, 10000)
+  }
   /** Lien de connexion au dashboard, valable 2 minutes (ouvert par `setup` dans le navigateur). */
   loginLink() {
     return this.request<{ path: string; expires_in: number }>("POST", "/api/session/link")

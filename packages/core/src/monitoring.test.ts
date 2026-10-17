@@ -13,4 +13,7 @@ test("posteHealth : jamais branché, en retard, en erreur, ok", () => {
   assert.equal(posteHealth({ report: { at: ago(LATE_AFTER_MS + 1), ok: true }, lastEventAt: null, now }).status, "late")
   assert.equal(posteHealth({ report: { at: ago(LATE_AFTER_MS - 1), ok: true }, lastEventAt: null, now }).status, "ok")
   assert.equal(posteHealth({ report: { at: "pas une date", ok: true }, lastEventAt: null, now }).status, "late")
+  const gone = posteHealth({ report: { at: ago(60_000), ok: true }, lastEventAt: ago(30_000), uninstalledAt: ago(10_000), now })
+  assert.equal(gone.status, "uninstalled", "désinstallé : prime sur la dernière synchro réussie")
+  assert.equal(gone.since, ago(10_000))
 })

@@ -39,7 +39,7 @@ async function buildMonitoring() {
     const recent = history.filter((r) => r.user_id === p.id && r.at >= since7d)
     return {
       profile: { id: p.id, name: p.name, title: p.title, role: p.role },
-      health: posteHealth({ report, lastEventAt: lastEvent.get(p.id) ?? null, now }),
+      health: posteHealth({ report, lastEventAt: lastEvent.get(p.id) ?? null, uninstalledAt: p.uninstalled_at, now }),
       report,
       last_event_at: lastEvent.get(p.id) ?? null,
       items_7d: recent.reduce((n, r) => n + r.items_sent, 0),
@@ -48,7 +48,7 @@ async function buildMonitoring() {
     }
   })
   postes.sort((a, b) => HEALTH_ORDER[a.health.status] - HEALTH_ORDER[b.health.status] || a.profile.name.localeCompare(b.profile.name))
-  const counts = { ok: 0, late: 0, error: 0, never: 0 }
+  const counts = { ok: 0, late: 0, error: 0, never: 0, uninstalled: 0 }
   for (const p of postes) counts[p.health.status]++
   return {
     generated_at: new Date(now).toISOString(),

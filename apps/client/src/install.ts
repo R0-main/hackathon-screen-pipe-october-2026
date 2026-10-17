@@ -6,6 +6,7 @@ import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync,
 import { homedir } from "node:os"
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import { DISTILL_MARKER } from "@brain/core"
+import { ApiError, BrainApi } from "./api"
 import { brainHome, claudeDir, codexDir, customHome, loadPartialConfig, loadState, paths, quoteArg, saveConfig, saveState, selfScript, writeJson, type FileCheckpoint, type State } from "./config"
 import { findOnPath, spawnTarget } from "./distill"
 import { isBrainSetupText, ownSecrets } from "./secrets"
@@ -779,7 +780,36 @@ export function removeMcpEntry(file = claudeJsonPath()): boolean {
   return true
 }
 
-export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = console.log) {
+/**
+ * Prévient le cerveau avant de tout retirer : le poste y est noté désinstallé et le jeton révoqué. Sans réponse, la
+ * désinstallation locale continue quand même. Renvoie true si le jeton est révoqué.
+ */
+export async function notifyUninstall(log: (s: string) => void = console.log): Promise<boolean> {
+  const cfg = loadPartialConfig()
+  if (!cfg.url || !cfg.token) {
+    log("Cerveau : pas de config, rien à prévenir.")
+    return false
+  }
+  try {
+    const r = await new BrainApi(cfg.url, cfg.token, 10_000).uninstall()
+    log(
+      r.revoked
+        ? "Cerveau prévenu : ce poste y est noté désinstallé et ton jeton est révoqué (MCP, hooks et synchro coupés partout)."
+        : "Cerveau prévenu : ce poste y est noté désinstallé. Jeton gardé : tu es le dernier admin branché, sans lui plus personne n'ouvrirait le cerveau.",
+    )
+    return r.revoked
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      log("Cerveau : jeton déjà refusé (poste déjà désinstallé, ou jeton régénéré) : l'accès est déjà coupé.")
+      return true
+    }
+    log(`Cerveau pas prévenu (${(err as Error).message}) : un admin peut couper l'accès en régénérant ton jeton (« Nouveau prompt »).`)
+    return false
+  }
+}
+
+export async function uninstall(opts: { purge?: boolean }, log: (s: string) => void = console.log) {
+  const revoked = await notifyUninstall(log)
   try {
     uninstallHooks(log)
   } catch (err) {
@@ -829,7 +859,11 @@ export function uninstall(opts: { purge?: boolean }, log: (s: string) => void = 
       log(`Dossier ${brainHome()} vidé en partie (${(err as Error).message}) : supprime-le à la main une fois ce terminal fermé.`)
     }
   } else {
-    log(`Config et jeton conservés dans ${brainHome()} (ajoutez --purge pour tout supprimer).`)
+    log(
+      revoked
+        ? `Config conservée dans ${brainHome()} (--purge pour tout supprimer) ; le jeton est révoqué : pour rebrancher ce poste, colle un nouveau prompt d'installation.`
+        : `Config et jeton conservés dans ${brainHome()} (ajoutez --purge pour tout supprimer).`,
+    )
   }
 }
 

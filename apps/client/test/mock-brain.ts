@@ -82,6 +82,7 @@ export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
       return { status: 201, body: { saved: list.length } }
     }
     if (req.method === "POST" && path === "/api/events") return { status: 201, body: { recorded: 1, zones: [] } }
+    if (req.method === "POST" && path === "/api/uninstall") return { body: { uninstalled: true, revoked: true, at: new Date().toISOString() } }
     return undefined
   })
   return { ...srv, ingested, received, automations, ingestCalls: () => ingestCalls }

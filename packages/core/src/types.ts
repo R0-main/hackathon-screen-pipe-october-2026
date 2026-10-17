@@ -86,6 +86,8 @@ export type Profile = {
   manager_id?: string | null
   /** Droit de pousser des skills dans le cerveau (les admins l'ont toujours). */
   can_publish_skills?: boolean
+  /** Client désinstallé de son poste (`brain uninstall`), jeton révoqué ; null une fois rebranché (nouveau prompt). */
+  uninstalled_at?: string | null
   created_at: string
 }
 
@@ -181,7 +183,7 @@ export type SyncReport = {
 export type SyncReportRow = SyncReport & { id: string; org_id: string; user_id: string }
 
 /** État d'un poste vu par la supervision. */
-export type PosteHealth = "never" | "ok" | "late" | "error"
+export type PosteHealth = "never" | "ok" | "late" | "error" | "uninstalled"
 
 /** Un fichier d'un skill : SKILL.md à la racine, ou un script qu'il utilise (`scripts/export.py`…). Texte seulement. */
 export type SkillFile = { path: string; content: string }

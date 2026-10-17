@@ -9,13 +9,13 @@ export const dynamic = "force-dynamic"
 
 type Ctx = { params: Promise<{ id: string }> }
 
-/** Régénère le jeton (l'ancien cesse de fonctionner) et renvoie un nouveau prompt d'installation. */
+/** Régénère le jeton (l'ancien cesse de fonctionner) et renvoie un nouveau prompt d'installation ; un poste désinstallé redevient branchable. */
 export const POST = withViewer<Ctx>(
   async (req, _viewer, { params }) => {
     const { id } = await params
     const store = getStore()
     const token = newToken()
-    const profile = await store.updateProfile(id, { token_hash: hashToken(token) })
+    const profile = await store.updateProfile(id, { token_hash: hashToken(token), uninstalled_at: null })
     if (!profile) return error(404, "Membre introuvable.")
     const zones = (await store.listZoneAccess(id)).map((a) => a.zone_id)
     const org = await store.getOrg()

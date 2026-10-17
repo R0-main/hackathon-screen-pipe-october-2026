@@ -96,8 +96,8 @@ Commandes :
                      automatiquement. À lancer après sync --confirm.
   install-pipe       Écrit le pipe Screenpipe « brain-sync » (~/.screenpipe/pipes/brain-sync/pipe.md) : la synchro apparaît dans les tâches
                      planifiées de Screenpipe et se relance à la fin de chaque réunion. Demande l'application Screenpipe (moteur de pipes).
-  uninstall [--purge] Retire hooks, planification, pipe Screenpipe, MCP, skills de l'entreprise et le service Screenpipe installé par setup ;
-                     --purge supprime aussi ~/.company-brain.
+  uninstall [--purge] Prévient le cerveau (poste noté désinstallé, jeton révoqué), puis retire hooks, planification, pipe Screenpipe, MCP,
+                     skills de l'entreprise et le service Screenpipe installé par setup ; --purge supprime aussi ~/.company-brain.
 
 Variables : COMPANY_BRAIN_HOME (défaut ~/.company-brain, ou --home <dossier>), CLAUDE_CONFIG_DIR (défaut ~/.claude), CODEX_HOME (défaut ~/.codex).`
 }
@@ -238,7 +238,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case "uninstall": {
       const { uninstall } = await import("./install")
-      uninstall({ purge: Boolean(flags.purge) })
+      await uninstall({ purge: Boolean(flags.purge) })
       return 0
     }
     default:

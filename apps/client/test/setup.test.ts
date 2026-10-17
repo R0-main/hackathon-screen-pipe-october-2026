@@ -173,6 +173,38 @@ test("ensureMcp : `claude mcp add` en échec → entrée écrite directement ; e
   }
 })
 
+test("uninstall : prévient le cerveau (jeton révoqué), retire le MCP de .claude.json sans CLI `claude`, garde la config", { skip: process.platform === "win32" }, async () => {
+  const brain = await mockBrain()
+  const home = tempDir("brain-uninstall-")
+  const brainDir = join(home, "brain")
+  const claudeJson = join(home, "claude", ".claude.json")
+  mkdirSync(brainDir, { recursive: true })
+  mkdirSync(dirname(claudeJson), { recursive: true })
+  writeFileSync(join(brainDir, "config.json"), JSON.stringify({ url: brain.url, token: "cb_test_token_123456" }))
+  writeFileSync(claudeJson, JSON.stringify({ numStartups: 3, mcpServers: { "company-brain": { type: "stdio", command: process.execPath, args: ["x", "mcp"] }, autre: { command: "npx" } } }))
+  // PATH vide : ni `claude`, ni crontab ; rien n'est touché hors du dossier de test.
+  const env = { HOME: home, COMPANY_BRAIN_HOME: brainDir, COMPANY_BRAIN_SCRIPT: join(brainDir, "brain.mjs"), CLAUDE_CONFIG_DIR: join(home, "claude"), PATH: join(home, "vide") }
+  try {
+    const { code, out } = await runCli(["uninstall"], env)
+    assert.equal(code, 0, out)
+    assert.ok(brain.requests.some((r) => r.method === "POST" && r.url === "/api/uninstall" && r.headers.authorization === "Bearer cb_test_token_123456"), "le cerveau est prévenu")
+    assert.match(out, /Cerveau prévenu : ce poste y est noté désinstallé et ton jeton est révoqué/)
+    assert.match(out, /Serveur MCP company-brain retiré de Claude Code \(.*\.claude\.json\)/)
+    assert.deepEqual(JSON.parse(readFileSync(claudeJson, "utf8")), { numStartups: 3, mcpServers: { autre: { command: "npx" } } })
+    assert.match(out, /le jeton est révoqué : pour rebrancher ce poste, colle un nouveau prompt/)
+    assert.ok(existsSync(join(brainDir, "config.json")), "config conservée sans --purge")
+
+    // Relancé avec un jeton déjà révoqué : l'accès est déjà coupé, la désinstallation locale va au bout.
+    writeFileSync(join(brainDir, "config.json"), JSON.stringify({ url: brain.url, token: "cb_jeton_revoque_000000" }))
+    const again = await runCli(["uninstall"], env)
+    assert.equal(again.code, 0, again.out)
+    assert.match(again.out, /jeton déjà refusé .* l'accès est déjà coupé/)
+    assert.match(again.out, /MCP : rien à retirer/)
+  } finally {
+    await brain.close()
+  }
+})
+
 test("setup : Screenpipe qui ne démarre pas (bibliothèque manquante) → le reste est branché quand même, code 6", { skip: `${process.platform}-${process.arch}` !== "linux-x64" }, async () => {
   const brain = await mockBrain()
   const home = tempDir("brain-setup-nosp-")

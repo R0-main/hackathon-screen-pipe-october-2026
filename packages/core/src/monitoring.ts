@@ -11,6 +11,8 @@ export type PosteHealthInput = {
   report: Pick<SyncReport, "at" | "ok" | "error"> | null
   /** Dernier événement d'agent du poste (hooks, MCP…), ou null. */
   lastEventAt: string | null
+  /** Client désinstallé du poste (profil), ou null. */
+  uninstalledAt?: string | null
   now: number
 }
 
@@ -20,10 +22,12 @@ export type PosteHealthResult = { status: PosteHealth; since: string | null; rea
  * - `never` : aucun compte rendu ni activité, le poste n'est pas branché (ou n'a jamais synchronisé) ;
  * - `error` : la dernière synchro a échoué ;
  * - `late` : la dernière synchro réussie date de plus de LATE_AFTER_MS ;
- * - `ok` : sinon.
+ * - `ok` : sinon ;
+ * - `uninstalled` : avant tout le reste, le client a été désinstallé (jeton révoqué) : plus rien n'est attendu du poste.
  * Un poste sans compte rendu mais avec de l'activité (hooks) est « late » : il nourrit le cerveau sans synchro planifiée.
  */
-export function posteHealth({ report, lastEventAt, now }: PosteHealthInput): PosteHealthResult {
+export function posteHealth({ report, lastEventAt, uninstalledAt, now }: PosteHealthInput): PosteHealthResult {
+  if (uninstalledAt) return { status: "uninstalled", since: uninstalledAt, reason: "Client désinstallé du poste, jeton révoqué : un nouveau prompt le rebranche." }
   if (!report) {
     if (!lastEventAt) return { status: "never", since: null, reason: "Aucune synchronisation ni activité reçue de ce poste." }
     return { status: "late", since: lastEventAt, reason: "Activité reçue (hooks) mais aucun compte rendu de synchronisation : la synchro planifiée ne tourne pas." }
@@ -35,4 +39,4 @@ export function posteHealth({ report, lastEventAt, now }: PosteHealthInput): Pos
 }
 
 /** Ordre d'affichage : les postes qui demandent une action d'abord. */
-export const HEALTH_ORDER: Record<PosteHealth, number> = { error: 0, late: 1, never: 2, ok: 3 }
+export const HEALTH_ORDER: Record<PosteHealth, number> = { error: 0, late: 1, never: 2, ok: 3, uninstalled: 4 }

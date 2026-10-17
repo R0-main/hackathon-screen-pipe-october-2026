@@ -101,6 +101,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
     setErr(null)
     try {
       const r = await api<{ prompt: string }>(`/api/admin/users/${u.id}/token`, { method: "POST" })
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, uninstalled_at: null } : x)))
       setPrompt({ name: u.name, prompt: r.prompt })
     } catch (e) {
       setErr(`Nouveau prompt impossible pour ${u.name} : ${errorMessage(e)}`)
@@ -251,7 +252,7 @@ function MemberDrawer(props: {
       <div className="flex items-start gap-3">
         <span className="relative shrink-0">
           <PersonAvatar id={u.id} size={48} />
-          <span className={`absolute bottom-0 right-0 size-3 rounded-full border border-ink ${p?.active ? "bg-phosphor" : "bg-surface"}`} aria-hidden />
+          <span className={`absolute bottom-0 right-0 size-3 rounded-full border border-ink ${p?.active && !u.uninstalled_at ? "bg-phosphor" : "bg-surface"}`} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <h2 id="member-drawer-title" className="text-[20px] font-medium leading-tight">
@@ -265,7 +266,12 @@ function MemberDrawer(props: {
       </div>
 
       <div className="inset mt-4 px-3 py-2.5 text-[13px]">
-        {p?.lastAt ? (
+        {u.uninstalled_at ? (
+          <>
+            Client désinstallé <RelTime iso={u.uninstalled_at} now={props.now} className="tabular-nums" />
+            <span className="text-trace"> : son poste n&apos;est plus branché. « Nouveau prompt » le rebranche.</span>
+          </>
+        ) : p?.lastAt ? (
           <>
             {p.active ? "Agent actif" : "Dernière activité"} <RelTime iso={p.lastAt} now={props.now} className="tabular-nums" />
             {p.agents.length > 0 && <span className="text-trace">, avec {p.agents.join(" et ")}</span>}

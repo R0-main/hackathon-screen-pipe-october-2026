@@ -16,7 +16,8 @@ const REFRESH_MS = 30_000
 
 /** Pastille d'état : encre pour « à jour », cerclée pour les autres (jamais de couleur seule, le libellé suit toujours). */
 function HealthDot({ status }: { status: PosteHealth }) {
-  const cls = status === "ok" ? "bg-ink" : status === "error" ? "border-2 border-danger" : status === "late" ? "border-2 border-ink" : "border border-line-strong"
+  const cls =
+    status === "ok" ? "bg-ink" : status === "error" ? "border-2 border-danger" : status === "late" ? "border-2 border-ink" : status === "uninstalled" ? "border border-dashed border-line-strong" : "border border-line-strong"
   return <span aria-hidden className={`inline-block size-2.5 shrink-0 rounded-full ${cls}`} />
 }
 
@@ -47,7 +48,7 @@ export function MonitoringPanel() {
   }, [load])
 
   const m = t.monitoring
-  const label: Record<PosteHealth, string> = { ok: m.ok, late: m.late, error: m.error, never: m.never }
+  const label: Record<PosteHealth, string> = { ok: m.ok, late: m.late, error: m.error, never: m.never, uninstalled: m.uninstalled }
 
   return (
     <PageScroll>
@@ -78,7 +79,7 @@ export function MonitoringPanel() {
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="panel-title">{m.postes}</h2>
                 <p className="flex flex-wrap gap-x-3 text-[12px] tabular-nums text-trace">
-                  {(["ok", "late", "error", "never"] as PosteHealth[]).map((s) => (
+                  {(["ok", "late", "error", "never", "uninstalled"] as PosteHealth[]).map((s) => (
                     <span key={s} className="inline-flex items-center gap-1.5">
                       <HealthDot status={s} />
                       {data.counts[s]} {label[s]}

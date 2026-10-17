@@ -46,6 +46,9 @@ import * as stateRoute from "../app/api/state/route"
 import * as demoSessionRoute from "../app/api/session/demo/route"
 import * as adminUsersRoute from "../app/api/admin/users/route"
 import * as adminTeamRoute from "../app/api/admin/team/route"
+import * as adminTokenRoute from "../app/api/admin/users/[id]/token/route"
+import * as adminMonitoringRoute from "../app/api/admin/monitoring/route"
+import * as uninstallRoute from "../app/api/uninstall/route"
 import * as itemRoute from "../app/api/items/[id]/route"
 import * as joinRoute from "../app/api/join/route"
 import * as onboardingAgentRoute from "../app/api/onboarding/agent/route"
@@ -775,6 +778,36 @@ async function main() {
         params: Promise.resolve({ id: fournilItem }),
       })
       assert(del.status === 404 && (await store.getItem(fournilItem)), "une connaissance de Fournil est introuvable (et intacte) depuis l'entreprise")
+
+      console.log("\n— Désinstallation d'un poste (brain uninstall) : notée dans le cerveau, jeton révoqué")
+      const uninstall = async (token: string) => {
+        const res = await uninstallRoute.POST(new Request("http://smoke.test/api/uninstall", { method: "POST", headers: { authorization: `Bearer ${token}` } }), { params: Promise.resolve({}) })
+        return { status: res.status, data: (await res.json()) as any }
+      }
+      assert((await call(uninstallRoute.POST, "/api/uninstall", { method: "POST", session: cookie })).status === 403, "une session du dashboard ne désinstalle rien (403)")
+      const gone = await uninstall(inv.data.token)
+      assert(gone.status === 200 && gone.data.revoked === true, "POST /api/uninstall : poste de Bob noté désinstallé, jeton révoqué")
+      assert((await profileFromToken(inv.data.token)) === null, "son ancien jeton ne marche plus (MCP, hooks, synchro)")
+      assert((await acmeStore.getProfile(bob.id))?.uninstalled_at === gone.data.at, "la date de désinstallation est sur son profil")
+      assert((await acmeStore.listEvents({ userId: bob.id, limit: 1 }))[0]?.type === "stopped", "son point s'éteint en direct (événement « stopped »)")
+      const team2 = await call(adminTeamRoute.GET, "/api/admin/team", { session: cookie })
+      const bob2 = team2.data.users.find((u: { id: string }) => u.id === bob.id)
+      assert(bob2.last_at === null && bob2.uninstalled_at === gone.data.at, "équipe : le poste de Bob n'est plus branché")
+      const mon = await call(adminMonitoringRoute.GET, "/api/admin/monitoring", { session: cookie })
+      const bobPoste = mon.data.postes.find((x: { profile: { id: string } }) => x.profile.id === bob.id)
+      assert(bobPoste?.health.status === "uninstalled" && mon.data.counts.uninstalled === 1, "supervision : poste « désinstallé »")
+      const regen = await adminTokenRoute.POST(new Request(`http://smoke.test/api/admin/users/${bob.id}/token`, { method: "POST", headers: { cookie: `brain_session=${cookie}` } }), {
+        params: Promise.resolve({ id: bob.id }),
+      })
+      const regenData = (await regen.json()) as { token: string }
+      assert(regen.status === 200 && (await profileFromToken(regenData.token))?.id === bob.id, "« Nouveau prompt » : un nouveau jeton qui marche")
+      assert((await acmeStore.getProfile(bob.id))?.uninstalled_at === null, "et le poste n'est plus noté désinstallé")
+      const lone = await uninstall(token)
+      assert(lone.status === 200 && lone.data.revoked === false, "le dernier admin branché qui désinstalle garde son jeton (sinon plus personne n'ouvrirait le cerveau)")
+      const alice2 = (await viewerFromCookies(cookie, undefined))!
+      assert(alice2?.real.uninstalled_at === lone.data.at, "sa session marche toujours, son poste est noté désinstallé")
+      await runInOrg(acme.id, () => recordEvents(alice2, [{ agent: "claude-code", type: "started" }]))
+      assert((await acmeStore.getProfile(boss.id))?.uninstalled_at === null, "il rebranche son poste (setup) : la mention s'efface d'elle-même")
       console.log("\n— Message d'équipe : demander à rejoindre, un admin accepte")
       const decide = (id: string, session: string, body: unknown) =>
         adminJoinIdRoute.POST(new Request(`http://smoke.test/api/admin/join/${id}`, { method: "POST", headers: { cookie: `brain_session=${session}`, "content-type": "application/json" }, body: JSON.stringify(body) }), {
