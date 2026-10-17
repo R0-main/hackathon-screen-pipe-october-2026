@@ -49,7 +49,7 @@ export function InstallActions({ demo, signup }: { demo: boolean; signup: boolea
     <div className="panel px-5 py-5">
       <PromptActions getPrompt={getPrompt} />
       <p className="mt-4 border-t border-line pt-4 text-[13px] leading-relaxed text-trace">
-        Public demo: the prompt creates a visitor account on Butine&apos;s brain, with your own token. What your computer sends there afterwards is visible
+        Public demo: the prompt creates a visitor account on Encore&apos;s brain, with your own token. What your computer sends there afterwards is visible
         to the demo&apos;s other visitors. Everything is removed with <span className="mono text-ink">~/.company-brain/brain uninstall</span>.
         {signup && (
           <>

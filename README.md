@@ -73,7 +73,7 @@ Prerequisites: Node.js ≥ 20 and `make`. Docker is optional.
 
 ```bash
 make dev      # first time: .env, npm install, Postgres, migrations, then the browser opens on creating your company
-make demo     # the same with the fictitious company Butine: http://localhost:3000/demo
+make demo     # the same with the fictitious company Encore: http://localhost:3000/demo
 make help     # all the commands (db-stop, db-reset, seed, simulate, test…)
 ```
 
@@ -95,7 +95,7 @@ packages/core/        Shared contracts (KnowledgeItem, AgentEvent), zones, priva
                       distillation (Claude + heuristic), automation detection, status summary
 apps/web/             The brain: Next.js dashboard + API (/api/ingest, /api/query, /api/events, /api/stream…)
   lib/store/          Storage: JSON file (zero config) or Postgres/Supabase (DATABASE_URL)
-  scripts/            seed (Butine), simulate (live activity), smoke (tests), migrate (SQL)
+  scripts/            seed (Encore), simulate (live activity), smoke (tests), migrate (SQL)
 apps/client/          The computer client, shipped as ONE file (brain.mjs, served by the dashboard on /brain.mjs):
                       brain-sync, company-brain MCP server, Claude Code hooks, install
 supabase/migrations/  Postgres schema + per-zone RLS policies
@@ -156,7 +156,7 @@ demo/                 Demo script
 - **Brain quality**: synonyms in search, optional semantic search (`VOYAGE_API_KEY` or an OpenAI-compatible
   endpoint, Ollama included: `npm run embed` for existing data), automatic replacement of a revised decision or
   procedure (the old one leaves the searches), Entities pages (`/entities`), and `npm run eval` which measures search
-  on the Butine demo.
+  on the Encore demo.
 
 ## Brain API
 
@@ -222,7 +222,7 @@ Then:
      (`~/.company-brain/brain join` resumes the same request); 8: declined. The other codes are those of the install
      ([docs/CLI.md](docs/CLI.md)).
 
-Each company has its own brain: accounts, zones, knowledge and activity never cross, and the Butine demo is not
+Each company has its own brain: accounts, zones, knowledge and activity never cross, and the Encore demo is not
 touched (a reseed replaces it without deleting the companies created). On the storage side: one organization per
 company (Postgres: marked `tenant:<id>` in `brain_settings`, no migration; file: `<BRAIN_DATA_DIR>/orgs/<id>/`). A
 token or a session points to its company, and each route reads its own. `BRAIN_SIGNUP=0` closes sign-up,
@@ -284,7 +284,7 @@ The brain runs on **Vercel Hobby** (always online) with **Neon** (free Postgres,
    - Build Command: `npm run build` (also builds `brain.mjs`, served on `/brain.mjs`)
    - Functions region: the same as the database (`fra1` for Neon Frankfurt)
    - Turn off "Vercel Authentication": the computers call the API with their personal token.
-3. **Variables**: `DATABASE_URL` (Neon, "pooled" connection), `BRAIN_PUBLIC_URL` (the public URL, used in the install prompt), `BRAIN_DEMO=1` for the demo. With `BRAIN_DEMO=1`, an empty database is filled automatically with the fictitious company Butine the first time `/login` is opened (a database still on the old demo, Fournil, is replaced once by Butine, keeping the visitor accounts and their tokens). The session secret is generated on its own and kept in the database.
+3. **Variables**: `DATABASE_URL` (Neon, "pooled" connection), `BRAIN_PUBLIC_URL` (the public URL, used in the install prompt), `BRAIN_DEMO=1` for the demo. With `BRAIN_DEMO=1`, an empty database is filled automatically with the fictitious company Encore the first time `/login` is opened (a database still on the old demo, Fournil, is replaced once by Encore, keeping the visitor accounts and their tokens). The session secret is generated on its own and kept in the database.
 
 4. **Daily "new zones" job**: set `CRON_SECRET` (a long random string, `openssl rand -hex 32`) and
    `BRAIN_SECRET_KEY` (same, encrypts the companies' Claude keys). `apps/web/vercel.json` declares the cron. The Claude
@@ -353,5 +353,5 @@ who does the analysis:
 npm test                 # unit tests (core + client)
 npm run typecheck
 npm run smoke            # end to end on the current storage (file, or Postgres if DATABASE_URL)
-npm run eval             # search quality on the Butine demo (after npm run seed)
+npm run eval             # search quality on the Encore demo (after npm run seed)
 ```

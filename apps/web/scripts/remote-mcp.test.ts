@@ -245,7 +245,7 @@ test("import: Claude explores read-only then saves knowledge (simulated Claude)"
       tools: [{ name: "notion-search", input_schema: { type: "object" }, read_only: true }],
       callTool: async (name, args) => (calls.push([name, args]), { content: [{ type: "text", text: "Page \"Deploy\": on Tuesdays." }] }),
       zones,
-      org: { name: "Butine" },
+      org: { name: "Encore" },
       now: () => Date.parse("2026-10-17T12:00:00Z"),
     },
   )
@@ -269,9 +269,9 @@ test("import: Claude explores read-only then saves knowledge (simulated Claude)"
   // The connector's zone wins; no read-only tool: clear error.
   const fixed = await exploreConnector(
     { id: "notion", name: "Notion", zone: "finance" },
-    { claude: { beta: { messages: { create: async () => script[1] } } } as never, tools: [{ name: "search", input_schema: { type: "object" }, read_only: true }], callTool: async () => ({}), zones, org: { name: "Butine" } },
+    { claude: { beta: { messages: { create: async () => script[1] } } } as never, tools: [{ name: "search", input_schema: { type: "object" }, read_only: true }], callTool: async () => ({}), zones, org: { name: "Encore" } },
   )
   assert.ok(fixed.items.every((i) => i.zone === "finance"))
   assert.ok(IMPORT_LIMITS.calls > 0)
-  await assert.rejects(exploreConnector({ id: "x", name: "X" }, { claude: claude as never, tools: [], callTool: async () => ({}), zones, org: { name: "Butine" } }), /no read-only tool/)
+  await assert.rejects(exploreConnector({ id: "x", name: "X" }, { claude: claude as never, tools: [], callTool: async () => ({}), zones, org: { name: "Encore" } }), /no read-only tool/)
 })

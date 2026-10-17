@@ -1,4 +1,4 @@
-// Fills the brain with the fictional company Butine (accounts, zones, knowledge, activity history).
+// Fills the brain with the fictional company Encore (accounts, zones, knowledge, activity history).
 // Usage: npm run seed            (file storage, or Postgres if DATABASE_URL is set)
 //        npm run seed -- --force (overwrites an existing brain)
 // The data comes from lib/demo-seed.ts (the same bootstrap as the demo mode of a fresh deployment).

@@ -98,7 +98,7 @@ more emptiness. The rules below apply to all of `apps/web`. They are coded in
 ## Public home page (`/`)
 
 Addresses: `/` the home page (for everyone), `/create` company creation, `/demo` the demo entrance
-(choosing a Butine account, demo mode only), `/login` the entrance (remembered companies, a big "Create my company"
+(choosing an Encore account, demo mode only), `/login` the entrance (remembered companies, a big "Create my company"
 button, token folded below it), `/dashboard` the brain and,
 next to it, the other signed-in pages. The old French addresses (`/accueil`, `/creer`, …) redirect permanently.
 
@@ -116,7 +116,7 @@ Same world, at the scale of a page (`components/landing`, "Home page" block of `
     very close to a chapter or a section, the scroll snaps to it gently.
   - All section animations follow the scroll: they move forward when you scroll down, stop when you
     stop, replay backwards when you scroll up. Titles go from pale to ink word by word; the
-    "Where Butine stands" panel fills and the prompt types itself during the hold; the privacy diagram (`PrivacyFlow`)
+    "Where Encore stands" panel fills and the prompt types itself during the hold; the privacy diagram (`PrivacyFlow`)
     waits for its section to be snapped before playing.
   - An ink thread runs down along the sections, with a bead that fills at each section.
   - Only the entrance of the first screen plays on load (the title's words, then the rest), and the brain's slow

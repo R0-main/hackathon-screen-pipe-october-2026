@@ -1,6 +1,6 @@
 # Demo script (5 minutes)
 
-Fictitious company: **Butine**, connected scales for beehives (6 people, 3,200 hives equipped at 140 beekeepers). Slipped under the hive, the scale tells the beekeeper, on their phone, whether their bees are doing well (harvest, swarming, cold, theft), without opening the hive.
+Fictitious company: **Encore**, refurbished smartphones sold online with a 2-year warranty, to individuals and to companies that equip their teams (18 people: 6 at the office, 12 technicians in the Lyon workshop; 2,100 phones a month, 40 business customers). AI is everywhere: it grades every phone's screen from the bench photos, sets the prices every night, answers 61% of the support tickets and drafts the CSR reports business customers ask for.
 
 ## Before going on stage
 
@@ -16,7 +16,7 @@ Online version: https://www.nos-brainer.tech (demo mode, fictitious data, seeded
 
 ## Run-through
 
-1. **The problem (30 s).** "Butine makes scales that monitor beehives. At Butine, everyone works with Claude Code or ChatGPT. But when Hugo figures out how to deploy, or Jean-Marc fine-tunes his bank reconciliation, that knowledge stays in their session."
+1. **The problem (30 s).** "Encore sells refurbished phones, with a workshop, an online shop and a B2B team. At Encore, everyone works with Claude Code or ChatGPT. But when Hugo figures out how to deploy, or Jean-Marc fine-tunes his bank reconciliation, that knowledge stays in their session."
 
 2. **The brain (45 s).** The dashboard: each zone (Dev, Product, Sales, Finance, Support, Leadership) is a knowledge area, the dots are the most cited customers/tools/projects, the synapses link the zones that share entities. Start `npm run simulate`: the zones light up as sessions and MCP queries go by, the "Live agents" feed scrolls.
 
@@ -29,13 +29,13 @@ Online version: https://www.nos-brainer.tech (demo mode, fictitious data, seeded
 
 6. **The automation (45 s).** The green card: "Jean-Marc runs this prompt almost every day around 09:07 (6 times over 6 days) → run it automatically Monday to Friday at 09:02". Detected from the prompt fingerprints sent by the hooks, without storing the raw text. "Set it up".
 
-7. **The skills (30 s).** "Skills" tab: Butine's know-how ready for Claude Code, with their scripts (`deploy-butine` and its `release.sh`). "View as: Jean-Marc": he only gets the whole company's skill and those of the Finance cortex, and his computer installs them on its own. In `/admin`, the "Publishes skills" column: pushing a skill needs a permission.
+7. **The skills (30 s).** "Skills" tab: Encore's know-how ready for Claude Code, with their scripts (`deploy-encore` and its `release.sh`). "View as: Jean-Marc": he only gets the whole company's skill and those of the Finance cortex, and his computer installs them on its own. In `/admin`, the "Publishes skills" column: pushing a skill needs a permission.
 
 8. **The handover (30 s).** `/admin` → "Handover" on Hugo: his zones, his tools, his recurring prompts and his knowledge. "The day Hugo goes on leave, the person replacing him gets all of this."
 
 ## Key lines
 
-- "A hive is already a collective brain. Butine equips the hives; NOS Brainer gives one to its team."
+- "Encore gives phones a second life; NOS Brainer gives its team's know-how a life beyond the session."
 - "Screenpipe is the pipe between the computer, its AI agents and the company's brain."
 - "A few KB distilled per day instead of 19 GB of captures."
 - "Finance does not need the code context, and neither do its agents."

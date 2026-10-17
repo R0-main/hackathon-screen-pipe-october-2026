@@ -2,7 +2,7 @@ import { Dot, zoneColor } from "../ui"
 import { LANDING_ZONES } from "./landing-data"
 
 /*
-  "The raw data stays on the computer", shown with real captures from the Butine demo: what Screenpipe records
+  "The raw data stays on the computer", shown with real captures from the Encore demo: what Screenpipe records
   on the computer, the three steps of the local filter, and the few knowledge items that go up to the brain.
 
   The markup describes the final state (readable without JavaScript and under prefers-reduced-motion): personal
@@ -13,20 +13,20 @@ import { LANDING_ZONES } from "./landing-data"
 type Capture = { app: string; text: string; kind: "work" | "personal" | "secret" }
 
 const CAPTURES: Capture[] = [
-  { app: "Claude Code", text: "How do we deploy Butine to production?", kind: "work" },
+  { app: "Claude Code", text: "How do we deploy Encore to production?", kind: "work" },
   { app: "WhatsApp", text: "Weekend photos", kind: "personal" },
   { app: "Terminal", text: "export STRIPE_KEY=", kind: "secret" },
   { app: "Codex", text: "Reconcile yesterday's Qonto statements", kind: "work" },
   { app: "Personal bank", text: "October account statement", kind: "personal" },
-  { app: "Slack", text: "#dev: the alert queue goes to prod", kind: "work" },
+  { app: "Slack", text: "#dev: the grading queue goes to prod", kind: "work" },
 ]
 
 const STEPS = ["Work apps only", "Secrets redacted", "Distilled on the computer"]
 
 const KNOWLEDGE = [
-  { zone: "dev", kind: "Procedure", title: "Deploy Butine to production" },
+  { zone: "dev", kind: "Procedure", title: "Deploy Encore to production" },
   { zone: "finance", kind: "Procedure", title: "Reconcile Qonto and Pennylane every morning" },
-  { zone: "dev", kind: "Decision", title: "Swarm alerts go through a queue" },
+  { zone: "dev", kind: "Decision", title: "Bench photos go through a queue before grading" },
 ]
 
 const zone = (id: string) => LANDING_ZONES.find((z) => z.id === id)!

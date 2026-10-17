@@ -1,4 +1,4 @@
-// The fictional company Butine, ready for the demo: accounts, zones, knowledge and 10 days of activity.
+// The fictional company Encore, ready for the demo: accounts, zones, knowledge and 10 days of activity.
 // Used by `npm run seed` and, in demo mode, to seed an empty brain automatically (deployment).
 
 import {
@@ -42,7 +42,7 @@ function rand(seed: number) {
   }
 }
 
-/** Title of the accounts created from the home page: it counts them and tells them apart from the Butine team. */
+/** Title of the accounts created from the home page: it counts them and tells them apart from the Encore team. */
 export const DEMO_VISITOR_TITLE = "Demo visitor"
 /** The same title as written by earlier (French) versions: those visitors are kept when a former demo is replaced. */
 const LEGACY_DEMO_VISITOR_TITLE = "Visiteur de la démo"
@@ -68,7 +68,7 @@ async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, al
   return events
 }
 
-/** Butine team accounts found by their email (null if one is missing: this is not the demo brain). */
+/** Encore team accounts found by their email (null if one is missing: this is not the demo brain). */
 function demoTeam(profiles: Profile[]): Record<string, string> | null {
   const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [p.email, p.id]))
   const ids: Record<string, string> = {}
@@ -87,7 +87,7 @@ export async function demoVisitorManager(store: BrainStore = getStore()): Promis
 
 /**
  * Demo brain filled by an earlier version: adds what it lacks, without erasing anything.
- * - Completely flat org chart (filled before reporting lines): the Butine team is attached as in the demo,
+ * - Completely flat org chart (filled before reporting lines): the Encore team is attached as in the demo,
  *   visitors to the lead dev's team. As soon as one reporting line exists, it is left alone (an admin's choice).
  * - No skill: the demo skills are published and the planned members get the right to publish.
  */
@@ -119,7 +119,7 @@ export async function upgradeDemoBrain(store: BrainStore = getStore()) {
 
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
 
-/** Empties the brain and fills it with Butine. Returns the accounts' tokens (shown only once). */
+/** Empties the brain and fills it with Encore. Returns the accounts' tokens (shown only once). */
 export async function seedDemoBrain(store: BrainStore = getStore()) {
   await store.reset(DEMO_ORG)
   const zones = await store.listZones()
@@ -258,8 +258,8 @@ export async function replaceLegacyDemoBrain(store: BrainStore = getStore()) {
 const g = globalThis as unknown as { __demoBootstrap?: Promise<void> }
 
 /**
- * Demo mode only: a brain without any account (fresh deployment database) is seeded with Butine.
- * A Butine brain already filled is never erased: it is only completed (upgradeDemoBrain). Only a brain still on a
+ * Demo mode only: a brain without any account (fresh deployment database) is seeded with Encore.
+ * An Encore brain already filled is never erased: it is only completed (upgradeDemoBrain). Only a brain still on a
  * former demo company is replaced, once, keeping its visitors (replaceLegacyDemoBrain).
  */
 export async function ensureDemoBrain(): Promise<void> {

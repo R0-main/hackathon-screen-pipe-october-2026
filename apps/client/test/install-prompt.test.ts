@@ -15,7 +15,7 @@ import { EXIT_NO_SCREENPIPE, EXIT_PERMISSIONS_PENDING } from "../src/setup"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
 const installSh = fileURLToPath(new URL("../../web/public/install.sh", import.meta.url))
-const EXAMPLE = { baseUrl: "https://brain.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Butine", zones: ["finance"] }
+const EXAMPLE = { baseUrl: "https://brain.example.com", token: "cb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", name: "Jean-Marc Dubois", orgName: "Encore", zones: ["finance"] }
 const prompt = buildInstallPrompt(EXAMPLE)
 
 test("install prompt: a single command per system (install.sh or install.ps1, then setup), a single permission in Claude Code", () => {
@@ -99,21 +99,21 @@ test("team message: one command per system (install.sh or install.ps1 --join), u
 })
 
 test("prompts: the company introduced in a nutshell when it has a description, nothing otherwise", () => {
-  const about = "Butine makes connected scales for beehives.\n6 people, based in Lyon."
+  const about = "Encore refurbishes smartphones.\n18 people, based in Lyon."
   const withAbout = buildInstallPrompt({ ...EXAMPLE, orgDescription: about })
-  assert.ok(withAbout.startsWith('You are going to connect this computer to NOS Brainer, Butine\'s company brain. The company, in a nutshell: "Butine makes connected scales for beehives. 6 people, based in Lyon". I am Jean-Marc Dubois'))
+  assert.ok(withAbout.startsWith('You are going to connect this computer to NOS Brainer, Encore\'s company brain. The company, in a nutshell: "Encore refurbishes smartphones. 18 people, based in Lyon". I am Jean-Marc Dubois'))
   assert.ok(INSTALL_PROMPT_RE.test(withAbout))
   const join = buildJoinPrompt({ ...JOIN, orgDescription: about })
-  assert.match(join, /^You are going to ask to join NOS Brainer, Atelier Lumen's company brain\. The company, in a nutshell: "Butine/)
+  assert.match(join, /^You are going to ask to join NOS Brainer, Atelier Lumen's company brain\. The company, in a nutshell: "Encore/)
   assert.ok(INSTALL_PROMPT_RE.test(join))
   for (const empty of [undefined, "", "  \n "]) {
     assert.equal(buildInstallPrompt({ ...EXAMPLE, orgDescription: empty }), prompt)
     assert.equal(buildJoinPrompt({ ...JOIN, orgDescription: empty }), joinPrompt)
   }
   // A long description is cut at the last whole word.
-  const long = buildInstallPrompt({ ...EXAMPLE, orgDescription: "hive ".repeat(100) })
+  const long = buildInstallPrompt({ ...EXAMPLE, orgDescription: "phone ".repeat(100) })
   const quoted = long.match(/nutshell: "(.*?)"/)?.[1] ?? ""
-  assert.ok(quoted.length <= ABOUT_ORG_MAX + 1 && quoted.endsWith("hive…"), quoted)
+  assert.ok(quoted.length <= ABOUT_ORG_MAX + 1 && quoted.endsWith("phone…"), quoted)
 })
 
 test("exit codes: one code, one meaning, for the scripts, setup and join", () => {
