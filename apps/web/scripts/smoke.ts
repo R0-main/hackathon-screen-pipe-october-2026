@@ -950,11 +950,13 @@ async function main() {
     source: { app: "Terminal", tool: "claude-code", at: new Date(at).toISOString() },
     confidence: 0.8,
   })
-  const firstDecision = await ingestItems(hugo, [decision("On met les webhooks Stripe dans une file Redis pour absorber les pics de commandes.", Date.now() - 60_000)])
+  // Le tag du passage figure aussi dans le corps : un smoke rejoué sur le même stockage ne retrouve pas les décisions du
+  // passage précédent comme quasi-doublons.
+  const firstDecision = await ingestItems(hugo, [decision(`On met les webhooks Stripe dans une file Redis pour absorber les pics de commandes (passage ${run}).`, Date.now() - 60_000)])
   assert(firstDecision.inserted === 1, "première version de la décision insérée")
-  const near = await ingestItems(hugo, [decision("On met les webhooks Stripe dans une file Redis pour absorber les pics de commandes !", Date.now() - 30_000)])
+  const near = await ingestItems(hugo, [decision(`On met les webhooks Stripe dans une file Redis pour absorber les pics de commandes (passage ${run}) !`, Date.now() - 30_000)])
   assert(near.inserted === 0 && near.skipped === 1, "un quasi-doublon (même contenu à la ponctuation près) est écarté")
-  const revised = await ingestItems(hugo, [decision("Finalement pas de file : les webhooks Stripe sont traités en direct, Redis retiré de l'infra après les tests de charge.", Date.now() + 5_000)])
+  const revised = await ingestItems(hugo, [decision(`Finalement pas de file : les webhooks Stripe sont traités en direct, Redis retiré de l'infra après les tests de charge (passage ${run}).`, Date.now() + 5_000)])
   assert(revised.inserted === 1 && revised.replaced === 1, "une décision revue (même sujet, contenu différent) remplace l'ancienne")
   assert((await store.getItem(firstDecision.ids[0]))?.superseded_by === revised.ids[0], "l'ancienne version porte superseded_by")
   const current = await hybridSearch(`${qtag} file d'attente webhooks`, ["dev"], 5)
