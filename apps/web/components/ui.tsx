@@ -191,6 +191,16 @@ export function SkillIcon(props: IconProps) {
   )
 }
 
+/** Import and export: a box with an arrow going in and out. */
+export function ArchiveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.5 9.5v3.5h11V9.5" />
+      <path d="M8 2.5v7M5.2 6.8L8 9.6l2.8-2.8" />
+    </Icon>
+  )
+}
+
 export function UsersIcon(props: IconProps) {
   return (
     <Icon {...props}>

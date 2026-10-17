@@ -65,6 +65,15 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               : `The context ${first}'s workstation uses the most, ready to hand over to whoever takes over. Only distilled knowledge is shown, never the raw conversations.`}
           </p>
         </div>
+        {/* The employee sheet: who did what, to read or hand over (Markdown), or to import into another brain (JSON). */}
+        <div className="flex shrink-0 flex-wrap gap-2 sm:self-start">
+          <a href={`/api/export?what=person&id=${encodeURIComponent(id)}&format=md`} download className="btn btn-sm">
+            Export sheet
+          </a>
+          <a href={`/api/export?what=person&id=${encodeURIComponent(id)}`} download className="btn btn-sm" title="To import into another brain">
+            JSON
+          </a>
+        </div>
       </header>
 
       <dl className="mt-7 grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-line bg-line sm:grid-cols-4">
