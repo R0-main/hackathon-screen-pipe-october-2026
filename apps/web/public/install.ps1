@@ -120,6 +120,19 @@ function Save-Url([string]$Url, [string]$OutFile) {
   return $false
 }
 
+# Empreinte SHA-256 par .NET, pas par Get-FileHash : cette fonction vient d'un module que Windows PowerShell 5.1 ne
+# charge pas quand il est lance depuis PowerShell 7 (PSModulePath pointe alors vers les modules de PowerShell 7), cas
+# de l'outil PowerShell de Claude Code qui lance `powershell`.
+function Get-Sha256([string]$Path) {
+  $stream = [IO.File]::OpenRead($Path)
+  try {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    return ([BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
+  } finally {
+    $stream.Dispose()
+  }
+}
+
 # Deplace un dossier, en reessayant : l'antivirus garde parfois quelques instants un fichier tout juste extrait.
 function Move-Directory([string]$From, [string]$To) {
   for ($try = 1; $try -le 5; $try++) {
@@ -149,7 +162,7 @@ function Install-PrivateNode {
     if (-not (Save-Url $zipUrl $zip)) {
       return @{ Code = 5; Message = "Telechargement impossible : $zipUrl ($script:DownloadError). Relance la meme commande." }
     }
-    if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $NodeZipSha256) {
+    if ((Get-Sha256 $zip) -ne $NodeZipSha256) {
       return @{ Code = 5; Message = 'Le telechargement de Node.js ne correspond pas a son empreinte officielle (coupe, ou modifie par un proxy ?) : relance la meme commande.' }
     }
     # tar.exe de Windows (bsdtar) lit les zip et va vite ; jamais le tar de Git, qui ne les lit pas. Sinon .NET.
