@@ -1,7 +1,7 @@
 // Importing an MCP connector's content into the brain: Claude explores the tool with its read-only tools only (search,
 // lists, reading recent pages or issues), then returns lasting knowledge (decisions, procedures, facts about projects
 // and customers) through `save_knowledge`. It enters through ingestItems, like a connector sync: secrets redacted,
-// duplicates skipped, connector zone or automatic classification.
+// duplicates skipped, filed in the cortexes the connector is allowed to (automatic classification among them).
 // Tool loop run by hand: the tools come from a remote server (raw JSON schemas), with a cap on turns, calls and time
 // to fit in a serverless function.
 
@@ -12,6 +12,7 @@ import {
   callResultText,
   claudeToolName,
   classifyZones,
+  connectorZones,
   extractEntities,
   truncate,
   type KnowledgeItemInput,
@@ -40,6 +41,20 @@ export const IMPORT_LIMITS = { turns: 12, calls: 30, items: 40, deadlineMs: 100_
 const SAVE_TOOL = "save_knowledge"
 
 type SavedItem = { title: string; body: string; kind: KnowledgeKind; zone?: string; url?: string; updated_at?: string }
+
+type ImportedConnector = Pick<McpConnectorConfig, "id" | "name" | "zones" | "zone">
+
+/**
+ * Zones the import may file into: those the connector is allowed to (all when it is open to every cortex). Throws when
+ * none of its cortexes exists any more, rather than spreading its content to the others.
+ */
+export function importZones(c: Pick<McpConnectorConfig, "zones" | "zone">, zones: Zone[]): Zone[] {
+  const allowed = connectorZones(c)
+  if (!allowed.length) return zones
+  const kept = zones.filter((z) => allowed.includes(z.id))
+  if (!kept.length) throw new Error("the cortexes this connector is allowed to no longer exist: choose others")
+  return kept
+}
 
 function systemPrompt(c: Pick<McpConnectorConfig, "name">, d: ImportDeps): string {
   const zones = d.zones.map((z) => `- ${z.id}: ${z.name}${z.description ? ` — ${z.description}` : ""}`).join("\n")
@@ -98,13 +113,12 @@ function readSaved(input: unknown): SavedItem[] {
   return out
 }
 
-/** Brain knowledge for an item Claude kept. */
-export function toItem(c: Pick<McpConnectorConfig, "id" | "name" | "zone">, s: SavedItem, zones: Zone[], now: number): KnowledgeItemInput {
+/** Brain knowledge for an item Claude kept, filed in one of `zones` (those the connector may file into). */
+export function toItem(c: Pick<McpConnectorConfig, "id" | "name">, s: SavedItem, zones: Zone[], now: number): KnowledgeItemInput {
   const title = truncate(s.title, 140)
   const body = truncate(s.body, 4000)
-  const fixed = c.zone && zones.some((z) => z.id === c.zone) ? c.zone : undefined
   const asked = s.zone && zones.some((z) => z.id === s.zone) ? s.zone : undefined
-  const zone = fixed ?? asked ?? classifyZones(`${title} ${body}`, zones, 1)[0] ?? zones[0]?.id ?? "general"
+  const zone = asked ?? classifyZones(`${title} ${body}`, zones, 1)[0] ?? zones[0]?.id ?? "general"
   const ref = createHash("sha256").update(s.url ?? title.toLowerCase()).digest("hex").slice(0, 16)
   return {
     zone,
@@ -120,7 +134,8 @@ export function toItem(c: Pick<McpConnectorConfig, "id" | "name" | "zone">, s: S
 export type ImportOutcome = { items: KnowledgeItemInput[]; calls: number; turns: number }
 
 /** Exploration loop: Claude calls the read-only tools and returns its knowledge through save_knowledge. */
-export async function exploreConnector(c: Pick<McpConnectorConfig, "id" | "name" | "zone">, d: ImportDeps): Promise<ImportOutcome> {
+export async function exploreConnector(c: ImportedConnector, deps: ImportDeps): Promise<ImportOutcome> {
+  const d = { ...deps, zones: importZones(c, deps.zones) }
   const now = d.now ?? Date.now
   const deadline = now() + IMPORT_LIMITS.deadlineMs
   if (!d.tools.length) throw new Error("no read-only tool on this server: nothing to explore")
