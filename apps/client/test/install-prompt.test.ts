@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { ABOUT_ORG_MAX, EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands } from "../../web/lib/install-prompt"
+import { ABOUT_ORG_MAX, EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands, terminalCommands } from "../../web/lib/install-prompt"
 import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
 import { EXIT_JOIN_PENDING, EXIT_JOIN_REJECTED } from "../src/join"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
@@ -233,6 +233,21 @@ test("install prompt, self-hosted brain: certificate fetched, fingerprint checke
   assert.ok(winAgain.endsWith(`install.ps1" --url ${EXAMPLE.baseUrl} --ca "C:\\Users\\jm\\.company-brain\\ca.crt"; exit $LASTEXITCODE`), winAgain)
   assert.ok(!/certutil|--token/.test(winAgain))
   assert.deepEqual(reinstallCommands(EXAMPLE.baseUrl), installCommands(EXAMPLE.baseUrl))
+})
+
+test("without an agent: the prompt's two commands, to paste into a terminal; PowerShell never closes its window", () => {
+  for (const caFingerprint of [undefined, FP]) {
+    const cmd = installCommands(EXAMPLE.baseUrl, `--token ${EXAMPLE.token}`, caFingerprint)
+    const t = terminalCommands(buildInstallPrompt({ ...EXAMPLE, caFingerprint }))
+    assert.ok(t, "an install prompt has its commands")
+    assert.equal(t.posix, cmd.posix, "macOS, Linux: the prompt's command as is")
+    // PowerShell: only the exits change, a failure says why and stops the line instead.
+    assert.ok(!/\bexit\b/.test(t.windows), t.windows)
+    const back = t.windows.replace(/\{ Write-Warning 'Download failed[^']*'; return \}/g, "{ exit 5 }").replace(/\{ Write-Warning 'Unexpected brain certificate[^']*'; return \}/g, "{ exit 9 }")
+    assert.equal(`${back}; exit $LASTEXITCODE`, cmd.windows)
+  }
+  assert.equal(terminalCommands(joinPrompt), null, "team message: its fields are filled in by the agent")
+  assert.equal(terminalCommands("Paste this into Claude Code."), null)
 })
 
 test("install.sh --ca: brain.mjs downloaded with the certificate (private HTTPS), option passed to setup; refused without", async (t) => {

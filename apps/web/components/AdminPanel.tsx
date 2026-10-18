@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { slugify, type Profile, type Zone } from "@brain/core"
 import { PageScroll } from "./AppShell"
-import { ClaudeConnectButton } from "./ClaudeConnector"
+import { ConnectAiButton } from "./ConnectAi"
 import { useBrainLive } from "./BrainLive"
 import { AgentLogos } from "./brand-logos"
 import { OrgChart, type Presence } from "./OrgChart"
@@ -382,7 +382,7 @@ function MemberDrawer(props: {
           <button type="button" className="btn" onClick={props.onPrompt} disabled={props.saving}>
             New prompt
           </button>
-          <ClaudeConnectButton userId={u.id} isSelf={u.id === props.meId} className="btn" />
+          <ConnectAiButton userId={u.id} isSelf={u.id === props.meId} className="btn" />
         </div>
       </div>
     </aside>
