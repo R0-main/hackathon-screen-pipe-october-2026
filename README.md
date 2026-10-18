@@ -1,57 +1,244 @@
-# NOS Brainer
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="NOS Brainer" width="96" height="96" />
+</p>
 
-> **The company brain that is a *no-brainer*.** Screenpipe remembers for one person; NOS Brainer turns what every
-> computer remembers into one brain the whole company, and every AI agent in it, can use.
+<h1 align="center">NOS Brainer</h1>
 
-**Screenpipe hackathon "Build Agents That Remember", 42 Paris, October 2026. Track 3: Make it work for a team.**
+<p align="center">
+  <strong>The company brain that is a <em>no-brainer</em>.</strong><br/>
+  Screenpipe remembers for one person. NOS Brainer turns what every computer remembers<br/>
+  into one brain the whole company, and every AI agent in it, can use.
+</p>
 
-| | |
-|---|---|
-| **Live demo** | [nos-brainer.tech/demo](https://www.nos-brainer.tech/demo): pick *Claire Martin, CEO* to see everything |
-| **Create your own brain** | [nos-brainer.tech/create](https://www.nos-brainer.tech/create) |
-| **Demo video (2 min)** | _link to add before submission_ |
-| **Run it on your machine** | `make dev` ([Run locally](#run-locally)) |
+<p align="center">
+  <a href="https://www.nos-brainer.tech/demo"><strong>Live demo</strong></a> &middot;
+  <a href="https://www.nos-brainer.tech/create"><strong>Create your brain</strong></a> &middot;
+  <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
+  <a href="ARCHITECTURE.md"><strong>Architecture</strong></a> &middot;
+  <a href="docs/REFERENCE.md"><strong>Reference</strong></a> &middot;
+  <a href="demo/DEMO.md"><strong>Demo script</strong></a>
+</p>
 
-![The company brain: zones light up as agents work, with the live feed of what they learn and ask](docs/screenshots/dashboard-brain.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/Screenpipe_hackathon-42_Paris_·_Oct_2026-0a0a0a" alt="Screenpipe hackathon, 42 Paris, October 2026" />
+  <img src="https://img.shields.io/badge/Track_3-Make_it_work_for_a_team-c7ff3e" alt="Track 3: Make it work for a team" />
+  <img src="https://img.shields.io/badge/MCP-server_+_apps-6e56cf" alt="MCP server and MCP Apps" />
+  <img src="https://img.shields.io/badge/TypeScript-Next.js_·_Postgres-3178c6" alt="TypeScript, Next.js, Postgres" />
+</p>
+
+<br/>
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-brain.png" alt="The company brain: zones light up as agents work, with the live feed of what they learn and ask" width="900" />
+</p>
+
+<p align="center">
+  <a href="https://www.nos-brainer.tech/demo"><strong>Open the live demo →</strong></a> sign in as <em>Claire Martin, CEO</em> to see everything,
+  then <em>"View as: Jean-Marc"</em> to see what finance sees.
+</p>
+
+<br/>
+
+## If Screenpipe is a person's memory, NOS Brainer is the company's.
+
+Every employee already works with AI: Claude Code and Codex for developers, ChatGPT or Claude in the browser for sales,
+finance and product, plus the meetings where decisions get made. NOS Brainer plugs **Screenpipe** into every computer,
+**distills** what people learn into decisions, procedures and facts, and puts it in **one shared brain** that every
+agent in the company can query, with the rights of its owner.
+
+**Paste one prompt. Work as usual. Every agent knows what the team knows.**
+
+|        | Step                    | What happens                                                                                                           |
+| ------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **01** | **Paste one prompt**    | An admin invites a colleague. They paste the prompt into Claude Code: Screenpipe, the company MCP, hooks and sync are installed in one command. |
+| **02** | **Work as usual**       | Every 15 minutes, `brain-sync` reads Screenpipe and the agent logs, strips secrets and personal content, and sends only distilled knowledge. |
+| **03** | **Every agent knows**   | Anyone's Claude Code, Codex or Claude asks the brain through MCP. The zone it reads lights up live on the dashboard.  |
+
+<br/>
 
 ## The problem
 
-Every employee already works with AI: Claude Code and Codex for developers, ChatGPT or Claude in the browser for sales,
-finance and product, plus meetings where decisions get made. What they learn stays locked in one session on one
-computer. Screenpipe solves memory **for one person** (its own team says it: 30 employees means 30 local databases, not
-one queryable company brain). Nobody shares what they learned, nobody sees what is worth automating across the team.
+AI made every employee faster, and the company **more forgetful**.
 
-## What we built
+- 🔒 **Knowledge is locked in sessions.** When Hugo figures out why the staging deploy fails, or Jean-Marc fine-tunes his
+  bank reconciliation with ChatGPT, that knowledge dies with the chat tab. The next person, and the next agent, starts
+  from zero.
+- 🙈 **Most of the work leaves no log.** Browser AI chats, Zoom calls, dashboards: no hook or log file sees them. A brain
+  built only on coding-agent logs hears the developers and nobody else.
+- 🗄️ **Screenpipe solves memory for one person, not a team.** Its own spec says it: *"sqlite does not federate, 30
+  employees = 30 dbs, not one queryable org brain."* And each of those databases weighs ~19 GB every two weeks.
+- 🚧 **Sharing naively is a non-starter.** Nobody will pipe raw screen captures into a shared store, and finance has no
+  business reading the code context, and neither do its agents.
+- 🔁 **Nobody sees the patterns.** One computer sees one habit. The prompt Jean-Marc runs every morning, the leads Sarah
+  copies by hand every Monday: worth automating, invisible to the team.
 
-- **One prompt to join.** An admin invites a colleague; the colleague pastes the prompt into Claude Code, which runs one
-  command: Screenpipe installed and started, macOS permissions opened at the right place, company MCP, hooks and a
-  15-minute sync set up. The brain opens, already signed in.
-- **Distilled, never raw.** On each computer, `brain-sync` reads Screenpipe and the local agent logs, filters secrets
-  and personal content, and distills the rest with Claude into decisions, procedures, facts and tasks. Only that goes up.
-- **One brain, per-zone access.** Knowledge lands in zones (Dev, Sales, Finance…). Everyone's agents query the brain
-  through an MCP with the rights of their owner: finance never sees the dev zone, and neither do its agents.
-- **The team view.** A live 3D brain, "where the company stands" per zone, the org chart, shared Claude Code skills, and
-  automations detected across people.
+**NOS Brainer is the missing layer:** the raw capture stays on each computer, only distilled knowledge goes up, and
+the brain enforces who reads what.
 
-## How Screenpipe is used
+<br/>
 
-Screenpipe is the sensor on every computer. Without it, the brain would only hear the coding agents that write logs:
-the browser chats of sales and finance, the meetings and the repeated workflows would be invisible.
+## Problems NOS Brainer solves
 
-| What | How | Code |
-|---|---|---|
-| **Installed by the prompt** | `brain setup` installs and starts Screenpipe, opens the macOS Screen Recording pane, waits until frames arrive, reads its local API token | `apps/client/src/setup.ts`, `screenpipe-cli.ts` |
-| **AI chats with no logs** | Local API `/search` with the semantic parser (`parsed` items with resolved speakers), accessibility text, OCR as fallback, `filter_pii=true`, app allowlist and `browser_url`: ChatGPT, Claude.ai or Gemini in the browser become conversations, distilled like a Claude Code session | `apps/client/src/sources/screenpipe.ts` |
-| **Meetings** | `/meetings` and their transcripts become a conversation, so decisions and commitments reach the brain (microphone is off by default: `setup --audio yes`) | `readScreenpipeMeetings` |
-| **A Screenpipe agent** | On each sync, Claude Code or Codex explores the recent activity itself through the Screenpipe MCP, read-only tools only (`activity-summary`, `search-content`, `keyword-search`, `list-meetings`, `get-meeting`), and proposes knowledge that goes through the same filters | `apps/client/src/agent.ts` |
-| **Workflows worth automating** | Screenpipe's detected workflows (occurrences, days, usual time, minutes per week) become automation suggestions in the company, next to the repeated prompts seen by the hooks | `fetchScreenpipeWorkflows`, `/automations` |
-| **A native pipe** | `brain install-pipe` writes the `brain-sync` pipe: the sync runs from Screenpipe every 15 minutes and after each meeting | `apps/client/src/install.ts` |
-| **Privacy by design** | The raw capture never leaves the computer; `sync --dry-run --full` shows exactly what would be sent | `apps/client/src/sync.ts` |
+| Without NOS Brainer                                                                                         | With NOS Brainer                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| ❌ Hugo spends two days on a failing staging migration. The fix lives in his terminal history.               | ✅ The Screenpipe agent spots it, it lands in the **Dev** zone, and the next developer's Claude Code finds it through MCP.     |
+| ❌ "We freeze Black Friday prices on Nov 17" was decided on Monday's Zoom. It only exists in people's heads.  | ✅ Screenpipe transcribes the meeting; it becomes a **decision** in the brain, with who said it and when.                      |
+| ❌ Sales answers a tricky VAT question with ChatGPT in Chrome. No log, no hook: invisible.                    | ✅ Screenpipe's semantic parser turns the browser chat into a conversation, distilled exactly like a Claude Code session.      |
+| ❌ 30 employees, 30 local databases, ~19 GB each every two weeks. Nothing queryable at company level.         | ✅ A few KB of distilled knowledge per computer per day, in one brain the whole company can search.                           |
+| ❌ A shared memory means everyone, and every agent, reads everything.                                        | ✅ **Per-zone access**, enforced on every route and in Postgres RLS. Agents inherit their owner's rights through their token. |
+| ❌ The same prompt every morning, the same copy-paste every Monday. Nobody notices.                          | ✅ Repeated prompts and Screenpipe workflows become **automation suggestions** in one place, set up by an admin.             |
+| ❌ Someone goes on leave and their context goes with them.                                                   | ✅ A **handover page**: their zones, tools, recurring prompts and knowledge, ready for whoever replaces them.                 |
+| ❌ Rolling a tool out to 18 computers takes a day of IT tickets.                                             | ✅ **One prompt** in Claude Code. If something is stuck, `brain doctor` says what and gives the command that fixes it.        |
 
-![What only Screenpipe sees: knowledge distilled from a ChatGPT chat in Chrome, a Zoom call and the Screenpipe agent](docs/screenshots/screenpipe-knowledge.png)
+<br/>
 
-**What only Screenpipe sees**, in the demo's Knowledge page: an answer found with ChatGPT in Chrome, a Zoom call with a
-customer, and what the Screenpipe agent found in Hugo's terminal and Vercel dashboard. No log holds any of it.
+## What only Screenpipe sees
+
+Screenpipe is the sensor on every computer, and the reason the brain hears more than developers. Without it, only the
+coding agents that write log files would feed it: no browser AI chats, no meetings, no workflows.
+
+<p align="center">
+  <img src="docs/screenshots/screenpipe-knowledge.png" alt="Knowledge distilled from a ChatGPT chat in Chrome, a Zoom call and the Screenpipe agent" width="900" />
+</p>
+
+<p align="center"><sub>In the demo company (fictitious data): an answer found with ChatGPT in Chrome, a Zoom call with a customer, and what the Screenpipe agent found in a developer's terminal and Vercel dashboard. No log file holds any of it.</sub></p>
+
+| Screenpipe capability          | How NOS Brainer uses it                                                                                                                                        | Code                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| **Installed by the prompt**    | `brain setup` installs and starts Screenpipe, opens the macOS Screen Recording pane at the right place, waits for the first frames, reads the local API token. | `apps/client/src/setup.ts`                |
+| **AI chats with no logs**      | `/search` with the semantic parser (`parsed` items, resolved speakers), accessibility text, OCR as fallback, `filter_pii=true`, app allowlist, `browser_url`: ChatGPT, Claude.ai and Gemini in the browser become conversations. | `apps/client/src/sources/screenpipe.ts`   |
+| **Meetings**                   | `/meetings` and their transcripts become conversations, so decisions and commitments reach the brain (microphone off by default).                                | `readScreenpipeMeetings`                  |
+| **A Screenpipe agent**         | On each sync, Claude Code or Codex explores recent activity itself through the Screenpipe MCP (read-only tools) and proposes knowledge, through the same filters. | `apps/client/src/agent.ts`                |
+| **Workflows worth automating** | Screenpipe's detected workflows (occurrences, days, usual time, minutes per week) are sent up and shown to admins as automation suggestions, next to the repeated prompts. | `fetchScreenpipeWorkflows`                |
+| **Every 15 minutes**           | The scheduled sync (launchd, cron or Task Scheduler) reads Screenpipe from its checkpoint, so nothing is read twice and no old history is sent by surprise.          | `apps/client/src/install.ts`              |
+| **Privacy by design**          | The raw capture never leaves the computer; `sync --dry-run --full` shows exactly what would be sent.                                                            | `apps/client/src/sync.ts`                 |
+
+<br/>
+
+## Features
+
+<table>
+<tr>
+<td align="center" width="33%">
+<h3>🪄 One prompt to join</h3>
+Paste it into Claude Code: Screenpipe, permissions, company MCP, hooks and a 15-minute sync, in one command. macOS, Linux and Windows.
+</td>
+<td align="center" width="33%">
+<h3>🧪 Distilled, never raw</h3>
+Secrets, emails, IBANs and personal content are stripped on the computer, then again on the server. Claude turns the rest into decisions, procedures, facts and tasks.
+</td>
+<td align="center" width="33%">
+<h3>🧠 One brain, per-zone access</h3>
+Knowledge lands in zones (Dev, Sales, Finance…). Finance never sees the Dev zone, and neither do its agents.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>🔌 Every agent plugged in</h3>
+A company MCP server for Claude Code and Codex, and <strong>MCP Apps</strong> that open the live brain, automations and org chart inside Claude.
+</td>
+<td align="center">
+<h3>✨ A live 3D brain</h3>
+Zones light up in neon as agents learn and ask, with a live feed of what is happening across the company.
+</td>
+<td align="center">
+<h3>📍 Where the company stands</h3>
+Goals, progress, next steps and who did what, per zone, written from what the team actually did.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>⚡ Automations across people</h3>
+Prompts someone repeats every day and workflows Screenpipe detects on each computer become suggestions an admin sets up in one click.
+</td>
+<td align="center">
+<h3>🧰 Shared skills</h3>
+The company's Claude Code skills and their scripts, assigned to a zone and installed automatically on the right computers.
+</td>
+<td align="center">
+<h3>🧹 A Claude moderator</h3>
+Every 15 minutes, Claude rereads what arrived: keeps, fixes or removes it (personal, secret, duplicate, too vague). Removed text is kept nowhere.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>🤝 Handover</h3>
+Someone leaves or goes on leave: their replacement gets the zones, tools, recurring prompts and knowledge of that role.
+</td>
+<td align="center">
+<h3>🔗 Connectors</h3>
+Notion, Linear, Todoist, calendars, and a catalog of 40+ official remote MCP servers (OAuth 2.1), whose content Claude imports read-only.
+</td>
+<td align="center">
+<h3>🏠 Yours to host</h3>
+Vercel + Neon on free tiers, or Docker with local HTTPS on a company machine: nothing leaves the building. Several companies per brain.
+</td>
+</tr>
+</table>
+
+<br/>
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph PC["Each employee's computer"]
+    SP["Screenpipe<br/>browser AI chats · meetings · workflows"]
+    AG["Claude Code / Codex<br/>logs + hooks"]
+    SYNC["brain-sync<br/>allowlist → redact → distill with Claude"]
+    SP --> SYNC
+    AG --> SYNC
+  end
+
+  subgraph BRAIN["The company brain"]
+    API["API<br/>redacts again · per-zone rights"]
+    DB[("Postgres<br/>knowledge · zones · RLS")]
+    DASH["Dashboard<br/>3D brain · status · automations · skills"]
+    MCP["Company MCP<br/>+ MCP Apps"]
+    API --> DB --> DASH
+    DB --> MCP
+  end
+
+  SYNC -- "distilled knowledge<br/>(a few KB / day)" --> API
+  AG -- "live events" --> API
+  MCP -- "answers, with the owner's rights" --> AG
+```
+
+Three rules hold the design together:
+
+|                                |                                                                                                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Raw stays local.**           | Screenpipe's capture never leaves the computer. Only distilled knowledge goes up, and `sync --dry-run --full` shows exactly what would be sent.   |
+| **Redacted twice.**            | Secrets, API keys, emails, phone numbers, IBANs, cards (Luhn) and personal content are removed on the computer, then again on ingestion.          |
+| **Read rights everywhere.**    | The same per-zone rule on every API route, the SSE feed, the MCP and the SQL RLS policies. A zone lights up for everyone; its content does not.   |
+
+<br/>
+
+## Built right, not just demoed
+
+|                                   |                                                                                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Reviewable sync.**              | `--dry-run --full` shows everything that would be sent, `--confirm` sends exactly what was reviewed.                                         |
+| **Employee oversight.**           | Each person sees and deletes the knowledge that came from their computer, even in zones they cannot read.                                    |
+| **Fault-tolerant.**               | A subscription limit, an overload or a network error never loses a conversation: the next sync retries. `brain doctor` diagnoses each computer. |
+| **No API key needed.**            | Distillation runs with each employee's own Claude Code subscription (`claude -p`); a company API key is optional.                          |
+| **Self-organizing zones.**        | Every day, Claude spots a recurring area of work with no zone of its own and creates it, within strict safeguards.                          |
+| **Multi-tenant.**                 | Each company has its own accounts, zones, knowledge and activity. Tokens are hashed, Claude keys encrypted with AES-256-GCM.                |
+| **Tested.**                       | 340+ unit tests (core, client, web), end-to-end smoke tests on file and Postgres storage, and a search-quality eval on the demo data. |
+| **Monitored.**                    | Per-computer sync health, server incidents, a public `/api/health` probe and a Slack-compatible alert webhook.                              |
+
+<br/>
+
+## Why it fits Track 3: *Make it work for a team*
+
+| The track asks for…        | NOS Brainer delivers                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Setup for a team**       | One install prompt per colleague, or one team message with admin approval. `brain doctor` fixes what gets stuck.        |
+| **Approvals**              | Admins approve join requests, automations, zones and skill publishers. A Claude moderator reviews every new knowledge item. |
+| **Shared tools**           | One company MCP for every agent, shared Claude Code skills per zone, and connectors (Notion, Linear, 40+ MCP servers).   |
+| **Memory across people**   | One brain that every colleague's agents read and feed, with per-zone access.                                          |
+
+<br/>
 
 ## Screenshots
 
@@ -60,313 +247,108 @@ customer, and what the Screenpipe agent found in Hugo's terminal and Vercel dash
 | ![Create your company](docs/screenshots/create-company.png) **Create your company**: three questions, Claude proposes the zones, then one prompt per colleague. | ![Where the company stands](docs/screenshots/company-status.png) **Where the company stands**: per zone, from what the team actually did. |
 | ![Team and access](docs/screenshots/team-access.png) **Team and access**: org chart, zones per person, invitations. | ![Automations](docs/screenshots/automations.png) **Automations**: a prompt Jean-Marc runs every morning, and two workflows Screenpipe detected on Sarah's and Léo's computers. |
 
-## Reproduce the demo
+<br/>
 
-1. **Without installing anything**: open [nos-brainer.tech/demo](https://www.nos-brainer.tech/demo), sign in as *Claire
-   Martin (CEO)*, then "View as: Jean-Marc Dubois" at the bottom left: the brain locks everything except Finance.
-2. **On your machine**: `make demo`, then `make simulate` in a second terminal to watch zones light up live.
-3. **With a real computer and Screenpipe**: `make dev` (or the live site), create your company on `/create`, paste the
-   install prompt into Claude Code on a Mac, work a few minutes in ChatGPT or Claude Code, then run
-   `~/.company-brain/brain sync --dry-run --full` to see what Screenpipe captured and what would be sent.
+## Quickstart
 
-The pitch is in [IDEA.md](IDEA.md), the architecture in [ARCHITECTURE.md](ARCHITECTURE.md), the stage run-through in
-[demo/DEMO.md](demo/DEMO.md), hosting on a company machine in [docs/LOCAL.md](docs/LOCAL.md).
+**1. Without installing anything.** Open [nos-brainer.tech/demo](https://www.nos-brainer.tech/demo), sign in as
+*Claire Martin (CEO)*, then pick *"View as: Jean-Marc Dubois"* at the bottom left: the brain locks everything except
+Finance.
 
-## Run locally
-
-Prerequisites: Node.js ≥ 20 and `make`. Docker is optional.
+**2. On your machine.** Node.js ≥ 20 and `make`; Docker is optional (a private Postgres is downloaded otherwise).
 
 ```bash
-make dev      # first time: .env, npm install, Postgres, migrations, then the browser opens on creating your company
-make demo     # the same with the fictitious company Encore: http://localhost:3000/demo
-make help     # all the commands (db-stop, db-reset, seed, simulate, test…)
+make demo        # the fictitious company Encore on http://localhost:3000/demo
+make simulate    # in a second terminal: fictional agents work and zones light up live
+make dev         # your own company: .env, install, Postgres, migrations, then /create opens
 ```
 
-- **Ports and API keys**: `make dev` creates `.env` from [.env.example](.env.example). A port already taken on your
-  computer? Change `BRAIN_PORT` (dashboard, 3000) or `POSTGRES_PORT` (database, 5432) in `.env`, then run again. The API
-  keys are all optional: without a Claude key, everything works with local heuristics.
-- **Postgres, without choosing anything**: with Docker if it works without `sudo`, otherwise a private Postgres
-  downloaded into the repository's `.local/postgres`, without administrator rights (42 school computers included). An
-  existing database (Neon, Supabase…): set `DATABASE_URL` in `.env` and no local Postgres is started.
-- With `make demo`, sign in as **Claire (CEO, admin)** to see everything, then "View as: Jean-Marc": finance only sees
-  its zone. `make simulate` in a 2nd terminal makes fictional agents work.
-- No HTTPS or Caddy here: they are only needed when other computers reach the brain over the company network
-  ([docs/LOCAL.md](docs/LOCAL.md)).
+**3. With a real computer and Screenpipe.** Create your company on [`/create`](https://www.nos-brainer.tech/create),
+paste the install prompt into Claude Code on a Mac, work a few minutes in ChatGPT or Claude Code, then:
 
-## What the repo contains
+```bash
+~/.company-brain/brain sync --dry-run --full   # what Screenpipe captured, and exactly what would be sent
+```
+
+All commands: `make help`. Ports, API keys, Postgres options and deployment: [docs/REFERENCE.md](docs/REFERENCE.md).
+
+<br/>
+
+## What's inside
 
 ```
-packages/core/        Shared contracts (KnowledgeItem, AgentEvent), zones, privacy filter,
-                      distillation (Claude + heuristic), automation detection, status summary
-apps/web/             The brain: Next.js dashboard + API (/api/ingest, /api/query, /api/events, /api/stream…)
-  lib/store/          Storage: JSON file (zero config) or Postgres/Supabase (DATABASE_URL)
-  scripts/            seed (Encore), simulate (live activity), smoke (tests), migrate (SQL)
-apps/client/          The computer client, shipped as ONE file (brain.mjs, served by the dashboard on /brain.mjs):
-                      brain-sync, company-brain MCP server, Claude Code hooks, install
+apps/web/             The brain: Next.js dashboard + API (ingest, query, events, SSE stream, MCP, MCP Apps)
+apps/client/          The computer client, shipped as ONE file (brain.mjs): setup, brain-sync, MCP, hooks, doctor
+packages/core/        Shared contracts, zones, privacy filter, distillation, automation detection, status summary
 supabase/migrations/  Postgres schema + per-zone RLS policies
-install/              The install "magic prompt" (generated by the dashboard for each employee)
-demo/                 Demo script
+install/              The install "magic prompt", generated for each employee
+deploy/local/         Docker + Caddy to host the brain on a company machine
+demo/                 The stage run-through
 ```
 
-## The building blocks
+**Stack:** TypeScript · Next.js · Postgres (Neon, Supabase or local) · Screenpipe local API + MCP · Claude
+(Claude Code subscription or API key) · Model Context Protocol + MCP Apps · Vercel or Docker.
 
-| Block | Where | Role |
-|---|---|---|
-| **Dashboard** | `apps/web` | Sidebar on the left, full-screen 3D brain on the right (zones lighting up in neon through SSE, wheel to zoom, "view as" search), with the "Live agents" feed next to it: you read the event while its zone lights up, and a zone in the feed opens its drawer. Separate pages: "where does the company stand" (`/status`), knowledge, tasks, automations. |
-| **Team & access** | `/admin` | Org chart (who reports to whom, active agents, everyone's zones; click a card to set manager, role and zones), members × zones matrix, invitation → install prompt with a personal token. |
-| **Skills** | `/skills` | The company's Claude Code skills (SKILL.md and the scripts they use), grouped by cortex. Publishing needs a permission granted in `/admin` (admins always have it); a skill assigned to a cortex (a zone) is only given to those who read that zone. A script that contains a secret is refused. |
-| **Onboarding** | `/onboarding` | Guided 7-question interview + reading of links → zones and first knowledge, reviewed before being applied. |
-| **Handover** | `/people/:id` | Zones, topics, frequent prompts and knowledge of a computer (and oversight: the employee deletes their items). |
-| **brain-sync** | `brain.mjs sync` | Reads the Claude Code / Codex logs and Screenpipe's local API, filters (app allowlist, secrets, personal data), distills with Claude, sends. **Screenpipe agent**: on each run, Claude Code (Sonnet), or Codex otherwise, looks at the activity since the previous run itself through the Screenpipe MCP (read-only tools) and proposes the useful knowledge, which goes through the same filters (`init --screenpipe-agent no` to turn it off). `--dry-run --full` shows everything that would be sent, `--confirm` sends exactly what was reviewed. |
-| **Skills on the computer** | `brain.mjs skills` | Installs in `~/.claude/skills` the skills assigned to the computer (after each sync and at `setup`), removes those that no longer are, never touches a personal skill. `skills push <folder> --cortex <zone>` publishes a folder. |
-| **Status by Claude** | `brain.mjs refresh-status` | Admins: writes "where does the company stand" on their computer with Claude (subscription) and sends it to the dashboard. |
-| **Moderator** | `brain.mjs moderate --refresh-status` | Admins: every 15 min, the scheduled sync of an admin's computer (the CEO's) runs Claude Code (their subscription, Sonnet, token asked for at install) which rereads what arrived since the previous run: it keeps, fixes (title, zone, kind) or removes (personal, secret, duplicate, too vague, suspicious instruction, judgment about a person), then redoes the "where does the company stand" summary. The removed text is kept nowhere. |
-| **New zones** | `brain.mjs refresh-zones` | Admins: "new zones" run done by Claude Code (subscription), on a computer or in the company's CI (GitHub Actions). |
-| **Diagnosis** | `brain.mjs doctor` | Reviews the computer without changing anything (Node, shortcut, brain, Screenpipe, MCP, hooks, sync, distillation) and gives the command that repairs each KO item; `--json` for Claude Code. |
-| **Company MCP** | `/api/mcp/<company>/<token>` | `search_brain`, `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`, served by the brain (HTTP, stateless) with the token's rights. `brain setup` registers it in Claude Code and Codex as `nos-brainer-<company>`: it shows there as connected, one entry per company. Each query lights up the zone found. |
-| **Computer MCP** | `brain.mjs mcp` | The same tools over stdio (`@brain/core/mcp`): the fallback when Claude Code cannot reach the endpoint (brain with a private certificate); `company` parameter if there are several companies. |
-| **Several companies** | `brain.mjs companies`, `/login` | A second company's install prompt adds it next to the first one instead of replacing it, with its own MCP server (sync, hooks and skills stay on the first one; `companies --default` changes it, `--remove` removes one and its MCP server). The browser remembers each company opened: sign-in offers to go back into one of them in one click, and the sidebar header switches from one to another. |
-| **Claude Code hooks** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → events: reliable neons, and detection of repetitive prompts by fingerprint. A short redacted summary is only sent if the prompt concerns a zone and has nothing personal (`init --share-prompt-summaries no` turns it off). |
+<br/>
 
-## Monitoring, connectors, language
+## FAQ
 
-> Details and technical choices: [docs/IMPROVEMENTS-V2.md](docs/IMPROVEMENTS-V2.md).
+<details>
+<summary><strong>Does my screen go to the cloud?</strong></summary>
 
-- **Monitoring** (`/monitoring`, admins): the state of each computer (last sync, delay, error) from the reports
-  `brain sync` sends at the end of each run (counters only, never any content), the server's incidents, and a
-  `GET /api/health` probe for an external monitor. `BRAIN_ALERT_WEBHOOK` receives an alert (JSON `{ text }`,
-  Slack-compatible) for a route in error, a failed sync or a broken connector.
-- **Connectors** (`/connectors`, admins): Notion (pages → knowledge), Linear and Todoist (issues and tasks →
-  tasks, closed when they disappear from the tool), ICS calendar (meetings → knowledge). Sync on demand and every
-  hour in the background. The token stays on the server.
-- **MCP servers** (`/connectors`, admins): catalog of 44 official remote MCP servers (Notion, Linear, GitHub,
-  Jira/Confluence, Stripe, Figma, Slack, Google Drive…) with their logo, search and categories, plus any custom MCP
-  server. "Connect" redirects to the provider's sign-in page (OAuth 2.1 from the MCP spec: RFC 9728 / RFC 8414
-  discovery, dynamic client registration, PKCE S256, `resource` parameter), then comes back to
-  `/api/connectors/mcp/callback`. Providers without dynamic registration (GitHub, Slack, HubSpot, Google…) need an
-  OAuth client declared by hand: the redirect URI to declare is shown. Tokens refreshed automatically, connection test
-  (list of tools), SSRF protection on all requests. Tokens, secrets and PKCE verifiers stay on the server.
-- **Connector tools for agents**: each connected MCP server can be opened to the team's agents (no tools, read-only by
-  default, or all tools) and tied to a zone (only those who read it see it). The brain's MCP adds `connected_tools`
-  (list, argument schemas) and `use_connected_tool` (call with the account the admin connected): "find the Notion page
-  about deploying" or "list my Linear issues" from Claude Code.
-- **Content import**: "Import now", or automatically every 6 hours. Claude (the company's key or `ANTHROPIC_API_KEY`)
-  explores the tool with its read-only tools only, starting with what changed since the last import, and returns lasting
-  knowledge (decisions, procedures, facts) that enters the brain like a sync: secrets redacted, duplicates skipped,
-  connector zone or automatic classification.
-- **Language**: the product is in English (interface, server and CLI messages, prompts, demo data). The old French
-  routes (`/etat`, `/connecteurs`, `/creer`…) redirect permanently to the English ones.
-- **Real-time feed**: the storage notifies the SSE stream as soon as an event is inserted (local emitter, or
-  `LISTEN/NOTIFY` on Postgres); the periodic reread is only a safety net.
-- **Brain quality**: synonyms in search, optional semantic search (`VOYAGE_API_KEY` or an OpenAI-compatible
-  endpoint, Ollama included: `npm run embed` for existing data), automatic replacement of a revised decision or
-  procedure (the old one leaves the searches), Entities pages (`/entities`), and `npm run eval` which measures search
-  on the Encore demo.
+No. Screenpipe's capture stays on the computer. `brain-sync` keeps only AI chats, meetings and work apps (allowlist),
+removes secrets and personal data, and sends a few distilled items. `sync --dry-run --full` shows exactly what would
+leave, and the brain redacts everything again on arrival.
+</details>
 
-## Brain API
+<details>
+<summary><strong>What if someone shares something they shouldn't?</strong></summary>
 
-Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-256 on the server) for agents; signed session cookie for the dashboard. The `brain_accounts` cookie (httpOnly) remembers for a year each company opened on this browser, with no token to retype: `POST /api/session/accounts {userId}` goes back into one, `DELETE` forgets it, and an expired session reopens on its own on the most recent one (`/resume`). Signing out only closes the current session and suspends this automatic sign-in until the next company is opened.
+Three nets: redaction on the computer, redaction again on the server, and a Claude moderator that rereads every new
+item and removes what is personal, secret, a judgment about a person or a suspicious instruction. Each employee can
+also delete anything that came from their computer.
+</details>
 
-| Method | Route | Use |
-|---|---|---|
-| POST | `/api/ingest` | `{items: KnowledgeItemInput[]}` — distilled knowledge (redacted again on the server). |
-| POST | `/api/events` | `AgentEventInput` or `{events: [...]}` — what makes the brain light up. |
-| POST | `/api/query` | `{query, zones?, limit?}` — search limited to readable zones; flags restricted zones without saying anything about them. |
-| GET | `/api/zones`, `/api/zones/:id` | Zones (with keywords for the hooks), summary of a zone. |
-| GET | `/api/whoami`, `/api/people/:id` | Context of the computer (handover). |
-| GET | `/api/stream` | SSE stream of the events, filtered by access rights. |
-| GET/POST | `/api/status` | Company status (overall headline reserved to whoever reads every zone). Admin POST: without a body, recomputed on the server; with `{status}`, summary written on a computer. |
-| GET | `/api/status/input` | Admin: material for the summary (last 30 days) for `refresh-status`. |
-| GET/POST | `/api/skills` | Skills the person receives (whole company + their cortexes), files included. POST `{name, description, zone?, files: [{path, content}]}`: publishes (permission required), same name → next version. |
-| PATCH/DELETE | `/api/skills/:id` | `{zone}`: assigns the skill to a cortex (`null`: the whole company). Author or admin. |
-| GET/POST/PATCH | `/api/automations…` | Suggestions (heuristic + Screenpipe workflows), approval by an admin. |
-| POST | `/api/orgs` | Public (unless `BRAIN_SIGNUP=0`): creates a company and its admin, opens the session, returns their install prompt. |
-| POST | `/api/join`, `/api/join/status` | Public: request to join with the team message code (fingerprint of the computer's token), then its state (for whoever holds the token). |
-| GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin: team message and pending requests, change the code; accept (account created as set) or decline. |
-| GET | `/api/admin/team` | Admin: the team and the last sign of each computer (`last_at`, null until it is connected). |
-| GET/PUT/DELETE | `/api/admin/claude` | Admin: the company's Claude API key (`{key}`, checked then encrypted); GET only returns its source and last 4 characters. |
-| GET/POST | `/api/admin/zones/auto` | Admin: history of the "new zones" job; POST without a body: server run (API key); with `{zones: [{name, description, keywords, item_ids}]}`: applies what `refresh-zones` proposed. |
-| GET/PUT/POST | `/api/admin/moderation` | Admin: the moderator's state, runs and decisions; PUT `{enabled}`; POST without a body: server run (API key); with `{ids, verdicts}`: applies what `brain moderate` decided. |
-| GET | `/api/admin/moderation/input` | Admin: knowledge that arrived since the moderator's last run (numbered, with their id and the close knowledge already in place). |
-| GET | `/api/admin/zones/auto/input` | Admin: material for a run (zones, numbered recent knowledge) for `refresh-zones`. |
-| GET | `/api/cron/new-zones` | Vercel Cron (`Authorization: Bearer $CRON_SECRET`): daily "new zones" job, across all companies. |
-| POST | `/api/sync/report` | Report of a computer's sync (counters, redacted error): Monitoring page. |
-| GET | `/api/admin/monitoring` | Admin: state of the computers, server incidents, instance. `GET /api/health`: public probe (200 / 503), with the migrations state on Postgres (`migrations.up_to_date`). |
-| GET/PUT/DELETE/POST | `/api/connectors`, `/api/connectors/:id`, `/api/connectors/:id/sync` | Admin: Notion, Linear, Todoist, ICS calendar connectors (settings without the token, sync on demand). |
-| GET/POST | `/api/connectors/mcp` | Admin: MCP servers added (without token) and the OAuth redirect URI; adding from the catalog or a custom server. |
-| PUT/DELETE/POST | `/api/connectors/mcp/:id`, `/api/connectors/mcp/:id/authorize`, `/api/connectors/mcp/:id/test` | Admin: manual OAuth client or token, removal; address of the provider's sign-in page; test (list of tools). |
-| GET/POST | `/api/connected-tools`, `/api/connected-tools/call` | Members (through the brain's MCP): connector tools open to agents, and calling a tool (read-only unless the admin opened everything). |
-| POST | `/api/connectors/mcp/:id/import` | Admin: imports the connector's content now (Claude, read-only). |
-| GET | `/api/connectors/mcp/callback` | OAuth return from the provider (the admin's session, anti-CSRF state tied to the account, 15 min). |
-| … | `/api/admin/*`, `/api/onboarding*`, `/api/session*` | Accounts, access, zones, onboarding, sign-in. |
+<details>
+<summary><strong>Do I need a Claude API key?</strong></summary>
 
-## Create your company from scratch
+No. Each computer distills with its owner's Claude Code subscription. Without any Claude at all, local heuristics take
+over. A company API key is optional and unlocks server-side jobs.
+</details>
 
-On the home page, **Create my company** (`/create`): three questions, one per screen (name, activity, who you are),
-and the company's brain exists, without a zone, with you as its admin. Then:
+<details>
+<summary><strong>Can we host it ourselves?</strong></summary>
 
-- **Claude suggests the zones** (optional, "Skip" to choose yourself): a prompt to open in Claude Code or Codex, framed
-  by the name and activity entered (see below). The page receives its proposal live;
-- **the zones**: those suggested by Claude, ticked by default, then the usual list and the zones added by hand.
-  "Validate the zones" creates them, adds the first suggested knowledge and redoes the computer's install prompt with
-  these zones (`POST /api/onboarding/zones`, same token: the session stays valid).
+Yes: `sh deploy/local/brain-local.sh up` runs Postgres, the brain and HTTPS on a company machine, and the install
+prompt pins its certificate. See [docs/LOCAL.md](docs/LOCAL.md).
+</details>
 
-Then:
+<details>
+<summary><strong>What about GDPR?</strong></summary>
 
-1. **Your computer**: copy the prompt (or "Open in Claude Code") and paste it into Claude Code. It installs everything
-   like the home page demo; the page switches to "Your computer is connected" at the first sign of its agent.
-2. **Your team**, in two ways (on this page, then in Team and access):
-   - **one message per person**: a name, the zones they read, and their prompt (with their own token) is copied.
-     Send it to them: they paste it into Claude Code, their computer joins the brain and shows up as connected;
-   - **a single message for the whole team** (Team and access, then Requests): the same for everyone, to send to
-     colleagues only. Each person's Claude fills in the request with what it already knows (name, role, email; nothing
-     made up, the rest stays empty), and `brain join` (run by `install.sh --join`, or `install.ps1 --join` on Windows)
-     sends it then waits. An admin completes it (role, access level, zones, manager) and accepts it: the computer then
-     finishes its install on its own. The code grants access to nothing; the token is created on the computer and only
-     its fingerprint goes with the request. "Change the code" invalidates the old message. Exit code 7: still waiting
-     (`~/.company-brain/brain join` resumes the same request); 8: declined. The other codes are those of the install
-     ([docs/CLI.md](docs/CLI.md)).
+The design follows it (distilled rather than raw, per-zone access, employee oversight and deletion). Before a real
+rollout, a company still has to settle employee consent, works council information, retention period and EU hosting.
+</details>
 
-Each company has its own brain: accounts, zones, knowledge and activity never cross, and the Encore demo is not
-touched (a reseed replaces it without deleting the companies created). On the storage side: one organization per
-company (Postgres: marked `tenant:<id>` in `brain_settings`, no migration; file: `<BRAIN_DATA_DIR>/orgs/<id>/`). A
-token or a session points to its company, and each route reads its own. `BRAIN_SIGNUP=0` closes sign-up,
-`BRAIN_MAX_ORGS` caps it (200 by default).
+<br/>
 
-### Fill the brain from past conversations
+## Documentation
 
-**Onboarding** page (admins), "Let Claude suggest the zones" step of `/create` (right before the zones), and a
-reminder on an empty dashboard: "Give the brain your accounts' context". The prompt opens in Claude Code locally
-(`claude-cli://` link, terminal on this computer; VS Code and the desktop app in "Local" mode as options) or is copied
-for Codex. The agent stops if it runs in the cloud, first asks for the person's consent ("Do you agree to give this
-website access to that data?"), only looks for the company's projects and conversations (its name and description, as
-entered in `/create`) and learns nothing else (personal project, another company, another customer: left aside), reads
-the computer's history (`~/.claude/projects`, `~/.codex/sessions`) and the READMEs of those projects, draws the zones
-and 10 to 40 first knowledge items from them (never any secrets or personal data), then sends them with an upload code
-valid for 2 h (`POST /api/onboarding/import`, Bearer `co_…`, admin only). It reports its start as soon as it has
-consent, then its findings and its end (`POST /api/onboarding/progress`, same code): the page says "it's started, you
-can move on" and each report arrives as a notification. While it reads, the admin connects the company's tools on the
-same step (MCP catalog: Notion, Linear, GitHub…): the agent lists them and calls their read-only tools with the same code
-(`GET /api/onboarding/tools`, `POST /api/onboarding/tools/call`, 25 calls at most, write tools refused), so that their
-spaces, projects and recent documents shape the zones and give first knowledge. It sends a first version early then
-completes it (each upload replaces the previous one); a proposal that arrives during the zones step is added to it. The page fills in on its own
-with the proposal, redacted again on the server; nothing is applied before the admin has reviewed and validated it (at
-the zones step of `/create`, or on the Onboarding page). The 7-question interview stays available below, and the
-`/demo` page offers "Create my dashboard".
+| Document                                     | What's in it                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [IDEA.md](IDEA.md)                           | The original pitch                                                                 |
+| [ARCHITECTURE.md](ARCHITECTURE.md)           | Data model, data flow, technical choices                                           |
+| [docs/REFERENCE.md](docs/REFERENCE.md)       | Every building block, the brain API, deployment, privacy and tests                 |
+| [demo/DEMO.md](demo/DEMO.md)                 | The 6-minute stage run-through                                                     |
+| [docs/CLI.md](docs/CLI.md)                   | Why the install prompt runs our own CLI                                            |
+| [docs/LOCAL.md](docs/LOCAL.md)               | Hosting the brain on a company machine                                             |
+| [install/PROMPT.md](install/PROMPT.md)       | The install prompt                                                                 |
 
-## Connect a real computer
+<br/>
 
-1. In `/admin`, invite the person and choose their zones: the dashboard generates their prompt (see [install/PROMPT.md](install/PROMPT.md)).
-2. They paste it into Claude Code, which runs **a single command** (`install.sh` on macOS / Linux, `install.ps1` on
-   Windows: they find or install Node.js then run `brain setup`; why a CLI: [docs/CLI.md](docs/CLI.md)):
-   Screenpipe installed and started, macOS permissions (screen, and accessibility as an option; no microphone) with
-   automatic resume, MCP, hooks, sync every 15 min, neon lit. If something gets stuck, `brain doctor` says what and how to fix it.
-3. The brain opens in their browser, already signed in. Then nothing to do: by working with Claude Code, they feed it.
-   `sync --dry-run --full` lets them review at any time what would be sent, `uninstall` removes everything.
+## Team
 
-The dashboard must be reachable by the computers (public URL or local network): set `BRAIN_PUBLIC_URL`.
+Built at **42 Paris** for the Screenpipe hackathon *"Build Agents That Remember"* (October 2026) by
+**Romain**, **Anas Tazzit**, **Adem** and **Raphael Goldenberg**.
 
-### The brain inside Claude (MCP Apps)
-
-The company's MCP server (`<brain>/api/mcp/<company id>/<token>`) also has three view tools: `show_brain` (the 3D brain,
-zones lighting up live as the team's agents work), `show_automations` (an admin sets the suggestions up or dismisses
-them in place) and `show_team` (the org chart). In Claude on the web and desktop, add that address as a custom
-connector (Settings → Connectors) and ask "show me the brain": the dashboard's view opens in the conversation, with
-the token's rights. Claude Code only shows their text answer; it lists them as commands (`/mcp__<server>__show_brain`…).
-The view (`apps/web/mcp-apps/`) reuses the dashboard's components and is built into one HTML file by
-`npm run build:mcp-apps -w @brain/web` (run by `dev` and `build`).
-
-## Host the brain on a company machine (Docker, local HTTPS)
-
-Nothing leaves the company: Postgres, the dashboard and HTTPS run on a computer that is always on, the computers
-reach it on the local network, and the install prompt pins the brain's certificate.
-
-```bash
-sh deploy/local/brain-local.sh up      # .env, Docker image, Postgres + brain + Caddy, address shown
-```
-
-Then `https://<address>/create` to create the company. All the details (certificates, backup, update, options):
-[docs/LOCAL.md](docs/LOCAL.md).
-
-## Deploy the shared brain (Vercel + Neon, free tiers)
-
-The brain runs on **Vercel Hobby** (always online) with **Neon** (free Postgres, asleep after 5 min of inactivity, wakes up in less than a second). Any Postgres works (Supabase included): the schema is in `supabase/migrations/`.
-
-1. **Database**: create a Neon project (Frankfurt region). The migrations apply on their own at each Vercel production deployment (at build time, before the new code is served; if a migration fails, the build fails and the previous deployment stays online). Previews do not migrate, since they often share the production database (`BRAIN_MIGRATE_ON_BUILD=1` if a preview has its own database, `=0` to turn it off). By hand: `DATABASE_URL=… npm run db:migrate`. The Docker container migrates when it starts.
-2. **Vercel**: import the repo with these settings:
-   - Root Directory: `apps/web` (with "Include source files outside of the Root Directory")
-   - Install Command: `cd ../.. && npm ci` (the monorepo installs from the root)
-   - Build Command: `npm run build` (also builds `brain.mjs`, served on `/brain.mjs`)
-   - Functions region: the same as the database (`fra1` for Neon Frankfurt)
-   - Turn off "Vercel Authentication": the computers call the API with their personal token.
-3. **Variables**: `DATABASE_URL` (Neon, "pooled" connection), `BRAIN_PUBLIC_URL` (the public URL, used in the install prompt), `BRAIN_DEMO=1` for the demo. With `BRAIN_DEMO=1`, an empty database is filled automatically with the fictitious company Encore the first time `/login` is opened (a database still on the old demo, Fournil, is replaced once by Encore, keeping the visitor accounts and their tokens). The session secret is generated on its own and kept in the database.
-
-4. **Daily "new zones" job**: set `CRON_SECRET` (a long random string, `openssl rand -hex 32`) and
-   `BRAIN_SECRET_KEY` (same, encrypts the companies' Claude keys). `apps/web/vercel.json` declares the cron. The Claude
-   key itself is set in the app: each admin pastes their company's key in **Team and access → Zones**.
-
-Variables: see [apps/web/.env.example](apps/web/.env.example).
-
-### Zones created automatically
-
-Every day at 10 am, Claude rereads a company's zones and the knowledge of the last 30 days, spots a recurring area of
-work that has no zone of its own (legal work filed in "Leadership" for lack of anything better…) and the zone is
-**created right away, without approval**. No computer needs to be on. The admin chooses, in Team and access → Zones,
-who does the analysis:
-
-- **Claude subscription (Claude Code)**, without an API key: a GitHub Actions workflow in a company repo (the dashboard
-  gives it ready to copy) runs `brain.mjs refresh-zones` every day at 10 am with two secrets, `CLAUDE_CODE_OAUTH_TOKEN`
-  (`claude setup-token`) and `BRAIN_TOKEN` (the admin's brain token). The company's Claude Code does the analysis
-  (`claude -p`, `GET /api/admin/zones/auto/input`): the Claude token never leaves its CI, the brain only receives the
-  proposed zones (`POST /api/admin/zones/auto`, knowledge designated by id) and applies them with its safeguards.
-  `~/.company-brain/brain refresh-zones [--dry-run]` does the same by hand on an admin's computer.
-- **Claude API key**: Vercel Cron calls `/api/cron/new-zones` and the server does the analysis with the company's key.
-- **Brain hosted on a company machine (Docker)**: no Vercel Cron. In API key mode, have the machine's cron call
-  `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://<address>/api/cron/new-zones`, at 8 am and 9 am UTC like
-  `vercel.json`. In subscription mode, GitHub cannot reach a brain on the local network: run `refresh-zones` from a
-  computer (or a self-hosted GitHub runner inside the company).
-
-- The knowledge concerned is filed in it (with its tasks), and the zone gets keywords: the following syncs classify
-  new sessions in it.
-- Access: it is readable by its authors and by every member who read **all** the zones its knowledge comes from.
-  Nobody loses sight of a knowledge item they could read, nobody discovers one they could not read.
-- Safeguards, since nobody reviews: at least 4 knowledge items (out of at least 12 recent ones), at most 2 zones per
-  day, 12 zones in total, never a duplicate of an existing zone, once a day per company at most.
-- **The company's Claude key**: an admin pastes it in Team and access → Zones (Anthropic Console key, `sk-ant-…`).
-  It is tried against Anthropic before being saved, encrypted with AES-256-GCM in the company's settings (with
-  `BRAIN_SECRET_KEY`, otherwise the brain's session secret) and never shown again, only its last 4 characters. It
-  also serves the status summary and the onboarding. Without it, the server uses `ANTHROPIC_API_KEY` if it has one;
-  otherwise the company is skipped by the cron (without noting anything in the history). The subscription token is
-  never stored on the server: Anthropic's terms reserve third-party products to API keys, hence the CI mode above.
-- The activity feed announces the zone (the neon lights up). Admins read the history of the runs and can start one
-  right away for their company (`GET` / `POST /api/admin/zones/auto`). To test the cron: `curl -H "Authorization: Bearer $CRON_SECRET" "$URL/api/cron/new-zones?force=1"`.
-
-### Claude without an API key (Claude Code subscription)
-
-- **brain-sync** distills on each computer with `claude -p`: it uses the employee's Claude Code subscription.
-- Scheduled sync (without an open session): the token is asked for when the computer is installed (`brain setup`). Run by Claude Code, the install shows a "TO DO" line: `~/.company-brain/brain connect-claude` in a terminal (sign-in in the browser with `claude setup-token`, paste the token, it is tried then kept). `init --claude-token <token>` is still possible. The token stays on the computer (config in mode 600), it is passed to each `claude -p` of the client and never appears in the crontab or the logs. It is valid for **one year** and does not renew on its own: when it expires, the client says so; run `claude setup-token` again then `init --claude-token`.
-- "Where does the company stand" written by Claude: an admin runs `~/.company-brain/brain refresh-status` on their computer (can be scheduled every morning); without it, the server keeps the heuristic summary. The server needs no key (`ANTHROPIC_API_KEY` is still possible).
-- Each employee uses **their own** subscription and their own token: Anthropic's terms forbid routing several people's requests through one person's subscription. To offer the tool to other companies, API keys are needed.
-- If `ANTHROPIC_API_KEY` is set on the computer, Claude Code uses it; `claude auth status` shows the active authentication.
-- Outages and limits: a subscription limit reached ("You've hit your session limit", weekly quota…), an overload or a network error is never blamed on a conversation: nothing is lost, the next sync tries again. An expired or revoked token stops the sync with the steps to follow (`claude setup-token`, then `init --claude-token`).
-- A conversation is only given up (nothing sent, checkpoint moved forward, warning shown) after 3 proven failures: Claude answered without usable JSON, or the call failed during a sync where Claude answered the others. If Claude does not answer at all any more, it also takes 5 attempts spread over 24 h, so that a stuck Screenpipe capture does not freeze the computer.
-- `claude -p` is always run without `--bare` mode (or `CLAUDE_CODE_SIMPLE`), which would ignore the token.
-
-## Privacy and security (MVP)
-
-- On the computer: app allowlist (AI sessions, terminals, editors), exclusion of personal content, redaction of secrets (API keys, tokens, passwords, private keys), emails, phone numbers, IBANs, cards (Luhn), social security numbers. Nothing raw is sent.
-- On the server: redaction again on ingestion, reading filtered by zone on **every** route (same rule as the SQL RLS policies), tokens stored hashed, random session secret kept in the database and bound to the token, SSRF protection checked at connection time on the onboarding scraping.
-- Activity: a zone lights up for everyone, but the content of an event (summary, fingerprint) is only visible to the person concerned, the admins, or whoever reads **all** its zones. A search only keeps its text if it touches no zone the searcher cannot read and has nothing personal.
-- Writing: everyone feeds the brain, in any existing zone; only reading is restricted (`zone_access.can_write` is reserved). Duplicates dropped (same author, same zone, same title and same content over 30 days).
-- Skills: publishing reserved to admins and allowed members, to a cortex they read; distribution limited to the cortex's readers (same rule as the "skills by cortex" RLS policy); text files with checked relative paths, refused if they contain a secret; the client only writes into the folders it created.
-- Oversight: each person sees and deletes the knowledge coming from their computer, including items filed in a zone they cannot read.
-- To settle before a real production rollout: employee consent and information of the works council, retention period, EU hosting, access audit.
-
-## Tests
-
-```bash
-npm test                 # unit tests (core + client)
-npm run typecheck
-npm run smoke            # end to end on the current storage (file, or Postgres if DATABASE_URL)
-npm run eval             # search quality on the Encore demo (after npm run seed)
-```
+<p align="center"><em>Encore gives phones a second life. NOS Brainer gives your team's know-how a life beyond the session.</em></p>

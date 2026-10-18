@@ -2,7 +2,7 @@
 
 > The brain runs at your place, on a company computer that is always on, and the computers reach it on the local
 > network over HTTPS. Nothing leaves the company: neither the captures (which stay on each computer) nor the distilled
-> knowledge (which stays on this machine). The cloud ([README](../README.md#deploy-the-shared-brain-vercel--neon-free-tiers))
+> knowledge (which stays on this machine). The cloud ([reference](REFERENCE.md#deploy-the-shared-brain-vercel--neon-free-tiers))
 > becomes an option, not a prerequisite.
 
 ## In three commands
