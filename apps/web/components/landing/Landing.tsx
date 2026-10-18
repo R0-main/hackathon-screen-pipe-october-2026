@@ -505,7 +505,7 @@ function Privacy() {
               The raw data stays on the computer.
             </h2>
             <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-              Screenpipe records about 19{"\u00a0"}GB in two weeks on a computer. None of it leaves the machine: only the distilled knowledge goes up to the brain.
+              Every employee&apos;s Screenpipe feeds the same brain, and what it records stays on their computer: only the distilled knowledge goes up.
             </p>
           </div>
           <PrivacyFlow />

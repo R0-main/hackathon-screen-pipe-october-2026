@@ -38,7 +38,7 @@ export function PrivacyFlow() {
       <div data-pf-workstation className="panel overflow-hidden">
         <div className="border-b border-line px-4 py-3">
           <span className="panel-title block">Hugo&apos;s computer</span>
-          <span data-pf-weight className="mt-0.5 block text-[12px] tabular-nums text-trace">19 GB in two weeks</span>
+          <span data-pf-weight className="mt-0.5 block text-[12px] tabular-nums text-trace">what Screenpipe records</span>
         </div>
         <ul className="divide-y divide-line">
           {CAPTURES.map((c) => (
@@ -90,7 +90,7 @@ export function PrivacyFlow() {
       <div data-pf-brain className="panel overflow-hidden">
         <div className="border-b border-line px-4 py-3">
           <span className="panel-title block">The brain</span>
-          <span data-pf-weight className="mt-0.5 block text-[12px] tabular-nums text-trace">a few KB</span>
+          <span data-pf-weight className="mt-0.5 block text-[12px] tabular-nums text-trace">what the team shares</span>
         </div>
         <ul className="divide-y divide-line">
           {KNOWLEDGE.map((k) => (

@@ -41,7 +41,7 @@ Online version: https://www.nos-brainer.tech (demo mode, fictitious data, seeded
 
 - "Encore gives phones a second life; NOS Brainer gives its team's know-how a life beyond the session."
 - "Screenpipe is the pipe between the computer, its AI agents and the company's brain."
-- "A few KB distilled per day instead of 19 GB of captures."
+- "Every employee's Screenpipe, one brain for the whole company."
 - "Finance does not need the code context, and neither do its agents."
 
 ## If something breaks

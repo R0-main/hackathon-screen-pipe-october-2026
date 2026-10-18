@@ -72,7 +72,7 @@ export function installedScreenpipeBin(): string | null {
 /**
  * Recording options: no microphone by default (one less macOS permission, no audio to explain), "memory" app
  * context (the `parsed` data brain-sync reads), and videos / screenshots deleted after 14 days (the text stays
- * searchable; ~19 GB in two weeks otherwise). Redaction of personal data and private browsing ignored: on by default.
+ * searchable). Redaction of personal data and private browsing ignored: on by default.
  */
 export function recordArgs(opts: { audio?: boolean } = {}): string[] {
   return [...(opts.audio ? [] : ["--disable-audio"]), "--app-context", "memory", "--retention-days", "14"]
