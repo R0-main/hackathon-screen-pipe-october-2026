@@ -308,6 +308,36 @@ export const DEMO_CORE_ITEMS: DemoItem[] = [
     body: "2,100 phones sold a month at €300 on average, gross margin 38%. Business customers make 31% of revenue; the largest is Groupe Vallière. Q4 goal: 7,500 phones in November and December.",
     entities: [c("Groupe Vallière")],
   },
+  {
+    author: "claire", zone: "core", kind: "fact", daysAgo: 10, tool: "claude",
+    title: "Our customers: individuals online, and companies that equip their teams",
+    body: "Individuals buy on the online shop, in one go or in 3 or 4 installments with Alma. Companies equip their teams through Sarah's B2B team: a fleet of phones, one invoice, a 48-hour replacement when a phone fails. 40 business customers today, 31% of revenue.",
+    entities: [t("Alma"), p("Sarah Cohen")],
+  },
+  {
+    author: "claire", zone: "core", kind: "procedure", daysAgo: 9, tool: "claude",
+    title: "Your first week at Encore",
+    body: "1. Day one at the Lyon workshop: a morning on a bench with a technician, to see how a phone is tested and graded.\n2. Read the core of the brain: what we do, our rules, who to ask.\n3. Your manager opens your zones; your agents (Claude Code, Codex) read the same brain as you.\n4. By Friday, follow one phone end to end, from its buyback to its delivery.",
+    entities: [],
+  },
+  {
+    author: "claire", zone: "core", kind: "fact", daysAgo: 8, tool: "claude",
+    title: "The workshop sets the pace: benches open from 8am to 6pm",
+    body: "Every phone goes through the Lyon workshop: tested, photographed, graded by the AI then confirmed by a technician, packed. The 12 technicians work from 8am to 6pm: no deployment, no shipping change and no meeting with them during those hours. The office (6 people) works around the workshop, not the other way round.",
+    entities: [pr("AI grading")],
+  },
+  {
+    author: "claire", zone: "core", kind: "fact", daysAgo: 7, tool: "claude",
+    title: "Encore words: grade, trade-in, fleet, \"not as described\"",
+    body: "Grade: Excellent, Very good or Fair, proposed by the AI from the photos, confirmed by the technician. Trade-in: we buy back a customer's old phone, which becomes next quarter's stock. Fleet: the phones a company rents or buys for its team. \"Not as described\": a return because the phone does not match its grade, the one we fight first.",
+    entities: [pr("Trade-in"), pr("AI grading")],
+  },
+  {
+    author: "claire", zone: "core", kind: "decision", daysAgo: 2, tool: "claude",
+    title: "This quarter's three priorities, for everyone",
+    body: "1. Sell 7,500 phones in November and December, and sign €1.2M of B2B.\n2. Bring \"not as described\" returns under 3%.\n3. Nothing that slows the workshop down before Christmas. Laptops come after, in April 2027.",
+    entities: [pr("Laptops")],
+  },
 ]
 
 /** Typical prompts per zone, for the history and the simulator. */
