@@ -29,6 +29,8 @@ export function createBrainMcpServer(version = "0.1.0"): McpServer {
   const multi = known.length > 1
   return createServer({
     version,
+    // The logo, served by the (first) company's brain.
+    baseUrl: known[0]?.url,
     instructions: multi ? companiesInstructions(known) : undefined,
     companyParam: multi
       ? `Company to query, by name or number; the first one by default ("${companyLabel(known[0])}"). Only give it when ` +

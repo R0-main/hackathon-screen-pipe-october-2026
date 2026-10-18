@@ -176,7 +176,10 @@ test("MCP: search_brain points to the PDF and get_document reads it; finance lig
     )
     return (await res.json()) as any
   }
-  await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } })
+  const init = await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } })
+  // The server's logo, served by the brain itself (app/icon.svg, public/icon.png).
+  const icons = init.result.serverInfo.icons as { src: string; mimeType: string }[]
+  assert.deepEqual(icons.map((i) => [new URL(i.src).pathname, i.mimeType]), [["/icon.svg", "image/svg+xml"], ["/icon.png", "image/png"]])
   const search = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "search_brain", arguments: { query: "Q3 revenue" } } })
   const text = search.result.content[0].text as string
   const id = text.match(/encore-revenue-Q3-2026\.pdf \([^)]*id `([^`]+)`\)/)?.[1]
