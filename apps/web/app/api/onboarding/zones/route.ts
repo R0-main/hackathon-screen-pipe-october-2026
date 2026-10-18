@@ -5,7 +5,7 @@ import { hashToken } from "@/lib/auth"
 import { ingestItems, refreshStatus } from "@/lib/brain"
 import { caFingerprint } from "@/lib/ca"
 import { buildInstallPrompt } from "@/lib/install-prompt"
-import { zonesForNewOrg, zonesFromDraft } from "@/lib/onboarding"
+import { coreFromDescription, zonesForNewOrg, zonesFromDraft } from "@/lib/onboarding"
 import { clearAgentDraft } from "@/lib/onboarding-agent"
 import { getStore } from "@/lib/store"
 import { error, json, parseBody, publicBaseUrl, withViewer } from "@/lib/http"
@@ -60,7 +60,10 @@ export const POST = withViewer(
     const org =
       !current.description.trim() && body.data.description.trim() ? await store.updateOrg({ name: current.name, description: body.data.description.trim() }) : current
     const fresh = { ...viewer, access: await getAccess(viewer.real) }
-    const inserted = body.data.items.length ? (await ingestItems(fresh, body.data.items, "job")).inserted : 0
+    // A description given only now (proposed by Claude Code or Codex) also goes into the core.
+    const core = org !== current ? coreFromDescription(org.name, org.description) : []
+    const items = [...core, ...body.data.items]
+    const inserted = items.length ? (await ingestItems(fresh, items, "job")).inserted : 0
     if (inserted) await refreshStatus(fresh)
     await clearAgentDraft(store)
 

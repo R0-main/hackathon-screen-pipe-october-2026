@@ -136,7 +136,8 @@ export function zonesFromDraft(draft: Pick<OnboardingDraft, "zones">, existing: 
   const seen = new Set<string>()
   const out: Zone[] = []
   for (const z of draft.zones) {
-    if (seen.has(z.id)) continue
+    // The core keeps its own name and description: a draft never rewrites it.
+    if (seen.has(z.id) || isCoreZone(z.id)) continue
     seen.add(z.id)
     const prev = existing.find((e) => e.id === z.id)
     const position = prev ? prev.position : nextPosition++
@@ -152,6 +153,17 @@ export function zonesFromDraft(draft: Pick<OnboardingDraft, "zones">, existing: 
     })
   }
   return out
+}
+
+/**
+ * The core's first knowledge: what the company does, in the words of whoever creates it (/create). The core is not
+ * empty even before Claude Code or Codex proposes anything.
+ */
+export function coreFromDescription(company: string, description: string): KnowledgeItemInput[] {
+  const body = description.trim()
+  if (!body) return []
+  const at = new Date().toISOString()
+  return [{ zone: CORE_ZONE_ID, kind: "fact", title: truncate(`What ${company.trim()} does`, 140), body, entities: [], source: { app: "dashboard", tool: "onboarding", at }, confidence: 0.9 }]
 }
 
 /** A new company's zones: the suggested ones (DEFAULT_ZONES) in their original order, then its own, with no duplicate color. */

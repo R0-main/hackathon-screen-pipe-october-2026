@@ -23,7 +23,7 @@ import {
 import { buildStatusInput, type StatusInput } from "./status"
 import type { NewZoneProposal, NewZonesInput } from "./new-zones"
 import { ModerationVerdictsSchema, type ModerationInput, type ModerationVerdict } from "./moderation"
-import { classifyZones, slugify } from "./zones"
+import { CORE_ZONE, classifyZones, isCoreZone, slugify } from "./zones"
 import { truncate } from "./text"
 
 /** Haiku to triage the volume, Sonnet to extract and summarize (see ARCHITECTURE.md). */
@@ -245,15 +245,18 @@ export async function synthesizeOnboarding(
       "high",
     )
     if (!parsed) return null
-    const { zones, zoneId } = normalizeOnboardingZones(parsed.zones)
-    const hints = zones.map((z) => ({ ...z }))
+    // The core is in every brain: never a proposed zone, always a zone its items may go to.
+    const { zones, zoneId } = normalizeOnboardingZones(parsed.zones.filter((z) => !isCoreZone(slugify(z.id || z.name))))
+    const hints = [...zones.map((z) => ({ ...z })), CORE_ZONE]
     const source = { app: "dashboard", tool: "onboarding" as const, at: new Date().toISOString() }
     return {
       company_name: parsed.company_name,
       description: parsed.description,
       zones,
       // Items cite the original ids ("customer_service"): they follow the renaming.
-      items: parsed.items.map((i) => toKnowledgeInput({ ...i, zone: zoneId(i.zone) ?? i.zone }, hints, source, zones[0]?.id ?? "leadership")),
+      items: parsed.items.map((i) =>
+        toKnowledgeInput({ ...i, zone: isCoreZone(slugify(i.zone)) ? CORE_ZONE.id : (zoneId(i.zone) ?? i.zone) }, hints, source, zones[0]?.id ?? "leadership"),
+      ),
     }
   } catch (err) {
     logError("onboarding", err)
