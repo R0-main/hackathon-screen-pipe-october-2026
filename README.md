@@ -65,8 +65,9 @@ AI made every employee faster, and the company **more forgetful**.
   from zero.
 - 🙈 **Most of the work leaves no log.** Browser AI chats, Zoom calls, dashboards: no hook or log file sees them. A brain
   built only on coding-agent logs hears the developers and nobody else.
-- 🗄️ **Screenpipe solves memory for one person, not a team.** Its own spec says it: *"sqlite does not federate, 30
-  employees = 30 dbs, not one queryable org brain."* And each of those databases weighs ~19 GB every two weeks.
+- 🗄️ **One Screenpipe per computer, no brain for the team yet.** Each Screenpipe remembers the work of one person.
+  Connecting every employee's Screenpipe to one brain is the layer Screenpipe's own spec describes: *"30 employees = 30
+  dbs, not one queryable org brain."*
 - 🚧 **Sharing naively is a non-starter.** Nobody will pipe raw screen captures into a shared store, and finance has no
   business reading the code context, and neither do its agents.
 - 🔁 **Nobody sees the patterns.** One computer sees one habit. The prompt Jean-Marc runs every morning, the leads Sarah
@@ -84,7 +85,7 @@ the brain enforces who reads what.
 | ❌ Hugo spends two days on a failing staging migration. The fix lives in his terminal history.               | ✅ The Screenpipe agent spots it, it lands in the **Dev** zone, and the next developer's Claude Code finds it through MCP.     |
 | ❌ "We freeze Black Friday prices on Nov 17" was decided on Monday's Zoom. It only exists in people's heads.  | ✅ Screenpipe transcribes the meeting; it becomes a **decision** in the brain, with who said it and when.                      |
 | ❌ Sales answers a tricky VAT question with ChatGPT in Chrome. No log, no hook: invisible.                    | ✅ Screenpipe's semantic parser turns the browser chat into a conversation, distilled exactly like a Claude Code session.      |
-| ❌ 30 employees, 30 local databases, ~19 GB each every two weeks. Nothing queryable at company level.         | ✅ A few KB of distilled knowledge per computer per day, in one brain the whole company can search.                           |
+| ❌ 30 employees, 30 Screenpipes, each one remembering for a single person.                                   | ✅ Every employee's Screenpipe connected to one brain the whole company, and every agent in it, can search.                   |
 | ❌ "Q3 revenue: €1.86M" is in the brain, but the revenue PDF it came from sits in Jean-Marc's Downloads.               | ✅ **Documents travel with their knowledge**: the file a session read goes with the facts drawn from it, in the same zone, and any agent opens it with `get_document`. |
 | ❌ A shared memory means everyone, and every agent, reads everything.                                        | ✅ **Per-zone access**, enforced on every route and in Postgres RLS. Agents inherit their owner's rights through their token. |
 | ❌ The same prompt every morning, the same copy-paste every Monday. Nobody notices.                          | ✅ Repeated prompts and Screenpipe workflows become **automation suggestions** in one place, set up by an admin.             |

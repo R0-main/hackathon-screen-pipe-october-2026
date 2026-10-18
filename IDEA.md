@@ -47,7 +47,7 @@ When someone leaves or is away, their replacement gets **the context that role u
 ## Points to settle
 
 - **Legal / GDPR**: employee consent, filtering of personal content, what goes up to the brain or not (distilled text rather than raw captures?), the employee's right of oversight.
-- **Data volume**: Screenpipe produces about 19 GB in 2 weeks per computer. The brain must **distill** (facts, decisions, entities, links) and keep that persistently, not store the raw data.
+- **Distillation**: the brain must **distill** what each computer's Screenpipe records (facts, decisions, entities, links) and keep that persistently, not store the raw data.
 - **Brain structure**: knowledge graph (people, projects, decisions, documents)? And how do we split the zones?
 - **Local vs cloud**: Screenpipe is local by default. What goes to the shared brain, and when (continuously, every hour)?
 

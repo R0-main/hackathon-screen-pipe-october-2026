@@ -5,7 +5,7 @@ See [IDEA.md](IDEA.md) for the product. This document describes the **how** and 
 ## Guiding principle
 
 **The raw data stays on the computer, only the distilled knowledge goes up to the brain.**
-Screenpipe records everything locally (~19 GB / 2 weeks). On each computer, an agent extracts only the AI sessions, distills them into "knowledge" (a few KB/day) and sends it to the shared brain. That solves storage, context saturation and a good part of GDPR at the same time.
+Screenpipe records everything locally, on every employee's computer. On each one, an agent extracts only the AI sessions, distills them into "knowledge" and sends it to the shared brain: every Screenpipe in the company feeds the same brain. That keeps the brain readable by agents (no context saturation) and settles a good part of GDPR at the same time.
 
 **One deliberate exception: the documents behind the knowledge.** When a session worked on a file (the Q3 revenue PDF
 Claude Code read, the spreadsheet dropped in a prompt), the file goes with the knowledge distilled from it, in the same

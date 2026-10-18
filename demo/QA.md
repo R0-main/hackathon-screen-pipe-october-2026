@@ -30,11 +30,11 @@ Five things, all local on the computer:
 Code: `apps/client/src/sources/screenpipe.ts`, `apps/client/src/agent.ts`, `apps/client/src/setup.ts`.
 
 **"Screenpipe already has a lot of features. Why not use it as is for a team?"**
-Screenpipe solves memory for one person. Its own spec says it: "sqlite does not federate, 30 employees = 30 dbs, not one
-queryable org brain". We don't replace Screenpipe; we federate it: each computer keeps its capture, and only what is
-worth sharing goes up.
+We don't replace Screenpipe; we connect every employee's Screenpipe to one brain. Its own spec describes that layer:
+"30 employees = 30 dbs, not one queryable org brain". Each computer keeps its capture, and only what is worth sharing
+goes up.
 
-**"Screenpipe records about 19 GB in two weeks. You send all that?"**
+**"Screenpipe records everything on the computer. You send all that?"**
 No. The raw capture never leaves the computer. `brain-sync` reads it, filters it, distills it, and sends a few KB of
 knowledge per day. `~/.company-brain/brain sync --dry-run --full` shows exactly what would be sent.
 
