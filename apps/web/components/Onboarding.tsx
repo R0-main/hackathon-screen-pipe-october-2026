@@ -8,7 +8,7 @@ import { PageScroll } from "./AppShell"
 import { AgentRun, AgentToasts, useAgentOnboarding } from "./AgentProgress"
 import { PromptActions } from "./PromptActions"
 import { KIND_LABEL, api, errorMessage, relativeTime } from "./format"
-import { BrainIcon, CheckIcon, CloseIcon, ErrorText } from "./ui"
+import { CheckIcon, CloseIcon, ErrorText, LogoMark } from "./ui"
 
 type Question = { id: string; question: string }
 type Draft = {
@@ -192,7 +192,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
           <div key={q.id} className="space-y-2">
             <div className="flex gap-3">
               <span className="mt-1 shrink-0" aria-hidden>
-                <BrainIcon size={24} />
+                <LogoMark size={24} />
               </span>
               <div className="panel bubble-in max-w-[85%] break-words px-4 py-3 text-[14px]">
                 <span className="mr-2 text-[12px] tabular-nums text-trace">

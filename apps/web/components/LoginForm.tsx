@@ -7,7 +7,7 @@ import { fmt } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
 import { PersonAvatar } from "./PersonDot"
-import { BrainIcon, CloseIcon, ErrorText, PlusIcon } from "./ui"
+import { CloseIcon, ErrorText, LogoMark, PlusIcon } from "./ui"
 
 /**
  * Sign-in: first the companies remembered by this browser (one click to go back into one of them), then, large, creating
@@ -88,7 +88,7 @@ export function LoginForm({
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
           <Link href="/" className="rounded-[6px]" aria-label={t.login.home}>
-            <BrainIcon size={56} />
+            <LogoMark size={56} />
           </Link>
           <h1 className="mt-3 text-[24px] font-medium leading-tight">NOS Brainer</h1>
           <p className="mt-1 text-[13px] text-trace">{t.login.tagline}</p>

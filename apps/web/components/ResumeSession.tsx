@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react"
 import { api } from "./format"
 import { useT } from "./I18n"
-import { BrainIcon } from "./ui"
+import { LogoMark } from "./ui"
 
 /**
  * Reopens the most recent remembered company (POST /api/session/resume), then loads the dashboard with a full
@@ -25,7 +25,7 @@ export function ResumeSession() {
   return (
     <main className="grid min-h-dvh place-items-center px-4" aria-busy>
       <div className="flex flex-col items-center gap-3 text-center">
-        <BrainIcon size={40} />
+        <LogoMark size={40} />
         <p className="text-[13px] text-trace" role="status">
           {t.login.resuming}
         </p>

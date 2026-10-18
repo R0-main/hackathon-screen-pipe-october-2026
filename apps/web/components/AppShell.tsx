@@ -14,7 +14,6 @@ import { ADMIN_VIEWS } from "./admin-views"
 import {
   ArchiveIcon,
   BoltIcon,
-  BrainIcon,
   ChatIcon,
   CheckIcon,
   ChevronsIcon,
@@ -403,7 +402,7 @@ function CompanySwitcher({ accounts, signup, onClose }: { accounts: RememberedAc
             </Link>
             {signup && (
               <Link href="/create" className={`${row} text-trace hover:text-ink`}>
-                <BrainIcon size={14} className="shrink-0" />
+                <LogoMark size={14} className="shrink-0" />
                 {t.shell.createCompany}
               </Link>
             )}
