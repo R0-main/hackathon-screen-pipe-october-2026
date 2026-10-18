@@ -122,8 +122,12 @@ const RIM = 1.14
 /** Shock wave: maximum push of the points (scene units), and reach beyond the zone's edge. */
 const SHOCK = 0.03
 const SHOCK_AROUND = 0.22
+/** The core's shock wave reaches much farther into the network around it (its circle stays the same). */
+const CORE_SHOCK_AROUND = 0.7
 
 type ThreeModule = typeof import("three")
+
+const shockAround = (g: { core: boolean }) => (g.core ? CORE_SHOCK_AROUND : SHOCK_AROUND)
 type SphereMesh = THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>
 type RingMesh = THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
 
@@ -573,7 +577,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   materials.push(knownMat)
 
   // Shock wave: as the front passes, the zone's knowledge and the network neurons around it (up to
-  // SHOCK_AROUND beyond the zone) are pushed outward then come back; their links follow.
+  // SHOCK_AROUND beyond the zone, CORE_SHOCK_AROUND for the core) are pushed outward then come back; their links follow.
   const knownNodes = [...gfx.values()].flatMap((g) => g.nodes.map((node, k) => ({ node, g, k })))
   const netBase = curves.positions.slice()
   const neuronR = net.points.map((_, i) => NEURON_R * (1 - 0.25 * net.depth[i]))
@@ -584,7 +588,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     let f = fields.get(g)
     if (f) return f
     const c = g.centerPos
-    const far = (g.reach + SHOCK_AROUND) ** 2
+    const far = (g.reach + shockAround(g)) ** 2
     const near = (p: V3) => (p[0] - c.x) ** 2 + (p[1] - c.y) ** 2 + (p[2] - c.z) ** 2 < far
     const neurons = net.points.map((p, i) => (near(p) ? i : -1)).filter((i) => i >= 0)
     const inNet = new Set(neurons)
@@ -607,13 +611,14 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const vy = p[1] - c.y
     const vz = p[2] - c.z
     const d = Math.hypot(vx, vy, vz) || 1
-    // Beyond the zone, the ripple dampens until it dies out at SHOCK_AROUND.
-    const edge = d > g.reach ? Math.max(0, 1 - (d - g.reach) / SHOCK_AROUND) : 1
+    // Beyond the zone, the ripple dampens until it dies out at its shock reach.
+    const around = shockAround(g)
+    const edge = d > g.reach ? Math.max(0, 1 - (d - g.reach) / around) : 1
     if (edge === 0) return
     for (const r of live) {
       if (r.zone !== g) continue
       const k = (t - r.start) / RIPPLE_MS
-      const off = (d - rippleRadius(r, k)) / 0.08
+      const off = (d - shockRadius(r, k)) / 0.08
       const push = (SHOCK * edge * Math.exp(-off * off) * (1 - k) * rippleGain(r, t)) / d
       out[o] += vx * push
       out[o + 1] += vy * push
@@ -879,6 +884,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const live: RippleGfx[] = []
   /** Radius of the ripple at instant k (0 → 1): it starts from the center and dies out a little after the farthest knowledge. */
   const rippleRadius = (r: RippleGfx, k: number) => 0.05 + (r.zone.reach + 0.08) * k
+  /** Front of the push on the points: the circle's, except for the core, whose push travels on to its shock reach. */
+  const shockRadius = (r: RippleGfx, k: number) => (r.zone.core ? 0.05 + (r.zone.reach + CORE_SHOCK_AROUND) * k : rippleRadius(r, k))
   /** Strength of a ripple: 1, then toward 0 in SETTLE_MS once its zone is left. */
   const rippleGain = (r: RippleGfx, t: number) => (r.fade === undefined ? 1 : Math.max(0, 1 - (t - r.fade) / SETTLE_MS))
   /** Activity (in ms, browser clock) dating from the click just left, or coming back from it late. */
