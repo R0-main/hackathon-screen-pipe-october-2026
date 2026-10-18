@@ -1,7 +1,9 @@
 // Company onboarding: guided interview + links → first version of the brain.
 
 import {
+  CORE_ZONE_ID,
   DEFAULT_ZONES,
+  isCoreZone,
   classifyZones,
   extractEntities,
   firstSentence,
@@ -43,7 +45,9 @@ function splitList(text: string): string[] {
 }
 
 /** Fallback without Claude: zones by keywords, one item per answer / per goal / per page. */
-function heuristicDraft(answers: OnboardingAnswers, pages: ScrapedPage[], existing: Zone[]): OnboardingDraft {
+function heuristicDraft(answers: OnboardingAnswers, pages: ScrapedPage[], all: Zone[]): OnboardingDraft {
+  // The core is in every brain: the teams are matched against the other zones (the defaults for a brain without any).
+  const existing = all.filter((z) => !isCoreZone(z.id))
   const zonesById = new Map<string, Omit<Zone, "position" | "color">>()
   // "dev (Hugo, Inès), finance (Jean-Marc)": the names in parentheses are not teams.
   const teamText = (answers.teams ?? "").replace(/\([^)]*\)/g, " ")
@@ -68,10 +72,11 @@ function heuristicDraft(answers: OnboardingAnswers, pages: ScrapedPage[], existi
   const source = { app: "dashboard", tool: "onboarding" as const, at }
   const items: KnowledgeItemInput[] = []
   const add = (zone: string | undefined, kind: KnowledgeItemInput["kind"], title: string, body: string) => {
-    const z = zone && zones.some((x) => x.id === zone) ? zone : (classifyZones(`${title} ${body}`, hints, 1)[0] ?? "leadership")
+    const z = zone && (zone === CORE_ZONE_ID || zones.some((x) => x.id === zone)) ? zone : (classifyZones(`${title} ${body}`, hints, 1)[0] ?? "leadership")
     items.push({ zone: z, kind, title: truncate(title, 140), body: truncate(body, 1500), entities: extractEntities(body), source, confidence: 0.7 })
   }
-  if (answers.activity) add("leadership", "fact", firstSentence(answers.activity, 120), answers.activity)
+  // What the company does: everyone needs it, it goes in the core.
+  if (answers.activity) add(CORE_ZONE_ID, "fact", firstSentence(answers.activity, 120), answers.activity)
   if (answers.clients) for (const c of splitList(answers.clients).slice(0, 6)) add("sales", "fact", `Key customer / partner: ${firstSentence(c, 90)}`, c)
   if (answers.tools) add(undefined, "fact", "Tools used every day", answers.tools)
   if (answers.goals)

@@ -273,6 +273,43 @@ export const DEMO_ITEMS: DemoItem[] = [
   },
 ]
 
+/**
+ * The core: what anyone at Encore needs, whatever their zone (everyone reads it). Seeded after the rest, and added once
+ * to a demo brain seeded before the core existed.
+ */
+export const DEMO_CORE_ITEMS: DemoItem[] = [
+  {
+    author: "claire", zone: "core", kind: "fact", daysAgo: 12, tool: "claude",
+    title: "What Encore does: refurbished smartphones with a 2-year warranty",
+    body: "Encore refurbishes smartphones and sells them online with a 2-year warranty, to individuals and to companies that equip their teams. Every phone is tested in the Lyon workshop: an AI grades the screen from photos, then a technician confirms. 2,100 phones sold a month, 40 business customers, 18 people (6 at the office, 12 technicians in the workshop).",
+    entities: [pr("AI grading")],
+  },
+  {
+    author: "claire", zone: "core", kind: "decision", daysAgo: 11, tool: "claude",
+    title: "Vision: a refurbished phone people trust as much as a new one, for half the price",
+    body: "Our bet: by 2028, one phone out of five used for work in France is refurbished. We win it on trust rather than on price: every phone tested, graded honestly, guaranteed 2 years. After phones, laptops in April 2027, with the same promise.",
+    entities: [pr("Laptops")],
+  },
+  {
+    author: "claire", zone: "core", kind: "fact", daysAgo: 11, tool: "claude",
+    title: "Our three rules: grade honestly, hide nothing, protect the workshop",
+    body: "1. Grade honestly: when in doubt, the lower grade; a disappointed customer costs more than a lower price.\n2. Hide nothing: battery health, scratches and the grade are shown before the purchase.\n3. Protect the workshop: nothing ships or deploys that disrupts the benches during workshop hours (8am to 6pm).",
+    entities: [],
+  },
+  {
+    author: "claire", zone: "core", kind: "procedure", daysAgo: 6, tool: "claude",
+    title: "Who to ask at Encore",
+    body: "Claire Martin (CEO): strategy, fundraising, hiring. Hugo Bernard (lead dev): the shop, the API, the workshop app. Jean-Marc Dubois: invoicing, cash, payroll. Sarah Cohen: business customers and quotes. Léo Petit: roadmap, product pages, the return rate.",
+    entities: [p("Claire Martin"), p("Hugo Bernard"), p("Jean-Marc Dubois"), p("Sarah Cohen"), p("Léo Petit")],
+  },
+  {
+    author: "claire", zone: "core", kind: "fact", daysAgo: 3, tool: "claude",
+    title: "Key figures everyone should know",
+    body: "2,100 phones sold a month at €300 on average, gross margin 38%. Business customers make 31% of revenue; the largest is Groupe Vallière. Q4 goal: 7,500 phones in November and December.",
+    entities: [c("Groupe Vallière")],
+  },
+]
+
 /** Typical prompts per zone, for the history and the simulator. */
 /**
  * Documents sent with the knowledge: the file a session worked on (here, the quarterly report Jean-Marc wrote with

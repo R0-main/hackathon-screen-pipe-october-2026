@@ -79,6 +79,24 @@ export const DEFAULT_ZONES: Zone[] = [
   },
 ]
 
+/**
+ * The core: the zone at the center of every brain, which every member reads. It holds what anyone in the company
+ * needs (vision, mission, what the company does, values, key figures). The stores create it when it is missing and
+ * list it after the other zones (the first zone stays a team's: it is the fallback of a classification). It is gray,
+ * the other zones' palette stays theirs.
+ */
+export const CORE_ZONE_ID = "core"
+export const CORE_ZONE: Zone = {
+  id: CORE_ZONE_ID,
+  name: "Core",
+  description: "What everyone in the company needs: vision, mission, what the company does, its customers, values, key figures, how it works.",
+  color: "#8c8c85",
+  keywords: ["vision", "mission", "values", "culture", "manifesto", "positioning", "pitch", "glossary", "handbook", "charter", "company-wide"],
+  position: -1,
+}
+
+export const isCoreZone = (id: string | null | undefined) => id === CORE_ZONE_ID
+
 // Fixed-order categorical palette, validated (color blindness, contrast) on a light background. Same list as ZONE_PALETTE in the web app.
 const ZONE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948", "#0e9aa7", "#9c4dcc"]
 

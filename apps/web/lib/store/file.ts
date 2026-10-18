@@ -4,6 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { randomBytes, randomUUID } from "node:crypto"
 import {
+  CORE_ZONE,
   DEFAULT_ZONES,
   normalize,
   tokenize,
@@ -411,7 +412,12 @@ export class FileStore implements BrainStore {
   }
 
   async listZones() {
-    return [...this.load().zones].sort((a, b) => a.position - b.position)
+    // Every brain has its core: created the first time it is missing.
+    const hasCore = (d: Data) => d.zones.some((z) => z.id === CORE_ZONE.id)
+    if (!hasCore(this.load())) this.mutate((d) => hasCore(d) || d.zones.push({ ...CORE_ZONE }))
+    // The core comes after the other zones: the first zone stays a team's (the fallback of a classification).
+    const last = (z: Zone) => (z.id === CORE_ZONE.id ? 1 : 0)
+    return [...this.load().zones].sort((a, b) => last(a) - last(b) || a.position - b.position)
   }
   async upsertZone(z: Zone) {
     return this.mutate((d) => {

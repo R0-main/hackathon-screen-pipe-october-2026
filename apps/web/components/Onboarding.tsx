@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import type { KnowledgeItemInput } from "@brain/core"
+import { CORE_ZONE, type KnowledgeItemInput } from "@brain/core"
 import { PageScroll } from "./AppShell"
 import { AgentRun, AgentToasts, useAgentOnboarding } from "./AgentProgress"
 import { PromptActions } from "./PromptActions"
@@ -320,7 +320,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
                     <div className="min-w-0">
                       <div className="flex flex-wrap gap-1.5 text-[12px]">
                         <span className="chip">{KIND_LABEL[it.kind]}</span>
-                        <span className="chip">{draft.zones.find((z) => z.id === it.zone)?.name ?? it.zone}</span>
+                        <span className="chip">{draft.zones.find((z) => z.id === it.zone)?.name ?? (it.zone === CORE_ZONE.id ? CORE_ZONE.name : it.zone)}</span>
                       </div>
                       <div className="mt-1 text-[13.5px] font-medium">{it.title}</div>
                       <div className="mt-0.5 line-clamp-2 text-[12px] text-trace">{it.body}</div>

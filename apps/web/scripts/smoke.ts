@@ -91,7 +91,7 @@ import * as mcpImportRoute from "../app/api/connectors/mcp/[id]/import/route"
 import * as connectedToolsRoute from "../app/api/connected-tools/route"
 import * as connectedCallRoute from "../app/api/connected-tools/call/route"
 import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceOutdatedDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
-import { DEMO_ITEMS, DEMO_ORG, DEMO_SCREENPIPE_ITEMS, LEGACY_DEMO_NAMES } from "./demo-data"
+import { DEMO_CORE_ITEMS, DEMO_ITEMS, DEMO_ORG, DEMO_SCREENPIPE_ITEMS, LEGACY_DEMO_NAMES } from "./demo-data"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
@@ -257,10 +257,11 @@ async function main() {
   const zoneName = (id: string) => zones.find((z) => z.id === id)?.name ?? id
 
   assert(claire.access.isAdmin && claire.access.readable.length >= 6, "the admin reads every zone")
-  assert(jm.access.readable.join() === "finance", "Jean-Marc only reads finance")
+  assert(jm.access.readable.join() === "core,finance", "Jean-Marc only reads finance, and the core everyone reads")
+  assert(zones.at(-1)?.id === "core" && zones.filter((z) => z.id === "core").length === 1, "every brain has its core, once, after the other zones")
 
   const devForJm = await queryBrain(jm, { query: "deploy to production" })
-  assert(devForJm.items.length === 0, "RLS: finance sees nothing of the dev zone")
+  assert(devForJm.items.every((i) => i.zone === "core"), "RLS: finance sees nothing of the dev zone (only what the core says)")
   assert(devForJm.zones_restricted.includes("dev"), "the dev zone is flagged as restricted")
   const devForHugo = await queryBrain(hugo, { query: "deploy to production" })
   assert(devForHugo.items.some((i) => i.title.includes("Deploy Encore")), "Hugo finds the deployment procedure")
@@ -286,7 +287,8 @@ async function main() {
   assert(after[0]?.id === evs[0].id, "the live stream rereads events in order")
 
   const stJm = await getState(jm)
-  assert(stJm.items.every((i) => i.zone === "finance"), "Jean-Marc's state only contains finance")
+  assert(stJm.items.every((i) => i.zone === "finance" || i.zone === "core"), "Jean-Marc's state only contains finance, and the core")
+  assert(stJm.zones.find((z) => z.id === "core")?.locked === false && stJm.items.some((i) => i.zone === "core"), "everyone reads the core")
   assert(stJm.zones.find((z) => z.id === "dev")?.locked === true, "the dev zone is locked for Jean-Marc")
   assert(stJm.automations.every((a) => a.user_id === jm.profile.id), "Jean-Marc only sees his own automations")
 
@@ -412,7 +414,7 @@ async function main() {
         "and keeps its zones",
       )
       assert(
-        (await old.listItems({})).length === DEMO_ITEMS.length + DEMO_SCREENPIPE_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-encore"),
+        (await old.listItems({})).length === DEMO_ITEMS.length + DEMO_SCREENPIPE_ITEMS.length + DEMO_CORE_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-encore"),
         "knowledge and skills of the new demo, without those of the former one",
       )
     } finally {
@@ -431,7 +433,7 @@ async function main() {
   assert((await getPersonContext(asJm, jm.profile.id))?.items.some((i) => i.id === jmDev.ids[0]), "\"view as Jean-Marc\" shows his item too")
   const jmSearch = await queryBrain(jm, { query: `Smoke ${run} Vercel deployment` })
   assert(jmSearch.items.some((i) => i.id === jmDev.ids[0]), "his own search finds his item")
-  assert(jmSearch.items.every((i) => i.zone === "finance" || i.author_id === jm.profile.id), "but nothing else from the dev zone")
+  assert(jmSearch.items.every((i) => i.zone === "finance" || i.zone === "core" || i.author_id === jm.profile.id), "but nothing else from the dev zone")
   assert(!jmSearch.zones_hit.includes("dev"), "his search does not light up (and is not broadcast in) the dev zone")
   assert((await queryBrain(jm, { query: `Smoke ${run} deployment`, zones: ["sales"] })).items.length === 0, "the zone filter applies to his own items too")
   assert(!(await queryBrain(sarah, { query: `Smoke ${run} Vercel deployment` })).items.some((i) => i.id === jmDev.ids[0]), "Sarah (no dev) does not see it")
@@ -490,7 +492,10 @@ async function main() {
   console.log("\n— Searches: text kept only without an unreadable zone or personal content (E2)")
   const lastEvent = async (v: Viewer) => (await store.listEvents({ userId: v.real.id, limit: 1 }))[0]
   const inesQuery = await queryBrain(ines, { query: "what is the payroll salary" })
-  assert(inesQuery.zones_hit.length === 0 && inesQuery.zones_restricted.includes("finance"), "Inès's search on finance: nothing readable")
+  assert(
+    inesQuery.zones_hit.every((z) => z === "core") && inesQuery.items.every((i) => i.zone === "core") && inesQuery.zones_restricted.includes("finance"),
+    "Inès's search on finance: nothing readable (only what the core says)",
+  )
   const inesEvent = await lastEvent(ines)
   const sarahView = (await getState(sarah)).events.find((e) => e.id === inesEvent?.id)
   assert(inesEvent && !inesEvent.summary && sarahView && !sarahView.summary, "this search is neither kept nor broadcast to Sarah")
@@ -521,7 +526,7 @@ async function main() {
 
   console.log("\n— \"Where the company stands\" limited to readable zones (D4)")
   const jmStatus = await statusForViewer(jm)
-  assert(jmStatus && jmStatus.zones.every((z) => z.zone === "finance"), "Jean-Marc only receives the finance zone")
+  assert(jmStatus && jmStatus.zones.every((z) => z.zone === "finance" || z.zone === "core"), "Jean-Marc only receives the finance zone, and the core")
   assert(jmStatus && jmStatus.headline !== status.headline && jmStatus.headline.startsWith(`In your zone (${zoneName("finance")})`), `headline recomputed on his zone: "${jmStatus?.headline}"`)
   assert((await getState(jm)).status?.headline === jmStatus?.headline, "same headline in the dashboard state")
   assert((await statusForViewer(hugo))?.headline.startsWith("In your zones ("), "Hugo: headline over his three zones")
@@ -629,7 +634,10 @@ async function main() {
     const statusEvent = (await store.listEvents({ afterId: evBefore, limit: 50 })).find((e) => e.agent === "job" && e.summary === "Updating the state of the company")
     assert(statusEvent && statusEvent.zones.length === zones.length && statusEvent.user_id === claire.profile.id, "the same \"Updating the state of the company\" event is emitted")
     const jmPushed = await statusForViewer(jm)
-    assert(jmPushed?.zones.map((z) => z.zone).join() === "finance" && jmPushed.headline !== saved.headline, "Jean-Marc only receives finance, with his own headline (D4)")
+    assert(
+      jmPushed?.zones.map((z) => z.zone).filter((z) => z !== "core").join() === "finance" && jmPushed.headline !== saved.headline,
+      "Jean-Marc only receives finance (and the core), with his own headline (D4)",
+    )
     assert((await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, raw: "{not json" })).status === 400, "unreadable body: 400")
     assert((await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, body: { status: { headline: "x", zones: "dev" } } })).status === 400, "malformed summary: 400")
     assert((await call(statusRoute.POST, "/api/status", { method: "POST", session: claireSession, body: { headline: "Summary without an envelope", zones: [{ zone: "dev" }] } })).status === 400, "summary without { status }: 400, no recompute that would overwrite it")
@@ -908,7 +916,7 @@ async function main() {
     try {
       assert((await root.countTenantOrgs()) === tenantsBefore + 1, "a created company is counted")
       assert((await root.getOrg()).id === encore.id && !(await root.isEmpty()), "the database's brain stays Encore's")
-      assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops", "the new company only has its own zones")
+      assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops,core", "the new company only has its own zones, around its core")
       const token = newToken()
       const boss = await acmeStore.createProfile({ name: `Alice ${run}`, role: "admin", manager_id: null, token_hash: hashToken(token) })
       assert(boss.org_id === acme.id, "its first account belongs to it")
@@ -919,7 +927,7 @@ async function main() {
       assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Encore does not see this account")
 
       const st = await call(stateRoute.GET, "/api/state", { session: cookie })
-      assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "its dashboard only shows its company")
+      assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops,core" && st.data.items.length === 0, "its dashboard only shows its company")
 
       console.log("\n— The company's MCP server (/api/mcp/<company>/<token>): what Claude Code and Codex plug in")
       const rpc = async (orgId: string, tok: string, body: unknown, method = "POST") => {
@@ -1141,8 +1149,8 @@ async function main() {
           body: { proposed: [rDraft.zones[0]], picked: ["product"], custom: ["Legal"], items: rDraft.items, description: "Connected scales for beehives.", token: founderToken },
         })
         const ids = (await hiveStore.listZones()).map((z) => z.id).sort().join()
-        assert(zonesRes.status === 200 && ids === "legal,product,sensors", `zones created: the kept one, the ticked one, the added one (${ids})`)
-        assert((await hiveStore.listZoneAccess(founder.id)).length === 3, "the admin reads and writes all their zones")
+        assert(zonesRes.status === 200 && ids === "core,legal,product,sensors", `zones created: the kept one, the ticked one, the added one, and the core (${ids})`)
+        assert((await hiveStore.listZoneAccess(founder.id)).length === 4, "the admin reads and writes all their zones, the core included")
         assert((await hiveStore.listItems({ zones: ["sensors"] })).some((i) => i.title.startsWith("Firmware in Rust")), "the suggested knowledge is added")
         assert(zonesRes.data.prompt.includes("zones: sensors, product, legal") && zonesRes.data.prompt.includes(founderToken), "the install prompt is redone with these zones, same token")
         assert((await viewerFromCookies(hiveCookie, undefined))?.real.id === founder.id, "the dashboard session stays valid")

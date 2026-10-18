@@ -103,6 +103,10 @@ type AgentEvent = {
 
 **Supabase tables**: `orgs`, `profiles` (role), `zones`, `zone_access` (user ↔ zone, read/write), `knowledge_items`, `documents` (file, text, zone, knowledge it backs), `entities`, `edges` (graph: item ↔ entity, entity ↔ entity), `agent_events`, `tasks`, `automation_suggestions`, `company_status` (generated summary), `skills` (the company's Claude Code skills and their scripts, assigned to a cortex = a zone).
 **RLS**: a user only reads `knowledge_items` if `zone ∈ zone_access(user)`. Admins see everything.
+**The core**: every brain has a `core` zone (`CORE_ZONE`, `packages/core/src/zones.ts`), created by the stores the first
+time a company lists its zones, that every member reads: what anyone in the company needs (what it does and for whom,
+vision, mission, values, key figures, who to ask). Distillation and onboarding file only that there; a team's work stays
+in its zone. On the dashboard, it sits in the middle of the brain, linked to every zone.
 
 ## The flows in detail
 

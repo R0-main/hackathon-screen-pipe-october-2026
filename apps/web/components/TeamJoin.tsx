@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { isCoreZone } from "@brain/core"
 import { AgentLogos } from "./brand-logos"
 import { PersonDot } from "./PersonDot"
 import { copyText } from "./PromptActions"
@@ -209,13 +210,16 @@ function RequestCard(props: { request: JoinRequest; zones: ZoneLite[]; people?: 
           <p className="text-[12px] text-trace">Zones they can read</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {props.zones.map((z) => {
-              const on = zones.includes(z.id)
+              const core = isCoreZone(z.id)
+              const on = core || zones.includes(z.id)
               return (
                 <button
                   key={z.id}
                   type="button"
                   className={`chip h-7 text-[13px] ${on ? "chip-on" : ""}`}
                   aria-pressed={on}
+                  disabled={core}
+                  title={core ? "Everyone reads the core." : undefined}
                   onClick={() => setZones((list) => (on ? list.filter((x) => x !== z.id) : [...list, z.id]))}
                 >
                   <Dot color={zoneColor(z.color, z.position)} />

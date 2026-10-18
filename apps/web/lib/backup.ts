@@ -7,6 +7,7 @@
 // zone, title and content; same person; same skill files) is skipped, so importing the same file twice changes nothing.
 
 import {
+  isCoreZone,
   SKILL_NAME_RE,
   classifyZones,
   clientItem,
@@ -514,7 +515,7 @@ export async function clientsCsvBackup(csv: string, defaultZone?: string | null)
   if (clients.length === 0) throw new BackupError(400, "No client found in the file: the first column must hold their names.", problems)
   const s = getStore()
   const [org, zones] = await Promise.all([s.getOrg(), s.listZones()])
-  if (zones.length === 0) throw new BackupError(400, "The brain has no zone yet: create one before importing.")
+  if (zones.every((z) => isCoreZone(z.id))) throw new BackupError(400, "The brain has no zone yet: create one before importing.")
   const fallback = (defaultZone && zones.some((z) => z.id === defaultZone) ? defaultZone : null) ?? matchZone("sales", zones)
   const backup = newBackup("clients", { name: org.name, description: org.description })
   const at = new Date().toISOString()

@@ -6,6 +6,7 @@ import {
   STATUS_WINDOW_DAYS,
   buildStatusInput,
   classifyZones,
+  isCoreZone,
   detectAutomations,
   expandQuery,
   heuristicStatus,
@@ -359,14 +360,15 @@ export type ZoneView = Zone & {
  * what they are doing right now). Without any trace, their job title attaches them to a zone; otherwise null.
  */
 function homeZone(p: Profile, zones: Zone[], authorStats: AuthorZoneStat[], events: AgentEvent[]): string | null {
-  const known = new Set(zones.map((z) => z.id))
+  // The core is everyone's: a person is placed at the edge of the zone where they work, never at the center.
+  const known = new Set(zones.map((z) => z.id).filter((id) => !isCoreZone(id)))
   const weight = new Map<string, number>()
   const add = (zone: string, w: number) => known.has(zone) && weight.set(zone, (weight.get(zone) ?? 0) + w)
   for (const st of authorStats) if (st.author_id === p.id) add(st.zone, st.count)
   for (const e of events) if (e.user_id === p.id) for (const z of e.zones) add(z, 2)
   const best = [...weight.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]
   if (best) return best[0]
-  return p.title ? (classifyZones(p.title, zones, 1)[0] ?? null) : null
+  return p.title ? (classifyZones(p.title, zones.filter((z) => known.has(z.id)), 1)[0] ?? null) : null
 }
 
 /** GET /api/state — dashboard snapshot, filtered by the viewer's permissions. */
@@ -486,7 +488,10 @@ export async function statusForViewer(viewer: Viewer, status?: CompanyStatus | n
   const zones = zoneList ?? (await s.listZones())
   const scoped = { ...current, zones: current.zones.filter((z) => canRead(access, z.zone)) }
   if (access.isAdmin || zones.every((z) => canRead(access, z.id))) return scoped
-  return { ...scoped, headline: await scopedHeadline(zones.filter((z) => canRead(access, z.id))) }
+  // The headline speaks of the member's own zones; the core, which everyone reads, keeps its own section.
+  const readable = zones.filter((z) => canRead(access, z.id))
+  const own = readable.filter((z) => !isCoreZone(z.id))
+  return { ...scoped, headline: await scopedHeadline(own.length ? own : readable) }
 }
 
 async function scopedHeadline(zones: Zone[]): Promise<string> {

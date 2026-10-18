@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { DEFAULT_ZONES, KnowledgeItemInputSchema, slugify } from "@brain/core"
+import { DEFAULT_ZONES, KnowledgeItemInputSchema, isCoreZone, slugify } from "@brain/core"
 import { getAccess } from "@/lib/access"
 import { hashToken } from "@/lib/auth"
 import { ingestItems, refreshStatus } from "@/lib/brain"
@@ -50,7 +50,8 @@ export const POST = withViewer(
       .filter((d) => !ids.has(d.id))
       .map(({ id, name, description, keywords }) => ({ id, name, description, keywords }))
     const wanted = [...proposed, ...others]
-    if (wanted.length === 0 && existing.length === 0) return error(400, "Choose at least one zone.")
+    // The core, in every brain, is not a zone chosen here.
+    if (wanted.length === 0 && existing.every((z) => isCoreZone(z.id))) return error(400, "Choose at least one zone.")
     for (const zone of zonesFromDraft({ zones: wanted }, existing)) await store.upsertZone(zone)
 
     const zones = await store.listZones()
