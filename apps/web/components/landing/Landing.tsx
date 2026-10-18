@@ -8,9 +8,9 @@ import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
 import { MCP_CATALOG, catalogEntry } from "@brain/core"
 import { McpLogo } from "../mcp-logos"
-import { LogoMark, ZoneTag, zoneColor } from "../ui"
+import { GithubIcon, LogoMark, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
-import { Hosting, Pricing } from "./Offer"
+import { Hosting, Pricing, REPO } from "./Offer"
 import { PrivacyFlow } from "./PrivacyFlow"
 import { ScrollBrain } from "./ScrollBrain"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
@@ -150,6 +150,11 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
               <div className="flex items-center gap-2">
                 <a href="#pricing" onClick={toSection} className="btn btn-ghost hidden sm:inline-flex">
                   Pricing
+                </a>
+                {/* The code is open: self-host it from the repo. Icon only on a phone, where the bar is tight. */}
+                <a href={REPO} target="_blank" rel="noreferrer" aria-label="GitHub, the open code to host it yourself" className="btn btn-ghost btn-icon sm:w-auto sm:px-3">
+                  <GithubIcon />
+                  <span className="hidden sm:inline">GitHub</span>
                 </a>
                 {demo && !signedIn && (
                   <Link href="/login" className="btn btn-ghost hidden sm:inline-flex">
