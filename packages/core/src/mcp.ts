@@ -5,6 +5,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, Zone } from "./types"
+import type { BrainDocument, DocumentRef } from "./documents"
+import { formatBytes } from "./documents"
 import { KNOWLEDGE_KINDS } from "./types"
 import { DEFAULT_ZONES, classifyZones } from "./zones"
 import { extractEntities, type ZoneHint } from "./distill"
@@ -44,13 +46,26 @@ export type ApiItem = {
   author_id: string
   author?: string
   score?: number
+  /** Documents (PDF, Word, Excel…) attached to the knowledge, among those the user can open. */
+  documents?: DocumentRef[]
 }
+
+/** A document found by a search or listed in a zone. */
+export type ApiDocument = DocumentRef & { title: string; summary: string; author?: string; created_at: string; score?: number }
 
 export type QueryResult = {
   query: string
   zones_searched: string[]
   zones_hit: string[]
   zones_restricted: string[]
+  items: ApiItem[]
+  /** Missing from an older brain. */
+  documents?: ApiDocument[]
+}
+
+/** GET /api/documents/:id: the document, its text, and the knowledge it backs. */
+export type DocumentResult = {
+  document: BrainDocument & { text: string; author?: string }
   items: ApiItem[]
 }
 
@@ -64,6 +79,8 @@ export type ZoneSummary = {
     who_did_what: { person: string; did: string }[]
   } | null
   items: ApiItem[]
+  /** Missing from an older brain. */
+  documents?: ApiDocument[]
   entities: { type: string; name: string; count: number }[]
   tasks: { id: string; title: string; status: string; assignee?: string }[]
 }
@@ -79,7 +96,15 @@ export type CompanyStatusResult = {
  * Response of POST /api/ingest. `skipped`: items already received (same author, zone, title and content over 30 days), skipped.
  * `zones`: zones where at least one item was inserted. `per_zone` (optional): number of items inserted per zone.
  */
-export type IngestResult = { inserted: number; skipped?: number; ids: string[]; zones: string[]; per_zone?: Record<string, number> }
+export type IngestResult = {
+  inserted: number
+  skipped?: number
+  ids: string[]
+  zones: string[]
+  per_zone?: Record<string, number>
+  /** For each item sent, in order: the id it got, or that of the knowledge it duplicates (null: none). Missing from an older brain. */
+  item_ids?: (string | null)[]
+}
 
 /** Tools of the company's MCP connectors that are open to agents (GET /api/connected-tools). */
 export type ConnectedTools = {
@@ -96,6 +121,8 @@ export interface BrainToolsApi {
   status(): Promise<CompanyStatusResult>
   query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }): Promise<QueryResult>
   ingest(items: KnowledgeItemInput[], agent?: AgentName): Promise<IngestResult>
+  /** A document and its text (the zone lights up for `agent`). */
+  document?(id: string, agent?: AgentName): Promise<DocumentResult>
   /** Connector tools (Notion, Linear, GitHub…) the admin opened to agents. */
   connectedTools?(input: { connector?: string; query?: string }): Promise<ConnectedTools>
   callConnectedTool?(input: { connector: string; tool: string; arguments: Record<string, unknown> }): Promise<ConnectedCall>
@@ -144,7 +171,18 @@ function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
     .filter(Boolean)
     .join(" · ")
   const ents = i.entities?.length ? `\nEntities: ${i.entities.map((e) => e.name).join(", ")}` : ""
-  return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}`
+  const docs = i.documents?.length ? `\nDocuments: ${i.documents.map(docLabel).join(", ")}` : ""
+  return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}${docs}`
+}
+
+/** "revenus-T3.pdf (20 KB, id `…`)": the id is what get_document takes. */
+function docLabel(d: DocumentRef): string {
+  return `${d.name} (${formatBytes(d.size)}, id \`${d.id}\`)`
+}
+
+function documentsBlock(docs: ApiDocument[], zoneName: ZoneNamer, heading: string): string {
+  const lines = docs.map((d) => `- **${d.title}** — ${docLabel(d)} · Zone: ${zoneName(d.zone)}${d.author ? ` · By: ${d.author}` : ""} · ${shortDate(d.created_at)}${d.summary ? `\n  ${truncate(d.summary, 240)}` : ""}`)
+  return `### ${heading}\n${lines.join("\n")}\n\nOpen one with get_document (its id) to read its full text.`
 }
 
 export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
@@ -159,7 +197,27 @@ export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
     )
   }
   const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched})`
-  return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${restricted}`
+  const docs = r.documents?.length ? `\n\n${documentsBlock(r.documents, zoneName, "Matching documents")}` : ""
+  return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${docs}${restricted}`
+}
+
+/** Text given to the agent: enough for a quarterly report or a price list, bounded for its context. */
+export const DOCUMENT_TEXT_FOR_AGENT = 40_000
+
+export function formatDocument(r: DocumentResult, zoneName: ZoneNamer): string {
+  const d = r.document
+  const meta = [
+    `Zone: ${zoneName(d.zone)}`,
+    `By: ${d.author ?? "?"}`,
+    `Added: ${shortDate(d.created_at)}`,
+    `${d.name}, ${formatBytes(d.size)}${d.pages ? `, ${d.pages} page${d.pages > 1 ? "s" : ""}` : ""}`,
+  ].join(" · ")
+  const text = d.text.trim()
+  const body = text
+    ? `${text.slice(0, DOCUMENT_TEXT_FOR_AGENT)}${text.length > DOCUMENT_TEXT_FOR_AGENT ? `\n\n[… text cut: ${text.length - DOCUMENT_TEXT_FOR_AGENT} more characters, ask the person for the file itself]` : ""}`
+    : "(no readable text: a scan or an image; the file can be downloaded from the dashboard)"
+  const linked = r.items.length ? `\n\n### Knowledge it backs\n${r.items.map((i) => `- [${KIND_LABELS[i.kind] ?? i.kind}] ${i.title} (${zoneName(i.zone)}, ${shortDate(i.source?.at ?? i.created_at)})`).join("\n")}` : ""
+  return `## Document — ${d.title}\n${meta}\n\n### Text\n${body}${linked}`
 }
 
 export function formatZones(zones: ApiZone[]): string {
@@ -186,6 +244,7 @@ export function formatZoneSummary(s: ZoneSummary): string {
   const open = s.tasks.filter((t) => t.status !== "done").slice(0, 10)
   if (open.length) parts.push(`### Open tasks\n${open.map((t) => `- ${t.title}${t.assignee ? ` (${t.assignee})` : ""}`).join("\n")}`)
   if (s.entities.length) parts.push(`### Most cited entities\n${s.entities.slice(0, 12).map((e) => `${e.name} (${e.type}, ${e.count})`).join(", ")}`)
+  if (s.documents?.length) parts.push(documentsBlock(s.documents.slice(0, 10), (id) => (id === s.zone.id ? s.zone.name : id), "Documents"))
   return parts.join("\n\n")
 }
 
@@ -273,7 +332,7 @@ function zoneName(cache: ZoneCache | null, id: string): string {
   return cache?.zones?.find((z) => z.id === id)?.name ?? DEFAULT_ZONES.find((z) => z.id === id)?.name ?? id
 }
 
-/** The "company-brain" MCP server and its six tools, on the company `open` gives. */
+/** The "company-brain" MCP server and its tools, on the company `open` gives. */
 export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
   const server = new McpServer({ name: "company-brain", version: opts.version ?? "0.1.0" }, opts.instructions ? { instructions: opts.instructions } : undefined)
   // Zones of each company, by key: start from the cache provided, completed on the first call.
@@ -327,7 +386,8 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
       title: "Search the company brain",
       description:
         "Searches the company's shared brain: decisions, procedures (deployment, closing, support…), facts about customers, " +
-        "projects and tools, open tasks and questions, fed by the whole team's AI sessions. Use it BEFORE guessing " +
+        "projects and tools, open tasks and questions, fed by the whole team's AI sessions, and the documents (PDF, Word, " +
+        "Excel…) that back them (read one with get_document). Use it BEFORE guessing " +
         "whenever a question touches the company's context (\"how do we deploy?\", \"what did we decide for X?\", \"who handles customer Y?\"). " +
         "Only the zones the user has access to are searched.",
       inputSchema: {
@@ -343,6 +403,26 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         await ensureZones(c)
         const r = await c.api.query({ query, zones: zones?.map((x) => resolveZone(c, x)), limit, agent: "mcp" })
         return formatQuery(r, namer(c))
+      }),
+  )
+
+  server.registerTool(
+    "get_document",
+    {
+      title: "Read a company document",
+      description:
+        "Reads a document kept in the company brain (PDF, Word, Excel, PowerPoint, CSV…): the quarterly revenue report behind " +
+        "a figure, a price list, a contract template, a spec. search_brain and get_zone_summary give the documents' ids next " +
+        "to the knowledge they back. Returns its full text and the knowledge it backs; only documents of the zones the user " +
+        "can read are opened.",
+      inputSchema: { id: z.string().min(1).max(64).describe("Id of the document, as given by search_brain or get_zone_summary."), ...companyParam },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ id, company }) =>
+      guard(company, async (c) => {
+        if (!c.api.document) return "This brain does not keep documents yet."
+        await ensureZones(c)
+        return formatDocument(await c.api.document(id.trim(), "mcp"), namer(c))
       }),
   )
 

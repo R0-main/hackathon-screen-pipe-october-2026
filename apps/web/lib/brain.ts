@@ -40,6 +40,7 @@ import { getClaude } from "./ai"
 import { claudeKeyInfo } from "./claude-key"
 import { embedDocuments, embedQuery, embeddingText, getEmbeddings, rankBySimilarity } from "./embeddings"
 import { canPublishSkills, canSeeSkill } from "./skills"
+import { documentRef, listDocumentsFor, searchDocumentsFor, withDocuments } from "./documents"
 
 const store = () => getStore()
 
@@ -84,12 +85,15 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
   const zones = await store().listZones()
   const authorId = viewer.real.id
   const since = new Date(Date.now() - DEDUPE_DAYS * 86400_000).toISOString()
-  const seen = new Set((await store().listItems({ authorId, sinceIso: since, limit: 100_000 })).map((i) => dedupeKey(i.zone, i.title, i.body)))
+  // Key → id of the knowledge already there (or index, in `prepared`, of an item of this same batch).
+  const seen = new Map<string, string | number>((await store().listItems({ authorId, sinceIso: since, limit: 100_000 })).map((i) => [dedupeKey(i.zone, i.title, i.body), i.id]))
   // Recent knowledge in the zone (all people): a near-duplicate is dropped, a more recent version of the
   // same subject (revised decision, updated procedure) replaces the old one.
   const recent = await store().listItems({ sinceIso: new Date(Date.now() - LIKENESS_DAYS * 86400_000).toISOString(), limit: LIKENESS_MAX_ITEMS, excludeSuperseded: true })
   const prepared: NewItem[] = []
   const supersedes: { index: number; oldId: string }[] = []
+  /** For each item sent: its index in `prepared`, or the id of the knowledge it duplicates (null: none known). */
+  const outcome: (number | string | null)[] = []
   let skipped = 0
   let replaced = 0
   for (const i of items) {
@@ -100,25 +104,28 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     const key = dedupeKey(zone, title, body)
     if (seen.has(key)) {
       skipped++
+      outcome.push(seen.get(key)!)
       continue
     }
     const candidate = { kind: i.kind, title, body, entities: i.entities }
     let old: string | null = null
-    let duplicate = false
+    let duplicate: string | null = null
     for (const r of recent) {
       if (r.zone !== zone) continue
       const rel = likeness(candidate, r)
       if (rel === "duplicate") {
-        duplicate = true
+        duplicate = r.id
         break
       }
       if (rel === "supersedes" && !old && r.created_at < clampDate(i.source.at)) old = r.id
     }
     if (duplicate) {
       skipped++
+      outcome.push(duplicate)
       continue
     }
-    seen.add(key)
+    seen.set(key, prepared.length)
+    outcome.push(prepared.length)
     if (old) supersedes.push({ index: prepared.length, oldId: old })
     prepared.push({ ...i, title, body, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
   }
@@ -159,7 +166,15 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
         }
       }),
     )
-  return { inserted: inserted.length, skipped, replaced, ids: inserted.map((i) => i.id), zones: touched }
+  return {
+    inserted: inserted.length,
+    skipped,
+    replaced,
+    ids: inserted.map((i) => i.id),
+    // In the order sent: what each item became (inserted, or the knowledge it duplicates); the sync links documents to it.
+    item_ids: outcome.map((o) => (typeof o === "number" ? (inserted[o]?.id ?? null) : o)),
+    zones: touched,
+  }
 }
 
 /** Agents that send the prompts typed by the employee (UserPromptSubmit hooks). */
@@ -230,14 +245,20 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
       at: new Date().toISOString(),
     },
   ])
-  const names = new Map((await store().listProfiles()).map((p) => [p.id, p.name]))
+  const [names, items, documents] = await Promise.all([
+    store().listProfiles().then((ps) => new Map(ps.map((p) => [p.id, p.name]))),
+    withDocuments(viewer, results),
+    searchDocumentsFor(viewer, input.query, searched, 5),
+  ])
   return {
     query: input.query,
     zones_searched: searched,
     zones_hit: hit,
     /** Zones that could have answered but that the user cannot read (nothing is said about their content). */
     zones_restricted: restricted,
-    items: results.map((r) => ({ ...r, author: names.get(r.author_id) ?? "?" })),
+    items: items.map((r) => ({ ...r, author: names.get(r.author_id) ?? "?" })),
+    /** Documents (PDF, Word, Excel…) whose name or text matches; those attached to the items are also in their `documents`. */
+    documents: documents.map((d) => ({ ...documentRef(d), title: d.title, summary: d.summary, author: names.get(d.author_id) ?? "?", created_at: d.created_at, score: d.score })),
   }
 }
 
@@ -370,7 +391,11 @@ export async function getState(viewer: Viewer) {
   ])
   const { access, profile } = viewer
   const readable = access.readable
-  const [tasks, recentItems] = await Promise.all([s.listTasks({ zones: readable }), s.listItems({ zones: readable, limit: 30, excludeSuperseded: true })])
+  const [tasks, recentItems, documents] = await Promise.all([
+    s.listTasks({ zones: readable }),
+    s.listItems({ zones: readable, limit: 30, excludeSuperseded: true }).then((list) => withDocuments(viewer, list)),
+    listDocumentsFor(viewer),
+  ])
   const statsBy = new Map(stats.map((x) => [x.zone, x]))
 
   const zoneViews: ZoneView[] = zones.map((z) => {
@@ -437,6 +462,7 @@ export async function getState(viewer: Viewer) {
     totals: {
       items: stats.reduce((n, x) => n + x.count, 0),
       skills: skills.filter((sk) => canSeeSkill(viewer, sk)).length,
+      documents: documents.length,
       contributors: new Set(profiles.map((p) => p.id)).size,
       active_24h: activeUsers.size,
     },

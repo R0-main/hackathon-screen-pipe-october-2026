@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./claude": "./src/claude.ts",
-    "./mcp": "./src/mcp.ts"
+    "./mcp": "./src/mcp.ts",
+    "./document-text": "./src/document-text.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

@@ -25,6 +25,7 @@ export const en = {
     activity: "Live agents",
     status: "Where the company stands",
     knowledge: "Knowledge",
+    documents: "Documents",
     entities: "Entities",
     skills: "Skills",
     tasks: "Tasks",
@@ -158,6 +159,8 @@ export const en = {
     superseded: "superseded",
     supersededHint: "A more recent piece of knowledge replaced this one.",
     entityHint: "Everything about {name}",
+    documents: "{n} document",
+    documentsPlural: "{n} documents",
   },
   entities: {
     title: "Entities",

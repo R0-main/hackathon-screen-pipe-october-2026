@@ -156,6 +156,15 @@ export function DocIcon(props: IconProps) {
   )
 }
 
+/** Paperclip: a document attached to knowledge, and the Documents page. */
+export function PaperclipIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10.5 5.5l-4.3 4.3a1.3 1.3 0 001.8 1.8l4.6-4.6a2.6 2.6 0 00-3.7-3.7L4.3 7.9a3.9 3.9 0 005.5 5.5l3.2-3.2" />
+    </Icon>
+  )
+}
+
 export function StackIcon(props: IconProps) {
   return (
     <Icon {...props}>

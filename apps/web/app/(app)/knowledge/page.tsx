@@ -1,5 +1,6 @@
 import { KnowledgeView } from "@/components/Pages"
 import { KNOWLEDGE_PAGE_LIMIT, listKnowledgeFor } from "@/lib/brain"
+import { withDocuments } from "@/lib/documents"
 import { requirePageViewer } from "@/lib/session"
 import { runInOrg } from "@/lib/store"
 
@@ -10,7 +11,7 @@ type Search = Record<string, string | string[] | undefined>
 /** Knowledge of the readable zones; `?zone=`, `?type=` and `?q=` prefill the filters (links from the status page). */
 export default async function Page({ searchParams }: { searchParams: Promise<Search> }) {
   const viewer = await requirePageViewer()
-  const [items, sp] = await Promise.all([runInOrg(viewer.real.org_id, () => listKnowledgeFor(viewer)), searchParams])
+  const [items, sp] = await Promise.all([runInOrg(viewer.real.org_id, async () => withDocuments(viewer, await listKnowledgeFor(viewer))), searchParams])
   const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined)
   const initial = { zone: one(sp.zone), kind: one(sp.type), q: one(sp.q) }
   // A new address (link to another zone, sidebar) starts from its own filters.

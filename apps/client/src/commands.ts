@@ -79,6 +79,13 @@ export async function initBrain(flags: Record<string, string | boolean>, log: Lo
     else if (["no", "off", "false", "0", "non"].includes(v)) next.share_prompt_summaries = false
     else throw new UserError(`--share-prompt-summaries: "yes" or "no" (got "${share}").`)
   }
+  const docs = str("send-documents")
+  if (docs !== undefined) {
+    const v = docs.toLowerCase()
+    if (["yes", "on", "true", "1", "oui"].includes(v)) next.send_documents = true
+    else if (["no", "off", "false", "0", "non"].includes(v)) next.send_documents = false
+    else throw new UserError(`--send-documents: "yes" or "no" (got "${docs}").`)
+  }
   const meetings = str("screenpipe-meetings")
   if (meetings !== undefined) {
     const v = meetings.toLowerCase()
@@ -253,6 +260,7 @@ export async function cmdStatus(log: Log = console.log): Promise<number> {
   log(
     `  Prompt summaries : ${cfg.share_prompt_summaries === false ? "disabled (fingerprint only)" : "sent only for prompts classified in a zone and not personal"}`,
   )
+  log(`  Documents     : ${cfg.send_documents === false ? "not sent (--send-documents no)" : "the files an AI session worked on (PDF, Word, Excel…) go with its knowledge"}`)
   let sched = false
   try {
     sched = scheduleInstalled()

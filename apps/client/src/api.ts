@@ -1,7 +1,7 @@
 // HTTP client of the brain's API (personal Bearer token).
 
-import type { AgentEventInput, AgentName, KnowledgeItemInput, ModerationInput, ModerationVerdict, NewZonesInput, Skill, SkillFile, StatusInput, SyncReport, ZoneStatus } from "@brain/core"
-import type { ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
+import type { AddDocumentResult, AgentEventInput, AgentName, DocumentUploadInput, KnowledgeItemInput, ModerationInput, ModerationVerdict, NewZonesInput, Skill, SkillFile, StatusInput, SyncReport, ZoneStatus } from "@brain/core"
+import type { ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, DocumentResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
 
 // API responses read by the MCP tools: shared with the brain's MCP endpoint (@brain/core/mcp).
 export type { ApiItem, ApiZone, CompanyStatusResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
@@ -141,6 +141,14 @@ export class BrainApi {
   }
   ingest(items: KnowledgeItemInput[], agent: AgentName = "brain-sync") {
     return this.request<IngestResult>("POST", "/api/ingest", { items, agent }, 60000)
+  }
+  /** A document and its text; `agent`: its zone lights up on the dashboard. */
+  document(id: string, agent: AgentName = "mcp") {
+    return this.request<DocumentResult>("GET", `/api/documents/${encodeURIComponent(id)}?agent=${agent}`, undefined, 30000)
+  }
+  /** Sends a document (base64), or links one the brain already has (`sha256` without `content`). */
+  uploadDocument(doc: DocumentUploadInput) {
+    return this.request<AddDocumentResult>("POST", "/api/documents", doc, 120000)
   }
   automations(workflows: Workflow[]) {
     return this.request<{ saved: number }>("POST", "/api/automations", { workflows })
