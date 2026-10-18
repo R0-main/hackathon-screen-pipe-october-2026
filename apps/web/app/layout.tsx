@@ -10,7 +10,7 @@ const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variabl
 
 export const metadata: Metadata = {
   title: "NOS Brainer",
-  description: "Your company's digital brain, fed by every workstation's AI sessions through Screenpipe.",
+  description: "Your company's digital brain, fed through Screenpipe by every computer's AI chats, meetings and repeated workflows.",
 }
 
 export const viewport: Viewport = { themeColor: "#f6f6f3", width: "device-width", initialScale: 1 }

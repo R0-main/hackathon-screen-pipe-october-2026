@@ -43,7 +43,9 @@ export type DemoItem = {
   body: string
   entities: Entity[]
   daysAgo: number
-  tool?: "claude-code" | "codex" | "chatgpt" | "claude"
+  tool?: "claude-code" | "codex" | "chatgpt" | "claude" | "meeting" | "agent"
+  /** App seen by Screenpipe (meeting tool, browser). Defaults by tool. */
+  app?: string
   done?: boolean
 }
 
@@ -296,6 +298,75 @@ export const DEMO_PROMPTS: Record<string, { user: string; text: string }[]> = {
 }
 
 /** The prompt Jean-Marc runs every morning around 9am: the demo's automation suggestion. */
+/**
+ * What only Screenpipe brings: meetings transcribed on the computer, AI chats in the browser (no logs to read) and
+ * what the computer's Screenpipe agent found by itself in the recent activity. Added to an existing demo brain too.
+ */
+export const DEMO_SCREENPIPE_ITEMS: DemoItem[] = [
+  {
+    author: "claire", zone: "leadership", kind: "decision", daysAgo: 2, tool: "meeting", app: "Google Meet",
+    title: "Weekly sync: the cooperative beta starts on November 4",
+    body: "Decided in Monday's team meeting (Claire, Hugo, Léo, Sarah): three cooperatives get the B2 scales and the yearly plan on November 4. Hugo freezes the firmware on October 28, Sarah sends the contracts this week, Léo writes the onboarding email.",
+    entities: [pr("Cooperative beta"), p("Hugo Bernard"), p("Sarah Cohen"), p("Léo Petit")],
+  },
+  {
+    author: "sarah", zone: "sales", kind: "decision", daysAgo: 1, tool: "meeting", app: "Zoom",
+    title: "Miel du Vexin: 40-scale pilot at €9 per hive per month",
+    body: "Call with the Miel du Vexin cooperative: they start with 40 scales in December if the swarming alert works on their apiaries without network coverage. Sarah promised a written answer on offline mode by Friday.",
+    entities: [c("Miel du Vexin"), pr("Swarming alert"), pr("Offline mode")],
+  },
+  {
+    author: "leo", zone: "product", kind: "fact", daysAgo: 3, tool: "meeting", app: "Google Meet",
+    title: "Beekeeper interviews: the weight curve matters more than the alerts",
+    body: "Five interviews this week: beekeepers open the app to look at the weight curve after a honey flow, not for the notifications. The curve moves to the home screen in the next release.",
+    entities: [pr("Weight curve"), pr("Mobile app")],
+  },
+  {
+    author: "jeanmarc", zone: "finance", kind: "procedure", daysAgo: 4, tool: "chatgpt", app: "Google Chrome",
+    title: "Invoice scales sold to Belgian cooperatives",
+    body: "Intra-EU B2B sale: invoice without French VAT, with the mention \"VAT reverse charge\" and the client's EU VAT number, then report the sale in the monthly EU sales list. Worked out with ChatGPT in the browser, confirmed by the accountant.",
+    entities: [t("ChatGPT"), t("Pennylane"), pr("EU sales")],
+  },
+  {
+    author: "hugo", zone: "dev", kind: "fact", daysAgo: 1, tool: "agent", app: "Screenpipe",
+    title: "Staging migration 0042 times out on the measurements index",
+    body: "Found by the Screenpipe agent across two days of Hugo's terminal and Vercel dashboard: the staging deploy failed three times on the same migration. Creating the measurements index concurrently fixed it; to do the same in production.",
+    entities: [t("Supabase"), t("Vercel"), pr("Measurements")],
+  },
+  {
+    author: "sarah", zone: "support", kind: "fact", daysAgo: 2, tool: "agent", app: "Screenpipe",
+    title: "Four support chats this week about apiaries without network",
+    body: "Found by the Screenpipe agent in Sarah's support inbox: four beekeepers asked why their scale stops reporting in the mountains. The answer to give: the scale stores 7 days of weight and sends it back as soon as it reconnects.",
+    entities: [pr("Offline mode"), pr("B2 scale")],
+  },
+]
+
+/** Repetitive workflows detected by Screenpipe on the computers (as brain-sync reports them to /api/automations). */
+export const DEMO_WORKFLOWS: {
+  user: string
+  id: string
+  zone: string
+  title: string
+  description: string
+  schedule: string
+  occurrences: number
+  days: number
+  minutes_saved_per_week: number
+}[] = [
+  {
+    user: "sarah", id: "wf-tradeshow-leads", zone: "sales",
+    title: "Copy the trade-show leads from the spreadsheet into HubSpot",
+    description: "Detected by Screenpipe on Sarah's computer: every Monday, the same sequence between Google Sheets and HubSpot, one lead at a time. Proposal: import the sheet automatically and only show Sarah the duplicates.",
+    schedule: "Mondays around 10:00", occurrences: 4, days: 4, minutes_saved_per_week: 45,
+  },
+  {
+    user: "leo", id: "wf-store-reviews", zone: "product",
+    title: "Sort the App Store reviews into the product backlog",
+    description: "Detected by Screenpipe on Léo's computer: every Friday afternoon, App Store Connect then Linear, review by review. Proposal: a weekly digest of the reviews, already grouped by topic, as Linear issues.",
+    schedule: "Fridays around 16:30", occurrences: 3, days: 3, minutes_saved_per_week: 30,
+  },
+]
+
 export const JEANMARC_DAILY_PROMPT = "Reconcile yesterday's Qonto statements with the Pennylane invoices and list the variances"
 
 /** Butine's skills: `zone` is the cortex that receives them (null: the whole company). */
