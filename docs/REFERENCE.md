@@ -216,9 +216,9 @@ The dashboard must be reachable by the computers (public URL or local network): 
 
 The company's MCP server (`<brain>/api/mcp/<company id>/<token>`) also has three view tools: `show_brain` (the 3D brain,
 zones lighting up live as the team's agents work), `show_automations` (an admin sets the suggestions up or dismisses
-them in place) and `show_team` (the org chart). In Claude on the web and desktop, add that address as a custom
-connector (Settings → Connectors) and ask "show me the brain": the dashboard's view opens in the conversation, with
-the token's rights. The address to paste is on the person's page, under **Connect to Claude** (also in the member's
+them in place) and `show_team` (the org chart). In Claude on the web and desktop (Customize → Connectors), ChatGPT
+(developer mode) or VS Code, add that address as a custom connector and ask "show me the brain": the dashboard's view
+opens in the conversation, with the token's rights; Cursor, Claude Code and Codex get the tools, as text. The address to paste is on the person's page, under **Connect an AI** (also in the member's
 panel of the org chart, for an admin): it carries a connector key (`cb_mcp_…`) derived from the person's token and
 signed by the brain, so it can be shown again at will without storing anything in clear, does not touch the
 computer's install, and stops working when the token is regenerated. Each person sees their own; an admin sees
