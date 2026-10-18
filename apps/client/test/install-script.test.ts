@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { installCommands } from "../../web/lib/install-prompt"
+import { buildInstallPrompt, installCommands, terminalCommands } from "../../web/lib/install-prompt"
 import { tempDir } from "./helpers"
 
 const publicDir = fileURLToPath(new URL("../../web/public/", import.meta.url))
@@ -622,11 +622,11 @@ test("install.ps1 (pwsh outside Windows): options, --url= joined back, setup's c
  * setup's code must come back up (3, 6), and a failed download give 5. Outside Windows (pwsh), "\\" is not a
  * path separator: replaced with "/" for the trial, and `powershell` with `pwsh`.
  */
-async function promptLine(ps: string, files: Record<string, { status?: number; body: string }>): Promise<Run> {
+async function promptLine(ps: string, files: Record<string, { status?: number; body: string }>, windowsLine = (url: string) => installCommands(url, TOKEN).windows): Promise<Run> {
   const srv = await brainServer(files)
   const profile = tempDir("brain-prompt-ps-")
   try {
-    const windows = installCommands(srv.url, TOKEN).windows
+    const windows = windowsLine(srv.url)
     if (!windows) throw new Error("without a private certificate, the prompt always has a Windows command")
     let line = windows
     if (!WIN) line = line.replace(/\\/g, "/").replace(/\bpowershell -NoProfile/, `${ps} -NoProfile`)
@@ -650,6 +650,18 @@ test("Windows line of the prompt: setup's code returned as is, failed download â
   }
   const missing = await promptLine(promptShell, { "/brain.mjs": { body: fakeClient(0) } })
   assert.equal(missing.code, 5, `${missing.stdout}\n${missing.stderr}`)
+})
+
+test("Windows line without an agent: setup runs in the same window, a failed download says so without closing it", { skip: promptShell ? false : "neither powershell.exe (Windows) nor pwsh" }, async () => {
+  const ps1 = { body: readFileSync(installPs1, "utf8") }
+  const byHand = (url: string) => terminalCommands(buildInstallPrompt({ baseUrl: url, token: TOKEN, name: "Test", orgName: "Test", zones: [] }))?.windows ?? ""
+  const done = await promptLine(promptShell, { "/install.ps1": ps1, "/brain.mjs": { body: fakeClient(0) } }, byHand)
+  assert.equal(clientOutput(done.stdout).argv[0], "setup", `${done.stdout}\n${done.stderr}`)
+  // An `exit 5` would close the window: the line stops with a warning instead, and PowerShell goes on.
+  const missing = await promptLine(promptShell, { "/brain.mjs": { body: fakeClient(0) } }, byHand)
+  assert.equal(missing.code, 0, `${missing.stdout}\n${missing.stderr}`)
+  assert.match(missing.stdout + missing.stderr, /Download failed \(network, proxy, brain address\?\): run the same command again/)
+  assert.ok(!missing.stdout.includes('{"argv"'), "nothing runs after the failed download")
 })
 
 // --- Windows -------------------------------------------------------------------------------------------------------

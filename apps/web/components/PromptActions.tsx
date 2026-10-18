@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { ClaudeLogo, CodexLogo } from "./brand-logos"
+import { BRAIN_CLI, BRAIN_CLI_WINDOWS, terminalCommands } from "@/lib/install-prompt"
+import { ClaudeLogo, CodexLogo, NodeLogo } from "./brand-logos"
 import { CheckIcon, ErrorText } from "./ui"
 
 type App = "terminal" | "desktop" | "vscode"
@@ -47,8 +48,9 @@ const OPENED: Record<App, string> = {
  *
  * `sends`: the prompt sends data from the computer to a website (onboarding by an agent). In auto mode, Claude Code
  * blocks it for safety, which is intended: we explain how to allow it knowingly.
+ * `terminal`: an install prompt, whose command can also be pasted by hand into a terminal (`TerminalCommand`).
  */
-export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPrompt: () => Promise<string>; size?: "lg" | "md"; sends?: boolean }) {
+export function PromptActions({ getPrompt, size = "lg", sends = false, terminal = false }: { getPrompt: () => Promise<string>; size?: "lg" | "md"; sends?: boolean; terminal?: boolean }) {
   const [status, setStatus] = useState<Status>({ kind: "idle" })
   const btn = size === "lg" ? "btn-lg" : ""
 
@@ -115,6 +117,7 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
         </button>
         .
       </p>
+      {terminal && <TerminalCommand getPrompt={getPrompt} />}
 
       {sends && (
         <p className="mt-2 text-[13px] leading-relaxed text-trace">
@@ -147,6 +150,68 @@ export function PromptActions({ getPrompt, size = "lg", sends = false }: { getPr
           </p>
         )}
         {status.kind === "error" && <ErrorText>{status.message}</ErrorText>}
+      </div>
+    </div>
+  )
+}
+
+type Os = "posix" | "windows"
+
+/**
+ * Without an agent, in small under the buttons: the prompt's command for each system, to paste yourself into a
+ * terminal (`terminalCommands`). The same install, Node.js included when it is missing; the agent stays the main way.
+ */
+function TerminalCommand({ getPrompt }: { getPrompt: () => Promise<string> }) {
+  const [copied, setCopied] = useState<Os | null>(null)
+  const [failed, setFailed] = useState<string | null>(null)
+
+  const copy = async (os: Os) => {
+    setCopied(null)
+    setFailed(null)
+    const prompt = getPrompt()
+    try {
+      await copyText(prompt.then((p) => terminalCommands(p)?.[os] ?? Promise.reject(new Error("no command in this prompt"))))
+      setCopied(os)
+    } catch {
+      // The prompt could not be prepared (demo visitor account): its reason. Otherwise, the clipboard refused.
+      const reason = await prompt.then(
+        () => null,
+        (e: unknown) => (e instanceof Error ? e.message : null),
+      )
+      setFailed(reason ?? "Automatic copy is not possible here: copy the command for your system from the prompt.")
+    }
+  }
+
+  const link = "underline underline-offset-2 hover:text-ink"
+  return (
+    <div className="mt-1.5 text-[12px] leading-relaxed text-trace">
+      <p>
+        No agent? Copy the command for{" "}
+        <button type="button" className={link} onClick={() => copy("posix")} aria-label="Copy the command for macOS and Linux">
+          macOS, Linux
+        </button>{" "}
+        or{" "}
+        <button type="button" className={link} onClick={() => copy("windows")} aria-label="Copy the command for Windows (PowerShell)">
+          Windows
+        </button>{" "}
+        and paste it into a terminal. It installs{" "}
+        <a href="https://nodejs.org/en/download" target="_blank" rel="noreferrer" className={`inline-flex items-center gap-1 align-bottom ${link}`}>
+          <NodeLogo size={12} />
+          Node.js
+        </a>{" "}
+        if it is missing.
+      </p>
+      <div aria-live="polite">
+        {copied && (
+          <p className="mt-1 flex items-start gap-1.5 text-ink">
+            <CheckIcon size={14} className="mt-[2px] shrink-0" />
+            <span>
+              Command copied: paste it into {copied === "windows" ? "PowerShell" : "a terminal"} on this computer. It installs everything, then opens the brain; no
+              history is sent. Stuck? Run <span className="mono">{copied === "windows" ? BRAIN_CLI_WINDOWS : BRAIN_CLI} doctor</span>.
+            </span>
+          </p>
+        )}
+        {failed && <ErrorText className="mt-1 text-[12px]">{failed}</ErrorText>}
       </div>
     </div>
   )
