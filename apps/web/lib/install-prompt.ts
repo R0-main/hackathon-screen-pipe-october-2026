@@ -83,9 +83,35 @@ export function reinstallCommands(baseUrl: string, caFile?: string): { posix: st
   }
 }
 
+/** Start of the prompt's two "system: command" lines, read back by `terminalCommands`. */
+const POSIX_LINE = "   macOS, Linux, Git Bash: "
+const WINDOWS_LINE = "   Windows, PowerShell: "
+
 /** The prompt's two "system: command" lines. */
 function commandLines(cmd: { posix: string; windows: string }): string {
-  return `   macOS, Linux, Git Bash: ${cmd.posix}\n   Windows, PowerShell: ${cmd.windows}`
+  return `${POSIX_LINE}${cmd.posix}\n${WINDOWS_LINE}${cmd.windows}`
+}
+
+/**
+ * Without Claude Code or Codex: an install prompt's two commands, to paste yourself into a terminal (null for any
+ * other prompt). The same install; only the agent's extras are left out, the review of the last 24 h included: the
+ * brain learns from the install onward. macOS and Linux: as is, each `exit` is in a subshell. PowerShell: an `exit`
+ * would close the window before the output can be read, so a failure says why and stops the line instead.
+ */
+export function terminalCommands(prompt: string): { posix: string; windows: string } | null {
+  const lines = prompt.split("\n")
+  const read = (start: string) => lines.find((l) => l.startsWith(start))?.slice(start.length)
+  const posix = read(POSIX_LINE)
+  const windows = read(WINDOWS_LINE)
+  if (!posix || !windows || !posix.includes(" --token ")) return null
+  const stop = (why: string) => `{ Write-Warning '${why}'; return }`
+  return {
+    posix,
+    windows: windows
+      .replace(/; exit \$LASTEXITCODE$/, "")
+      .replaceAll(`{ exit ${EXIT.download} }`, stop("Download failed (network, proxy, brain address?): run the same command again."))
+      .replaceAll(`{ exit ${EXIT.certificate} }`, stop("Unexpected brain certificate (fingerprint different from the one given): nothing was installed, tell your admin.")),
+  }
 }
 
 /** What Claude does with the shared codes (setup, and join once the request is accepted). */

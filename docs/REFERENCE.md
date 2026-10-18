@@ -94,13 +94,13 @@ demo/                 Demo script
   OAuth client declared by hand: the redirect URI to declare is shown. Tokens refreshed automatically, connection test
   (list of tools), SSRF protection on all requests. Tokens, secrets and PKCE verifiers stay on the server.
 - **Connector tools for agents**: each connected MCP server can be opened to the team's agents (no tools, read-only by
-  default, or all tools) and tied to a zone (only those who read it see it). The brain's MCP adds `connected_tools`
-  (list, argument schemas) and `use_connected_tool` (call with the account the admin connected): "find the Notion page
-  about deploying" or "list my Linear issues" from Claude Code.
+  default, or all tools), allowed to every cortex by default or only to some (only those who read one of them see it).
+  The brain's MCP adds `connected_tools` (list, argument schemas) and `use_connected_tool` (call with the account the
+  admin connected): "find the Notion page about deploying" or "list my Linear issues" from Claude Code.
 - **Content import**: "Import now", or automatically every 6 hours. Claude (the company's key or `ANTHROPIC_API_KEY`)
   explores the tool with its read-only tools only, starting with what changed since the last import, and returns lasting
   knowledge (decisions, procedures, facts) that enters the brain like a sync: secrets redacted, duplicates skipped,
-  connector zone or automatic classification.
+  filed in the connector's allowed cortexes only (automatic classification among them).
 - **Language**: the product is in English (interface, server and CLI messages, prompts, demo data). The old French
   routes (`/etat`, `/connecteurs`, `/creer`…) redirect permanently to the English ones.
 - **Real-time feed**: the storage notifies the SSE stream as soon as an event is inserted (local emitter, or
@@ -219,9 +219,9 @@ The dashboard must be reachable by the computers (public URL or local network): 
 
 The company's MCP server (`<brain>/api/mcp/<company id>/<token>`) also has three view tools: `show_brain` (the 3D brain,
 zones lighting up live as the team's agents work), `show_automations` (an admin sets the suggestions up or dismisses
-them in place) and `show_team` (the org chart). In Claude on the web and desktop, add that address as a custom
-connector (Settings → Connectors) and ask "show me the brain": the dashboard's view opens in the conversation, with
-the token's rights. The address to paste is on the person's page, under **Connect to Claude** (also in the member's
+them in place) and `show_team` (the org chart). In Claude on the web and desktop (Customize → Connectors), ChatGPT
+(developer mode) or VS Code, add that address as a custom connector and ask "show me the brain": the dashboard's view
+opens in the conversation, with the token's rights; Cursor, Claude Code and Codex get the tools, as text. The address to paste is on the person's page, under **Connect an AI** (also in the member's
 panel of the org chart, for an admin): it carries a connector key (`cb_mcp_…`) derived from the person's token and
 signed by the brain, so it can be shown again at will without storing anything in clear, does not touch the
 computer's install, and stops working when the token is regenerated. Each person sees their own; an admin sees

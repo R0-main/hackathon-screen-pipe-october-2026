@@ -2,13 +2,15 @@
 // API only — tokens, secrets and PKCE verifiers never leave the server), OAuth connection with a redirect to the
 // provider's sign-in page, return (callback) and connection test (list of tools).
 // The connected servers' tools are cached (`mcp_tools` key) and offered to the team's agents through the brain's MCP,
-// following the rule the admin chose (none, read-only, all) and the connector's zone.
+// following the rule the admin chose (none, read-only, all), to the cortexes it is allowed to (all by default).
 
 import {
   MCP_RETURN_PAGES,
   buildAuthorizeUrl,
   callResultText,
   catalogEntry,
+  connectorAllowed,
+  connectorZones,
   hasAccess,
   mcpImportDue,
   publicMcpConnector,
@@ -31,7 +33,7 @@ import { ingestItems } from "../brain"
 import { recordIncident, sendAlert } from "../monitoring"
 import { getStore } from "../store"
 import { callTool, listTools, McpAuthError } from "./client"
-import { exploreConnector } from "./import"
+import { exploreConnector, importZones } from "./import"
 import { discover, exchangeCode, pkcePair, randomToken, refreshTokens, registerClient } from "./oauth"
 
 const SETTING = "mcp_connectors"
@@ -138,13 +140,14 @@ export type McpPatch = {
   token?: string
   enabled?: boolean
   agents?: McpAgentsMode
-  zone?: string | null
+  /** Allowed cortexes; empty or null: every cortex. */
+  zones?: string[] | null
   import_enabled?: boolean
 }
 
 /**
- * OAuth client declared by hand, personal token, pause, tools offered to agents, zone, import. An empty secret keeps the
- * one saved for this client.
+ * OAuth client declared by hand, personal token, pause, tools offered to agents, allowed cortexes, import. An empty
+ * secret keeps the one saved for this client.
  */
 export async function updateMcp(id: string, patch: McpPatch): Promise<McpConnectorPublic> {
   const c = await mutate((cfg) => {
@@ -162,7 +165,12 @@ export async function updateMcp(id: string, patch: McpPatch): Promise<McpConnect
     }
     if (patch.enabled !== undefined) c.enabled = patch.enabled
     if (patch.agents !== undefined) c.agents = patch.agents
-    if (patch.zone !== undefined) c.zone = patch.zone || undefined
+    if (patch.zones !== undefined) {
+      const zones = connectorZones({ zones: patch.zones ?? [] })
+      if (zones.length) c.zones = zones
+      else delete c.zones
+      delete c.zone
+    }
     if (patch.import_enabled !== undefined) c.import = { ...c.import, enabled: patch.import_enabled }
     return c
   })
@@ -329,10 +337,10 @@ export async function checkMcp(id: string): Promise<McpConnectorPublic> {
 
 export type AgentConnector = { id: string; name: string; mode: McpAgentsMode; tools: McpToolDef[] }
 
-/** Connector visible to this member: enabled, connected, tools open to agents, and a readable zone if it has one. */
+/** Connector visible to this member: enabled, connected, tools open to agents, and allowed to a cortex they read. */
 function visibleTo(c: McpConnectorConfig, viewer: Viewer): boolean {
   if (!c.enabled || !hasAccess(c) || (c.agents ?? "read") === "off") return false
-  return !c.zone || viewer.access.readable.includes(c.zone)
+  return connectorAllowed(c, viewer.access.readable)
 }
 
 /** Tools of the given connectors under their rule (cache reread when needed, in parallel). */
@@ -433,6 +441,12 @@ export async function importMcp(viewer: Viewer, id: string): Promise<McpImportRu
     // Read-only tools only, whatever the agents rule: the import never changes the tool.
     const tools = defs.filter((d) => d.read_only)
     const [zones, org] = await Promise.all([store.listZones(), store.getOrg()])
+    // Its allowed cortexes were all removed: for the admin to fix, not an incident.
+    try {
+      importZones(c, zones)
+    } catch (err) {
+      throw new McpUserError(message(err))
+    }
     const outcome = await exploreConnector(c, {
       claude,
       tools,

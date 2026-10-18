@@ -441,7 +441,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     already signed in. On a Mac, you will need to allow screen recording.
                   </p>
                   <div className="panel mt-8 px-5 py-5">
-                    <PromptActions getPrompt={() => Promise.resolve(created.prompt)} />
+                    <PromptActions getPrompt={() => Promise.resolve(created.prompt)} terminal />
                     <p className="mt-4 border-t border-line pt-4 text-[13px] leading-relaxed text-trace">
                       This message contains your personal token: keep it to yourself. No history is sent, the brain learns from the install onward.
                     </p>

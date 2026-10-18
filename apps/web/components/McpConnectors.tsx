@@ -18,7 +18,7 @@ import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
 import { McpLogo } from "./mcp-logos"
 import { RelTime } from "./RelTime"
-import { ErrorText } from "./ui"
+import { Dot, ErrorText, zoneColor } from "./ui"
 
 type Props = {
   initial: McpConnectorPublic[]
@@ -27,13 +27,15 @@ type Props = {
   returnTo?: McpReturn
   /** Without a title or introduction (the page hosting it has its own: step 8 of /create). */
   bare?: boolean
-  /** Zones offered to tie a connector to (absent: no zone choice). */
-  zones?: { id: string; name: string }[]
+  /** Cortexes a connector can be allowed to (absent: no choice). */
+  zones?: ZoneOption[]
 }
 
+type ZoneOption = { id: string; name: string; color?: string | null; position?: number }
+
 const ReturnTo = createContext<McpReturn>("connectors")
-const Zones = createContext<{ id: string; name: string }[]>([])
-/** Compact cards (step of /create): the agents, zone and import settings stay on the Connectors page. */
+const Zones = createContext<ZoneOption[]>([])
+/** Compact cards (step of /create): the agents, cortexes and import settings stay on the Connectors page. */
 const Bare = createContext(false)
 
 const CUSTOM_COLOR = "#52525B"
@@ -443,7 +445,7 @@ function CustomServer({ onAdded }: { onAdded: (c: McpConnectorPublic) => void })
   )
 }
 
-/** What the brain does with a connected connector: tools open to agents, zone, content import. */
+/** What the brain does with a connected connector: tools open to agents, allowed cortexes, content import. */
 function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onChange: (c: McpConnectorPublic) => void }) {
   const { t } = useT()
   const k = t.connectors.mcp
@@ -452,7 +454,7 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
   const [err, setErr] = useState<string | null>(null)
   const path = `/api/connectors/mcp/${encodeURIComponent(c.id)}`
 
-  async function save(patch: { agents?: McpAgentsMode; zone?: string | null; import_enabled?: boolean }) {
+  async function save(patch: { agents?: McpAgentsMode; zones?: string[]; import_enabled?: boolean }) {
     setBusy("save")
     setErr(null)
     try {
@@ -476,6 +478,12 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
     setBusy(null)
   }
 
+  // Allowed cortexes that still exist: a removed cortex leaves the list on the next change.
+  const allowed = c.zones.filter((id) => zones.some((z) => z.id === id))
+  function toggleZone(id: string) {
+    save({ zones: allowed.includes(id) ? allowed.filter((x) => x !== id) : [...allowed, id] })
+  }
+
   const last = c.last_import
   return (
     <div className="space-y-2 border-t border-line pt-3 text-[12px]">
@@ -491,17 +499,24 @@ function Usage({ connector: c, onChange }: { connector: McpConnectorPublic; onCh
       </label>
       <p className="text-trace">{k.agentsHelp}</p>
       {zones.length > 0 && (
-        <label className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">{k.zoneLabel}</span>
-          <select className="input input-sm !w-auto" value={c.zone ?? ""} disabled={busy !== null} onChange={(e) => save({ zone: e.target.value || null })}>
-            <option value="">{k.zoneAll}</option>
-            {zones.map((z) => (
-              <option key={z.id} value={z.id}>
-                {z.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="space-y-1.5">
+          <span className="block font-medium">{k.zonesLabel}</span>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label={fmt(k.zonesAria, { name: c.name })}>
+            <button type="button" className={`chip ${c.zones.length ? "" : "chip-on"}`} aria-pressed={!c.zones.length} disabled={busy !== null} onClick={() => save({ zones: [] })}>
+              {k.zonesAll}
+            </button>
+            {zones.map((z, i) => {
+              const on = allowed.includes(z.id)
+              return (
+                <button type="button" key={z.id} className={`chip ${on ? "chip-on" : ""}`} aria-pressed={on} disabled={busy !== null} onClick={() => toggleZone(z.id)}>
+                  <Dot color={zoneColor(z.color, z.position ?? i)} />
+                  {z.name}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-trace">{c.zones.length ? k.zonesSome : k.zonesHelp}</p>
+        </div>
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <label className="flex items-center gap-2">
