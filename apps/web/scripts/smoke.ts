@@ -9,7 +9,7 @@ import { createHash, createHmac } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 import postgres from "postgres"
-import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, workstationHealth, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type NewZonesInput, type StatusInput, type Task } from "@brain/core"
+import { DISTILL_MARKER, buildCliStatusPrompt, parseStatusJson, redactText, workstationHealth, slugify, tokenize, type CompanyStatus, type KnowledgeItemInput, type NewZonesInput, type StatusInput, type Task } from "@brain/core"
 import { getRootStore, getStore, isStoreSetupError, runInOrg, storeForOrg, type BrainStore } from "../lib/store"
 import { FileStore } from "../lib/store/file"
 import { PostgresStore } from "../lib/store/postgres"
@@ -30,6 +30,7 @@ import {
   streamStartId,
 } from "../lib/brain"
 import {
+  createConnectorKey,
   createLoginCode,
   createOnboardingCode,
   createSessionValue,
@@ -47,6 +48,7 @@ import {
 } from "../lib/auth"
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
+import * as connectorRoute from "../app/api/connector/route"
 import * as zoneRoute from "../app/api/zones/[id]/route"
 import * as healthRoute from "../app/api/health/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -698,6 +700,27 @@ async function main() {
       await store.updateProfile(hugo.profile.id, { token_hash: original! })
     }
     assert((await viewerFromCookies(cookie, undefined))?.real.id === hugo.profile.id, "token restored: the session is valid again")
+
+    // Connector key (Claude → Connectors): derived from the token, shown again at will, revoked with it.
+    const key = await createConnectorKey(hugo.profile.id)
+    assert(key.startsWith("cb_mcp_") && key === (await createConnectorKey(hugo.profile.id)), "a connector key is stable (shown again identical)")
+    assert((await profileFromToken(key))?.id === hugo.profile.id, "a connector key is accepted like the token")
+    assert(!redactText(`url /api/mcp/x/${key}`).includes(key), "a connector key is redacted like a token")
+    const [keyUser, keySig] = Buffer.from(key.slice(7), "base64url").toString("utf8").split(".")
+    const forgedKey = `cb_mcp_${Buffer.from(`${claire.profile.id}.${keySig}`).toString("base64url")}`
+    assert(!(await profileFromToken(forgedKey)) && keyUser === hugo.profile.id, "a connector key moved to another member is refused")
+    await store.updateProfile(hugo.profile.id, { token_hash: hashToken(newToken()) })
+    try {
+      assert(!(await profileFromToken(key)), "regenerating the token revokes the connector key")
+    } finally {
+      await store.updateProfile(hugo.profile.id, { token_hash: original! })
+    }
+    const own = await call(connectorRoute.GET as Handler, "/api/connector", { session: cookie })
+    assert(own.status === 200 && own.data.url.endsWith(encodeURIComponent(key)), "a member gets their own connector address")
+    const others = await call(connectorRoute.GET as Handler, `/api/connector?user=${claire.profile.id}`, { session: cookie })
+    assert(others.status === 403, "a member cannot get someone else's connector address")
+    const byAdmin = await call(connectorRoute.GET as Handler, `/api/connector?user=${hugo.profile.id}`, { session: claireCookie })
+    assert(byAdmin.status === 200 && byAdmin.data.url === own.data.url, "an admin gets a member's connector address")
     process.env.BRAIN_SESSION_SECRET = `smoke-${run}-${"x".repeat(40)}`
     assert(!(await viewerFromCookies(cookie, undefined)), "BRAIN_SESSION_SECRET takes precedence over the stored secret")
     assert((await viewerFromCookies(await createSessionValue(hugo.profile.id), undefined))?.real.id === hugo.profile.id, "and signs new sessions")

@@ -251,8 +251,43 @@ async function buildViewer(real: Profile | null, viewAs?: string): Promise<Viewe
   return { profile, real, access: await getAccess(profile) }
 }
 
+/**
+ * Prefix of a connector key: what you paste into Claude (Settings → Connectors) to plug the brain's MCP server in.
+ * Starts with cb_ so that brain-sync and the redaction recognize it like a personal token.
+ */
+const CONNECTOR_PREFIX = "cb_mcp_"
+
+/**
+ * Connector key of a member: derived from their token (signed, purpose "mcp1"), so the brain recomputes it at will
+ * without storing anything in clear, and can show it again; it has the token's rights and stops working when the
+ * token is regenerated. Without expiry: a connector added to Claude must keep working.
+ */
+export async function createConnectorKey(userId: string): Promise<string> {
+  const tokenHash = await tokenHashOf(userId)
+  if (!tokenHash) throw new Error("Member not found.")
+  return `${CONNECTOR_PREFIX}${Buffer.from(`${userId}.${await sign(userId, "never", tokenHash, "mcp1")}`).toString("base64url")}`
+}
+
+async function connectorKeyUser(key: string): Promise<string | null> {
+  const m = key.match(/^cb_mcp_([A-Za-z0-9_-]{40,400})$/)
+  if (!m) return null
+  const [userId, sig, ...rest] = Buffer.from(m[1], "base64url").toString("utf8").split(".")
+  if (!userId || !sig || rest.length) return null
+  const tokenHash = await tokenHashOf(userId)
+  if (!tokenHash) return null
+  const a = Buffer.from(sig)
+  const b = Buffer.from(await sign(userId, "never", tokenHash, "mcp1"))
+  return a.length === b.length && timingSafeEqual(a, b) ? userId : null
+}
+
+/** The account of a personal token, or of a connector key (same rights). */
 export async function profileFromToken(token: string): Promise<Profile | null> {
-  const hash = hashToken(token.trim())
+  const trimmed = token.trim()
+  if (trimmed.startsWith(CONNECTOR_PREFIX)) {
+    const userId = await connectorKeyUser(trimmed)
+    if (userId) return (await (await storeForUser(userId))?.getProfile(userId)) ?? null
+  }
+  const hash = hashToken(trimmed)
   const orgId = await getRootStore().findUserOrg({ tokenHash: hash })
   return orgId ? storeForOrg(orgId).getProfileByTokenHash(hash) : null
 }
