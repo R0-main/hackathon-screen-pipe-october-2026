@@ -57,7 +57,7 @@ Commands:
                      The 15-min sync uses it without an open session: distillation, Screenpipe agent, moderator.
   init --url <url> --token <token> [--screenpipe-url <u>] [--screenpipe-token <t>] [--anthropic-key <k>]
        [--claude-token <token>] [--share-prompt-summaries yes|no] [--screenpipe-meetings yes|no]
-       [--screenpipe-agent yes|no|claude|codex] [--agent-model <model>] [--ca <pem>]
+       [--screenpipe-agent yes|no|claude|codex] [--agent-model <model>] [--send-documents yes|no] [--ca <pem>]
                      Saves the config (~/.company-brain/config.json, mode 600) and tests the connection.
                      --ca: certificate (PEM) of the authority of a self-hosted brain on local HTTPS; the client trusts
                      it for all its calls, on top of the public certificates ("none" to remove it).
@@ -66,6 +66,7 @@ Commands:
                      passed to every \`claude -p\` of the client, scheduled sync included ("none" to remove it).
                      --share-prompt-summaries no: the hook no longer sends any prompt summary (fingerprint only).
                      --screenpipe-meetings no: the meetings transcribed by Screenpipe are not distilled.
+                     --send-documents no: the sync no longer sends the files (PDF, Word, Excel…) the sessions worked on.
                      --screenpipe-agent: on every sync, Claude Code (otherwise Codex) looks at the recent activity itself
                      through the Screenpipe MCP, read-only, and draws the useful knowledge from it. "claude" or "codex"
                      forces the engine, "no" turns the agent off. --agent-model: its model (default: sonnet for Claude Code,
@@ -78,7 +79,8 @@ Commands:
                      removes one (and its MCP server).
   hello              End-to-end test: your zones light up on the dashboard.
   sync [--dry-run [--full]] [--since 24h|7d|<ISO>] [--source claude|codex|screenpipe|all] [--limit N] [--verbose]
-                     Reads the local AI sessions, filters (secrets, personal), distills and sends to the brain.
+                     Reads the local AI sessions, filters (secrets, personal), distills and sends to the brain, with
+                     the documents (PDF, Word, Excel…) the sessions worked on, linked to their knowledge.
                      --dry-run shows what would be sent without sending anything (--full: each knowledge item in full),
                      and says what the preview does not contain (limit reached, captures not read, turns in progress).
                      If Claude fails, the conversation is retried later (never distilled without an LLM as a fallback),
@@ -95,6 +97,12 @@ Commands:
                      Publishes the folder (SKILL.md and the scripts it uses) to the brain; same name: next version.
                      Requires the right to publish skills (granted by an admin). Without --cortex: the one of the previous
                      version, or the whole company for a new skill. A file that contains a secret is refused.
+  docs [list] [--zone <zone>] [--search <words>]
+                     The company documents you can read (PDF, Word, Excel…): those the sync sent with the knowledge of
+                     the sessions that worked on them, and those added by hand.
+  docs add <file>… [--zone <zone>] [--title <title>]
+                     Sends documents to the brain yourself (3 MB at most each). Checked here then by the brain: a file
+                     with a secret or personal data (payslip, ID, contact list…) is refused and stays on the computer.
   refresh-status [--dry-run]
                      Admins: writes "where the company stands" on this computer with Claude (\`claude -p\`, your subscription;
                      otherwise the API key) and sends it to the dashboard. --dry-run: shows the summary without sending it.
@@ -243,6 +251,10 @@ async function main(argv: string[]): Promise<number> {
     case "skills": {
       const { cmdSkills } = await import("./skills")
       return cmdSkills(positional, flags)
+    }
+    case "docs": {
+      const { cmdDocs } = await import("./documents")
+      return cmdDocs(positional, flags)
     }
     case "refresh-status": {
       const { cmdRefreshStatus } = await import("./refresh-status")

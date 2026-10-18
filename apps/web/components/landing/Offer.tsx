@@ -10,7 +10,8 @@ import { CheckIcon } from "../ui"
   lead to company creation (or to the demo when creation is closed).
 */
 
-const REPO = "https://github.com/R0-main/hackathon-screen-pipe-october-2026"
+/** The open code, also linked from the header: anyone can host the brain themselves. */
+export const REPO = "https://github.com/R0-main/hackathon-screen-pipe-october-2026"
 const GUIDE = `${REPO}#deploy-the-shared-brain-vercel--neon-free-tiers`
 
 const COMMANDS = [

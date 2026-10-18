@@ -6,6 +6,8 @@ import {
   DISTILL_MARKER,
   chunkConversation,
   classifyZones,
+  documentBaseName,
+  formatBytes,
   looksPersonal,
   personalSignals,
   redact,
@@ -37,6 +39,7 @@ import {
   type State,
 } from "./config"
 import { DISTILLER_LABELS, apiAuthHelp, claudeAuthHelp, createDistiller, finalizeItems, type DistillerKind, type Failure } from "./distill"
+import { documentCandidate, documentsLine, readDocument, sendDocuments, type DocumentJob, type DocumentOutcome } from "./documents"
 import { isBrainSetupText, maskOwnSecrets, ownSecrets } from "./secrets"
 import { readClaudeLogs } from "./sources/claude-logs"
 import { readCodexLogs } from "./sources/codex-logs"
@@ -261,7 +264,12 @@ export type SyncSummary = {
   failed?: number
   /** What the dry run does not show (and that --confirm will not send). */
   gaps?: string[]
+  /** Documents sent with the knowledge (or kept on the computer, and why). */
+  documents?: DocumentOutcome[]
 }
+
+/** Documents of a session, to send with its knowledge: indexes of its items in the list sent. */
+export type PlannedDocument = { path: string; items: number[]; source: DocumentJob["source"] }
 
 /** What `sync --dry-run` showed, so that `sync --confirm` sends exactly that. */
 export type Preview = {
@@ -275,6 +283,8 @@ export type Preview = {
   zones: Record<string, number>
   items: KnowledgeItemInput[]
   workflows: Workflow[]
+  /** Missing from a dry run made before documents. */
+  documents?: PlannedDocument[]
   next_state: State
 }
 
@@ -356,6 +366,48 @@ function sentLine(sent: number, duplicates: number, zoneLine: string): string {
   )
 }
 
+/**
+ * The documents each session worked on, sent with ITS knowledge (a session that gave nothing sends nothing).
+ * `flat`: the items in sending order, with their conversation.
+ */
+export function planDocuments(flat: { item: KnowledgeItemInput; conv: string }[], convs: Map<string, Conversation>): PlannedDocument[] {
+  const out: PlannedDocument[] = []
+  const indexes = new Map<string, number[]>()
+  flat.forEach((f, n) => indexes.set(f.conv, [...(indexes.get(f.conv) ?? []), n]))
+  for (const [id, items] of indexes) {
+    const conv = convs.get(id)
+    if (!conv?.documents?.length) continue
+    for (const path of conv.documents) out.push({ path, items, source: { app: conv.app, tool: conv.tool, at: conv.ended_at } })
+  }
+  return out
+}
+
+/** Sending jobs, once the brain gave the id of each item (`ids`, same order as the items sent). */
+function documentJobs(planned: PlannedDocument[], ids: (string | null)[], items: KnowledgeItemInput[]): DocumentJob[] {
+  return planned.flatMap((d) => {
+    const linked = d.items.map((i) => ids[i]).filter((x): x is string => typeof x === "string")
+    if (!linked.length) return []
+    return [{ path: d.path, item_ids: linked, zone: items[d.items[0]]?.zone, source: d.source }]
+  })
+}
+
+/** Sends the documents with the knowledge just sent; never fails the sync (each document reports its own outcome). */
+async function sendPlannedDocuments(api: BrainApi, planned: PlannedDocument[], ids: (string | null)[], items: KnowledgeItemInput[], state: State, io: Io, verbose: boolean) {
+  const jobs = documentJobs(planned, ids, items)
+  if (!jobs.length) return []
+  let outcomes: DocumentOutcome[] = []
+  try {
+    outcomes = await sendDocuments(api, jobs, state, { brainHome: brainHome() })
+  } catch (err) {
+    io.warn(`Documents not sent: ${(err as Error).message}`)
+    return []
+  }
+  const line = documentsLine(outcomes)
+  if (line) io.log(`Documents: ${line}.`)
+  if (verbose) for (const o of outcomes) io.log(`    ${o.status}: ${o.name}${"reason" in o ? ` (${o.reason})` : ` → ${o.zone}`}`)
+  return outcomes
+}
+
 function withLock<T>(io: Io, busy: () => T, fn: () => Promise<T>): Promise<T> {
   const lock = acquireLock()
   if ("busy" in lock) {
@@ -399,6 +451,7 @@ async function confirmPreview(cfg: Config, io: Io): Promise<SyncSummary> {
   let sent = 0
   let duplicates = 0
   const tally = new ZoneTally()
+  const ids: (string | null)[] = []
   try {
     for (let i = 0; i < preview.items.length; i += BATCH) {
       const batch = preview.items.slice(i, i + BATCH)
@@ -406,6 +459,7 @@ async function confirmPreview(cfg: Config, io: Io): Promise<SyncSummary> {
       sent += res.inserted
       duplicates += res.skipped ?? 0
       tally.add(batch, res)
+      batch.forEach((_, n) => ids.push(res.item_ids?.[n] ?? null))
     }
   } catch (err) {
     io.warn(`Sending interrupted after ${plural(sent, "knowledge item")}: run \`sync --confirm\` again (what the brain already received will be skipped).`)
@@ -422,10 +476,11 @@ async function confirmPreview(cfg: Config, io: Io): Promise<SyncSummary> {
   const zones = tally.record()
   const next: State = preview.next_state ?? {}
   next.last_sync = { at: new Date().toISOString(), distiller: preview.distiller, items_sent: sent, conversations: preview.conversations, zones }
+  io.log(sentLine(sent, duplicates, tally.line()))
+  const documents = cfg.send_documents === false ? [] : await sendPlannedDocuments(api, preview.documents ?? [], ids, preview.items, next, io, false)
   saveState(next)
   removePreview()
-  io.log(sentLine(sent, duplicates, tally.line()))
-  return { conversations: preview.conversations, items: preview.items, sent, duplicates, zones, distiller: preview.distiller, deferred: 0 }
+  return { conversations: preview.conversations, items: preview.items, sent, duplicates, zones, distiller: preview.distiller, deferred: 0, documents }
 }
 
 async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<SyncSummary> {
@@ -710,6 +765,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     kept.forEach((item, n) => flat.push({ item, conv, last: n === kept.length - 1 }))
   }
   const items = flat.map((f) => f.item)
+  const planned = cfg.send_documents === false ? [] : planDocuments(flat, new Map(jobs.map((j) => [j.conv.id, j.conv])))
   const { perZone, zoneLine } = countZones(items)
   const convCounts: Partial<Record<SourceName, number>> = {}
   for (const r of results) convCounts[r.source] = r.conversations.length
@@ -756,6 +812,16 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       })
     }
     if (workflowsDropped) io.log(`  ${plural(workflowsDropped, "Screenpipe workflow dropped", "Screenpipe workflows dropped")} (app outside the allowlist or personal content).`)
+    if (planned.length) {
+      io.log(`[dry run] ${plural(planned.length, "document")} worked on in these sessions would go with their knowledge:`)
+      for (const [n, d] of planned.entries()) {
+        const c = documentCandidate(d.path, { brainHome: brainHome() })
+        const problems = "skipped" in c ? [c.skipped] : (await readDocument(c).catch((e: Error) => ({ problems: [e.message] }))).problems
+        const what = "skipped" in c ? documentBaseName(d.path) : `${c.name} (${formatBytes(c.size)})`
+        io.log(`  D${n + 1}. ${what} → with item${d.items.length > 1 ? "s" : ""} ${d.items.map((i) => i + 1).join(", ")}${problems.length ? ` — stays on the computer: ${problems[0]}` : ""}`)
+      }
+      io.log("  The brain reads each file again on arrival (PDFs included) and refuses it if it holds a secret or personal data.")
+    }
     if (abridged) io.log("Abridged texts: add --full to see each knowledge item in full.")
     if (gaps.length) {
       io.log("")
@@ -779,6 +845,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       zones: perZone,
       items,
       workflows,
+      documents: planned,
       next_state: next,
     }
     ensureHome()
@@ -805,6 +872,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   let sent = 0
   let duplicates = 0
   const tally = new ZoneTally()
+  const ids: (string | null)[] = []
   try {
     for (let i = 0; i < flat.length; i += BATCH) {
       const batch = flat.slice(i, i + BATCH)
@@ -812,6 +880,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       sent += res.inserted
       duplicates += res.skipped ?? 0
       tally.add(batch.map((b) => b.item), res)
+      batch.forEach((_, n) => ids.push(res.item_ids?.[n] ?? null))
       for (const b of batch) if (b.last) done.add(b.conv)
       saveState(checkpoint())
     }
@@ -830,8 +899,9 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   const sentZones = tally.record()
   const next = checkpoint()
   next.last_sync = { at: new Date().toISOString(), distiller: distiller.kind, items_sent: sent, conversations: convCounts, zones: sentZones }
+  io.log(sentLine(sent, duplicates, tally.line()))
+  const documents = await sendPlannedDocuments(api, planned, ids, items, next, io, verbose)
   saveState(next)
   removePreview()
-  io.log(sentLine(sent, duplicates, tally.line()))
-  return { conversations: convCounts, items, sent, duplicates, zones: sentZones, distiller: distiller.kind, deferred, failed: notDistilled.size }
+  return { conversations: convCounts, items, sent, duplicates, zones: sentZones, distiller: distiller.kind, deferred, failed: notDistilled.size, documents }
 }

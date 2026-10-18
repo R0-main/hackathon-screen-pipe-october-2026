@@ -22,6 +22,11 @@ export type Conversation = {
   screenpipe_ref?: string
   /** Reminder (short, already redacted) of the initial ask when this segment does not contain it (see chunkConversation). */
   ask?: string
+  /**
+   * Documents the session worked on (PDF, Word, Excel… read by the agent or dropped in the prompt): absolute paths on
+   * the computer, never sent as such. The sync sends the files themselves with the knowledge distilled from the session.
+   */
+  documents?: string[]
 }
 
 export type ZoneHint = Pick<Zone, "id" | "name" | "keywords" | "description">

@@ -46,6 +46,11 @@ export type Config = {
   agent_model?: string
   /** UserPromptSubmit hook: send a short redacted summary of the prompts classified in a zone (default: yes). */
   share_prompt_summaries?: boolean
+  /**
+   * The sync also sends the documents (PDF, Word, Excel…) an AI session worked on, with the knowledge distilled from
+   * it (default: yes).
+   */
+  send_documents?: boolean
   /** Certificate (PEM) of the authority that signs a self-hosted brain: the client trusts it on top of the public certificates. */
   ca_file?: string
   /** Environment recorded by install-schedule, applied again by `sync --scheduled` (useful on Windows). */
@@ -83,6 +88,8 @@ export type State = {
    * counted, conclusive or not, since first_at (safeguard: given up after 24 h and 5 attempts); at: last failure.
    */
   distill_failures?: Record<string, { n: number; at: string; error?: string; tries?: number; first_at?: string }>
+  /** Documents already handled, by fingerprint: their id in the brain once sent, or why it refused them (not offered again). */
+  documents?: Record<string, { id?: string; refused?: string; at: string }>
   last_sync?: {
     at: string
     distiller: string
@@ -206,6 +213,7 @@ export function withDefaults(raw: Partial<Config>): Partial<Config> {
     screenpipe_url: DEFAULT_SCREENPIPE_URL,
     use_claude_cli: true,
     share_prompt_summaries: true,
+    send_documents: true,
     screenpipe_meetings: true,
     screenpipe_agent: true,
     sources: [...SOURCE_NAMES],

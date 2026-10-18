@@ -1,9 +1,13 @@
 // The fictional company Encore, ready for the demo: accounts, zones, knowledge and 10 days of activity.
 // Used by `npm run seed` and, in demo mode, to seed an empty brain automatically (deployment).
 
+import { createHash } from "node:crypto"
 import {
   DEFAULT_TIMEZONE,
   SKILL_MAIN_FILE,
+  cleanDocumentText,
+  documentFormat,
+  documentSummary,
   detectAutomations,
   heuristicStatus,
   promptFingerprint,
@@ -12,9 +16,11 @@ import {
   type Profile,
 } from "@brain/core"
 import { hashToken, isDemoMode, newToken } from "./auth"
-import { getStore, type BrainStore } from "./store"
+import { simplePdf } from "./simple-pdf"
+import { getStore, isStoreSetupError, type BrainStore } from "./store"
 import type { NewEvent } from "./store/types"
 import {
+  DEMO_DOCUMENTS,
   DEMO_ITEMS,
   DEMO_ORG,
   DEMO_PROMPTS,
@@ -185,6 +191,57 @@ async function insertDemoItems(store: BrainStore, ids: Record<string, string>, l
   return events
 }
 
+/**
+ * The demo's documents (a PDF made here), linked to the knowledge they back, with the brain-sync write event.
+ * A document already there (same file) is skipped. Returns the events of those added.
+ */
+async function seedDemoDocuments(store: BrainStore, ids: Record<string, string>): Promise<NewEvent[]> {
+  const items = await store.listItems({})
+  const events: NewEvent[] = []
+  for (const d of DEMO_DOCUMENTS) {
+    const content = simplePdf(d.lines, { title: d.title })
+    const sha256 = createHash("sha256").update(content).digest("hex")
+    if (await store.findDocumentBySha(sha256)) continue
+    const at = localTime(d.daysAgo, 17, 40)
+    const text = cleanDocumentText(d.lines.map((l) => l.text).join("\n"))
+    await store.insertDocument({
+      name: d.name,
+      mime: documentFormat(d.name)?.mime ?? "application/pdf",
+      size: content.length,
+      sha256,
+      zone: d.zone,
+      title: d.title,
+      summary: documentSummary(text),
+      pages: 1,
+      author_id: ids[d.author],
+      source: { app: "Claude", tool: "claude", at: at.toISOString() },
+      item_ids: items.filter((i) => d.items.includes(i.title)).map((i) => i.id),
+      text,
+      content,
+      created_at: at.toISOString(),
+    })
+    events.push({ user_id: ids[d.author], agent: "brain-sync", type: "write", zones: [d.zone], summary: `Document added: ${d.name}`, at: new Date(at.getTime() + 15 * 60_000).toISOString() })
+  }
+  return events
+}
+
+/**
+ * Demo brain seeded before documents existed: adds the missing knowledge they back, then the documents. Returns the
+ * number of documents added.
+ */
+export async function upgradeDocumentsDemo(store: BrainStore = getStore()): Promise<number> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name) return 0
+  const ids = demoTeam(await store.listProfiles())
+  if (!ids) return 0
+  const existing = new Set((await store.listItems({})).map((i) => i.title))
+  const wanted = new Set(DEMO_DOCUMENTS.flatMap((d) => d.items))
+  const missing = DEMO_ITEMS.filter((it) => wanted.has(it.title) && !existing.has(it.title))
+  const events = missing.length ? await insertDemoItems(store, ids, missing, rand(11)) : []
+  const docs = await seedDemoDocuments(store, ids)
+  if (events.length || docs.length) await store.insertEvents([...events, ...docs].sort((a, b) => a.at.localeCompare(b.at)))
+  return docs.length
+}
+
 /** The workflows Screenpipe detected on the computers, as brain-sync reports them (source "screenpipe"). */
 async function seedDemoWorkflows(store: BrainStore, ids: Record<string, string>) {
   await store.upsertAutomations(
@@ -251,6 +308,8 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
   events.push(...(await insertDemoItems(store, ids, [...DEMO_ITEMS, ...DEMO_SCREENPIPE_ITEMS], r)))
 
   events.push(...(await seedDemoSkills(store, ids, allZoneIds)))
+  // A database whose documents migration is not applied yet: the demo goes without them.
+  events.push(...(await seedDemoDocuments(store, ids).catch((err) => (isStoreSetupError(err) ? [] : Promise.reject(err)))))
 
   // History of sessions and prompts over 10 days.
   for (let d = 10; d >= 0; d--) {
@@ -401,6 +460,14 @@ async function upgradeOnce(store: BrainStore) {
   await claimed(store, "demo-upgrade-screenpipe", async () => {
     const n = await upgradeScreenpipeDemo(store)
     if (n) console.log(`[demo] brain completed: ${n} Screenpipe item(s) and the detected workflows.`)
+  })
+  // Documents migration not applied yet: tried again on the next start (the claim is released).
+  await claimed(store, "demo-upgrade-documents", async () => {
+    const n = await upgradeDocumentsDemo(store)
+    if (n) console.log(`[demo] brain completed: ${n} document(s) with the knowledge they back.`)
+  }).catch((err) => {
+    if (!isStoreSetupError(err)) throw err
+    console.error("[demo] documents not added:", err.message)
   })
 }
 

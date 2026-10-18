@@ -4,6 +4,8 @@ import type {
   AutomationCandidate,
   AutomationStatus,
   AutomationSuggestion,
+  BrainDocument,
+  BrainDocumentWithText,
   CompanyStatus,
   EntityType,
   KnowledgeItem,
@@ -11,6 +13,7 @@ import type {
   Org,
   Profile,
   Role,
+  ScoredDocument,
   ScoredItem,
   Skill,
   SkillFile,
@@ -57,6 +60,15 @@ export type NewJoinRequest = { name?: string; title?: string; email?: string; ho
 
 /** Publishing a skill: new name → version 1, existing name → next version (the original author is kept). */
 export type NewSkill = { name: string; description: string; zone: string | null; files: SkillFile[]; publisher_id: string }
+
+/** A document entering the brain: its metadata, its extracted text and its bytes. */
+export type NewDocument = Omit<BrainDocumentWithText, "id" | "org_id" | "created_at"> & { content: Buffer; created_at?: string }
+
+/**
+ * `zones`: documents filed in these zones, plus those of `orAuthorId` whatever their zone (right of review); absent:
+ * all zones. `itemIds`: documents backing at least one of these knowledge items.
+ */
+export type DocumentFilter = { zones?: string[]; orAuthorId?: string; zone?: string; itemIds?: string[]; limit?: number }
 
 /** Sync reports kept per workstation. */
 export const SYNC_REPORTS_KEEP = 30
@@ -177,6 +189,20 @@ export interface BrainStore {
    * Returns the tasks touched.
    */
   upsertExternalTasks(source: string, tasks: NewTask[]): Promise<Task[]>
+
+  /** Documents (PDF, Word, Excel…) sent with the knowledge: metadata and text here, bytes apart. */
+  insertDocument(d: NewDocument): Promise<BrainDocument>
+  /** The document with this fingerprint (same file sent again), if the company already has it. */
+  findDocumentBySha(sha256: string): Promise<BrainDocument | null>
+  getDocument(id: string): Promise<BrainDocumentWithText | null>
+  getDocumentContent(id: string): Promise<Buffer | null>
+  /** Most recent first. */
+  listDocuments(f: DocumentFilter): Promise<BrainDocument[]>
+  /** Search on name, title and text, in the given zones (or by this author), like searchItems. */
+  searchDocuments(query: string, zones: string[], limit: number, opts?: { authorId?: string }): Promise<ScoredDocument[]>
+  /** Adds knowledge items to those the document backs (already linked ones are kept). Null if it no longer exists. */
+  linkDocument(id: string, itemIds: string[]): Promise<BrainDocument | null>
+  deleteDocument(id: string): Promise<boolean>
 
   listAutomations(): Promise<AutomationSuggestion[]>
   /** Inserts or updates by `key`, keeping the status (accepted / dismissed) already chosen. */
