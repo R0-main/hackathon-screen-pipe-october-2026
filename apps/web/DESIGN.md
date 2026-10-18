@@ -128,6 +128,8 @@ Same world, at the scale of a page (`components/landing`, "Home page" block of `
   with a monthly or yearly choice. Front end only: indicative prices, no payment wired; the cloud buttons lead
   to `/create` (or to the demo when creation is closed). Their cards (`data-reveal="cards"`) are in place before
   the section's hold, so you can compare as soon as you arrive. A single primary button: the Team plan.
+- Next to "Pricing" in the header, a ghost "GitHub" button (the mark, then the word; the mark alone on a phone)
+  opens the repository in a new tab: the code is open, anyone can host the brain themselves.
 - `prefers-reduced-motion`: no pinning, hold or smooth scrolling, brain still and assembled, chapters
   read one after the other, every section in its final state.
 - Phosphor stays reserved to the zones an agent queries (here, the demo's three agents).
