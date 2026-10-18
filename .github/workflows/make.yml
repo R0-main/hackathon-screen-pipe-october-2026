@@ -44,7 +44,7 @@ jobs:
           loc=$(curl -sS -o /dev/null -w '%{redirect_url}' http://localhost:3100/)
           echo "/ → $loc"
           case "$loc" in */create) ;; *) echo "expected: redirect to /create"; exit 1 ;; esac
-      - name: make seed (Butine)
+      - name: make seed (Encore)
         env:
           LOCAL_DB: ${{ matrix.db }}
         run: make seed

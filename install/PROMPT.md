@@ -94,7 +94,7 @@ company name (`The company, in a nutshell: "…".`), on one line and cut at 300 
 same. Without a description, the line stays as in the example.
 
 ```text
-You are going to connect this computer to NOS Brainer, Butine's company brain. I am Jean-Marc Dubois, zones: finance.
+You are going to connect this computer to NOS Brainer, Encore's company brain. I am Jean-Marc Dubois, zones: finance.
 This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me in one sentence to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal). Action blocked or refused: work around nothing, tell me in one sentence what to do, with no list or explanation, then wait.
 
 1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
@@ -129,7 +129,7 @@ certificate (`/ca.crt`), checks its SHA-256 fingerprint (pinned in the prompt, c
 With a public certificate (cloud), none of this appears.
 
 ```text
-You are going to connect this computer to NOS Brainer, Butine's company brain. I am Jean-Marc Dubois, zones: finance.
+You are going to connect this computer to NOS Brainer, Encore's company brain. I am Jean-Marc Dubois, zones: finance.
 This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. If you are not running on my computer (cloud session, remote container), stop and tell me in one sentence to paste this message again into Claude Code or Codex locally (the `claude` or `codex` terminal). Action blocked or refused: work around nothing, tell me in one sentence what to do, with no list or explanation, then wait.
 
 1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.

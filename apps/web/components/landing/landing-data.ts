@@ -2,7 +2,7 @@ import { DEFAULT_ZONES } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 
 /**
- * Butine's brain (the demo's fictional company) as the home page shows it: same zones and
+ * Encore's brain (the demo's fictional company) as the home page shows it: same zones and
  * same volumes as `scripts/demo-data.ts`, without a server call since the visitor is not signed in.
  */
 const COUNTS: Record<string, number> = { dev: 10, product: 7, sales: 7, finance: 7, support: 4, leadership: 5 }
@@ -20,12 +20,12 @@ export const LANDING_TOTAL = LANDING_ZONES.reduce((n, z) => n + z.count, 0)
 
 /** Zones that share entities in the demo (customer, tool, project). */
 export const LANDING_SYNAPSES = [
-  { a: "dev", b: "product", weight: 4, via: ["swarm alert"] },
-  { a: "sales", b: "product", weight: 3, via: ["Miellerie Roussel"] },
-  { a: "finance", b: "sales", weight: 2, via: ["Stripe"] },
-  { a: "dev", b: "support", weight: 3, via: ["B2 scale"] },
-  { a: "finance", b: "leadership", weight: 2, via: ["runway"] },
-  { a: "sales", b: "leadership", weight: 1, via: ["MRR"] },
+  { a: "dev", b: "product", weight: 4, via: ["AI grading"] },
+  { a: "sales", b: "product", weight: 3, via: ["Groupe Vallière"] },
+  { a: "dev", b: "finance", weight: 2, via: ["Stripe"] },
+  { a: "dev", b: "support", weight: 3, via: ["Diagnostics"] },
+  { a: "finance", b: "leadership", weight: 2, via: ["Trade-in"] },
+  { a: "sales", b: "leadership", weight: 1, via: ["Groupe Vallière"] },
 ]
 
 /**
@@ -35,5 +35,5 @@ export const LANDING_SYNAPSES = [
 export const LANDING_AGENTS = [
   { zone: "dev", from: 0.6, to: 0.69, label: "Hugo's Claude Code is searching “deploy to production”" },
   { zone: "finance", from: 0.68, to: 0.77, label: "Jean-Marc's Codex is searching “Qonto reconciliation”" },
-  { zone: "sales", from: 0.76, to: 0.85, label: "Sarah's Claude is searching “price per hive”" },
+  { zone: "sales", from: 0.76, to: 0.85, label: "Sarah's Claude is searching “B2B lease price”" },
 ]

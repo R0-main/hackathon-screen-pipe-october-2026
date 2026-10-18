@@ -348,7 +348,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     maxLength={80}
                     autoFocus
                     aria-label="Company name"
-                    placeholder="Butine"
+                    placeholder="Encore"
                     onChange={(e) => setCompany(e.target.value)}
                   />
                 </Question>
@@ -369,7 +369,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                     rows={2}
                     autoFocus
                     aria-label="Company business"
-                    placeholder="Connected scales for beehives: beekeepers follow their bees from their phone."
+                    placeholder="Refurbished smartphones with a 2-year warranty, for individuals and companies."
                     onChange={(e) => setDescription(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {

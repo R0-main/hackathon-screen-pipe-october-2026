@@ -261,20 +261,20 @@ async function main() {
   assert(devForJm.items.length === 0, "RLS: finance sees nothing of the dev zone")
   assert(devForJm.zones_restricted.includes("dev"), "the dev zone is flagged as restricted")
   const devForHugo = await queryBrain(hugo, { query: "deploy to production" })
-  assert(devForHugo.items.some((i) => i.title.includes("Deploy Butine")), "Hugo finds the deployment procedure")
+  assert(devForHugo.items.some((i) => i.title.includes("Deploy Encore")), "Hugo finds the deployment procedure")
   const finance = await queryBrain(jm, { query: "Qonto Pennylane reconciliation" })
   assert(finance.items[0]?.zone === "finance" && finance.zones_hit.includes("finance"), "Jean-Marc finds the reconciliation, the finance zone lights up")
 
   const before = (await store.zoneStats()).find((z) => z.zone === "dev")?.count ?? 0
   const res = await ingestItems(hugo, [
     {
-      zone: "unknown", kind: "task", title: `Add an index on swarm alerts (${run})`, body: "TODO before going to prod. Contact: hugo@butine.example, key sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+      zone: "unknown", kind: "task", title: `Add an index on returns (${run})`, body: "TODO before going to prod. Contact: hugo@encore.example, key sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
       entities: [{ type: "tool", name: "Postgres" }], source: { app: "Terminal", tool: "claude-code", at: new Date().toISOString() }, confidence: 0.7,
     },
   ])
   const it = await store.getItem(res.ids[0])
   assert(it && it.zone === "dev", "an unknown zone is reclassified (dev)")
-  assert(it && !it.body.includes("sk-ant") && !it.body.includes("@butine"), "secrets and emails redacted on the server")
+  assert(it && !it.body.includes("sk-ant") && !it.body.includes("@encore"), "secrets and emails redacted on the server")
   assert(((await store.zoneStats()).find((z) => z.zone === "dev")?.count ?? 0) === before + 1, "the dev zone counter goes up")
   assert((await store.listTasks({ zones: ["dev"] })).some((t) => t.source_item_id === res.ids[0]), "a task is created from the item")
 
@@ -301,9 +301,9 @@ async function main() {
   console.log("\n— Company skills: publishing under permission, assignment to a cortex")
   const names = async (v: Viewer) => (await listVisibleSkills(v)).map((x) => x.name)
   const jmSkills = await names(jm)
-  assert(jmSkills.includes("butine-tone") && jmSkills.includes("qonto-pennylane-reconciliation"), "Jean-Marc receives the company-wide skills and the finance cortex's")
-  assert(!jmSkills.includes("deploy-butine"), "but not the dev cortex's")
-  assert((await names(hugo)).includes("deploy-butine") && !(await names(hugo)).includes("qonto-pennylane-reconciliation"), "Hugo receives the dev skill, not the finance one")
+  assert(jmSkills.includes("encore-tone") && jmSkills.includes("qonto-pennylane-reconciliation"), "Jean-Marc receives the company-wide skills and the finance cortex's")
+  assert(!jmSkills.includes("deploy-encore"), "but not the dev cortex's")
+  assert((await names(hugo)).includes("deploy-encore") && !(await names(hugo)).includes("qonto-pennylane-reconciliation"), "Hugo receives the dev skill, not the finance one")
   assert((await names(claire)).length >= 5, "the admin sees every skill")
   assert(canPublishSkills(claire) && canPublishSkills(hugo) && !canPublishSkills(ines), "publishing: admins and allowed members only")
   const refused = async (p: Promise<unknown>, status: number) => {
@@ -375,7 +375,7 @@ async function main() {
       assert(after.get("Inès Lefèvre")?.manager_id === id("Hugo") && after.get("Jean-Marc Dubois")?.manager_id === id("Claire"), "the flat org chart gets its reporting lines back")
       assert(after.get("Claire Martin")?.manager_id == null, "the CEO stays at the top")
       assert(after.get("Visitor 1234")?.manager_id === id("Hugo"), "visitors join the lead dev's team")
-      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deploy-butine")?.version === 3, "the demo skills are added")
+      assert(res.skills === 5 && (await old.listSkills()).find((x) => x.name === "deploy-encore")?.version === 3, "the demo skills are added")
       assert(after.get("Hugo Bernard")?.can_publish_skills === true && after.get("Inès Lefèvre")?.can_publish_skills === false, "Hugo and Jean-Marc get the right to publish")
       assert((await old.listItems({})).length === itemsBefore && visitor.id === after.get("Visitor 1234")?.id, "nothing is erased")
       await old.updateProfile(id("Inès"), { manager_id: id("Claire") })
@@ -394,7 +394,7 @@ async function main() {
       const old = new FileStore(tmp)
       await seedDemoBrain(old)
       assert((await replaceOutdatedDemoBrain(old)) === null, "the current demo is never replaced")
-      await old.updateOrg({ name: LEGACY_DEMO_NAMES[0] })
+      await old.updateOrg({ name: LEGACY_DEMO_NAMES[LEGACY_DEMO_NAMES.length - 1] })
       const token = newToken()
       // A visitor created by an earlier (French) version: its title was still French.
       const visitor = await old.createProfile({ name: "Visitor 4321", title: "Visiteur de la démo", role: "member", token_hash: hashToken(token) })
@@ -410,7 +410,7 @@ async function main() {
         "and keeps its zones",
       )
       assert(
-        (await old.listItems({})).length === DEMO_ITEMS.length + DEMO_SCREENPIPE_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-butine"),
+        (await old.listItems({})).length === DEMO_ITEMS.length + DEMO_SCREENPIPE_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-encore"),
         "knowledge and skills of the new demo, without those of the former one",
       )
     } finally {
@@ -443,7 +443,7 @@ async function main() {
   const dup = await ingestItems(hugo, [item("dev", `Smoke ${run} duplicate`), item("dev", `smoke ${run} duplicate`), item("product", `Smoke ${run} duplicate`)])
   created.push(...dup.ids)
   assert(dup.inserted === 2 && dup.skipped === 1, "duplicate within a batch skipped, same title in another zone kept")
-  const sameTitle = `Smoke ${run} claude — butine`
+  const sameTitle = `Smoke ${run} claude — encore`
   const fact1 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "We decided to switch to Pennylane." }])
   const fact2 = await ingestItems(hugo, [{ ...item("dev", sameTitle), body: "We also decided to keep Qonto for cash." }])
   created.push(...fact1.ids, ...fact2.ids)
@@ -507,7 +507,7 @@ async function main() {
   assert(persoEvent.zones.includes("dev") && !persoEvent.summary, "personal search: zone lit, text not kept")
   await queryBrain(hugo, { query: `Smoke ${run} deploy to production` })
   assert((await lastEvent(hugo)).summary === `Smoke ${run} deploy to production`, "search within one's zones, nothing personal: text kept")
-  const both = `Smoke ${run} support tickets about scales and deployment`
+  const both = `Smoke ${run} support tickets about eSIM and deployment`
   await queryBrain(hugo, { query: both })
   const bothEvent = await lastEvent(hugo)
   assert(bothEvent.summary === both && bothEvent.zones.includes("dev") && bothEvent.zones.includes("support"), "text kept: the event carries every zone touched (dev + support)")
@@ -874,7 +874,7 @@ async function main() {
   console.log("\n— Create your company (/create): a separate brain")
   {
     const root = getRootStore()
-    const butine = await root.getOrg()
+    const encore = await root.getOrg()
     const tenantsBefore = await root.countTenantOrgs()
     const acme = await root.createTenantOrg({
       name: `Acme ${run}`,
@@ -884,7 +884,7 @@ async function main() {
     const acmeStore = storeForOrg(acme.id)
     try {
       assert((await root.countTenantOrgs()) === tenantsBefore + 1, "a created company is counted")
-      assert((await root.getOrg()).id === butine.id && !(await root.isEmpty()), "the database's brain stays Butine's")
+      assert((await root.getOrg()).id === encore.id && !(await root.isEmpty()), "the database's brain stays Encore's")
       assert((await acmeStore.listZones()).map((z) => z.id).join() === "ops", "the new company only has its own zones")
       const token = newToken()
       const boss = await acmeStore.createProfile({ name: `Alice ${run}`, role: "admin", manager_id: null, token_hash: hashToken(token) })
@@ -893,7 +893,7 @@ async function main() {
       const cookie = await createSessionValue(boss.id)
       const alice = await viewerFromCookies(cookie, claire.profile.id)
       assert(alice?.real.id === boss.id && alice.profile.id === boss.id, "its session is recognized; \"view as\" does not leave its company")
-      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Butine does not see this account")
+      assert(!(await store.listProfiles()).some((p) => p.id === boss.id), "Encore does not see this account")
 
       const st = await call(stateRoute.GET, "/api/state", { session: cookie })
       assert(st.status === 200 && st.data.zones.map((z: { id: string }) => z.id).join() === "ops" && st.data.items.length === 0, "its dashboard only shows its company")
@@ -928,16 +928,16 @@ async function main() {
       assert(/No connector is open to agents/.test(mcpConnected.data.result.content[0].text), "MCP: connected_tools says so when no connector is connected")
       const mcpUse = await rpc(acme.id, token, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "use_connected_tool", arguments: { connector: "linear", tool: "list_issues" } } })
       assert(mcpUse.data.result.isError === true && /not found or not shared/.test(mcpUse.data.result.content[0].text), "MCP: use_connected_tool on a missing connector: clear error")
-      assert((await rpc(butine.id, token, hello)).status === 401, "MCP: one company's token does not open another's server")
+      assert((await rpc(encore.id, token, hello)).status === 401, "MCP: one company's token does not open another's server")
       assert((await rpc(acme.id, newToken(), hello)).status === 401, "MCP: unknown token refused")
       assert((await rpc(acme.id, token, null, "GET")).status === 405, "MCP: GET refused (stateless server)")
 
       console.log("\n— Companies remembered by the browser: go back to one, switch from one to another")
-      const butineSession = await createSessionValue(claire.profile.id)
-      const both = await rememberAccounts(cookie, butineSession)
+      const encoreSession = await createSessionValue(claire.profile.id)
+      const both = await rememberAccounts(cookie, encoreSession)
       const listed = await listRememberedAccounts(both)
       assert(
-        listed.map((a) => a.org.id).join() === `${acme.id},${butine.id}` && listed[0].org.name === `Acme ${run}` && listed[0].org.description === "Smoke test",
+        listed.map((a) => a.org.id).join() === `${acme.id},${encore.id}` && listed[0].org.name === `Acme ${run}` && listed[0].org.description === "Smoke test",
         "two companies remembered, the most recent first, with their name and description",
       )
       const sameOrg = await listRememberedAccounts(await rememberAccounts(await createSessionValue(hugo.profile.id), both))
@@ -948,10 +948,10 @@ async function main() {
       assert((await isRemembered(both, boss.id)) && !(await isRemembered(both, hugo.profile.id)), "only remembered accounts reopen without a token")
       const stretched = `${boss.id}.${Date.now() + 86400_000}.${cookie.split(".")[2]}`
       assert(
-        (await listRememberedAccounts(`${stretched}~not-a-session~${butineSession}`)).map((a) => a.userId).join() === claire.profile.id,
+        (await listRememberedAccounts(`${stretched}~not-a-session~${encoreSession}`)).map((a) => a.userId).join() === claire.profile.id,
         "a tampered or unreadable remembered session is dropped",
       )
-      assert((await listRememberedAccounts(await forgetAccount(both, boss.id))).map((a) => a.org.id).join() === butine.id, "forgetting a company removes it from the list")
+      assert((await listRememberedAccounts(await forgetAccount(both, boss.id))).map((a) => a.org.id).join() === encore.id, "forgetting a company removes it from the list")
       const [entry] = both.split("~")
       assert(!(await viewerFromCookies(entry, undefined)), "a remembered company is not a session cookie (separate use)")
       assert(Number(entry.split(".")[1]) > Date.now() + 300 * 86400_000, "a remembered company lasts a year, not a session's 14 days")
@@ -966,7 +966,7 @@ async function main() {
       }
       const inv = await call(adminUsersRoute.POST, "/api/admin/users", { method: "POST", session: cookie, body: { name: `Bob ${run}`, zones: ["ops", "dev"] } })
       assert(inv.status === 201 && inv.data.prompt.includes(`Acme ${run}`) && inv.data.prompt.includes(" ops."), "inviting a colleague: prompt in its name, company zones only")
-      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "the colleague joins the company, not Butine")
+      assert((await acmeStore.listProfiles()).length === 2 && !(await store.listProfiles()).some((p) => p.id === inv.data.profile.id), "the colleague joins the company, not Encore")
 
       const bob = (await profileFromToken(inv.data.token))!
       const bobViewer: Viewer = { profile: bob, real: bob, access: await getAccess(bob) }
@@ -978,15 +978,15 @@ async function main() {
 
       const ing = await runInOrg(acme.id, () => ingestItems(bobViewer, [item("ops", `Oncall procedure for Acme (${run})`)]))
       assert((await acmeStore.getItem(ing.ids[0]))?.zone === "ops", "a knowledge item from Bob's workstation reaches the company")
-      const fromButine = await queryBrain(claire, { query: `oncall Acme ${run}` })
-      assert(fromButine.items.every((i) => i.org_id === butine.id), "Butine sees none of it")
+      const fromEncore = await queryBrain(claire, { query: `oncall Acme ${run}` })
+      assert(fromEncore.items.every((i) => i.org_id === encore.id), "Encore sees none of it")
       const fromAcme = await runInOrg(acme.id, () => queryBrain(alice!, { query: "deploy to production" }))
-      assert(fromAcme.items.length === 0, "and the company sees nothing of Butine")
-      const butineItem = created[0]
-      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${butineItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
-        params: Promise.resolve({ id: butineItem }),
+      assert(fromAcme.items.length === 0, "and the company sees nothing of Encore")
+      const encoreItem = created[0]
+      const del = await itemRoute.DELETE(new Request(`http://smoke.test/api/items/${encoreItem}`, { method: "DELETE", headers: { cookie: `brain_session=${cookie}` } }), {
+        params: Promise.resolve({ id: encoreItem }),
       })
-      assert(del.status === 404 && (await store.getItem(butineItem)), "a Butine knowledge item cannot be found (and is intact) from the company")
+      assert(del.status === 404 && (await store.getItem(encoreItem)), "an Encore knowledge item cannot be found (and is intact) from the company")
       console.log("\n— Team message: ask to join, an admin accepts")
       const decide = (id: string, session: string, body: unknown) =>
         adminJoinIdRoute.POST(new Request(`http://smoke.test/api/admin/join/${id}`, { method: "POST", headers: { cookie: `brain_session=${session}`, "content-type": "application/json" }, body: JSON.stringify(body) }), {
@@ -1009,9 +1009,9 @@ async function main() {
       const status0 = await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: leaToken } })
       assert(status0.status === 200 && status0.data.status === "pending", "the workstation follows its request: pending")
       assert((await call(joinStatusRoute.POST, "/api/join/status", { method: "POST", body: { id: asked.data.id, token: newToken() } })).status === 404, "nobody else can follow the request")
-      const butineAdmin = await createSessionValue(claire.profile.id)
-      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: butineAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Butine does not see the request")
-      assert((await decide(asked.data.id, butineAdmin, { action: "accept", name: "Intruder" })).status === 404, "nor can it accept it")
+      const encoreAdmin = await createSessionValue(claire.profile.id)
+      assert((await call(adminJoinRoute.GET, "/api/admin/join", { session: encoreAdmin })).data.requests.every((r: { id: string }) => r.id !== asked.data.id), "Encore does not see the request")
+      assert((await decide(asked.data.id, encoreAdmin, { action: "accept", name: "Intruder" })).status === 404, "nor can it accept it")
       const accepted = await decide(asked.data.id, cookie, { action: "accept", name: "Léa Bernard", title: "Designer", zones: ["ops"], manager_id: boss.id })
       assert(accepted.status === 200, "a company admin completes and accepts")
       const lea = await profileFromToken(leaToken)
@@ -1066,14 +1066,14 @@ async function main() {
       const progress = (await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: cookie })).data.events as { step: string; message: string }[]
       assert(progress.map((e) => e.step).join() === "start,progress,draft" && /First proposal received: 2 zones, 1 knowledge item/.test(progress[2].message), "the feed: start, finding, proposal received")
       assert(!JSON.stringify(progress).includes("sk-ant"), "secrets redacted in the feed")
-      assert((await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: butineAdmin })).data.events.length === 0, "Butine does not see the feed")
+      assert((await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: encoreAdmin })).data.events.length === 0, "Encore does not see the feed")
       assert((await upload(sendCode, proposal)).status === 201, "the agent sends its completed proposal again")
       const completed = (await call(onboardingProgressRoute.GET, "/api/onboarding/progress", { session: cookie })).data.events.at(-1)
       assert(completed.step === "draft" && completed.message.startsWith("Proposal completed"), "the page knows it is a completed version")
       const pendingDraft = (await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: cookie })).data.draft
       assert(pendingDraft?.source === "codex" && pendingDraft.items.length === 1, "the Onboarding page finds it (it fills itself in)")
       assert(!JSON.stringify(pendingDraft).includes("sk-ant") && !JSON.stringify(pendingDraft).includes("alice@"), "secrets and emails redacted on receipt")
-      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: butineAdmin })).data.draft === null, "Butine does not see it")
+      assert((await call(onboardingImportRoute.GET, "/api/onboarding/import", { session: encoreAdmin })).data.draft === null, "Encore does not see it")
       assert((await acmeStore.listZones()).every((z) => z.id !== "design"), "nothing is applied before validation")
       const { source: _src, ...validated } = pendingDraft
       const applied = await call(onboardingApplyRoute.POST, "/api/onboarding/apply", { method: "POST", session: cookie, body: validated })
@@ -1193,7 +1193,7 @@ async function main() {
             const res = await cron({ authorization: `Bearer secret-${run}` }, "?force=1")
             const body = (await res.json()) as { ran: boolean; orgs: { org_id: string; status: string; reason?: string }[] }
             const acmeRun = body.orgs.find((o) => o.org_id === acme.id)
-            assert(res.status === 200 && body.orgs[0].org_id === butine.id && acmeRun?.reason === "no_claude", "cron: every company is reviewed; without an API key, nothing is created")
+            assert(res.status === 200 && body.orgs[0].org_id === encore.id && acmeRun?.reason === "no_claude", "cron: every company is reviewed; without an API key, nothing is created")
           }
         } finally {
           if (prevSecret === undefined) delete process.env.CRON_SECRET
@@ -1213,7 +1213,7 @@ async function main() {
         assert((await getOrgClaudeKey(acmeStore)) === fakeKey && (await getClaude(acmeStore)) !== null, "the server reads it back for the company's calls")
         const info = await claudeRoute("GET", cookie)
         assert(info.status === 200 && info.data.source === "org" && info.data.last4 === "AbCd" && !JSON.stringify(info.data).includes(fakeKey), "the admin only sees its last 4 characters")
-        assert(!(await getOrgClaudeKey(store)), "Butine does not have Acme's key")
+        assert(!(await getOrgClaudeKey(store)), "Encore does not have Acme's key")
         const removed = await claudeRoute("DELETE", cookie)
         assert(removed.status === 200 && removed.data.source !== "org" && !(await getOrgClaudeKey(acmeStore)), "the admin can remove it")
       }
@@ -1247,7 +1247,7 @@ async function main() {
   const server = http.createServer((req, res) => {
     if (req.url === "/page") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-encoding": "gzip" })
-      return res.end(zlib.gzipSync("<html><head><title>Butine</title></head><body><p>Connected scales for beehives</p></body></html>"))
+      return res.end(zlib.gzipSync("<html><head><title>Encore</title></head><body><p>Refurbished smartphones with a 2-year warranty</p></body></html>"))
     }
     if (req.url === "/big") {
       res.writeHead(200, { "content-type": "text/plain" })
@@ -1269,7 +1269,7 @@ async function main() {
   const fakeBlocked = (ip: string) => ip !== "127.0.0.1" && isBlockedAddress(ip)
   try {
     const okPage = await scrapeUrlWith(`http://public.test:${port}/page`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
-    assert(okPage.title === "Butine" && okPage.text.includes("beehives"), "a public (gzip) page is read")
+    assert(okPage.title === "Encore" && okPage.text.includes("smartphones"), "a public (gzip) page is read")
     const big = await scrapeUrlWith(`http://public.test:${port}/big`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
     assert(!big.error && big.truncated && big.text.length <= 20000, "page size bounded")
     const viaIp = await scrapeUrlWith(`http://public.test:${port}/redirect-ip`, { resolve: async () => [{ address: "127.0.0.1", family: 4 }], isBlocked: fakeBlocked })
@@ -1385,7 +1385,7 @@ async function main() {
 
     const tag = `Moderation ${run}`
     const posted = await ingestItems(hugo, [
-      { ...item("dev", `${tag}: Stripe webhooks go through a Redis queue`, "decision"), body: "To absorb the swarm alert spikes." },
+      { ...item("dev", `${tag}: Stripe webhooks go through a Redis queue`, "decision"), body: "To absorb the Black Friday spikes." },
       { ...item("dev", `${tag}: doctor's appointment on Thursday`, "task"), source: { app: "Screenpipe", tool: "agent", at: new Date().toISOString() } },
       { ...item("dev", `${tag}: VAT to file`), body: "Return before the 19th of the month." },
     ])

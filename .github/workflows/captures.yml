@@ -39,7 +39,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Demo data (Butine)
+      - name: Demo data (Encore)
         run: npm run seed -w @brain/web -- --force
 
       - name: Playwright

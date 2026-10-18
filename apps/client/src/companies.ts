@@ -12,7 +12,7 @@ export { companyLabel }
 
 type Log = (s: string) => void
 
-/** One numbered line per company: "1. Butine (default): connected scales for beehives…". */
+/** One numbered line per company: "1. Encore (default): refurbished smartphones…". */
 export function describeCompanies(list: Company[]): string {
   return list.map((c, i) => `${i + 1}. ${companyLabel(c)}${i === 0 ? " (default)" : ""}${c.description ? `: ${truncate(c.description.trim(), 200)}` : ""}`).join("\n")
 }

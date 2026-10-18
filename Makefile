@@ -37,7 +37,7 @@ dev: setup migrate check-port ## Run everything: config, dependencies, Postgres,
 	@sh scripts/open-when-ready.sh "http://localhost:$(BRAIN_PORT)" &
 	@$(RUN) BRAIN_LANDING=0 npm run dev
 
-demo: setup migrate check-port ## Like dev, with the Butine demo company (one-click sign-in)
+demo: setup migrate check-port ## Like dev, with the Encore demo company (one-click sign-in)
 	@echo "→ Demo: http://localhost:$(BRAIN_PORT)/demo opens in your browser as soon as the server is ready."
 	@sh scripts/open-when-ready.sh "http://localhost:$(BRAIN_PORT)/demo" &
 	@$(RUN) BRAIN_DEMO=1 BRAIN_LANDING=0 npm run dev
@@ -72,7 +72,7 @@ db-reset: ## Erase all the data of the local database (asks for confirmation)
 migrate: setup db ## Apply the SQL migrations (each one only once)
 	@$(RUN) npm run --silent db:migrate
 
-seed: migrate ## Load Butine into the database (FORCE=1 to overwrite an existing brain)
+seed: migrate ## Load Encore into the database (FORCE=1 to overwrite an existing brain)
 	@$(RUN) npm run seed -- $(if $(FORCE),--force,)
 
 simulate: ## Make fictional agents work (with make demo running in another terminal)

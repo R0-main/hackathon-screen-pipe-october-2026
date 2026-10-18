@@ -62,7 +62,7 @@ jobs:
       - name: Create a company (/create) and pinned install prompt
         run: |
           curl -fsS --cacert ca.crt -X POST https://localhost/api/orgs -H 'content-type: application/json' \
-            -d '{"company":"Butine CI","name":"Claire CI","title":"CEO","zones":["finance","dev"]}' -o org.json
+            -d '{"company":"Encore CI","name":"Claire CI","title":"CEO","zones":["finance","dev"]}' -o org.json
           node -e '
             const fs = require("fs");
             const o = JSON.parse(fs.readFileSync("org.json", "utf8"));
@@ -84,7 +84,7 @@ jobs:
             && curl -fsSL --cacert ~/.company-brain/ca.crt https://localhost/install.sh -o ~/.company-brain/install.sh \
             && sh ~/.company-brain/install.sh --url https://localhost --token "$TOKEN" --ca ~/.company-brain/ca.crt --skip-screenpipe --no-open
           ~/.company-brain/brain status | tee status.txt
-          grep -E "Connection +: OK — Claire CI, Butine CI" status.txt
+          grep -E "Connection +: OK — Claire CI, Encore CI" status.txt
           grep -E "Certificate +: .*SHA-256 fingerprint $FP" status.txt
           grep -E "Claude hooks +: installed" status.txt
 
