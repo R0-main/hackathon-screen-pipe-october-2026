@@ -218,7 +218,11 @@ The company's MCP server (`<brain>/api/mcp/<company id>/<token>`) also has three
 zones lighting up live as the team's agents work), `show_automations` (an admin sets the suggestions up or dismisses
 them in place) and `show_team` (the org chart). In Claude on the web and desktop, add that address as a custom
 connector (Settings → Connectors) and ask "show me the brain": the dashboard's view opens in the conversation, with
-the token's rights. Claude Code only shows their text answer; it lists them as commands (`/mcp__<server>__show_brain`…).
+the token's rights. The address to paste is on the person's page, under **Connect to Claude** (also in the member's
+panel of the org chart, for an admin): it carries a connector key (`cb_mcp_…`) derived from the person's token and
+signed by the brain, so it can be shown again at will without storing anything in clear, does not touch the
+computer's install, and stops working when the token is regenerated. Each person sees their own; an admin sees
+everyone's. Claude Code only shows their text answer; it lists them as commands (`/mcp__<server>__show_brain`…).
 The view (`apps/web/mcp-apps/`) reuses the dashboard's components and is built into one HTML file by
 `npm run build:mcp-apps -w @brain/web` (run by `dev` and `build`).
 

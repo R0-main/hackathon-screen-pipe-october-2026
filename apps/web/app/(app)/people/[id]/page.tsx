@@ -6,6 +6,7 @@ import { runInOrg, storeForOrg } from "@/lib/store"
 import { requirePageViewer } from "@/lib/session"
 import { PageScroll } from "@/components/AppShell"
 import { entityHref } from "@/components/format"
+import { ClaudeConnectButton } from "@/components/ClaudeConnector"
 import { PersonAvatar } from "@/components/PersonDot"
 import { PersonItems } from "@/components/PersonItems"
 import { ZoneTag, zoneColor } from "@/components/ui"
@@ -67,6 +68,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         </div>
         {/* The employee sheet: who did what, to read or hand over (Markdown), or to import into another brain (JSON). */}
         <div className="flex shrink-0 flex-wrap gap-2 sm:self-start">
+          <ClaudeConnectButton userId={id} isSelf={isSelf} />
           <a href={`/api/export?what=person&id=${encodeURIComponent(id)}&format=md`} download className="btn btn-sm">
             Export sheet
           </a>
