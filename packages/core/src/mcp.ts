@@ -317,6 +317,17 @@ export type BrainMcpOptions = {
   clean?: (text: string) => string
   /** `source.app` of the knowledge saved by remember. */
   sourceApp?: string
+  /** Address of the brain serving the logo (the icon clients show next to the server, and its site); missing: none. */
+  baseUrl?: string
+}
+
+/** The server's logo, served by the brain (apps/web: app/icon.svg, public/icon.png); the PNG for clients without SVG. */
+export function brainIcons(baseUrl: string) {
+  const base = baseUrl.replace(/\/+$/, "")
+  return [
+    { src: `${base}/icon.svg`, mimeType: "image/svg+xml", sizes: ["any"] },
+    { src: `${base}/icon.png`, mimeType: "image/png", sizes: ["512x512"] },
+  ]
 }
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean }
@@ -334,7 +345,11 @@ function zoneName(cache: ZoneCache | null, id: string): string {
 
 /** The "company-brain" MCP server and its tools, on the company `open` gives. */
 export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
-  const server = new McpServer({ name: "company-brain", version: opts.version ?? "0.1.0" }, opts.instructions ? { instructions: opts.instructions } : undefined)
+  const identity = opts.baseUrl ? { icons: brainIcons(opts.baseUrl), websiteUrl: opts.baseUrl.replace(/\/+$/, "") } : {}
+  const server = new McpServer(
+    { name: "company-brain", title: "NOS Brainer", version: opts.version ?? "0.1.0", ...identity },
+    opts.instructions ? { instructions: opts.instructions } : undefined,
+  )
   // Zones of each company, by key: start from the cache provided, completed on the first call.
   const caches = new Map<string, ZoneCache | null>()
 
