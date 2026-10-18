@@ -181,7 +181,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                 target="_blank"
                 rel="noreferrer"
                 data-hero="eyebrow"
-                className="mb-6 inline-flex items-center gap-2 text-[14px] text-trace transition-colors duration-150 ease-out hover:text-ink"
+                className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-trace transition-colors duration-150 ease-out hover:border-line-strong hover:text-ink"
               >
                 <ScreenpipeLogo size={16} className="text-ink" />
                 Built on Screenpipe
@@ -319,7 +319,7 @@ function Screenpipe() {
           </a>
         </div>
 
-        <figure data-reveal="panel" className="panel overflow-hidden">
+        <figure data-reveal="panel" className="panel overflow-hidden lg:self-start">
           <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
             <span className="panel-title">What only Screenpipe saw this week</span>
             <span className="text-[12px] text-trace">Encore</span>
