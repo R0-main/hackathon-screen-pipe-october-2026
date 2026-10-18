@@ -1,11 +1,13 @@
 import { z } from "zod"
 import { DEFAULT_ZONES } from "@brain/core"
-import { getRootStore, storeForOrg } from "@/lib/store"
+import { getAccess } from "@/lib/access"
+import { ingestItems } from "@/lib/brain"
+import { getRootStore, runInOrg, storeForOrg } from "@/lib/store"
 import { hashToken, newToken, signupOpen } from "@/lib/auth"
 import { caFingerprint } from "@/lib/ca"
 import { buildInstallPrompt } from "@/lib/install-prompt"
 import { error, internalError, json, parseBody, publicBaseUrl } from "@/lib/http"
-import { zonesForNewOrg } from "@/lib/onboarding"
+import { coreFromDescription, zonesForNewOrg } from "@/lib/onboarding"
 import { openSession } from "@/lib/session"
 
 export const runtime = "nodejs"
@@ -48,6 +50,9 @@ export async function POST(req: Request) {
     const token = newToken()
     const profile = await store.createProfile({ name, title: title || undefined, role: "admin", manager_id: null, token_hash: hashToken(token) })
     await store.setZoneAccess(profile.id, zones.map((z) => ({ zone_id: z.id, can_write: true })))
+    // What the company does goes into its core right away.
+    const core = coreFromDescription(org.name, org.description)
+    if (core.length) await runInOrg(org.id, async () => ingestItems({ profile, real: profile, access: await getAccess(profile) }, core, "job"))
 
     // The session of the company you come from (if any) stays remembered: you go back to it in one click.
     await openSession(profile.id)

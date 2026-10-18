@@ -105,8 +105,8 @@ type AgentEvent = {
 **RLS**: a user only reads `knowledge_items` if `zone ∈ zone_access(user)`. Admins see everything.
 **The core**: every brain has a `core` zone (`CORE_ZONE`, `packages/core/src/zones.ts`), created by the stores the first
 time a company lists its zones, that every member reads: what anyone in the company needs (what it does and for whom,
-vision, mission, values, key figures, who to ask). Distillation and onboarding file only that there; a team's work stays
-in its zone. On the dashboard, it sits in the middle of the brain, linked to every zone.
+vision, mission, values, key figures, who to ask). Creating a company puts its description there ("What <company>
+does"); distillation and onboarding file only that kind of knowledge there, a team's work stays in its zone. On the dashboard, it sits in the middle of the brain, linked to every zone.
 
 ## The flows in detail
 
