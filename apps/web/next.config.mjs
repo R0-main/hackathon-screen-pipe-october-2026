@@ -40,6 +40,8 @@ const nextConfig = {
   // Allows a verification build next to a running `next dev` (NEXT_DIST_DIR=.next-build).
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
   env: { BRAIN_EXPECTED_MIGRATION: latestMigration() },
+  // The MCP App (scripts/build-mcp-apps.ts), read from disk by the MCP endpoint: shipped with its functions.
+  outputFileTracingIncludes: { "/api/mcp/**": ["./.mcp-apps/**"] },
   async redirects() {
     return LEGACY_PATHS.map(([source, destination]) => ({ source, destination, permanent: true }))
   },

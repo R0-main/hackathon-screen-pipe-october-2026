@@ -1,10 +1,21 @@
 "use client"
 
 import { useState } from "react"
-import type { AutomationSuggestion } from "@brain/core"
-import type { ZoneView } from "@/lib/brain"
+import type { AutomationSuggestion, Zone } from "@brain/core"
 import { api, errorMessage } from "./format"
 import { CheckIcon, ClockIcon, ErrorText, ZoneTag, zoneColor } from "./ui"
+
+/** What the buttons do. By default, the brain's API; the MCP App (show_automations) goes through its MCP server instead. */
+export type AutomationActions = {
+  setStatus: (id: string, status: AutomationSuggestion["status"]) => Promise<unknown>
+  /** Missing: no "Analyze activity" button. */
+  detect?: () => Promise<unknown>
+}
+
+const API_ACTIONS: AutomationActions = {
+  setStatus: (id, status) => api(`/api/automations/${id}`, { method: "PATCH", json: { status } }),
+  detect: () => api("/api/automations/detect", { method: "POST" }),
+}
 
 export function AutomationsPanel({
   automations,
@@ -12,12 +23,14 @@ export function AutomationsPanel({
   zones,
   isAdmin,
   onChange,
+  actions = API_ACTIONS,
 }: {
   automations: AutomationSuggestion[]
   names: Record<string, string>
-  zones: ZoneView[]
+  zones: Zone[]
   isAdmin: boolean
   onChange: () => void
+  actions?: AutomationActions
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -27,7 +40,7 @@ export function AutomationsPanel({
     setBusy(id)
     setErr(null)
     try {
-      await api(`/api/automations/${id}`, { method: "PATCH", json: { status } })
+      await actions.setStatus(id, status)
       onChange()
     } catch (e) {
       setErr(`Could not ${status === "accepted" ? "validate" : "update"}: ${errorMessage(e)}`)
@@ -40,7 +53,7 @@ export function AutomationsPanel({
     setBusy("detect")
     setErr(null)
     try {
-      await api("/api/automations/detect", { method: "POST" })
+      await actions.detect?.()
       onChange()
     } catch (e) {
       setErr(`Could not analyze: ${errorMessage(e)}`)
@@ -53,7 +66,7 @@ export function AutomationsPanel({
     <section className="panel p-4 sm:p-5" aria-busy={busy === "detect"}>
       <div className="flex items-center justify-between gap-2">
         <h2 className="panel-title">Suggested automations</h2>
-        {isAdmin && (
+        {isAdmin && actions.detect && (
           <button type="button" className="btn btn-sm" onClick={detect} disabled={busy === "detect"}>
             {busy === "detect" ? "Analyzing" : "Analyze activity"}
           </button>

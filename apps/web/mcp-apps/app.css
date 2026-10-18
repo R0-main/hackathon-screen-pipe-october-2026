@@ -1,0 +1,8 @@
+/* The dashboard's styles (tokens, .btn, .chip, .panel, the brain's dots and labels), compiled with the classes of the
+   components the views reuse. */
+@import "../app/globals.css";
+
+html,
+body {
+  background: var(--color-surface);
+}

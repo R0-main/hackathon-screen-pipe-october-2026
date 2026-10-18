@@ -17,6 +17,8 @@ deploy/local/certs/*
 deploy/local/ca.crt
 deploy/local/backups/
 apps/web/public/brain.mjs.sha256
+# Built MCP App (scripts/build-mcp-apps.ts)
+apps/web/.mcp-apps/
 .DS_Store
 .next-build/
 
