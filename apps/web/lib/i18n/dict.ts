@@ -25,6 +25,7 @@ export const en = {
     activity: "Live agents",
     status: "Where the company stands",
     knowledge: "Knowledge",
+    allKnowledge: "All knowledge",
     documents: "Documents",
     entities: "Entities",
     skills: "Skills",
