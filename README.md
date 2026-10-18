@@ -11,6 +11,11 @@
 </p>
 
 <p align="center">
+  🌐 <strong>Live at <a href="https://www.nos-brainer.tech">www.nos-brainer.tech</a></strong>
+</p>
+
+<p align="center">
+  <a href="https://www.nos-brainer.tech"><strong>Live site</strong></a> &middot;
   <a href="https://www.nos-brainer.tech/demo"><strong>Live demo</strong></a> &middot;
   <a href="https://www.nos-brainer.tech/create"><strong>Create your brain</strong></a> &middot;
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
