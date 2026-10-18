@@ -180,4 +180,6 @@ Automation detection: the hooks send a **fingerprint** of the normalized prompt 
 
 Sync robustness: each source keeps its checkpoint and its pending conversations. An outage (subscription limit, overload, network, expired token) is never counted against a conversation; a conversation is only given up after 3 proven failures (or 5 attempts over 24 h if Claude does not answer at all any more), so that the checkpoint moves forward without losing data on a mere outage.
 
+Import and export (`apps/web/lib/backup.ts`, format in `packages/core/src/backup.ts`): `GET /api/export?what=brain|skills|clients|person|team` and `POST /api/import` (with `dry_run` for the preview). One JSON format for every export, so any file can be imported back, into the same company or another; people are referred to by their id in the exporting brain and matched on import by email, then name, otherwise created without a token. Clients also come in as a CSV spreadsheet (one knowledge item per client), and an employee sheet reads as Markdown.
+
 Next steps: Notion / Calendar / Todoist connectors, pgvector, voice onboarding interview, consent and retention period (GDPR), real execution of the approved automations.

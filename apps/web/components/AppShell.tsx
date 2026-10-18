@@ -12,6 +12,7 @@ import { PersonAvatar } from "./PersonDot"
 import { usePendingJoins } from "./TeamJoin"
 import { ADMIN_VIEWS } from "./admin-views"
 import {
+  ArchiveIcon,
   BoltIcon,
   BrainIcon,
   ChatIcon,
@@ -112,8 +113,11 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
         { href: "/onboarding", label: t.nav.onboarding, icon: ChatIcon },
         { href: "/connectors", label: t.nav.connectors, icon: LinkIcon },
         { href: "/monitoring", label: t.nav.monitoring, icon: WatchIcon },
+        { href: "/data", label: t.nav.data, icon: ArchiveIcon },
       ]
     : []
+  // Members export their skills, clients and sheet from the same page, without the configuration section.
+  if (!isAdmin) main.push({ href: "/data", label: t.nav.data, icon: ArchiveIcon })
 
   async function viewAs(userId: string) {
     setBusy(true)

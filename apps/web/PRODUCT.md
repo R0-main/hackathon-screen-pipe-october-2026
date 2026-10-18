@@ -36,6 +36,7 @@ The context comes from real work with AI, captured on each computer by Screenpip
 - Handover: a role's context taken over by the replacement, the employee can delete their items.
 - Without a Claude key, everything works with local heuristics.
 - Company skills: kept in the brain with their scripts, publishing reserved to authorized people, Skills tab, assignment of a skill to a cortex (zone) to give it only to those with access to that context; each computer installs its own in ~/.claude/skills.
+- Import and export (`/data`): the whole brain (admins), the skills, the clients (CSV or JSON) and each employee's sheet (Markdown: who did what; JSON: to import elsewhere). An import only adds: duplicates are skipped, people are matched by email then name, tokens are never exported.
 - Pricing shown on the home page is indicative only; no payment is wired, managed hosting is not open yet.
 
 ## Brand Commitments

@@ -34,6 +34,7 @@ export const en = {
     onboarding: "Onboarding",
     connectors: "Connectors",
     monitoring: "Monitoring",
+    data: "Import and export",
     navigation: "Navigation",
     subpages: "Sub-pages",
   },
