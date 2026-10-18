@@ -1,11 +1,10 @@
 "use client"
 
 import { useMemo } from "react"
-import type { KnowledgeItem } from "@brain/core"
 import { useBrainLive } from "./BrainLive"
 import { PageScroll } from "./AppShell"
 import { StatusPanel } from "./StatusPanel"
-import { KnowledgeList, type KnowledgeFilters } from "./KnowledgeList"
+import { KnowledgeList, type ItemWithDocuments, type KnowledgeFilters } from "./KnowledgeList"
 import { peopleLooks } from "./PersonDot"
 import { TasksPanel } from "./TasksPanel"
 import { AutomationsPanel } from "./AutomationsPanel"
@@ -34,11 +33,12 @@ export function StatusView() {
  * `items`: the knowledge read by the page (far more than the live state's 30); those that arrive afterwards through
  * the live state are added at the top.
  */
-export function KnowledgeView({ items, limit, initial }: { items: KnowledgeItem[]; limit: number; initial?: KnowledgeFilters }) {
+export function KnowledgeView({ items, limit, initial }: { items: ItemWithDocuments[]; limit: number; initial?: KnowledgeFilters }) {
   const { state, now } = useBrainLive()
   const merged = useMemo(() => {
     const byId = new Map(items.map((i) => [i.id, i]))
-    for (const i of state.items) byId.set(i.id, i)
+    // The live state's version wins, its documents too (the page's are kept if it has none).
+    for (const i of state.items) byId.set(i.id, { ...byId.get(i.id), ...i })
     return [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at))
   }, [items, state.items])
   return (

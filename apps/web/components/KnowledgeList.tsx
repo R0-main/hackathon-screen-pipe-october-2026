@@ -2,16 +2,20 @@
 
 import Link from "next/link"
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react"
-import type { KnowledgeItem, KnowledgeKind } from "@brain/core"
+import type { DocumentRef, KnowledgeItem, KnowledgeKind } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { fmt, intlLocale, plural, type Locale } from "@/lib/i18n"
 import { DISPLAY_TIMEZONE, entityHref, firstName } from "./format"
+import { DocumentLinks } from "./DocumentLinks"
 import { useT } from "./I18n"
 import { PersonDot, type PersonLook } from "./PersonDot"
 import { RelTime } from "./RelTime"
-import { CloseIcon, Dot, SearchIcon, ZoneBead, ZoneTag, zoneColor } from "./ui"
+import { CloseIcon, Dot, PaperclipIcon, SearchIcon, ZoneBead, ZoneTag, zoneColor } from "./ui"
 
 type ZoneLike = { name: string; color: string; position?: number }
+
+/** A knowledge item and the documents it comes with (those the viewer can open). */
+export type ItemWithDocuments = KnowledgeItem & { documents?: DocumentRef[] }
 
 /**
  * `unreadableNote`: the item's zone is not readable by the viewer (their own item); text of the badge's tooltip.
@@ -25,7 +29,7 @@ export function KnowledgeCard({
   unreadableNote,
   action,
 }: {
-  item: KnowledgeItem
+  item: ItemWithDocuments
   author?: string
   zone?: ZoneView | ZoneLike
   now?: number
@@ -76,6 +80,7 @@ export function KnowledgeCard({
             </span>
             <span className="chip tabular-nums text-trace">{fmt(t.knowledge.confidence, { pct: Math.round(item.confidence * 100) })}</span>
           </div>
+          <DocumentLinks documents={item.documents} />
           {action && <div className="flex justify-end pt-1">{action}</div>}
         </div>
       )}
@@ -99,7 +104,7 @@ export function KnowledgeList({
   initial,
   limit,
 }: {
-  items: KnowledgeItem[]
+  items: ItemWithDocuments[]
   names: Record<string, string>
   zones: ZoneView[]
   looks: Map<string, PersonLook>
@@ -123,7 +128,7 @@ export function KnowledgeList({
       new Map(
         items.map((i) => [
           i.id,
-          fold([i.title, i.body, names[i.author_id] ?? "", zoneById.get(i.zone)?.name ?? "", i.source.app, ...i.entities.map((e) => e.name)].join(" ")),
+          fold([i.title, i.body, names[i.author_id] ?? "", zoneById.get(i.zone)?.name ?? "", i.source.app, ...i.entities.map((e) => e.name), ...(i.documents ?? []).map((d) => d.name)].join(" ")),
         ]),
       ),
     [items, names, zoneById],
@@ -299,7 +304,7 @@ const KnowledgeRow = memo(function KnowledgeRow({
   last,
   locale,
 }: {
-  item: KnowledgeItem
+  item: ItemWithDocuments
   zone?: ZoneView
   author?: string
   look?: PersonLook
@@ -334,6 +339,12 @@ const KnowledgeRow = memo(function KnowledgeRow({
             <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
               <span>{t.kinds[item.kind]}</span>
               {zone && <span className="text-trace">{zone.name}</span>}
+              {item.documents?.length ? (
+                <span className="inline-flex items-center gap-1 text-trace">
+                  <PaperclipIcon size={12} aria-hidden />
+                  {plural(item.documents.length, t.knowledge.documents, t.knowledge.documentsPlural)}
+                </span>
+              ) : null}
             </span>
           </span>
           <span className="flex items-center gap-2 text-[12px] text-trace">
@@ -358,6 +369,7 @@ const KnowledgeRow = memo(function KnowledgeRow({
                 ))}
               </ul>
             )}
+            <DocumentLinks documents={item.documents} className="mt-3" />
             <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-trace">
               {author && (
                 <span>
@@ -414,8 +426,8 @@ function dayKey(iso: string): string {
   return Number.isNaN(t) ? "" : new Date(t).toLocaleDateString("en-CA", { timeZone: DISPLAY_TIMEZONE })
 }
 
-function groupByDay(items: KnowledgeItem[]): { key: string; items: KnowledgeItem[] }[] {
-  const out: { key: string; items: KnowledgeItem[] }[] = []
+function groupByDay<T extends KnowledgeItem>(items: T[]): { key: string; items: T[] }[] {
+  const out: { key: string; items: T[] }[] = []
   for (const i of items) {
     const key = dayKey(i.created_at)
     const last = out[out.length - 1]

@@ -9,10 +9,12 @@ import {
   tokenize,
   type AgentEvent,
   type AutomationSuggestion,
+  type BrainDocument,
   type CompanyStatus,
   type KnowledgeItem,
   type Org,
   type Profile,
+  type ScoredDocument,
   type ScoredItem,
   type Skill,
   type SyncReport,
@@ -21,7 +23,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
@@ -45,6 +47,8 @@ type Data = {
   automations: AutomationSuggestion[]
   /** Missing from files written before skills. */
   skills?: Skill[]
+  /** Documents' metadata (their text and bytes are files of the documents/ folder). Missing from older files. */
+  documents?: BrainDocument[]
   status: CompanyStatus | null
   seq: { event: number }
   /** Added with the team message: missing from older files. */
@@ -103,6 +107,7 @@ function emptyData(org?: { name: string; description: string }): Data {
     tasks: [],
     automations: [],
     skills: [],
+    documents: [],
     status: null,
     seq: { event: 0 },
   }
@@ -736,6 +741,110 @@ export class FileStore implements BrainStore {
     })
   }
 
+  private get documentsDir() {
+    return path.join(this.dir, "documents")
+  }
+  private documentPath(id: string, ext: "bin" | "txt") {
+    return path.join(this.documentsDir, `${id}.${ext}`)
+  }
+  private documentText(id: string): string {
+    try {
+      return fs.readFileSync(this.documentPath(id, "txt"), "utf8")
+    } catch {
+      return ""
+    }
+  }
+
+  async insertDocument(doc: NewDocument) {
+    const { content, text, ...meta } = doc
+    const id = randomUUID()
+    // The files first: the metadata never points to a document whose bytes are missing.
+    fs.mkdirSync(this.documentsDir, { recursive: true })
+    fs.writeFileSync(this.documentPath(id, "bin"), content)
+    fs.writeFileSync(this.documentPath(id, "txt"), text)
+    try {
+      return this.mutate((d) => {
+        const stored: BrainDocument = { ...meta, id, org_id: d.org.id, created_at: doc.created_at ?? new Date().toISOString() }
+        ;(d.documents ??= []).push(stored)
+        return stored
+      })
+    } catch (err) {
+      fs.rmSync(this.documentPath(id, "bin"), { force: true })
+      fs.rmSync(this.documentPath(id, "txt"), { force: true })
+      throw err
+    }
+  }
+  async findDocumentBySha(sha256: string) {
+    return this.load().documents?.find((x) => x.sha256 === sha256) ?? null
+  }
+  async getDocument(id: string) {
+    const doc = this.load().documents?.find((x) => x.id === id)
+    return doc ? { ...doc, text: this.documentText(id) } : null
+  }
+  async getDocumentContent(id: string) {
+    if (!this.load().documents?.some((x) => x.id === id)) return null
+    try {
+      return fs.readFileSync(this.documentPath(id, "bin"))
+    } catch {
+      return null
+    }
+  }
+  async listDocuments(f: DocumentFilter) {
+    const zones = f.zones ? new Set(f.zones) : null
+    const items = f.itemIds ? new Set(f.itemIds) : null
+    return (this.load().documents ?? [])
+      .filter(
+        (x) =>
+          (!zones || zones.has(x.zone) || (f.orAuthorId !== undefined && x.author_id === f.orAuthorId)) &&
+          (!f.zone || x.zone === f.zone) &&
+          (!items || x.item_ids.some((i) => items.has(i))),
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, f.limit ?? 1000)
+  }
+  async searchDocuments(query: string, zones: string[], limit: number, opts: { authorId?: string } = {}): Promise<ScoredDocument[]> {
+    const q = [...new Set(tokenize(query))]
+    if (q.length === 0) return []
+    const allowed = new Set(zones)
+    const matches = (tokens: Set<string>, t: string) => tokens.has(t) || (t.length >= 4 && [...tokens].some((x) => x.startsWith(t)))
+    const scored: ScoredDocument[] = []
+    for (const doc of this.load().documents ?? []) {
+      if (!allowed.has(doc.zone) && !(opts.authorId && doc.author_id === opts.authorId)) continue
+      const head = new Set(tokenize(`${doc.name} ${doc.title}`))
+      const body = new Set(tokenize(this.documentText(doc.id)))
+      let score = 0
+      let hits = 0
+      for (const t of q) {
+        const s = (matches(head, t) ? 3 : 0) + (matches(body, t) ? 1 : 0)
+        if (s > 0) hits++
+        score += s
+      }
+      if (score === 0) continue
+      scored.push({ ...doc, score: Math.round(score * (hits / q.length) * 100) / 100 })
+    }
+    return scored.sort((a, b) => b.score - a.score || b.created_at.localeCompare(a.created_at)).slice(0, limit)
+  }
+  async linkDocument(id: string, itemIds: string[]) {
+    return this.mutate((d) => {
+      const doc = d.documents?.find((x) => x.id === id)
+      if (!doc) return null
+      doc.item_ids = [...new Set([...doc.item_ids, ...itemIds])]
+      return doc
+    })
+  }
+  async deleteDocument(id: string) {
+    const deleted = this.mutate((d) => {
+      const before = d.documents?.length ?? 0
+      d.documents = (d.documents ?? []).filter((x) => x.id !== id)
+      return d.documents.length < before
+    })
+    if (deleted) {
+      fs.rmSync(this.documentPath(id, "bin"), { force: true })
+      fs.rmSync(this.documentPath(id, "txt"), { force: true })
+    }
+    return deleted
+  }
+
   async listAutomations() {
     return [...this.load().automations].sort((a, b) => b.minutes_saved_per_week - a.minutes_saved_per_week)
   }
@@ -902,5 +1011,6 @@ export class FileStore implements BrainStore {
       this.data = emptyData(org)
       this.save()
     })
+    fs.rmSync(this.documentsDir, { recursive: true, force: true })
   }
 }

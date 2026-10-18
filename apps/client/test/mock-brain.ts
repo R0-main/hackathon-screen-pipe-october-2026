@@ -1,5 +1,6 @@
 // Fake brain (minimal API) for the sync and MCP tests.
 
+import { createHash } from "node:crypto"
 import { TEST_ZONES, mockServer } from "./helpers"
 
 export const DEPLOY_ITEM = {
@@ -21,7 +22,11 @@ export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
   const ingested: unknown[] = []
   const received: unknown[] = []
   const automations: unknown[] = []
-  const keys = new Set<string>()
+  /** Item key → its id (like the real brain, a duplicate gives back the id of the item already there). */
+  const keys = new Map<string, string>()
+  /** POST /api/documents received, and the documents kept (by fingerprint). */
+  const uploads: { name: string; sha256?: string; content?: string; item_ids: string[]; zone?: string; auto?: boolean }[] = []
+  const documents = new Map<string, { id: string; name: string; zone: string; item_ids: string[] }>()
   let ingestCalls = 0
   const srv = await mockServer((req) => {
     if (req.headers.authorization !== "Bearer cb_test_token_123456") return { status: 401, body: { error: "Not authenticated" } }
@@ -51,6 +56,19 @@ export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
       return { body: { zone: TEST_ZONES[0], status: null, items: [DEPLOY_ITEM], entities: [{ type: "tool", name: "Vercel", count: 2 }], tasks: [{ id: "t", title: "Write the runbook", status: "open", assignee: "Hugo" }] } }
     if (req.method === "GET" && path === "/api/zones/finance") return { status: 403, body: { error: "You don't have access to this zone." } }
     if (req.method === "GET" && path === "/api/status") return { body: null }
+    if (req.method === "GET" && path === "/api/documents/d1")
+      return {
+        body: {
+          document: {
+            id: "d1", org_id: "o", name: "runbook.pdf", mime: "application/pdf", size: 2048, sha256: "0".repeat(64), zone: "dev",
+            title: "Production runbook", summary: "Merge into main", pages: 1, author_id: "u1", author: "Hugo Bernard",
+            source: { app: "Claude Code", tool: "claude-code", at: "2026-10-08T13:40:00.000Z" }, item_ids: ["i1"],
+            created_at: "2026-10-08T13:40:00.000Z", text: "Merge into main, then tag vX.Y.Z and watch Sentry.",
+          },
+          items: [DEPLOY_ITEM],
+        },
+      }
+    if (req.method === "GET" && path.startsWith("/api/documents/")) return { status: 404, body: { error: "Document not found." } }
     if (req.method === "POST" && path === "/api/query") {
       const q = String((req.body as { query: string }).query)
       const found = /deploy/i.test(q)
@@ -64,17 +82,35 @@ export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
       const items = (req.body as { items: { zone: string; title: string; body: string }[] }).items
       received.push(...items)
       // Like the real brain (E1): an item already received (same zone, same title AND same content) is skipped, counted in `skipped`.
+      const ids: string[] = []
       const fresh = items.filter((i) => {
         const k = JSON.stringify([i.zone, i.title.toLowerCase().trim(), (i.body ?? "").replace(/\s+/g, " ").toLowerCase().trim()])
-        if (keys.has(k)) return false
-        keys.add(k)
+        const known = keys.get(k)
+        if (known) {
+          ids.push(known)
+          return false
+        }
+        const id = `n${keys.size + 1}`
+        keys.set(k, id)
+        ids.push(id)
         return true
       })
       ingested.push(...fresh)
       return {
         status: 201,
-        body: { inserted: fresh.length, skipped: items.length - fresh.length, ids: fresh.map((_, i) => `n${i}`), zones: [...new Set(fresh.map((i) => i.zone))] },
+        body: { inserted: fresh.length, skipped: items.length - fresh.length, ids: fresh.map((_, i) => `n${i}`), item_ids: ids, zones: [...new Set(fresh.map((i) => i.zone))] },
       }
+    }
+    if (req.method === "POST" && path === "/api/documents") {
+      const b = req.body as (typeof uploads)[number]
+      uploads.push(b)
+      const sha = b.content ? createHash("sha256").update(Buffer.from(b.content, "base64")).digest("hex") : b.sha256!
+      const doc = documents.get(sha)
+      if (!doc && !b.content) return { status: 404, body: { error: "Unknown document: send its content." } }
+      const kept = doc ?? { id: `doc${documents.size + 1}`, name: b.name, zone: b.zone ?? "dev", item_ids: [] }
+      kept.item_ids = [...new Set([...kept.item_ids, ...b.item_ids])]
+      documents.set(sha, kept)
+      return { status: doc ? 200 : 201, body: { document: kept, created: !doc, linked: b.item_ids.length } }
     }
     if (req.method === "POST" && path === "/api/automations") {
       const list = (req.body as { workflows: unknown[] }).workflows
@@ -84,5 +120,5 @@ export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
     if (req.method === "POST" && path === "/api/events") return { status: 201, body: { recorded: 1, zones: [] } }
     return undefined
   })
-  return { ...srv, ingested, received, automations, ingestCalls: () => ingestCalls }
+  return { ...srv, ingested, received, automations, uploads, documents, ingestCalls: () => ingestCalls }
 }

@@ -4,6 +4,7 @@ import { statSync } from "node:fs"
 import { basename, join } from "node:path"
 import { DISTILL_MARKER, type Conversation, type ConversationMessage } from "@brain/core"
 import type { FileCheckpoint, State } from "../config"
+import { documentPathsInCodexLine, documentPathsInText } from "../documents"
 import { isBrainSetupText } from "../secrets"
 import { TURN_IDLE_MS } from "./claude-logs"
 import { asString, listJsonlFiles, readNewLines, toIso } from "./jsonl"
@@ -61,12 +62,16 @@ export function parseCodexLine(j: Record<string, unknown>): { msg?: Parsed; even
 export function parseCodexLines(lines: Record<string, unknown>[], opts: { fallbackId: string; since?: Date; secrets?: string[] }): { conversation: Conversation | null; internal: boolean } {
   const msgs: ConversationMessage[] = []
   const events: ConversationMessage[] = []
+  const documents = new Set<string>()
   let cwd: string | undefined
   let internal = false
   const sinceMs = opts.since?.getTime()
   for (const j of lines) {
     const p = parseCodexLine(j)
     if (p.cwd) cwd = p.cwd
+    // Files a command of the agent opens (pdftotext, a script on a spreadsheet…).
+    const at = toIso(j.timestamp)
+    if (sinceMs === undefined || !at || Date.parse(at) >= sinceMs) for (const d of documentPathsInCodexLine(j)) documents.add(d)
     for (const [list, m] of [[msgs, p.msg], [events, p.event]] as const) {
       if (!m) continue
       // Our own calls, or the brain's install session (token in clear text): ignored.
@@ -77,7 +82,10 @@ export function parseCodexLines(lines: Record<string, unknown>[], opts: { fallba
   }
   if (internal) return { conversation: null, internal }
   const chosen = msgs.length ? msgs : events
-  return { conversation: buildConversation({ id: opts.fallbackId, tool: "codex", app: "Codex", cwd }, chosen), internal }
+  // The prompt's own files (dropped in the terminal), resolved against the session's folder.
+  for (const m of chosen) if (m.role === "user") for (const d of documentPathsInText(m.text, cwd)) documents.add(d)
+  const docs = documents.size ? { documents: [...documents] } : {}
+  return { conversation: buildConversation({ id: opts.fallbackId, tool: "codex", app: "Codex", cwd, ...docs }, chosen), internal }
 }
 
 /** Session id stable between two reads: the UUID of the file name (rollout-…-<uuid>.jsonl). */

@@ -51,7 +51,7 @@ agent in the company can query, with the rights of its owner.
 |        | Step                    | What happens                                                                                                           |
 | ------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **01** | **Paste one prompt**    | An admin invites a colleague. They paste the prompt into Claude Code: Screenpipe, the company MCP, hooks and sync are installed in one command. |
-| **02** | **Work as usual**       | Every 15 minutes, `brain-sync` reads Screenpipe and the agent logs, strips secrets and personal content, and sends only distilled knowledge. |
+| **02** | **Work as usual**       | Every 15 minutes, `brain-sync` reads Screenpipe and the agent logs, strips secrets and personal content, and sends only distilled knowledge, with the documents (PDF, Word, Excel…) a session worked on. |
 | **03** | **Every agent knows**   | Anyone's Claude Code, Codex or Claude asks the brain through MCP. The zone it reads lights up live on the dashboard.  |
 
 <br/>
@@ -85,6 +85,7 @@ the brain enforces who reads what.
 | ❌ "We freeze Black Friday prices on Nov 17" was decided on Monday's Zoom. It only exists in people's heads.  | ✅ Screenpipe transcribes the meeting; it becomes a **decision** in the brain, with who said it and when.                      |
 | ❌ Sales answers a tricky VAT question with ChatGPT in Chrome. No log, no hook: invisible.                    | ✅ Screenpipe's semantic parser turns the browser chat into a conversation, distilled exactly like a Claude Code session.      |
 | ❌ 30 employees, 30 local databases, ~19 GB each every two weeks. Nothing queryable at company level.         | ✅ A few KB of distilled knowledge per computer per day, in one brain the whole company can search.                           |
+| ❌ "Q3 revenue: €1.86M" is in the brain, but the revenue PDF it came from sits in Jean-Marc's Downloads.               | ✅ **Documents travel with their knowledge**: the file a session read goes with the facts drawn from it, in the same zone, and any agent opens it with `get_document`. |
 | ❌ A shared memory means everyone, and every agent, reads everything.                                        | ✅ **Per-zone access**, enforced on every route and in Postgres RLS. Agents inherit their owner's rights through their token. |
 | ❌ The same prompt every morning, the same copy-paste every Monday. Nobody notices.                          | ✅ Repeated prompts and Screenpipe workflows become **automation suggestions** in one place, set up by an admin.             |
 | ❌ Someone goes on leave and their context goes with them.                                                   | ✅ A **handover page**: their zones, tools, recurring prompts and knowledge, ready for whoever replaces them.                 |

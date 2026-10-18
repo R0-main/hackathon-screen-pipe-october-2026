@@ -9,7 +9,7 @@ export { StoreSetupError, isStoreSetupError } from "./errors"
 
 // Bump when the stores' interface or behavior changes: in `next dev`, the singleton survives
 // hot reload and would otherwise keep an instance of the old class (missing methods).
-const STORE_VERSION = 7
+const STORE_VERSION = 8
 
 const g = globalThis as unknown as { __brainStore?: BrainStore; __brainStoreVersion?: number; __brainOrgContext?: AsyncLocalStorage<string> }
 

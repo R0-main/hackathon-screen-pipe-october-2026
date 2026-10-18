@@ -10,10 +10,12 @@ import {
   tokenize,
   type AgentEvent,
   type AutomationSuggestion,
+  type BrainDocument,
   type CompanyStatus,
   type KnowledgeItem,
   type Org,
   type Profile,
+  type ScoredDocument,
   type ScoredItem,
   type Skill,
   type SyncReport,
@@ -22,7 +24,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 import { JOIN_MISSING_MESSAGE, SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
@@ -152,6 +154,34 @@ function toSkill(r: Row): Skill {
     updated_at: iso(r.updated_at),
   }
 }
+
+/** Columns of `documents` returned to callers: never the bytes nor the text (read apart). */
+const DOCUMENT_COLUMNS = ["id", "org_id", "author_id", "zone", "name", "mime", "size", "sha256", "title", "summary", "pages", "source", "item_ids", "created_at"]
+
+function toDocument(r: Row): BrainDocument {
+  return {
+    id: r.id,
+    org_id: r.org_id,
+    author_id: r.author_id,
+    zone: r.zone,
+    name: r.name,
+    mime: r.mime,
+    size: Number(r.size),
+    sha256: r.sha256,
+    title: r.title,
+    summary: r.summary,
+    ...(r.pages != null ? { pages: Number(r.pages) } : {}),
+    source: r.source ?? {},
+    item_ids: r.item_ids ?? [],
+    created_at: iso(r.created_at),
+  }
+}
+
+/** Search text of a document: the start is enough to find it (and keeps the tsvector under its 1 MB limit). */
+const DOCUMENT_SEARCH_CHARS = 100_000
+
+const DOCUMENTS_MISSING_MESSAGE =
+  "The database needs an update: the documents table is missing. Apply the migrations (npm run db:migrate)."
 
 /** Missing skills table: the skills migration was not applied. */
 const SKILLS_MISSING_MESSAGE =
@@ -969,6 +999,102 @@ export class PostgresStore implements BrainStore {
     const [r] = await this.sql`update tasks set status = ${patch.status ?? c.status}, assignee_id = ${patch.assignee_id ?? c.assignee_id},
       updated_at = now() where id = ${id} returning *`
     return toTask(r)
+  }
+
+  /** Query on documents: missing table (migration not applied) → clear configuration error (503). */
+  private async documents<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run()
+    } catch (err) {
+      if (missingTable(err)) throw new StoreSetupError(DOCUMENTS_MISSING_MESSAGE)
+      throw err
+    }
+  }
+
+  async insertDocument(d: NewDocument) {
+    const org = await this.orgId()
+    const items = d.item_ids.filter((id) => UUID_RE.test(id))
+    const [r] = await this.documents(() => this.sql`insert into documents
+      (org_id, author_id, zone, name, mime, size, sha256, title, summary, pages, source, item_ids, content, text, search_title, search_body, created_at)
+      values (${org}, ${d.author_id}, ${d.zone}, ${d.name}, ${d.mime}, ${d.size}, ${d.sha256}, ${d.title}, ${d.summary}, ${d.pages ?? null},
+        ${this.sql.json(d.source)}, ${this.sql.array(items)}::uuid[], ${d.content}, ${d.text}, ${normalize(`${d.name} ${d.title}`)},
+        ${normalize(d.text.slice(0, DOCUMENT_SEARCH_CHARS))}, ${d.created_at ?? new Date().toISOString()})
+      returning ${this.sql(DOCUMENT_COLUMNS)}`)
+    return toDocument(r)
+  }
+  async findDocumentBySha(sha256: string) {
+    const org = await this.orgId()
+    const [r] = await this.documents(() => this.sql`select ${this.sql(DOCUMENT_COLUMNS)} from documents where org_id = ${org} and sha256 = ${sha256}`)
+    return r ? toDocument(r) : null
+  }
+  async getDocument(id: string) {
+    if (!UUID_RE.test(id)) return null
+    const org = await this.orgId()
+    const [r] = await this.documents(() => this.sql`select ${this.sql(DOCUMENT_COLUMNS)}, text from documents where id = ${id} and org_id = ${org}`)
+    return r ? { ...toDocument(r), text: r.text as string } : null
+  }
+  async getDocumentContent(id: string) {
+    if (!UUID_RE.test(id)) return null
+    const org = await this.orgId()
+    const [r] = await this.documents(() => this.sql`select content from documents where id = ${id} and org_id = ${org}`)
+    return r ? Buffer.from(r.content as Uint8Array) : null
+  }
+  async listDocuments(f: DocumentFilter) {
+    const sql = this.sql
+    const author = f.orAuthorId && UUID_RE.test(f.orAuthorId) ? f.orAuthorId : null
+    if (f.zones && f.zones.length === 0 && !author) return []
+    const items = f.itemIds?.filter((id) => UUID_RE.test(id))
+    if (items && items.length === 0) return []
+    const scope = !f.zones
+      ? sql``
+      : f.zones.length && author
+        ? sql`and (zone in ${sql(f.zones)} or author_id = ${author})`
+        : f.zones.length
+          ? sql`and zone in ${sql(f.zones)}`
+          : sql`and author_id = ${author}`
+    const org = await this.orgId()
+    const rows = await this.documents(() => sql`
+      select ${sql(DOCUMENT_COLUMNS)} from documents
+      where org_id = ${org} ${scope}
+        ${f.zone ? sql`and zone = ${f.zone}` : sql``}
+        ${items ? sql`and item_ids && ${sql.array(items)}::uuid[]` : sql``}
+      order by created_at desc
+      limit ${f.limit ?? 1000}`)
+    return rows.map(toDocument)
+  }
+  async searchDocuments(query: string, zones: string[], limit: number, opts: { authorId?: string } = {}): Promise<ScoredDocument[]> {
+    const terms = tsTerms(query)
+    const sql = this.sql
+    const author = opts.authorId && UUID_RE.test(opts.authorId) ? opts.authorId : null
+    if (terms.length === 0 || (zones.length === 0 && !author)) return []
+    const scope =
+      zones.length && author ? sql`(d.zone in ${sql(zones)} or d.author_id = ${author})` : zones.length ? sql`d.zone in ${sql(zones)}` : sql`d.author_id = ${author}`
+    const org = await this.orgId()
+    const rows = await this.documents(() => sql`
+      select ${sql(DOCUMENT_COLUMNS.map((c) => `d.${c}`))}, ts_rank_cd(d.search, q) * (
+          (select count(*) from unnest(${sql.array(terms)}::text[]) t where d.search @@ to_tsquery('simple', t))::float / ${terms.length}
+        ) as score
+      from documents d, to_tsquery('simple', ${terms.join(" | ")}) q
+      where d.org_id = ${org} and ${scope} and d.search @@ q
+      order by score desc, d.created_at desc
+      limit ${limit}`)
+    return rows.map((r) => ({ ...toDocument(r), score: Math.round(Number(r.score) * 1000) / 100 }))
+  }
+  async linkDocument(id: string, itemIds: string[]) {
+    if (!UUID_RE.test(id)) return null
+    const org = await this.orgId()
+    const items = itemIds.filter((x) => UUID_RE.test(x))
+    const [r] = await this.documents(() => this.sql`update documents
+      set item_ids = (select coalesce(array_agg(distinct x), '{}') from unnest(item_ids || ${this.sql.array(items)}::uuid[]) x)
+      where id = ${id} and org_id = ${org}
+      returning ${this.sql(DOCUMENT_COLUMNS)}`)
+    return r ? toDocument(r) : null
+  }
+  async deleteDocument(id: string) {
+    if (!UUID_RE.test(id)) return false
+    const org = await this.orgId()
+    const rows = await this.documents(() => this.sql`delete from documents where id = ${id} and org_id = ${org} returning id`)
+    return rows.length > 0
   }
 
   async listAutomations() {

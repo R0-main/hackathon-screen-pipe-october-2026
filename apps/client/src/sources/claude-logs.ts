@@ -4,6 +4,7 @@ import { statSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { DISTILL_MARKER, type Conversation, type ConversationMessage } from "@brain/core"
 import type { FileCheckpoint, State } from "../config"
+import { documentPathsInText, documentPathsInToolUse } from "../documents"
 import { isBrainSetupText } from "../secrets"
 import { asString, listJsonlFiles, readNewLines, toIso } from "./jsonl"
 import { buildConversation, type SourceResult } from "./types"
@@ -52,6 +53,25 @@ export function parseClaudeLine(j: Record<string, unknown>): { sessionId?: strin
   return { sessionId: asString(j.sessionId), role, text, at: toIso(j.timestamp), cwd: asString(j.cwd) }
 }
 
+/**
+ * Documents a transcript line works on: the files its tool calls open (Read, Bash) and those named in the person's
+ * message (dropped in the prompt, @mention). Never the outputs (a `ls` of Downloads names files nobody opened).
+ */
+export function documentPathsOfLine(j: Record<string, unknown>): string[] {
+  if ((j.type !== "user" && j.type !== "assistant") || j.isMeta === true || j.isCompactSummary === true) return []
+  const cwd = asString(j.cwd)
+  const content = (j.message as { content?: unknown } | undefined)?.content
+  if (typeof content === "string") return j.type === "user" ? documentPathsInText(cleanUserText(content), cwd) : []
+  if (!Array.isArray(content)) return []
+  const out: string[] = []
+  for (const b of content as (Block & { input?: unknown })[]) {
+    if (!b || typeof b !== "object") continue
+    if (b.type === "tool_use" && j.type === "assistant") out.push(...documentPathsInToolUse(b, cwd))
+    else if (b.type === "text" && j.type === "user" && typeof b.text === "string") out.push(...documentPathsInText(cleanUserText(b.text), cwd))
+  }
+  return out
+}
+
 export type ClaudeParseResult = { conversations: Conversation[]; internal: boolean }
 
 /**
@@ -62,7 +82,7 @@ export function parseClaudeLines(
   lines: Record<string, unknown>[],
   opts: { fallbackId: string; since?: Date; brainHome?: string; secrets?: string[] },
 ): ClaudeParseResult {
-  const sessions = new Map<string, { messages: ConversationMessage[]; cwd?: string }>()
+  const sessions = new Map<string, { messages: ConversationMessage[]; cwd?: string; documents?: Set<string> }>()
   let title: string | undefined
   let internal = false
   const sinceMs = opts.since?.getTime()
@@ -70,6 +90,17 @@ export function parseClaudeLines(
     if (j.type === "summary" && typeof j.summary === "string") title = j.summary
     const cwd = asString(j.cwd)
     if (cwd && opts.brainHome && resolve(cwd) === opts.brainHome) internal = true
+    // Files the turn worked on (Read tool, file dropped in the prompt): lines without text count too.
+    const docs = documentPathsOfLine(j)
+    if (docs.length) {
+      const at = toIso(j.timestamp)
+      if (sinceMs === undefined || !at || Date.parse(at) >= sinceMs) {
+        const id = asString(j.sessionId) ?? opts.fallbackId
+        const s = sessions.get(id) ?? { messages: [] }
+        for (const d of docs) (s.documents ??= new Set()).add(d)
+        sessions.set(id, s)
+      }
+    }
     const p = parseClaudeLine(j)
     if (!p) continue
     if (p.text.includes(DISTILL_MARKER) || isBrainSetupText(p.text, opts.secrets)) internal = true
@@ -83,7 +114,7 @@ export function parseClaudeLines(
   if (internal) return { conversations: [], internal }
   const conversations: Conversation[] = []
   for (const [id, s] of sessions) {
-    const conv = buildConversation({ id, tool: "claude-code", app: "Claude Code", title, cwd: s.cwd }, s.messages)
+    const conv = buildConversation({ id, tool: "claude-code", app: "Claude Code", title, cwd: s.cwd, ...(s.documents?.size ? { documents: [...s.documents] } : {}) }, s.messages)
     if (conv) conversations.push(conv)
   }
   return { conversations, internal }
