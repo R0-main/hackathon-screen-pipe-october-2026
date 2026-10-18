@@ -123,10 +123,10 @@ it from the install prompt, and Claude, ChatGPT, Cursor or VS Code from **Connec
 connector address to paste, nothing to install). That is how sales and finance use the brain too.
 
 <p align="center">
-  <img src="docs/screenshots/mcp-app-brain.png" alt="show_brain in Claude: the company's live 3D brain inside the conversation" width="900" />
+  <img src="docs/screenshots/mcp-app-brain.png" alt="Asked in Claude to show the company brain, the agent calls show_brain and the live 3D brain opens in the conversation" width="760" />
 </p>
 
-<p align="center"><sub><code>show_brain</code> in Claude: the company's live 3D brain opens in the conversation, and its zones light up as the team's agents search.</sub></p>
+<p align="center"><sub>"Show me the company brain", asked in Claude: the agent calls the brain's <code>show_brain</code> tool and the live 3D brain opens in the conversation. Its zones light up as the team's agents search.</sub></p>
 
 | Tool                                   | What the agent gets                                                                                                        |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
