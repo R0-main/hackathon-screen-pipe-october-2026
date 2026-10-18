@@ -59,7 +59,8 @@ more emptiness. The rules below apply to all of `apps/web`. They are coded in
   in the middle, between the hemispheres: a larger gray bead with a thin halo, its knowledge on two crossed orbits (thin
   tubes), a spoke to each zone's center where the flow runs. The core and its spokes are drawn over the network, seen
   through it, without erasing anything around them. It is never anyone's home zone (people stay at the edge of their
-  zone). In 2D, a disc on the fissure with a dotted thread to each zone.
+  zone). In 2D, a disc on the fissure with a dotted thread to each zone. Its geometry (place, orbits, spokes) is in
+  `brain-geometry.ts`, shared with the home page brain, where it settles like the zones and gets named with them.
 - Active zone: phosphor on its beads and its center, phosphor ripple, white bubble with the label.
 - Labels = real HTML buttons projected onto the scene (keyboard and screen reader), drag to rotate,
   wheel, pinch or buttons to zoom. Without WebGL: `BrainViz` (2D, same monochrome).

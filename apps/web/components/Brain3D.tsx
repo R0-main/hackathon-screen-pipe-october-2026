@@ -6,7 +6,27 @@ import type * as THREE from "three"
 import { isCoreZone } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes, type V3 } from "./brain-geometry"
+import {
+  CORE_ORBITS,
+  arcBetween,
+  backFade,
+  brainNetwork,
+  brainSurface,
+  coreCenter,
+  coreSpot,
+  curveNetwork,
+  gradientSegments,
+  hashString,
+  knowledgeLinks,
+  orbitPoint,
+  seeded,
+  shadeCurves,
+  spokeCurve,
+  territories,
+  zoneAnchors,
+  zoneNodes,
+  type V3,
+} from "./brain-geometry"
 import { arcBeads, arcTube, type FlowArc } from "./arc-flow"
 import { assignLooks, dotKit, type DotLook } from "./dot-model"
 import { firstName } from "./format"
@@ -68,7 +88,8 @@ const SYNAPSE_R = 0.0045
 const CENTER_R = 0.042
 /**
  * The core, in the middle of the brain, between the two hemispheres: a larger gray bead, its knowledge on two
- * crossed orbits, and a spoke to each zone's center, where the flow runs as between two zones.
+ * crossed orbits, and a spoke to each zone's center, where the flow runs as between two zones (geometry shared with
+ * the home page: brain-geometry).
  */
 const CORE_R = 0.062
 /** The core's color when it lights up: graphite, its gray deepened. */
@@ -79,11 +100,6 @@ const CORE_HALO = 1.75
 const ORBIT_R = 0.0028
 /** The core is drawn over the rest of the brain, seen through it: it reads at once, whatever the side you look from. */
 const CORE_ON_TOP = 4
-/** Each orbit: radius, then tilt (Euler x, y, z): two rings that cross like an X seen in profile. */
-const CORE_ORBITS: { r: number; tilt: V3 }[] = [
-  { r: 0.2, tilt: [0.75, 0, 0.7] },
-  { r: 0.28, tilt: [-0.75, 0, -0.7] },
-]
 const SPOKE_R = 0.0042
 /** People dots: distance from the brain's silhouette and between two neighboring dots, in pixels (before zoom). */
 const DOT_GAP = 32
@@ -471,25 +487,14 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   // orbits, drawn as thin rings that take the ink of its links when it lights up.
   const coreGfx = (() => {
     if (!coreZone) return null
-    const mass = surface.filter((sp) => sp.part === "cortex")
-    const at = new T.Vector3(mass.reduce((sum, sp) => sum + sp.p[0], 0) / mass.length, mass.reduce((sum, sp) => sum + sp.p[1], 0) / mass.length, 0)
-    const orbits = CORE_ORBITS.map(({ r, tilt }) => {
-      const q = new T.Quaternion().setFromEuler(new T.Euler(...tilt))
-      return { r, u: new T.Vector3(1, 0, 0).applyQuaternion(q), v: new T.Vector3(0, 0, 1).applyQuaternion(q) }
-    })
-    const onOrbit = (o: (typeof orbits)[number], angle: number) => at.clone().addScaledVector(o.u, Math.cos(angle) * o.r).addScaledVector(o.v, Math.sin(angle) * o.r)
+    const c = coreCenter()
     const count = beads(coreZone)
-    const spots = Array.from({ length: count }, (_, k) => (rand: () => number) => {
-      const o = orbits[k % orbits.length]
-      const onThis = Math.ceil((count - (k % orbits.length)) / orbits.length)
-      const angle = (Math.floor(k / orbits.length) / onThis) * Math.PI * 2 + (k % orbits.length) * 0.9 + (rand() - 0.5) * 0.35
-      return onOrbit(o, angle)
-    })
-    const g = addZone(coreZone, at, spots, true)
+    const spots = Array.from({ length: count }, (_, k) => (rand: () => number) => new T.Vector3(...coreSpot(c, k, count, rand)))
+    const g = addZone(coreZone, new T.Vector3(...c), spots, true)
     const lineMat = new T.MeshBasicMaterial({ color: CORE_LINE, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false })
     materials.push(lineMat)
-    for (const o of orbits) {
-      const path = new T.CatmullRomCurve3(Array.from({ length: 48 }, (_, k) => onOrbit(o, (k / 48) * Math.PI * 2)), true)
+    for (const o of CORE_ORBITS) {
+      const path = new T.CatmullRomCurve3(Array.from({ length: 48 }, (_, k) => new T.Vector3(...orbitPoint(c, o, (k / 48) * Math.PI * 2))), true)
       const ringGeo = new T.TubeGeometry(path, 160, ORBIT_R, 6, true)
       const ring = new T.Mesh(ringGeo, lineMat)
       ring.renderOrder = CORE_ON_TOP
@@ -499,7 +504,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const haloMat = new T.MeshBasicMaterial({ color: CORE_LINE, side: T.DoubleSide, transparent: true, depthWrite: false, depthTest: false })
     materials.push(haloMat)
     const halo: RingMesh = new T.Mesh(geoRing, haloMat)
-    halo.position.copy(at)
+    halo.position.set(...c)
     halo.renderOrder = CORE_ON_TOP
     group.add(halo)
     return { g, lineMat, haloMat, halo }
@@ -683,23 +688,12 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     materials.push(mat)
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, arc })
   }
-  // Spokes: from the core to each zone's center, as a gradient from its gray to the zone's color, slightly curved
-  // (alternately one way and the other) so that they read as fibers, not as rays.
+  // Spokes: from the core to each zone's center, as a gradient from its gray to the zone's color.
   const spokes: SynapseGfx[] = []
   if (coreG)
     for (const g of gfx.values()) {
       if (g === coreG) continue
-      const a = coreG.centerPos
-      const b = g.centerPos
-      const d = new T.Vector3().subVectors(b, a)
-      const side = new T.Vector3().crossVectors(d, new T.Vector3(0, 1, 0))
-      if (side.lengthSq() < 1e-6) side.set(1, 0, 0)
-      side.normalize().multiplyScalar(d.length() * (spokes.length % 2 === 0 ? 0.12 : -0.12))
-      const mid = new T.Vector3().addVectors(a, b).multiplyScalar(0.5).add(side)
-      const pts = Array.from({ length: 25 }, (_, k) => {
-        const u = k / 24
-        return new T.Vector3().addScaledVector(a, (1 - u) ** 2).addScaledVector(mid, 2 * (1 - u) * u).addScaledVector(b, u ** 2)
-      })
+      const pts = spokeCurve(coreG.centerPos.toArray(), g.centerPos.toArray(), spokes.length % 2 === 0 ? 0.12 : -0.12).map((p) => new T.Vector3(...p))
       const baseOpacity = 0.6
       const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
       const { geo, arc } = arcTube(T, pts, new T.Color(coreG.color), new T.Color(g.locked ? NEUTRAL : g.color), SPOKE_R, `${coreG.id}|${g.id}`)

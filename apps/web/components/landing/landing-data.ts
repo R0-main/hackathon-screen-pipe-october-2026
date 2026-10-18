@@ -1,13 +1,14 @@
-import { DEFAULT_ZONES } from "@brain/core"
+import { CORE_ZONE, DEFAULT_ZONES } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 
 /**
  * Encore's brain (the demo's fictional company) as the home page shows it: same zones and
- * same volumes as `scripts/demo-data.ts`, without a server call since the visitor is not signed in.
+ * same volumes as `scripts/demo-data.ts`, without a server call since the visitor is not signed in. The core comes
+ * last, as the brain lists it.
  */
-const COUNTS: Record<string, number> = { dev: 10, product: 7, sales: 7, finance: 7, support: 4, leadership: 5 }
+const COUNTS: Record<string, number> = { dev: 10, product: 7, sales: 7, finance: 7, support: 4, leadership: 5, core: 5 }
 
-export const LANDING_ZONES: ZoneView[] = DEFAULT_ZONES.map((z) => ({
+export const LANDING_ZONES: ZoneView[] = [...DEFAULT_ZONES, CORE_ZONE].map((z) => ({
   ...z,
   count: COUNTS[z.id] ?? 0,
   last_at: null,

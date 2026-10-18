@@ -373,6 +373,54 @@ export function zoneAnchors(n: number): number[] {
   return anchors
 }
 
+// --- The core: the zone at the center of every brain (shared by the dashboard and the home page) ---
+
+/** The core's place: in the fissure between the hemispheres, at the height of their mass. */
+export function coreCenter(): V3 {
+  const mass = brainSurface().filter((s) => s.part === "cortex")
+  return [mass.reduce((sum, s) => sum + s.p[0], 0) / mass.length, mass.reduce((sum, s) => sum + s.p[1], 0) / mass.length, 0]
+}
+
+/**
+ * The core's two orbits, where its knowledge sits: radius and plane (u, v). Each is a horizontal ring tilted around z
+ * then x (Euler XYZ [a, 0, c]): seen in profile, the two cross like an X.
+ */
+export const CORE_ORBITS: { r: number; u: V3; v: V3 }[] = [
+  [0.2, 0.75, 0.7],
+  [0.28, -0.75, -0.7],
+].map(([r, a, c]) => ({ r, u: [Math.cos(c), Math.sin(c) * Math.cos(a), Math.sin(c) * Math.sin(a)], v: [0, -Math.sin(a), Math.cos(a)] }))
+
+/** Point of an orbit around `c` at the given angle. */
+export function orbitPoint(c: V3, o: (typeof CORE_ORBITS)[number], angle: number): V3 {
+  const [cos, sin] = [Math.cos(angle) * o.r, Math.sin(angle) * o.r]
+  return [c[0] + o.u[0] * cos + o.v[0] * sin, c[1] + o.u[1] * cos + o.v[1] * sin, c[2] + o.u[2] * cos + o.v[2] * sin]
+}
+
+/** Place of the core's k-th knowledge item (out of `count`): in turn on each orbit, evenly spaced, slightly jittered. */
+export function coreSpot(c: V3, k: number, count: number, rand: () => number): V3 {
+  const n = CORE_ORBITS.length
+  const onThis = Math.ceil((count - (k % n)) / n)
+  return orbitPoint(c, CORE_ORBITS[k % n], (Math.floor(k / n) / onThis) * Math.PI * 2 + (k % n) * 0.9 + (rand() - 0.5) * 0.35)
+}
+
+/**
+ * A spoke from the core to a zone's center: a quadratic curve slightly bent sideways (`bend` of its length, one way or
+ * the other from one spoke to the next), so that the spokes read as fibers, not as rays.
+ */
+export function spokeCurve(a: V3, b: V3, bend: number, steps = 24): V3[] {
+  const d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+  // Sideways: perpendicular to the spoke and to the vertical (or along x for a vertical spoke).
+  let side: V3 = [-d[2], 0, d[0]]
+  let len = Math.hypot(side[0], side[2])
+  if (len < 1e-3) [side, len] = [[1, 0, 0], 1]
+  const k = (Math.hypot(d[0], d[1], d[2]) * bend) / len
+  const mid: V3 = [(a[0] + b[0]) / 2 + side[0] * k, (a[1] + b[1]) / 2 + side[1] * k, (a[2] + b[2]) / 2 + side[2] * k]
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps
+    return [0, 1, 2].map((m) => (1 - u) ** 2 * a[m] + 2 * (1 - u) * u * mid[m] + u ** 2 * b[m]) as V3
+  })
+}
+
 /** Nearest zone of each surface point (-1 outside the cortex): splits the cortex into territories. */
 export function territories(anchors: number[]): number[] {
   const surface = brainSurface()
