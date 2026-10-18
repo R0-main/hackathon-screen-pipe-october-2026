@@ -161,6 +161,7 @@ function heroIn(root: HTMLElement) {
     if (el) gsap.fromTo(el, { autoAlpha: 0, y }, { autoAlpha: 1, y: 0, duration: 0.9, ease: "power3.out", delay })
   }
   fade("nav", 0.05, 0)
+  fade("eyebrow", 0.05, 0)
   fade("sub", 0.75)
   fade("cta", 0.87)
   fade("note", 1.01, 0)
