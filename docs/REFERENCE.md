@@ -94,13 +94,13 @@ demo/                 Demo script
   OAuth client declared by hand: the redirect URI to declare is shown. Tokens refreshed automatically, connection test
   (list of tools), SSRF protection on all requests. Tokens, secrets and PKCE verifiers stay on the server.
 - **Connector tools for agents**: each connected MCP server can be opened to the team's agents (no tools, read-only by
-  default, or all tools) and tied to a zone (only those who read it see it). The brain's MCP adds `connected_tools`
-  (list, argument schemas) and `use_connected_tool` (call with the account the admin connected): "find the Notion page
-  about deploying" or "list my Linear issues" from Claude Code.
+  default, or all tools), allowed to every cortex by default or only to some (only those who read one of them see it).
+  The brain's MCP adds `connected_tools` (list, argument schemas) and `use_connected_tool` (call with the account the
+  admin connected): "find the Notion page about deploying" or "list my Linear issues" from Claude Code.
 - **Content import**: "Import now", or automatically every 6 hours. Claude (the company's key or `ANTHROPIC_API_KEY`)
   explores the tool with its read-only tools only, starting with what changed since the last import, and returns lasting
   knowledge (decisions, procedures, facts) that enters the brain like a sync: secrets redacted, duplicates skipped,
-  connector zone or automatic classification.
+  filed in the connector's allowed cortexes only (automatic classification among them).
 - **Language**: the product is in English (interface, server and CLI messages, prompts, demo data). The old French
   routes (`/etat`, `/connecteurs`, `/creer`…) redirect permanently to the English ones.
 - **Real-time feed**: the storage notifies the SSE stream as soon as an event is inserted (local emitter, or

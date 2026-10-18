@@ -8,6 +8,8 @@ import {
   callResultText,
   canonicalResource,
   claudeToolName,
+  connectorAllowed,
+  connectorZones,
   isReadOnlyTool,
   mcpImportDue,
   toolsForAgents,
@@ -133,6 +135,21 @@ test("public view: never a secret, derived status", () => {
   assert.equal(publicMcpConnector({ ...c, tokens: undefined }).status, "needs_auth")
   assert.equal(publicMcpConnector({ ...c, last_check: { at: "", ok: false, tools: [], error: "x" } }).status, "error")
   assert.equal(publicMcpConnector({ ...c, auth: "none", tokens: undefined }).status, "connected")
+  assert.deepEqual(pub.zones, [], "no allowed cortex given: every cortex")
+})
+
+test("allowed cortexes: every cortex by default, otherwise those who read one of them", () => {
+  assert.deepEqual(connectorZones({}), [])
+  assert.deepEqual(connectorZones({ zones: [] }), [])
+  assert.deepEqual(connectorZones({ zones: ["finance", "sales", "finance", ""] }), ["finance", "sales"])
+  assert.deepEqual(connectorZones({ zone: "dev" }), ["dev"], "single zone of older settings")
+  assert.deepEqual(connectorZones({ zones: [], zone: "dev" }), [], "the list wins over the old zone")
+
+  assert.ok(connectorAllowed({}, []), "open to every cortex: even someone who reads none")
+  assert.ok(connectorAllowed({ zones: ["finance", "sales"] }, ["sales"]))
+  assert.ok(!connectorAllowed({ zones: ["finance", "sales"] }, ["dev"]))
+  assert.ok(!connectorAllowed({ zones: ["finance"] }, []))
+  assert.ok(!connectorAllowed({ zone: "finance" }, ["dev"]))
 })
 
 test("return page after sign-in: closed list of internal pages", () => {
