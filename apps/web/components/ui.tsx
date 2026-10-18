@@ -273,23 +273,6 @@ export function LogoutIcon(props: IconProps) {
   )
 }
 
-/** Brain pictogram: an ink stroke, two dots. Never any color. */
-export function BrainIcon({ size = 30, className = "" }: { size?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className={className}>
-      <path
-        d="M15 5c-2.2-1.6-5.6-.8-6.4 1.9C6 7.3 4.6 9.7 5.4 12c-2 1.4-2 4.5 0 6-.8 2.4.7 4.8 3.2 5.1.9 2.7 4.2 3.5 6.4 1.9V5zM17 5c2.2-1.6 5.6-.8 6.4 1.9 2.6.4 4 2.8 3.2 5.1 2 1.4 2 4.5 0 6 .8 2.4-.7 4.8-3.2 5.1-.9 2.7-4.2 3.5-6.4 1.9V5z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <circle cx="10.5" cy="12" r="1.5" fill="currentColor" />
-      <circle cx="21.5" cy="18" r="1.5" fill="currentColor" />
-    </svg>
-  )
-}
-
 /** NOS Brainer logo (same drawing as the favicon): six linked ink beads, the central bead in phosphor. */
 export function LogoMark({ size = 26, className = "" }: { size?: number; className?: string }) {
   return (

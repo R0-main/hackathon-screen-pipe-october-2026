@@ -41,8 +41,9 @@ more emptiness. The rules below apply to all of `apps/web`. They are coded in
 
 ## Logo
 
-- `<LogoMark>` (`components/ui.tsx`) and the favicon `app/icon.svg`, only: top left (home, `/create`, sidebar) and in
-  the tab. Everywhere else, the brain icon stays `<BrainIcon>`.
+- `<LogoMark>` (`components/ui.tsx`) wherever the brand shows: top left (home, `/create`, sidebar), the centered pages
+  (login, demo, resume), the interview's avatar and « Create my company » in the switcher. The favicon `app/icon.svg`
+  and its PNGs (`app/favicon.ico`, `app/apple-icon.png`, `public/icon.png`) are the same drawing.
 - Its central bead is phosphor: the only exception to the phosphor rule, it is part of the brand.
 
 ## Motion

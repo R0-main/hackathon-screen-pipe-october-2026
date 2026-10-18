@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { api, errorMessage } from "./format"
-import { BrainIcon, ErrorText } from "./ui"
+import { ErrorText, LogoMark } from "./ui"
 
 type DemoUser = { id: string; name: string; title?: string; role: string }
 
@@ -44,7 +44,7 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
           <Link href="/" className="rounded-[6px]" aria-label="Home page">
-            <BrainIcon size={56} />
+            <LogoMark size={56} />
           </Link>
           <h1 className="mt-3 text-[24px] font-medium leading-tight">The demo: Encore's brain</h1>
           <p className="mt-1 text-[13px] text-trace">
