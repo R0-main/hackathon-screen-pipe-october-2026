@@ -52,6 +52,16 @@ from a third-party site, run `sudo apt-get` and send telemetry): Screenpipe inst
 | 8 | Team message: request declined, nothing is installed | Says so |
 | 1, 2, 4 | Setup failure, bad call, unsupported system | `brain doctor --json`, explains, runs the "safe" fixes |
 
+## Without an agent: the same command in a terminal
+
+The agent stays the main way. Under its buttons (home page, `/create`), a line in small offers the prompt's command
+for macOS / Linux or for Windows, to paste yourself into a terminal: the same install, Node.js included when it is
+missing (link to nodejs.org for those who would rather install it themselves). Only the agent's extras are left
+out, the review of the last 24 h included: the brain learns from the install onward. The command comes from the
+prompt (`terminalCommands` in [apps/web/lib/install-prompt.ts](../apps/web/lib/install-prompt.ts)); in PowerShell, its
+`exit`s, which would close the window before the output can be read, become a warning that stops the line. Stuck:
+`~/.company-brain/brain doctor` (Windows: `~/.company-brain/brain.cmd doctor`).
+
 ## `brain doctor`: the diagnosis
 
 `~/.company-brain/brain doctor` (Windows: `~/.company-brain/brain.cmd doctor`) checks the whole computer **without
