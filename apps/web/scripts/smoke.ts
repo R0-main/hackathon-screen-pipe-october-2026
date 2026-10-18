@@ -581,7 +581,7 @@ async function main() {
   const mcpTest = await call(mcpConnectorTestRoute.POST, "/api/connectors/mcp/linear/test", { method: "POST", session: claireSession, params: { id: "linear" } })
   assert(mcpTest.status === 200 && mcpTest.data?.last_check?.ok === false && mcpTest.data?.status === "needs_auth", "test without a connection: failure noted, no network call")
   assert((await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/linear", { method: "PUT", session: claireSession, params: { id: "linear" }, body: { agents: "everything" } })).status === 400, "unknown agents rule: 400")
-  assert((await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/linear", { method: "PUT", session: claireSession, params: { id: "linear" }, body: { zone: "unknown-zone" } })).status === 400, "unknown zone: 400")
+  assert((await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/linear", { method: "PUT", session: claireSession, params: { id: "linear" }, body: { zones: ["finance", "unknown-zone"] } })).status === 400, "unknown cortex: 400")
   const mcpPolicy = await call(mcpConnectorRoute.PUT, "/api/connectors/mcp/linear", { method: "PUT", session: claireSession, params: { id: "linear" }, body: { agents: "all", import_enabled: true } })
   assert(mcpPolicy.status === 200 && mcpPolicy.data?.agents === "all" && mcpPolicy.data?.import_enabled === true, "agents rule and import saved")
   const mcpImport = await call(mcpImportRoute.POST, "/api/connectors/mcp/linear/import", { method: "POST", session: claireSession, params: { id: "linear" } })
@@ -597,6 +597,32 @@ async function main() {
   assert(cbAnon.status === 303 && /\/login$/.test(cbAnon.headers.get("location") ?? ""), "OAuth return without a session: to the sign-in")
   for (const id of ["linear", "github"]) await call(mcpConnectorRoute.DELETE, `/api/connectors/mcp/${id}`, { method: "DELETE", session: claireSession, params: { id } })
   assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: claireSession })).data.connectors.length === mcpList.data.connectors.length - 2, "removal: both servers are gone")
+
+  console.log("\n— MCP connectors: allowed cortexes (all by default)")
+  {
+    // A connected server and its tools already cached: no network call.
+    const [savedConnectors, savedTools] = await Promise.all([store.getOrgSetting("mcp_connectors"), store.getOrgSetting("mcp_tools")])
+    const id = `smoke-${run}`
+    const now = new Date().toISOString()
+    const others = JSON.parse(savedConnectors ?? "{}")
+    await store.setOrgSetting("mcp_connectors", JSON.stringify({ ...others, [id]: { id, name: `Smoke ${run}`, url: "https://mcp.smoke.test/mcp", auth: "token", token: "SECRET-SMOKE-TOKEN", enabled: true, added_at: now } }))
+    await store.setOrgSetting("mcp_tools", JSON.stringify({ ...JSON.parse(savedTools ?? "{}"), [id]: { at: now, tools: [{ name: "search", input_schema: { type: "object" }, read_only: true }] } }))
+    try {
+      const sees = async (who: string) => ((await call(connectedToolsRoute.GET, "/api/connected-tools", { session: who })).data.connectors as { id: string }[]).some((c) => c.id === id)
+      assert(!hugo.access.readable.includes("finance"), "Hugo does not read finance")
+      const open = (await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: claireSession })).data.connectors.find((c: { id: string }) => c.id === id)
+      assert(open?.zones?.length === 0 && (await sees(hugoSession)) && (await sees(jmSession)), "by default, every cortex: Hugo and Jean-Marc see its tools")
+      const only = await call(mcpConnectorRoute.PUT, `/api/connectors/mcp/${id}`, { method: "PUT", session: claireSession, params: { id }, body: { zones: ["finance", "finance"] } })
+      assert(only.status === 200 && only.data?.zones?.join() === "finance", "allowed to the finance cortex only")
+      assert((await sees(jmSession)) && !(await sees(hugoSession)), "Jean-Marc (finance) still sees it, Hugo no longer does")
+      const denied = await call(connectedCallRoute.POST, "/api/connected-tools/call", { method: "POST", session: hugoSession, body: { connector: id, tool: "search" } })
+      assert(denied.status === 404, "Hugo cannot call its tools: 404")
+      const reopened = await call(mcpConnectorRoute.PUT, `/api/connectors/mcp/${id}`, { method: "PUT", session: claireSession, params: { id }, body: { zones: [] } })
+      assert(reopened.status === 200 && reopened.data?.zones?.length === 0 && (await sees(hugoSession)), "back to every cortex: Hugo sees it again")
+    } finally {
+      await Promise.all([store.setOrgSetting("mcp_connectors", savedConnectors), store.setOrgSetting("mcp_tools", savedTools)])
+    }
+  }
 
   console.log("\n— Company status produced on a workstation (E4)")
   const originalStatus = await store.getStatus()

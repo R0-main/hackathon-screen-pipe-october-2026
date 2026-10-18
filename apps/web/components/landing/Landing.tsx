@@ -7,6 +7,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
 import Lenis from "lenis"
 import { MCP_CATALOG, catalogEntry } from "@brain/core"
+import { ScreenpipeLogo } from "../brand-logos"
 import { McpLogo } from "../mcp-logos"
 import { GithubIcon, LogoMark, ZoneTag, zoneColor } from "../ui"
 import { InstallActions } from "./InstallActions"
@@ -175,6 +176,16 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
 
           <div ref={heroRef} className="landing-hero">
             <div className="landing-wrap">
+              <a
+                href={SCREENPIPE_URL}
+                target="_blank"
+                rel="noreferrer"
+                data-hero="eyebrow"
+                className="mb-6 inline-flex items-center gap-2 text-[14px] text-trace transition-colors duration-150 ease-out hover:text-ink"
+              >
+                <ScreenpipeLogo size={16} className="text-ink" />
+                Built on Screenpipe
+              </a>
               <h1 id="landing-title" data-hero="title" className="landing-display max-w-[9.5em]">
                 Everything your team learns with AI, in a single brain.
               </h1>
@@ -242,6 +253,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
 
       <div data-after className="relative">
         <span data-thread className="landing-thread" aria-hidden />
+        <Screenpipe />
         <Dashboard />
         <Connectors />
         <Install demo={demo} signup={signup} />
@@ -272,6 +284,74 @@ function Chapter({ title, children, refFn }: { title: string; children: React.Re
   )
 }
 
+const SCREENPIPE_URL = "https://screenpipe.com"
+
+/** Screenpipe on each computer: what no log keeps, shown with knowledge it gave the demo. */
+function Screenpipe() {
+  const seen = [
+    { source: "Google Meet", text: "Weekly sync: Black Friday prices freeze on November 17." },
+    { source: "Zoom", text: "Kalia Santé: 40-phone pilot at €21 per month with a 48-hour replacement." },
+    { source: "ChatGPT in Chrome", text: "Invoice phones sold to Belgian companies." },
+    { source: "Screenpipe agent", text: "Staging migration 0042 times out on the orders index." },
+  ]
+  const ways = [
+    { term: "Browser chats and meetings", def: "Its local API, with the semantic parser and filter_pii: a ChatGPT tab or a call transcript becomes a conversation, distilled like a Claude Code session." },
+    { term: "A Screenpipe agent", def: "On each sync, Claude Code explores the recent activity through the Screenpipe MCP, with read-only tools, and proposes what is worth keeping." },
+    { term: "Habits worth automating", def: "The workflows Screenpipe detects on each computer become automation suggestions, across the whole team." },
+  ]
+  return (
+    <section className="landing-section relative" aria-labelledby="screenpipe">
+      <Bead />
+      <div className="landing-wrap grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
+        <div className="lg:pt-6">
+          <p data-reveal="text" className="flex items-center gap-2 text-[14px] text-trace">
+            <ScreenpipeLogo size={18} className="text-ink" />
+            Screenpipe, on each computer
+          </p>
+          <h2 id="screenpipe" data-reveal="title" className="landing-h2 mt-4 max-w-[12em]">
+            What no log keeps, Screenpipe sees.
+          </h2>
+          <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
+            Screenpipe records each computer&apos;s screen, locally, and its calls when the microphone is on. The brain reads it every 15 minutes: the AI chats in the
+            browser, the meetings, the habits no hook or log file sees. Without it, the brain would only hear the developers&apos; terminals.
+          </p>
+          <a data-reveal="text" href={SCREENPIPE_URL} target="_blank" rel="noreferrer" className="landing-link mt-5 inline-block text-[15px]">
+            screenpipe.com
+          </a>
+        </div>
+
+        <figure data-reveal="panel" className="panel overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <span className="panel-title">What only Screenpipe saw this week</span>
+            <span className="text-[12px] text-trace">Encore</span>
+          </div>
+          <ul data-rows className="divide-y divide-line">
+            {seen.map((s) => (
+              <li key={s.text} className="flex flex-col gap-1 px-5 py-3.5 sm:flex-row sm:gap-4">
+                <span className="w-[136px] shrink-0 text-[13px] text-trace">{s.source}</span>
+                <span className="text-[14px]">{s.text}</span>
+              </li>
+            ))}
+          </ul>
+          <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">
+            Knowledge of the demo, distilled from Screenpipe on four computers. Encore is a fictional company.
+          </figcaption>
+        </figure>
+      </div>
+      <div className="landing-wrap">
+        <dl data-reveal="cards" className="mt-16 grid border-t border-ink sm:grid-cols-3">
+          {ways.map((f) => (
+            <div key={f.term} className="border-b border-line py-5 sm:border-b-0 sm:pr-8 sm:pt-6">
+              <dt className="text-[15px] font-medium">{f.term}</dt>
+              <dd className="mt-1.5 text-[15px] leading-relaxed text-trace">{f.def}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </section>
+  )
+}
+
 /** What the CEO sees: an excerpt of the demo dashboard, in its own components. */
 function Dashboard() {
   const status = [
@@ -281,7 +361,7 @@ function Dashboard() {
     { zone: "finance", text: "September VAT to file before October 19." },
   ]
   return (
-    <section className="landing-section relative" aria-labelledby="ceo">
+    <section className="landing-section relative border-t border-line" aria-labelledby="ceo">
       <Bead />
       <div className="landing-wrap grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
         <div className="lg:pt-6">

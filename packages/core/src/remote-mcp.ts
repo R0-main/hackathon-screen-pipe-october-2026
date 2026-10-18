@@ -162,7 +162,12 @@ export type McpConnectorConfig = {
   last_check?: McpCheck
   /** Tools offered to the team's agents through the brain's MCP (default: read-only). */
   agents?: McpAgentsMode
-  /** Zone it belongs to: those who read it see the tools; the import files content there (none: whole team, auto classification). */
+  /**
+   * Cortexes (zones) allowed to use it: only those who read one of them see its tools, and the import files content in
+   * them only. Absent or empty: every cortex (the default), automatic classification.
+   */
+  zones?: string[]
+  /** @deprecated single zone of older settings, read as `zones: [zone]`. */
   zone?: string
   /** Importing the content into the brain (Claude explores the tool read-only). */
   import?: { enabled: boolean; last_run?: McpImportRun }
@@ -191,9 +196,22 @@ export type McpConnectorPublic = {
   has_token: boolean
   last_check?: McpCheck
   agents: McpAgentsMode
-  zone?: string
+  /** Allowed cortexes; empty: every cortex. */
+  zones: string[]
   import_enabled: boolean
   last_import?: McpImportRun
+}
+
+/** Cortexes the connector is allowed to (older settings: their single zone); empty: every cortex. */
+export function connectorZones(c: Pick<McpConnectorConfig, "zones" | "zone">): string[] {
+  if (Array.isArray(c.zones)) return [...new Set(c.zones.filter((z) => typeof z === "string" && z))]
+  return c.zone ? [c.zone] : []
+}
+
+/** A member who reads `readable` may use the connector: it is open to every cortex, or to one they read. */
+export function connectorAllowed(c: Pick<McpConnectorConfig, "zones" | "zone">, readable: readonly string[]): boolean {
+  const zones = connectorZones(c)
+  return !zones.length || zones.some((z) => readable.includes(z))
 }
 
 export function hasAccess(c: McpConnectorConfig): boolean {
@@ -216,7 +234,7 @@ export function publicMcpConnector(c: McpConnectorConfig): McpConnectorPublic {
     has_token: Boolean(c.token || c.tokens?.access_token),
     last_check: c.last_check,
     agents: c.agents ?? "read",
-    zone: c.zone,
+    zones: connectorZones(c),
     import_enabled: Boolean(c.import?.enabled),
     last_import: c.import?.last_run,
   }

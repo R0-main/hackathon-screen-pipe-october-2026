@@ -1,5 +1,7 @@
 # Demo script (6 minutes; for the 3-minute final, keep steps 1, 2, 4, 5 and 7)
 
+Questions after the demo: [jury Q&A](QA.md).
+
 Fictitious company: **Encore**, refurbished smartphones sold online with a 2-year warranty, to individuals and to companies that equip their teams (18 people: 6 at the office, 12 technicians in the Lyon workshop; 2,100 phones a month, 40 business customers). AI is everywhere: it grades every phone's screen from the bench photos, sets the prices every night, answers 61% of the support tickets and drafts the CSR reports business customers ask for.
 
 ## Before going on stage

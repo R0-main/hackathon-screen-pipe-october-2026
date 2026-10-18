@@ -266,12 +266,29 @@ test("import: Claude explores read-only then saves knowledge (simulated Claude)"
   assert.equal(out.calls, 1)
   assert.equal(out.turns, 3)
 
-  // The connector's zone wins; no read-only tool: clear error.
-  const fixed = await exploreConnector(
-    { id: "notion", name: "Notion", zone: "finance" },
-    { claude: { beta: { messages: { create: async () => script[1] } } } as never, tools: [{ name: "search", input_schema: { type: "object" }, read_only: true }], callTool: async () => ({}), zones, org: { name: "Encore" } },
-  )
-  assert.ok(fixed.items.every((i) => i.zone === "finance"))
+  // Allowed to some cortexes: the content is filed in them only (older single zone included); none left: clear error.
+  const restricted = (c: { zones?: string[]; zone?: string }) => {
+    const prompts: string[] = []
+    return exploreConnector(
+      { id: "notion", name: "Notion", ...c },
+      {
+        // One save, then done.
+        claude: { beta: { messages: { create: async (req: { system: string }) => script[prompts.push(req.system)] } } } as never,
+        tools: [{ name: "search", input_schema: { type: "object" }, read_only: true }],
+        callTool: async () => ({}),
+        zones,
+        org: { name: "Encore" },
+      },
+    ).then((out) => ({ ...out, prompt: prompts[0] }))
+  }
+  const fixed = await restricted({ zones: ["finance"] })
+  assert.ok(fixed.items.every((i) => i.zone === "finance"), "Claude's \"dev\" is outside the allowed cortexes")
+  assert.doesNotMatch(fixed.prompt, /- dev:/, "only the allowed cortexes are offered to Claude")
+  assert.ok((await restricted({ zone: "finance" })).items.every((i) => i.zone === "finance"))
+  const both = await restricted({ zones: ["dev", "finance"] })
+  assert.deepEqual(both.items.map((i) => i.zone), ["dev", "finance"], "several cortexes: Claude's choice, then classification among them")
+  await assert.rejects(restricted({ zones: ["removed"] }), /no longer exist/)
+  // No read-only tool: clear error.
   assert.ok(IMPORT_LIMITS.calls > 0)
   await assert.rejects(exploreConnector({ id: "x", name: "X" }, { claude: claude as never, tools: [], callTool: async () => ({}), zones, org: { name: "Encore" } }), /no read-only tool/)
 })
