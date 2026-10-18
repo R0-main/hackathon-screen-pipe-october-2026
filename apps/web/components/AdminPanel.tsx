@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { slugify, type Profile, type Zone } from "@brain/core"
+import { isCoreZone, slugify, type Profile, type Zone } from "@brain/core"
 import { PageScroll } from "./AppShell"
 import { ConnectAiButton } from "./ConnectAi"
 import { useBrainLive } from "./BrainLive"
@@ -17,6 +17,8 @@ import { AutoZones } from "./AutoZones"
 import { Moderation } from "./Moderation"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 import { possessive } from "@/lib/install-prompt"
+
+const CORE_FOR_ALL = "Everyone reads the core: the vision, the mission, what the company does."
 
 type User = Profile & { zones: string[] }
 
@@ -318,14 +320,16 @@ function MemberDrawer(props: {
           ) : (
             <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Zones visible to ${u.name}`}>
               {zones.map((z) => {
-                const on = u.zones.includes(z.id)
+                const core = isCoreZone(z.id)
+                const on = core || u.zones.includes(z.id)
                 return (
                   <button
                     type="button"
                     key={z.id}
                     className={`chip ${on ? "chip-on" : ""}`}
                     aria-pressed={on}
-                    disabled={props.saving}
+                    disabled={props.saving || core}
+                    title={core ? CORE_FOR_ALL : undefined}
                     onClick={() => props.onToggleZone(z.id)}
                   >
                     <Dot color={zoneColor(z.color, z.position)} />
@@ -404,7 +408,8 @@ function AccessTable(props: {
     <section className="panel p-4 sm:p-5">
       <h2 className="panel-title">Who sees which zones</h2>
       <p className="mt-1 max-w-3xl text-[13px] text-trace">
-        A member, and their agents through the MCP, only reads the ticked zones. Everyone feeds the brain; only reading is restricted. Admins see everything.
+        A member, and their agents through the MCP, only reads the ticked zones, plus the core, which everyone reads. Everyone feeds the brain; only reading is
+        restricted. Admins see everything.
         Publishing skills requires permission; a skill assigned to a cortex is only given to those who read that zone.
       </p>
       <div className="scroll-thin mt-4 overflow-x-auto">
@@ -438,14 +443,15 @@ function AccessTable(props: {
                   <div className="text-[12px] text-trace">{u.title ?? u.email ?? ""}</div>
                 </td>
                 {zones.map((z) => {
-                  const on = u.role === "admin" || u.zones.includes(z.id)
+                  const core = isCoreZone(z.id)
+                  const on = u.role === "admin" || core || u.zones.includes(z.id)
                   return (
-                    <td key={z.id} className="px-2 py-2.5 text-center">
+                    <td key={z.id} className="px-2 py-2.5 text-center" title={core ? CORE_FOR_ALL : undefined}>
                       <input
                         type="checkbox"
                         className="size-4"
                         checked={on}
-                        disabled={u.role === "admin" || saving === u.id}
+                        disabled={u.role === "admin" || core || saving === u.id}
                         onChange={() => props.onToggle(u, z.id)}
                         aria-label={`${u.name}: access to ${z.name}`}
                       />
@@ -581,13 +587,16 @@ function InviteForm({
       {role === "member" && (
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Accessible zones">
           {zones.map((z) => {
-            const on = selected.includes(z.id)
+            const core = isCoreZone(z.id)
+            const on = core || selected.includes(z.id)
             return (
               <button
                 type="button"
                 key={z.id}
                 className={`chip ${on ? "chip-on" : ""}`}
                 aria-pressed={on}
+                disabled={core}
+                title={core ? CORE_FOR_ALL : undefined}
                 onClick={() => setSelected((s) => (on ? s.filter((x) => x !== z.id) : [...s, z.id]))}
               >
                 <Dot color={zoneColor(z.color, z.position)} />

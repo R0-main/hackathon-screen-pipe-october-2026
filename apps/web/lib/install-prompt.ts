@@ -11,6 +11,8 @@
 // connected; 1 failure (→ doctor); 2 bad call; 3 macOS permission pending; 4 unsupported system; 5 download
 // failed; 6 connected without Screenpipe; 7 request not accepted yet; 8 request declined.
 
+import { isCoreZone } from "@brain/core"
+
 /**
  * Our prompts only make sense on the person's own workstation (installing the client, reading their history). A Claude
  * Code session in the cloud (desktop app in a remote environment) stops instead of installing into a container.
@@ -154,7 +156,9 @@ export function aboutOrg(description?: string): string {
 }
 
 export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; orgDescription?: string; zones: string[]; caFingerprint?: string }): string {
-  const { baseUrl, token, name, orgName, orgDescription, zones, caFingerprint } = opts
+  const { baseUrl, token, name, orgName, orgDescription, caFingerprint } = opts
+  // The core is everyone's: the person's zones are the others.
+  const zones = opts.zones.filter((z) => !isCoreZone(z))
   const brain = BRAIN_CLI
   const cmd = installCommands(baseUrl, `--token ${token}`, caFingerprint)
   return `You are going to connect this computer to NOS Brainer, ${possessive(orgName)} company brain.${aboutOrg(orgDescription)} I am ${name}, zones: ${zones.join(", ") || "none yet"}.

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { slugify, type McpConnectorPublic } from "@brain/core"
+import { CORE_ZONE, slugify, type McpConnectorPublic } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { AgentLogos } from "./brand-logos"
 import { AgentRun, AgentToasts, useAgentOnboarding, type AgentEvent, type RunState } from "./AgentProgress"
@@ -943,7 +943,8 @@ function Presence({ connected, self, compact = false }: { connected: boolean; se
 function MiniBrain(props: { frame: React.RefObject<HTMLDivElement | null>; zones: ZoneOption[]; people: { id: string; name: string; connected: boolean }[]; counts: Record<string, number> }) {
   const { frame, zones, people, counts } = props
   const views = useMemo<ZoneView[]>(
-    () => zones.map((z) => ({ ...z, keywords: [], count: counts[z.id] ?? 0, last_at: null, contributors: 0, locked: false, entities: [] })),
+    // The core is there from the start, at the center: every company's brain has one, the zones come around it.
+    () => [CORE_ZONE, ...zones].map((z) => ({ ...z, keywords: [], count: counts[z.id] ?? 0, last_at: null, contributors: 0, locked: false, entities: [] })),
     [zones, counts],
   )
   const [now, setNow] = useState(() => Date.now())

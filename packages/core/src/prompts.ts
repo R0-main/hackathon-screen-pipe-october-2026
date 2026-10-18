@@ -26,7 +26,9 @@ Writing rules:
 - in English, concise, understandable by a colleague who did not see the session;
 - title: a short, precise sentence (≤ 120 characters);
 - body: 1 to 5 sentences, with the "why" when there is one;
-- zone: must be one of the zone ids provided;
+- zone: must be one of the zone ids provided; "core", the zone everyone reads, only takes what any employee needs
+  whatever their team (what the company does and for whom, its vision, mission, values, key figures, who to ask):
+  a team's own work goes in that team's zone;
 - entities: people, projects, customers, tools, documents explicitly mentioned;
 - confidence: between 0 and 1, your confidence that it is accurate and useful;
 - at most 6 items; no item if nothing is worth keeping.`
@@ -229,7 +231,9 @@ You produce:
 - zones: 4 to 8 knowledge areas (short lowercase id without accents, name, description, 10 to 25 keywords without accents
   used to classify work sessions automatically); reuse the existing zones provided when they fit;
 - items: 8 to 25 starting pieces of knowledge (same rules as for a session: fact, decision, procedure, task, question),
-  each attached to a zone.
+  each attached to a zone. The "core" zone always exists and everyone reads it: what any employee needs (what the company
+  does and for whom, its vision, mission, values, key figures) goes there, with "core" as zone; it is not one of the
+  zones you propose.
 In English, factual, without inventing anything that is not in the interview or the pages.`
 
 export const NEW_ZONES_SYSTEM = `You evolve how a company's "brain" is split into knowledge zones (one zone = one area of work).

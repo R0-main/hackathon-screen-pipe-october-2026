@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
+import { isCoreZone } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { CENTER, HEMISPHERES, VIEW_H, VIEW_W, gyriPaths, hemispherePolygon, layoutZones, neuronPositions, polygonPath, round2, smoothPath, type Pt } from "./brain-geometry"
 import { zoneColor } from "./ui"
@@ -14,6 +15,8 @@ const INK = "#0a0a0a"
 const TRACE = "#78786f"
 const LINE = "#e2e2dc"
 const PHOSPHOR = "#c7ff3e"
+/** The core: a disc on the fissure, between the two hemispheres, with a thread to each zone. */
+const CORE_R = 34
 
 const bubble = (label: string) => (label.length > 36 ? `${label.slice(0, 35)}…` : label)
 
@@ -32,7 +35,8 @@ export function BrainViz(props: {
   onSelect?: (zone: string) => void
 }) {
   const { zones, synapses, activity, ripples, now, selected, onSelect } = props
-  const ids = useMemo(() => zones.map((z) => z.id), [zones])
+  const ids = useMemo(() => zones.map((z) => z.id).filter((id) => !isCoreZone(id)), [zones])
+  const core = zones.find((z) => isCoreZone(z.id))
   const cells = useMemo(() => layoutZones(ids), [ids])
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.id, c])), [cells])
   const outlines = useMemo(() => HEMISPHERES.map((h) => smoothPath(hemispherePolygon(h, 140, 1))), [])
@@ -79,6 +83,24 @@ export function BrainViz(props: {
         {gyri.flat().map((d, i) => (
           <path key={i} d={d} fill="none" stroke={LINE} strokeWidth={1} />
         ))}
+
+        {core &&
+          cells.map((c) => {
+            const active = intensity(core.id) > 0 || intensity(c.id) > 0
+            return (
+              <line
+                key={`core-${c.id}`}
+                x1={CENTER[0]}
+                y1={CENTER[1]}
+                x2={c.center[0]}
+                y2={c.center[1]}
+                stroke={active ? INK : TRACE}
+                strokeOpacity={active ? 0.8 : 0.25}
+                strokeDasharray="2 4"
+                className={active ? "synapse-flow" : undefined}
+              />
+            )
+          })}
 
         {synapses.map((s) => {
           const a = cellBy.get(s.a)
@@ -134,6 +156,7 @@ export function BrainViz(props: {
       })}
 
       {ripples.map((r) => {
+        if (core && r.zone === core.id) return <circle key={r.key} cx={CENTER[0]} cy={CENTER[1]} r={CORE_R + 8} fill="none" stroke={PHOSPHOR} strokeWidth={3} className="ripple" />
         const cell = cellBy.get(r.zone)
         if (!cell) return null
         return <circle key={r.key} cx={cell.center[0]} cy={cell.center[1]} r={38} fill="none" stroke={PHOSPHOR} strokeWidth={3} className="ripple" />
@@ -174,6 +197,26 @@ export function BrainViz(props: {
       })}
 
       <path d="M500,40 C496,160 504,460 500,585" stroke={INK} strokeOpacity={0.25} strokeWidth={1} fill="none" />
+
+      {core && (
+        <g onClick={() => onSelect?.(core.id)} style={{ cursor: "pointer" }}>
+          <circle
+            cx={CENTER[0]}
+            cy={CENTER[1]}
+            r={CORE_R}
+            fill={intensity(core.id) > 0 ? PHOSPHOR : selected === core.id ? "#f6f6f3" : "#ffffff"}
+            stroke={zoneColor(core.color, core.position)}
+            strokeWidth={selected === core.id ? 2.5 : 1.5}
+          />
+          <circle cx={CENTER[0]} cy={CENTER[1] - 14} r={4} fill={zoneColor(core.color, core.position)} />
+          <text x={CENTER[0]} y={CENTER[1] + 4} textAnchor="middle" fontSize={14} fontWeight={500} fill={INK}>
+            {core.name}
+          </text>
+          <text x={CENTER[0]} y={CENTER[1] + 19} textAnchor="middle" fontSize={11} fill={TRACE}>
+            {`${core.count} item${core.count === 1 ? "" : "s"}`}
+          </text>
+        </g>
+      )}
     </svg>
   )
 }

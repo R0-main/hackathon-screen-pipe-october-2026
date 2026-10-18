@@ -7,7 +7,7 @@ import type { KnowledgeItem, KnowledgeKind, Zone } from "./types"
 import type { ZoneHint } from "./distill"
 import { jsonObjects } from "./status"
 import { normalize, truncate } from "./text"
-import { slugify } from "./zones"
+import { isCoreZone, slugify } from "./zones"
 
 /** Material re-read: knowledge from the last 30 days, 300 at most (the most recent). */
 export const NEW_ZONES_WINDOW_DAYS = 30
@@ -60,7 +60,8 @@ export function buildNewZonesInput(input: { companyName: string; zones: Zone[]; 
  * - names, descriptions and keywords bounded as in the admin.
  */
 export function planNewZones(proposals: NewZoneProposal[], input: NewZonesInput, existing: Pick<Zone, "id" | "name">[]): NewZonePlan[] {
-  const room = Math.min(NEW_ZONES_PER_RUN, MAX_ZONES - existing.length)
+  // The core, in every brain, does not take a team zone's place.
+  const room = Math.min(NEW_ZONES_PER_RUN, MAX_ZONES - existing.filter((z) => !isCoreZone(z.id)).length)
   if (room <= 0) return []
   const byRef = new Map(input.items.map((i) => [i.ref, i]))
   const takenIds = new Set(existing.flatMap((z) => [z.id, slugify(z.name)]))

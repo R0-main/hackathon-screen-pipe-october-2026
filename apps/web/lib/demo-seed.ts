@@ -21,6 +21,7 @@ import { getStore, isStoreSetupError, type BrainStore } from "./store"
 import type { NewEvent } from "./store/types"
 import {
   DEMO_DOCUMENTS,
+  DEMO_CORE_ITEMS,
   DEMO_ITEMS,
   DEMO_ORG,
   DEMO_PROMPTS,
@@ -242,6 +243,17 @@ export async function upgradeDocumentsDemo(store: BrainStore = getStore()): Prom
   return docs.length
 }
 
+/** Demo brain seeded before the core existed: adds its knowledge (vision, values, who to ask…). Returns how many. */
+export async function upgradeCoreDemo(store: BrainStore = getStore()): Promise<number> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name) return 0
+  const ids = demoTeam(await store.listProfiles())
+  if (!ids) return 0
+  const existing = new Set((await store.listItems({})).map((i) => i.title))
+  const missing = DEMO_CORE_ITEMS.filter((it) => !existing.has(it.title))
+  if (missing.length) await store.insertEvents(await insertDemoItems(store, ids, missing, rand(13)))
+  return missing.length
+}
+
 /** The workflows Screenpipe detected on the computers, as brain-sync reports them (source "screenpipe"). */
 async function seedDemoWorkflows(store: BrainStore, ids: Record<string, string>) {
   await store.upsertAutomations(
@@ -306,6 +318,8 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
 
   // Knowledge (and the matching brain-sync write event), including what came from Screenpipe.
   events.push(...(await insertDemoItems(store, ids, [...DEMO_ITEMS, ...DEMO_SCREENPIPE_ITEMS], r)))
+  // The core: what everyone at Encore needs (same seed as a demo brain that receives it later).
+  events.push(...(await insertDemoItems(store, ids, DEMO_CORE_ITEMS, rand(13))))
 
   events.push(...(await seedDemoSkills(store, ids, allZoneIds)))
   // A database whose documents migration is not applied yet: the demo goes without them.
@@ -460,6 +474,10 @@ async function upgradeOnce(store: BrainStore) {
   await claimed(store, "demo-upgrade-screenpipe", async () => {
     const n = await upgradeScreenpipeDemo(store)
     if (n) console.log(`[demo] brain completed: ${n} Screenpipe item(s) and the detected workflows.`)
+  })
+  await claimed(store, "demo-upgrade-core", async () => {
+    const n = await upgradeCoreDemo(store)
+    if (n) console.log(`[demo] brain completed: ${n} core item(s).`)
   })
   // Documents migration not applied yet: tried again on the next start (the claim is released).
   await claimed(store, "demo-upgrade-documents", async () => {

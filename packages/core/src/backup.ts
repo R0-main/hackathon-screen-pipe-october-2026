@@ -24,7 +24,8 @@ const ZoneSchema = z.object({
   description: z.string().max(1000).default(""),
   color: z.string().max(32).default(""),
   keywords: z.array(z.string().max(80)).max(100).default([]),
-  position: z.number().int().min(0).max(1000).default(0),
+  // -1: the core, before every other zone.
+  position: z.number().int().min(-1).max(1000).default(0),
 })
 
 const PersonSchema = z.object({

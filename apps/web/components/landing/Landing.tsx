@@ -232,6 +232,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
           <Chapter refFn={(el) => (chapterRefs.current[1] = el)} title="One zone per function, access per person.">
             <p>
               The admin chooses who sees what. Jean-Marc, in finance, doesn't need the code: neither he nor his agents have access to the Dev zone.
+              In the middle, the core holds what everyone needs: what Encore does, its vision, who to ask.
             </p>
             <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[14px]" aria-label="Zones of Encore's brain">
               {LANDING_ZONES.map((z) => (

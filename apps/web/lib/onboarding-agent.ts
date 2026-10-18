@@ -4,7 +4,7 @@
 // interview synthesis, POST /api/onboarding/apply).
 
 import { z } from "zod"
-import { KNOWLEDGE_KINDS, ENTITY_TYPES, KnowledgeItemInputSchema, redactText } from "@brain/core"
+import { KNOWLEDGE_KINDS, ENTITY_TYPES, KnowledgeItemInputSchema, isCoreZone, redactText } from "@brain/core"
 import { verifyOnboardingCode } from "./auth"
 import { getRootStore, storeForOrg, type BrainStore } from "./store"
 import { IF_BLOCKED, LOCAL_ONLY, possessive } from "./install-prompt"
@@ -125,7 +125,7 @@ export function clearAgentProgress(store: BrainStore) {
  */
 export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string; orgName: string; description?: string; zones: { id: string; name: string }[] }): string {
   const { baseUrl, code, orgName } = opts
-  const zones = opts.zones.map((z) => `${z.id} (${z.name})`).join(", ") || "none"
+  const zones = opts.zones.filter((z) => !isCoreZone(z.id)).map((z) => `${z.id} (${z.name})`).join(", ") || "none"
   const host = new URL(baseUrl).host
   // The name and what the admin said about the company (/create, onboarding): it is the reading's only filter, so as to
   // learn nothing from an unrelated conversation (personal project, another company, another customer).
@@ -146,6 +146,7 @@ export function buildOnboardingAgentPrompt(opts: { baseUrl: string; code: string
 3. Write ~/.company-brain/onboarding.json:
    {"source": "claude-code" or "codex", "company_name": "…", "description": "2 or 3 sentences", "zones": [{"id": "…", "name": "…", "description": "…", "keywords": ["…"]}], "items": [{"zone": "<id>", "kind": "${KNOWLEDGE_KINDS.join(" | ")}", "title": "…", "body": "…", "entities": [{"type": "${ENTITY_TYPES.join(" | ")}", "name": "…"}]}]}
    3 to 8 zones (current ones: ${zones}; keep their ids if they fit), 10 to 40 self-contained, factual items, in English.
+   What everyone in the company needs (what it does and for whom, vision, values, key figures) goes in the "core" zone, which always exists: give it "core" as zone, without listing it in the zones.
 4. Send a first version as soon as you have the zones and a few items, without waiting for the end:
    curl -fsS -X POST ${baseUrl}/api/onboarding/import ${auth} --data @"$HOME/.company-brain/onboarding.json"
    Then go back to your creation: keep reading, complete the file and send it again (each upload replaces the previous one, the page updates).

@@ -5,6 +5,7 @@
 import { randomBytes } from "node:crypto"
 import postgres from "postgres"
 import {
+  CORE_ZONE,
   DEFAULT_ZONES,
   normalize,
   tokenize,
@@ -652,8 +653,17 @@ export class PostgresStore implements BrainStore {
   }
 
   async listZones() {
-    const rows = await this.sql`select * from zones where org_id = ${await this.orgId()} order by position, id`
-    return rows.map(toZone)
+    const org = await this.orgId()
+    // The core comes after the other zones: the first zone stays a team's (the fallback of a classification, here and
+    // in the clients already installed on the workstations).
+    const rows = await this.sql`select * from zones where org_id = ${org} order by id = ${CORE_ZONE.id}, position, id`
+    if (rows.some((r) => r.id === CORE_ZONE.id)) return rows.map(toZone)
+    // Every brain has its core: created the first time it is missing.
+    const z = CORE_ZONE
+    await this.sql`insert into zones (org_id, id, name, description, color, keywords, position)
+      values (${org}, ${z.id}, ${z.name}, ${z.description}, ${z.color}, ${this.sql.array(z.keywords)}, ${z.position})
+      on conflict (org_id, id) do nothing`
+    return [...rows.map(toZone), { ...z }]
   }
   async upsertZone(z: Zone) {
     await this.sql`insert into zones (org_id, id, name, description, color, keywords, position)

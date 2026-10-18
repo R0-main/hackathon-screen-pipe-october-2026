@@ -3,9 +3,30 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
+import { isCoreZone } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { BrainViz, type Ripple, type ZoneActivity } from "./BrainViz"
-import { arcBetween, backFade, brainNetwork, gradientSegments, knowledgeLinks, brainSurface, curveNetwork, shadeCurves, hashString, seeded, territories, zoneAnchors, zoneNodes, type V3 } from "./brain-geometry"
+import {
+  CORE_ORBITS,
+  arcBetween,
+  backFade,
+  brainNetwork,
+  brainSurface,
+  coreCenter,
+  coreSpot,
+  curveNetwork,
+  gradientSegments,
+  hashString,
+  knowledgeLinks,
+  orbitPoint,
+  seeded,
+  shadeCurves,
+  spokeCurve,
+  territories,
+  zoneAnchors,
+  zoneNodes,
+  type V3,
+} from "./brain-geometry"
 import { arcBeads, arcTube, type FlowArc } from "./arc-flow"
 import { assignLooks, dotKit, type DotLook } from "./dot-model"
 import { firstName } from "./format"
@@ -65,6 +86,21 @@ const NEURON_R = 0.008
 const SYNAPSE_R = 0.0045
 
 const CENTER_R = 0.042
+/**
+ * The core, in the middle of the brain, between the two hemispheres: a larger gray bead, its knowledge on two
+ * crossed orbits, and a spoke to each zone's center, where the flow runs as between two zones (geometry shared with
+ * the home page: brain-geometry).
+ */
+const CORE_R = 0.062
+/** The core's color when it lights up: graphite, its gray deepened. */
+const CORE_GLOW = 0x3a3a35
+/** Its orbits (thin tubes, a little thicker than the network's lines) and its halo (a ring facing the screen). */
+const CORE_LINE = 0x9a9a93
+const CORE_HALO = 1.75
+const ORBIT_R = 0.0028
+/** The core is drawn over the rest of the brain, seen through it: it reads at once, whatever the side you look from. */
+const CORE_ON_TOP = 4
+const SPOKE_R = 0.0042
 /** People dots: distance from the brain's silhouette and between two neighboring dots, in pixels (before zoom). */
 const DOT_GAP = 32
 const DOT_SPACING = 44
@@ -91,12 +127,16 @@ type RingMesh = THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
 
 type ZoneGfx = {
   id: string
+  /** The core: at the center of the brain, never behind it. */
+  core: boolean
   locked: boolean
   color: number
   /** The zone's color when it lights up: its own, more saturated and a little lighter. */
   glow: number
   /** Distance of the knowledge farthest from the center: the ripple goes as far as it. */
   reach: number
+  /** Radius of its bead at rest. */
+  radius: number
   center: SphereMesh
   outline: SphereMesh
   nodes: SphereMesh[]
@@ -359,7 +399,10 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const materials: THREE.Material[] = []
 
   const surface = brainSurface()
-  const anchors = zoneAnchors(zones.length)
+  // The core sits in the middle of the brain; the other zones share the cortex.
+  const coreZone = zones.find((z) => isCoreZone(z.id))
+  const cortex = zones.filter((z) => !isCoreZone(z.id))
+  const anchors = zoneAnchors(cortex.length)
   const owner = territories(anchors)
   /** Surface point i, shifted by k along its normal (k < 0: under the surface). */
   const onSurface = (i: number, k: number) => {
@@ -370,33 +413,34 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const gfx = new Map<string, ZoneGfx>()
   const pickables: THREE.Object3D[] = []
 
-  zones.forEach((z, i) => {
+  /** Number of beads of a zone: grows with its knowledge, a few for a locked zone. */
+  const beads = (z: ZoneView) => (z.locked ? 5 : 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2)))
+  /** A zone: its center, and its knowledge at the given spots (each draws its own position from the zone's seed). */
+  const addZone = (z: ZoneView, centerPos: THREE.Vector3, spots: ((rand: () => number) => THREE.Vector3)[], core = false) => {
     const rand = seeded(hashString(z.id))
-    const centerPos = onSurface(anchors[i], -0.08)
     const color = new T.Color(zoneColor(z.color, z.position)).getHex()
+    const radius = core ? CORE_R : CENTER_R
 
     // A colored dot, without outline: the ink circle only marks the chosen or active zone.
     const centerMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : color })
     const center: SphereMesh = new T.Mesh(geoSphere, centerMat)
     center.position.copy(centerPos)
-    center.scale.setScalar(CENTER_R)
+    center.scale.setScalar(radius)
     center.userData.zone = z.id
     const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide, transparent: true, opacity: 0 })
     materials.push(outlineMat)
     const outline: SphereMesh = new T.Mesh(geoSphere, outlineMat)
     outline.position.copy(centerPos)
-    outline.scale.setScalar(CENTER_R * RIM)
+    outline.scale.setScalar(radius * RIM)
     outline.visible = false
     group.add(outline, center)
     pickables.push(center)
 
-    const count = z.locked ? 5 : 4 + Math.min(16, Math.round(Math.sqrt(z.count) * 2.2))
     const nodeMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : color })
     const nodes: SphereMesh[] = []
     const linkPts: THREE.Vector3[] = []
-    for (const idx of zoneNodes(anchors, owner, i, count)) {
-      // Under the surface, at varied depths: the knowledge is in the brain, not laid on top of it.
-      const p = onSurface(idx, -(0.04 + rand() * 0.14))
+    for (const spot of spots) {
+      const p = spot(rand)
       const r = 0.007 + rand() * 0.006
       const node: SphereMesh = new T.Mesh(geoSphere, nodeMat)
       node.position.copy(p)
@@ -412,13 +456,60 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     }
     const linkMat = new T.LineBasicMaterial({ color: LINE, transparent: true, opacity: 0.7 })
     const linkGeo = new T.BufferGeometry().setFromPoints(linkPts)
-    group.add(new T.LineSegments(linkGeo, linkMat))
+    const links = new T.LineSegments(linkGeo, linkMat)
+    group.add(links)
     geometries.push(linkGeo)
     materials.push(centerMat, nodeMat, linkMat)
-    const glow = new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
+    const glow = core ? CORE_GLOW : new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
     const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
-    gfx.set(z.id, { id: z.id, locked: z.locked, color, glow, reach, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false, mix: 0, outlineMat, dismissedAt: -Infinity })
-  })
+    const g: ZoneGfx = { id: z.id, core, locked: z.locked, color, glow, reach, radius, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false, mix: 0, outlineMat, dismissedAt: -Infinity }
+    gfx.set(z.id, g)
+    if (core)
+      for (const obj of [center, outline, ...nodes, links]) {
+        obj.renderOrder = obj === center || nodes.includes(obj as SphereMesh) ? CORE_ON_TOP + 1 : CORE_ON_TOP
+        const m = obj.material as THREE.Material
+        m.depthTest = false
+        m.transparent = true
+      }
+    return g
+  }
+
+  cortex.forEach((z, i) =>
+    addZone(
+      z,
+      onSurface(anchors[i], -0.08),
+      // Under the surface, at varied depths: the knowledge is in the brain, not laid on top of it.
+      zoneNodes(anchors, owner, i, beads(z)).map((idx) => (rand: () => number) => onSurface(idx, -(0.04 + rand() * 0.14))),
+    ),
+  )
+
+  // The core: in the fissure, at the height of the hemispheres' mass. Its knowledge is spread over two crossed
+  // orbits, drawn as thin rings that take the ink of its links when it lights up.
+  const coreGfx = (() => {
+    if (!coreZone) return null
+    const c = coreCenter()
+    const count = beads(coreZone)
+    const spots = Array.from({ length: count }, (_, k) => (rand: () => number) => new T.Vector3(...coreSpot(c, k, count, rand)))
+    const g = addZone(coreZone, new T.Vector3(...c), spots, true)
+    const lineMat = new T.MeshBasicMaterial({ color: CORE_LINE, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false })
+    materials.push(lineMat)
+    for (const o of CORE_ORBITS) {
+      const path = new T.CatmullRomCurve3(Array.from({ length: 48 }, (_, k) => new T.Vector3(...orbitPoint(c, o, (k / 48) * Math.PI * 2))), true)
+      const ringGeo = new T.TubeGeometry(path, 160, ORBIT_R, 6, true)
+      const ring = new T.Mesh(ringGeo, lineMat)
+      ring.renderOrder = CORE_ON_TOP
+      group.add(ring)
+      geometries.push(ringGeo)
+    }
+    const haloMat = new T.MeshBasicMaterial({ color: CORE_LINE, side: T.DoubleSide, transparent: true, depthWrite: false, depthTest: false })
+    materials.push(haloMat)
+    const halo: RingMesh = new T.Mesh(geoRing, haloMat)
+    halo.position.set(...c)
+    halo.renderOrder = CORE_ON_TOP
+    group.add(halo)
+    return { g, lineMat, haloMat, halo }
+  })()
+  const coreG = coreGfx?.g
 
   // The network that draws the brain: links as arcs, in ink; only the zones carry color.
   const net = brainNetwork(owner)
@@ -584,7 +675,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   for (const s of synapses) {
     const A = gfx.get(s.a)
     const B = gfx.get(s.b)
-    if (!A || !B) continue
+    // The core is already linked to every zone by its spoke.
+    if (!A || !B || A.core || B.core) continue
     const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
     const baseOpacity = 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08)
     const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
@@ -596,14 +688,37 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     materials.push(mat)
     syn.push({ a: s.a, b: s.b, mat, baseOpacity, active: false, arc })
   }
-  // The flow: small light beads in each arc, which speed up when one of the two zones is active.
-  const flow = arcBeads(T, syn.map((s) => s.arc))
-  flow.mesh.visible = !reducedFlow
-  group.add(flow.mesh)
+  // Spokes: from the core to each zone's center, as a gradient from its gray to the zone's color.
+  const spokes: SynapseGfx[] = []
+  if (coreG)
+    for (const g of gfx.values()) {
+      if (g === coreG) continue
+      const pts = spokeCurve(coreG.centerPos.toArray(), g.centerPos.toArray(), spokes.length % 2 === 0 ? 0.12 : -0.12).map((p) => new T.Vector3(...p))
+      const baseOpacity = 0.6
+      const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
+      const { geo, arc } = arcTube(T, pts, new T.Color(coreG.color), new T.Color(g.locked ? NEUTRAL : g.color), SPOKE_R, `${coreG.id}|${g.id}`)
+      // Over the brain near the core, like it: the spokes leave from its bead.
+      const tube = new T.Mesh(geo, mat)
+      tube.renderOrder = CORE_ON_TOP
+      group.add(tube)
+      geometries.push(geo)
+      materials.push(mat)
+      spokes.push({ a: coreG.id, b: g.id, mat, baseOpacity, active: false, arc })
+    }
+  const links = [...syn, ...spokes]
+
+  // The flow: small light beads in each arc, which speed up when one of the two zones is active. Those of the spokes
+  // are drawn on top, like their arcs.
+  const flows = [arcBeads(T, syn.map((s) => s.arc)), arcBeads(T, spokes.map((s) => s.arc))]
+  flows[1].mesh.renderOrder = CORE_ON_TOP
+  for (const f of flows) {
+    f.mesh.visible = !reducedFlow
+    group.add(f.mesh)
+  }
   const flowFrame = (time: number) => {
     if (reducedFlow) return
-    for (const s of syn) s.arc.fast = s.active
-    flow.frame(time)
+    for (const s of links) s.arc.fast = s.active
+    for (const f of flows) f.frame(time)
   }
 
   // People dots: placed on screen, just outside the brain's silhouette, in the direction of their zone.
@@ -672,7 +787,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     if (!rect.width || !rect.height) return null
     ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
     raycaster.setFromCamera(ndc, camera)
-    const hit = raycaster.intersectObjects(pickables, false)[0]
+    const hits = raycaster.intersectObjects(pickables, false)
+    // The core is drawn over the rest: under the pointer, it wins over a bead it hides.
+    const hit = hits.find((h) => coreG && h.object.userData.zone === coreG.id) ?? hits[0]
     return hit ? ((hit.object.userData.zone as string) ?? null) : null
   }
   let dragging = false
@@ -764,7 +881,9 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   /** Activity (in ms, browser clock) dating from the click just left, or coming back from it late. */
   const dismissed = (g: ZoneGfx, at: number) => at < g.dismissedAt + 3000
   const spawnRipple = (g: ZoneGfx, key: string, t: number) => {
-    const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: g.glow, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }))
+    const mesh: RingMesh = new T.Mesh(geoRing, new T.MeshBasicMaterial({ color: g.glow, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false, depthTest: !g.core }))
+    // The core's ripple is drawn on top, like the core.
+    if (g.core) mesh.renderOrder = CORE_ON_TOP
     mesh.position.copy(g.center.position)
     group.add(mesh)
     live.push({ key, zone: g, mesh, start: t })
@@ -834,11 +953,19 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         node.scale.setScalar((node.userData.r as number) * (1 + 0.6 * g.mix) * (1 + 1.4 * pulse))
       }
       g.outline.visible = g.mix > 0.01
-      g.center.scale.setScalar(CENTER_R * (1 + 0.3 * g.mix))
+      g.center.scale.setScalar(g.radius * (1 + 0.3 * g.mix))
       g.outline.scale.setScalar(g.center.scale.x * RIM)
     }
+    // The core's orbits and halo take the ink of its links when it lights up; the halo always faces the screen.
+    if (coreGfx) {
+      const { g, lineMat, haloMat, halo } = coreGfx
+      lineMat.color.setHex(CORE_LINE).lerp(tone.setHex(INK), g.mix)
+      haloMat.color.copy(lineMat.color)
+      halo.scale.setScalar(g.center.scale.x * CORE_HALO)
+      halo.lookAt(camera.position)
+    }
     shadeNetwork()
-    for (const s of syn) {
+    for (const s of links) {
       const on = Boolean(gfx.get(s.a)?.active || gfx.get(s.b)?.active)
       if (on !== s.active) {
         s.active = on
@@ -887,7 +1014,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       tmp.project(camera)
       const x = (tmp.x * 0.5 + 0.5) * size.w
       const y = (-tmp.y * 0.5 + 0.5) * size.h
-      const behind = tmp.z > centerDepth
+      const behind = !g.core && tmp.z > centerDepth
       const flip = x > size.w * 0.62
       el.style.transform = flip ? `translate(${(x - gap).toFixed(1)}px, ${(y - 12).toFixed(1)}px) translateX(-100%)` : `translate(${(x + gap).toFixed(1)}px, ${(y - 12).toFixed(1)}px)`
       el.classList.toggle("is-flip", flip)
@@ -1027,7 +1154,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     for (const g of geometries) g.dispose()
     for (const m of materials) m.dispose()
     neurons.dispose()
-    flow.dispose()
+    for (const f of flows) f.dispose()
     kit.dispose()
     renderer.dispose()
   }

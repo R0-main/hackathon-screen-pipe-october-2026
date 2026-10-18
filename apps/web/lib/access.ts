@@ -1,11 +1,11 @@
 // Per-zone access: the "RLS" rule applied by the API (equivalent of the policies in supabase/migrations/*_rls.sql).
 //
-// Reading: restricted to the zones in zone_access (admins read everything).
+// Reading: restricted to the zones in zone_access (admins read everything), plus the core, which everyone reads.
 // Writing: NOT restricted. Everyone feeds the brain, in any existing zone;
 // `zone_access.can_write` (and hence `writable`) is kept but reserved, no route applies it.
 // In return, the author of a piece of knowledge sees it and can delete it even without reading its zone (right of review).
 
-import type { AgentEvent, Profile } from "@brain/core"
+import { CORE_ZONE_ID, type AgentEvent, type Profile } from "@brain/core"
 import { storeForOrg } from "./store"
 
 /** `writable` is informational (reserved): writing is not restricted by zone. */
@@ -20,7 +20,7 @@ export async function getAccess(profile: Profile): Promise<Access> {
   const rows = await store.listZoneAccess(profile.id)
   return {
     isAdmin: false,
-    readable: rows.map((r) => r.zone_id),
+    readable: [...new Set([CORE_ZONE_ID, ...rows.map((r) => r.zone_id)])],
     writable: rows.filter((r) => r.can_write).map((r) => r.zone_id),
   }
 }

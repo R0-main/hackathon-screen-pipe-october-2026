@@ -61,7 +61,8 @@ export function mcpInstructions(org: Pick<Org, "name" | "description">, profile:
   return (
     `${possessive(org.name)} company brain${org.description?.trim() ? `: ${org.description.trim().replace(/[.\s]+$/, "")}` : ""}. ` +
     `Connected on behalf of ${profile.name}, with their per-zone rights. Query it (search_brain) before guessing whenever a ` +
-    `question touches ${possessive(org.name)} context (decisions, procedures, customers, projects, tools); remember saves knowledge in it.`
+    `question touches ${possessive(org.name)} context (decisions, procedures, customers, projects, tools); remember saves knowledge in it. ` +
+    `Its "core" zone, which everyone reads, holds what anyone in the company needs: what it does, its vision, values, key figures.`
   )
 }
 
