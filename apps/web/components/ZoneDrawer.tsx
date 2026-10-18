@@ -1,15 +1,18 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import type { KnowledgeItem, Task, ZoneStatus } from "@brain/core"
+import { formatBytes, type DocumentRef, type KnowledgeItem, type Task, type ZoneStatus } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
+import { documentHref } from "./DocumentLinks"
 import { KnowledgeCard } from "./KnowledgeList"
 import { api } from "./format"
-import { CloseIcon, Dot, ErrorText, LockIcon, zoneColor } from "./ui"
+import { CloseIcon, Dot, ErrorText, LockIcon, PaperclipIcon, zoneColor } from "./ui"
 
 type ZoneDetail = {
   status: ZoneStatus | null
-  items: (KnowledgeItem & { author: string })[]
+  items: (KnowledgeItem & { author: string; documents?: DocumentRef[] })[]
+  /** Missing from an older brain. */
+  documents?: (DocumentRef & { title: string; author: string })[]
   entities: { type: string; name: string; count: number }[]
   tasks: (Task & { assignee?: string })[]
 }
@@ -107,6 +110,22 @@ export function ZoneDrawer({ zone, onClose }: { zone: ZoneView; onClose: () => v
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+            {detail.documents && detail.documents.length > 0 && (
+              <div>
+                <h3 className="panel-title">Documents</h3>
+                <ul className="mt-2 space-y-1.5">
+                  {detail.documents.map((d) => (
+                    <li key={d.id} className="flex items-center gap-2 text-[13px]">
+                      <PaperclipIcon size={14} className="shrink-0 text-trace" aria-hidden />
+                      <a href={documentHref(d.id)} target="_blank" rel="noopener" className="min-w-0 truncate hover:underline">
+                        {d.title}
+                      </a>
+                      <span className="ml-auto shrink-0 tabular-nums text-[12px] text-trace">{formatBytes(d.size)}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             <div>

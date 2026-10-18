@@ -40,13 +40,24 @@ after(async () => {
 
 test("MCP: list of tools", async () => {
   const { tools } = await client.listTools()
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "get_document", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
   const search = tools.find((t) => t.name === "search_brain")!
   assert.match(search.description ?? "", /decisions, procedures/)
   assert.deepEqual(search.inputSchema.required, ["query"])
   // A single company: nothing to choose, neither a `company` parameter nor a server instruction.
   assert.ok(tools.every((t) => !("company" in (t.inputSchema.properties ?? {}))))
   assert.equal(client.getInstructions(), undefined)
+})
+
+test("MCP get_document: the document's text and the knowledge it backs; its zone lights up (agent mcp)", async () => {
+  const t = text(await client.callTool({ name: "get_document", arguments: { id: "d1" } }))
+  assert.match(t, /^## Document — Production runbook/m)
+  assert.match(t, /Zone: Dev · By: Hugo Bernard · Added: 08 Oct 2026 · runbook\.pdf, 2 KB, 1 page/)
+  assert.match(t, /Merge into main, then tag/)
+  assert.match(t, /### Knowledge it backs\n- \[procedure\] Deploy Fournil to production/)
+  const req = brain.requests.find((x) => x.url.startsWith("/api/documents/d1"))!
+  assert.equal(req.url, "/api/documents/d1?agent=mcp")
+  assert.equal((await client.callTool({ name: "get_document", arguments: { id: "nope" } })).isError, true)
 })
 
 test("MCP, a single company: no \"Company:\" header in the answers", async () => {

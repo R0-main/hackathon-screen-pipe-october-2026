@@ -7,6 +7,11 @@ See [IDEA.md](IDEA.md) for the product. This document describes the **how** and 
 **The raw data stays on the computer, only the distilled knowledge goes up to the brain.**
 Screenpipe records everything locally (~19 GB / 2 weeks). On each computer, an agent extracts only the AI sessions, distills them into "knowledge" (a few KB/day) and sends it to the shared brain. That solves storage, context saturation and a good part of GDPR at the same time.
 
+**One deliberate exception: the documents behind the knowledge.** When a session worked on a file (the Q3 revenue PDF
+Claude Code read, the spreadsheet dropped in a prompt), the file goes with the knowledge distilled from it, in the same
+zone, with the same read rights: "Q3 revenue: €1.86M" comes with the report it was read from. Never a folder scan, never
+a capture: only files a session opened, checked on the computer and again by the brain (see flow 3, step 6).
+
 ## Overview
 
 ```mermaid
@@ -75,6 +80,15 @@ type KnowledgeItem = {
   confidence: number           // 0-1
 }
 
+// A file behind the knowledge (POST /api/documents, base64, 3 MB at most), linked to the items distilled with it
+type Document = {
+  name: string                 // file name only, never its folders
+  zone: string                 // that of its knowledge, otherwise classified from its text
+  item_ids: string[]           // the knowledge it backs
+  sha256: string               // the same file is kept once, then linked again
+  text: string                 // extracted by the brain (pdf.js, Office/OpenDocument XML), redacted, for search and agents
+}
+
 // What makes the brain light up
 type AgentEvent = {
   org_id: string
@@ -87,7 +101,7 @@ type AgentEvent = {
 }
 ```
 
-**Supabase tables**: `orgs`, `profiles` (role), `zones`, `zone_access` (user ↔ zone, read/write), `knowledge_items`, `entities`, `edges` (graph: item ↔ entity, entity ↔ entity), `agent_events`, `tasks`, `automation_suggestions`, `company_status` (generated summary), `skills` (the company's Claude Code skills and their scripts, assigned to a cortex = a zone).
+**Supabase tables**: `orgs`, `profiles` (role), `zones`, `zone_access` (user ↔ zone, read/write), `knowledge_items`, `documents` (file, text, zone, knowledge it backs), `entities`, `edges` (graph: item ↔ entity, entity ↔ entity), `agent_events`, `tasks`, `automation_suggestions`, `company_status` (generated summary), `skills` (the company's Claude Code skills and their scripts, assigned to a cortex = a zone).
 **RLS**: a user only reads `knowledge_items` if `zone ∈ zone_access(user)`. Admins see everything.
 
 ## The flows in detail
@@ -116,9 +130,16 @@ The admin invites someone → the person receives **a prompt to paste into Claud
 3. Haiku: "does this contain reusable knowledge?" + zone.
 4. Sonnet: extraction into `KnowledgeItem[]` + entities.
 5. `POST /ingest`, then the checkpoint moves forward. An `AgentEvent{agent:"brain-sync", type:"write"}` is emitted.
+6. **Documents**: the files the session worked on (Claude Code `Read` and `Bash` calls, Codex commands, paths dropped in the
+   prompt; never a command's output) go to `POST /api/documents` with the ids of the knowledge just sent (`item_ids` of the
+   ingest response). Business formats only (PDF, Word, Excel, PowerPoint, OpenDocument, CSV), 3 MB at most, from the home
+   folder, outside hidden and application folders. Checked on the computer (name, secrets, personal data), then by the
+   brain, which reads each file (pdf.js for PDFs) and refuses it with a secret, sensitive personal data, a list of contacts
+   or no readable text. A file already sent only goes by its fingerprint, to be linked to the new knowledge
+   (`init --send-documents no` turns it off; `brain docs add <file>` sends one by hand).
 
 ### 4. Reading by agents (`company-brain` MCP)
-Tools: `search_brain(query, zones?)`, `get_zone_summary(zone)`, `whoami_context()` (the computer's context, useful for handover).
+Tools: `search_brain(query, zones?)` (knowledge, with the documents that back it), `get_document(id)` (a document's full text and the knowledge it backs), `get_zone_summary(zone)`, `whoami_context()` (the computer's context, useful for handover).
 Each call goes through `/query` (RLS applied with the user's token) and emits an `AgentEvent{type:"query"}` → neon.
 The MCP server is served by the brain itself, one per company: `/api/mcp/<company id>/<token>` ("streamable" HTTP, stateless; the token can also go as `Authorization: Bearer` on `/api/mcp/<id>`). The tools (`@brain/core/mcp`) call the API routes in place there, with the token's rights. `brain setup` registers it in Claude Code (`claude mcp add --transport http`) and Codex (`~/.codex/config.toml`) as `nos-brainer-<company>`: a person who belongs to several companies sees one connected server per company, and its instructions (the company's name and description) tell the model which one to query. For a brain with a private certificate, which Claude Code and Codex do not know, the computer's MCP server (`brain.mjs mcp`, stdio) takes over, with a `company` parameter if there are several companies.
 

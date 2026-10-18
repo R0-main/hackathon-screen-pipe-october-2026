@@ -210,6 +210,12 @@ export const DEMO_ITEMS: DemoItem[] = [
     entities: [],
   },
   {
+    author: "jeanmarc", zone: "finance", kind: "fact", daysAgo: 4, tool: "claude",
+    title: "Q3 2026 revenue: €1.86M, up 18% on Q2",
+    body: "July €590k, August €545k, September €725k (back-to-school peak and the Groupe Vallière fleet order). 6,200 phones sold at €300 on average, gross margin 38%; business customers make 31% of revenue. Details in the Q3 revenue report.",
+    entities: [c("Groupe Vallière"), { type: "doc", name: "Q3 2026 revenue report" }],
+  },
+  {
     author: "jeanmarc", zone: "finance", kind: "task", daysAgo: 3, tool: "claude",
     title: "File the September VAT return before October 19",
     body: "Estimated amount: €38,400. Keep the margin scheme sales apart from those at normal VAT (business sales, accessories).",
@@ -268,6 +274,51 @@ export const DEMO_ITEMS: DemoItem[] = [
 ]
 
 /** Typical prompts per zone, for the history and the simulator. */
+/**
+ * Documents sent with the knowledge: the file a session worked on (here, the quarterly report Jean-Marc wrote with
+ * Claude), kept in the brain next to the facts drawn from it. `items`: titles of the knowledge it backs.
+ */
+export type DemoDocument = {
+  author: string
+  zone: string
+  name: string
+  title: string
+  daysAgo: number
+  items: string[]
+  lines: { text: string; size?: number; bold?: boolean }[]
+}
+
+export const DEMO_DOCUMENTS: DemoDocument[] = [
+  {
+    author: "jeanmarc", zone: "finance", daysAgo: 4,
+    name: "encore-revenue-Q3-2026.pdf",
+    title: "Encore — Q3 2026 revenue report",
+    items: ["Q3 2026 revenue: €1.86M, up 18% on Q2", "Monthly burn of about €95k, 11 months of runway as of October 1"],
+    lines: [
+      { text: "Encore — Quarterly revenue report, Q3 2026", size: 18, bold: true },
+      { text: "Prepared by Jean-Marc Dubois, Finance · October 2026", size: 10 },
+      { text: "" },
+      { text: "Revenue: €1,860,000 (+18% vs Q2 2026)", size: 13, bold: true },
+      { text: "July: €590,000 · 1,960 phones" },
+      { text: "August: €545,000 · 1,830 phones" },
+      { text: "September: €725,000 · 2,410 phones" },
+      { text: "" },
+      { text: "Mix: individuals 69% · business customers 31% (40 accounts)" },
+      { text: "Gross margin: 38% (VAT margin scheme on phones bought back from individuals)" },
+      { text: "Average selling price: €300 · return rate under warranty: 4.1%" },
+      { text: "" },
+      { text: "Highlights", size: 13, bold: true },
+      { text: "- Back-to-school peak in September; Groupe Vallière fleet order of 180 phones." },
+      { text: "- Trade-in is now 22% of supply, bought back at €96 on average." },
+      { text: "- Stripe payouts land on Qonto at D+7, Alma's at D+2: cash forecast updated." },
+      { text: "" },
+      { text: "Outlook Q4", size: 13, bold: true },
+      { text: "November and December bring 40% of the year's sales: €420k of stock bought in the autumn." },
+      { text: "Monthly burn of about €95k, 11 months of runway as of October 1 (excluding fundraising)." },
+    ],
+  },
+]
+
 export const DEMO_PROMPTS: Record<string, { user: string; text: string }[]> = {
   dev: [
     { user: "hugo", text: "Why is the Stripe charge.refunded webhook failing in prod this morning?" },
