@@ -116,6 +116,31 @@ coding agents that write log files would feed it: no browser AI chats, no meetin
 
 <br/>
 
+## Every agent plugged in
+
+The brain is an MCP server. Every agent in the company asks it with the rights of its owner: Claude Code and Codex get
+it from the install prompt, and Claude, ChatGPT, Cursor or VS Code from **Connect an AI** on each person's page (a
+connector address to paste, nothing to install). That is how sales and finance use the brain too.
+
+<p align="center">
+  <img src="docs/screenshots/mcp-app-brain.png" alt="show_brain in Claude: the company's live 3D brain inside the conversation" width="900" />
+</p>
+
+<p align="center"><sub><code>show_brain</code> in Claude: the company's live 3D brain opens in the conversation, and its zones light up as the team's agents search.</sub></p>
+
+| Tool                                   | What the agent gets                                                                                                        |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `search_brain`                         | The team's decisions, procedures, facts, tasks and questions, with the documents behind them, in the zones its owner reads. |
+| `get_document`                         | The full text of a document kept in the brain: the revenue report behind a figure, a price list, a spec.                   |
+| `get_zone_summary`, `list_zones`       | What a zone knows (summary, goals, next steps, who did what), and which zones exist.                                       |
+| `company_status`                       | Where the company stands, per zone: goals, progress, next steps.                                                           |
+| `whoami_context`                       | Who the agent works for: role, zones, frequent prompts, recent decisions. Useful for a handover.                           |
+| `remember`                             | Writes a decision, a procedure or a fact back into the brain.                                                              |
+| `connected_tools`, `use_connected_tool` | The company's connected apps (Notion, Linear, GitHub…) through the brain, read-only unless an admin opens them.           |
+| `show_brain`, `show_automations`, `show_team` | **MCP Apps**: the live brain, the automations to set up and the org chart, as interactive views in Claude, ChatGPT and VS Code; a text answer in Claude Code. Also slash commands. |
+
+<br/>
+
 ## Features
 
 <table>
