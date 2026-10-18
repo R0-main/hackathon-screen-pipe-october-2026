@@ -62,6 +62,8 @@ const CORE_HALO = 1.75
 const ORBIT_R = 0.0024
 const SPOKE_R = 0.0036
 const CORE_ON_TOP = 4
+/** The spokes' beads: after the spokes (which would otherwise cover them), under the core's bead and its knowledge. */
+const SPOKE_BEADS_ON_TOP = CORE_ON_TOP + 0.5
 /** Height kept free at the top and bottom of the screen during the chapters (nav bar, progress bar). */
 const NAV_ROOM = 72
 /** Gap between the chapters column and the brain, in px. */
@@ -419,7 +421,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const links = [...syn, ...spokes]
   // The flow, as on the dashboard: small light beads in each arc. Under reduced motion, none.
   const flows = [arcBeads(T, syn.map((sy) => sy.arc)), arcBeads(T, spokes.map((sy) => sy.arc))]
-  flows[1].mesh.renderOrder = CORE_ON_TOP
+  flows[1].mesh.renderOrder = SPOKE_BEADS_ON_TOP
   for (const f of flows) {
     f.mesh.visible = !still
     group.add(f.mesh)
