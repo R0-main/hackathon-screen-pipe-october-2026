@@ -43,7 +43,9 @@ export type DemoItem = {
   body: string
   entities: Entity[]
   daysAgo: number
-  tool?: "claude-code" | "codex" | "chatgpt" | "claude"
+  tool?: "claude-code" | "codex" | "chatgpt" | "claude" | "meeting" | "agent"
+  /** App seen by Screenpipe (meeting tool, browser). Defaults by tool. */
+  app?: string
   done?: boolean
 }
 
@@ -294,6 +296,75 @@ export const DEMO_PROMPTS: Record<string, { user: string; text: string }[]> = {
     { user: "claire", text: "Where do we stand on the quarter's goals?" },
   ],
 }
+
+/**
+ * What only Screenpipe brings: meetings transcribed on the computer, AI chats in the browser (no logs to read) and
+ * what the computer's Screenpipe agent found by itself in the recent activity. Added to an existing demo brain too.
+ */
+export const DEMO_SCREENPIPE_ITEMS: DemoItem[] = [
+  {
+    author: "claire", zone: "leadership", kind: "decision", daysAgo: 2, tool: "meeting", app: "Google Meet",
+    title: "Weekly sync: Black Friday prices freeze on November 17",
+    body: "Decided in Monday's team meeting (Claire, Hugo, Léo, Sarah): the pricing job stops changing prices on November 17 and the Black Friday stock (2,000 iPhones 13 and 14) is bought this week. Hugo adds the freeze switch, Jean-Marc releases the cash, Léo writes the landing page.",
+    entities: [pr("Black Friday"), pr("Pricing engine"), p("Hugo Bernard"), p("Léo Petit")],
+  },
+  {
+    author: "sarah", zone: "sales", kind: "decision", daysAgo: 1, tool: "meeting", app: "Zoom",
+    title: "Kalia Santé: 40-phone pilot at €21 per month with a 48-hour replacement",
+    body: "Call with Kalia Santé: they start with 40 phones in December if a broken phone is replaced within 48 hours anywhere in France. Sarah promised a written answer on the replacement stock by Friday.",
+    entities: [c("Kalia Santé"), pr("B2B leasing"), pr("48-hour replacement")],
+  },
+  {
+    author: "leo", zone: "product", kind: "fact", daysAgo: 3, tool: "meeting", app: "Google Meet",
+    title: "Customer interviews: people leave the cart for fear of losing their data, not because of the price",
+    body: "Five interviews with visitors who abandoned their cart: three were afraid of not managing to move their eSIM and their WhatsApp chats. A \"we help you move your data\" step goes into the checkout.",
+    entities: [pr("Checkout"), pr("eSIM")],
+  },
+  {
+    author: "jeanmarc", zone: "finance", kind: "procedure", daysAgo: 4, tool: "chatgpt", app: "Google Chrome",
+    title: "Invoice phones sold to Belgian companies",
+    body: "A phone bought back from an individual stays under the margin scheme even when a Belgian company buys it: French VAT on the margin, no reverse charge, and the invoice says \"Margin scheme – second-hand goods\". Only phones bought from professionals go out without VAT, with the client's EU VAT number. Worked out with ChatGPT in the browser, confirmed by the accountant.",
+    entities: [t("ChatGPT"), t("Pennylane"), pr("EU sales")],
+  },
+  {
+    author: "hugo", zone: "dev", kind: "fact", daysAgo: 1, tool: "agent", app: "Screenpipe",
+    title: "Staging migration 0042 times out on the orders index",
+    body: "Found by the Screenpipe agent across two days of Hugo's terminal and Vercel dashboard: the staging deploy failed three times on the same migration. Creating the orders index concurrently fixed it; to do the same in production before Black Friday.",
+    entities: [t("Supabase"), t("Vercel"), pr("Black Friday")],
+  },
+  {
+    author: "sarah", zone: "support", kind: "fact", daysAgo: 2, tool: "agent", app: "Screenpipe",
+    title: "Four support chats this week about WhatsApp chats lost after switching phones",
+    body: "Found by the Screenpipe agent in Sarah's support inbox: four customers moving from Android to iPhone lost their WhatsApp history. The answer to give: WhatsApp's transfer only works during the first setup, so reset the phone and run \"Move to iOS\" first.",
+    entities: [pr("Data transfer"), t("Zendesk")],
+  },
+]
+
+/** Repetitive workflows detected by Screenpipe on the computers (as brain-sync reports them to /api/automations). */
+export const DEMO_WORKFLOWS: {
+  user: string
+  id: string
+  zone: string
+  title: string
+  description: string
+  schedule: string
+  occurrences: number
+  days: number
+  minutes_saved_per_week: number
+}[] = [
+  {
+    user: "sarah", id: "wf-tradeshow-leads", zone: "sales",
+    title: "Copy the trade-show leads from the spreadsheet into HubSpot",
+    description: "Detected by Screenpipe on Sarah's computer: every Monday, the same sequence between Google Sheets and HubSpot, one company at a time. Proposal: import the sheet automatically and only show Sarah the duplicates.",
+    schedule: "Mondays around 10:00", occurrences: 4, days: 4, minutes_saved_per_week: 45,
+  },
+  {
+    user: "leo", id: "wf-store-reviews", zone: "product",
+    title: "Sort the Trustpilot reviews into the product backlog",
+    description: "Detected by Screenpipe on Léo's computer: every Friday afternoon, Trustpilot then Linear, review by review. Proposal: a weekly digest of the reviews, already grouped by topic (battery, grade, delivery), as Linear issues.",
+    schedule: "Fridays around 16:30", occurrences: 3, days: 3, minutes_saved_per_week: 30,
+  },
+]
 
 /** The prompt Jean-Marc runs every morning around 9am: the demo's automation suggestion. */
 export const JEANMARC_DAILY_PROMPT = "Reconcile yesterday's Qonto statements with the Pennylane invoices and list the variances"

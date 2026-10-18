@@ -41,6 +41,7 @@ test("automation: the suggested slot follows the real rhythm (weekly, twice a we
   const d = detectAutomations(daily, people, { now: new Date("2026-10-16T12:00:00Z") })
   assert.equal(d[0].schedule, "Monday to Friday at 08:55")
   assert.match(d[0].description, /almost every day/)
+  assert.match(d[0].description, /run it automatically Monday to Friday at 08:55/, "day names keep their capital")
   assert.equal(d[0].minutes_saved_per_week, 60)
   assert.equal(planSchedule([{ weekday: 1, e: { at: "2026-10-05T07:00:00Z" } }, { weekday: 3, e: { at: "2026-10-28T07:00:00Z" } }], "09:00").runsPerWeek, 1)
 })

@@ -174,7 +174,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                 Everything your team learns with AI, in a single brain.
               </h1>
               <p data-hero="sub" className="mt-5 max-w-[34em] text-[16px] leading-relaxed sm:text-[18px]">
-                Every employee already works with Claude Code or Codex. Screenpipe captures those sessions on their computer, and the brain keeps what matters for every agent in the company.
+                Your team already works with AI: Claude Code in the terminal, ChatGPT in the browser, decisions made in meetings. Screenpipe sees all of it on each computer, and the brain keeps what matters for every agent in the company.
               </p>
               <div data-hero="cta" className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
                 <Link href={cta.href} className="btn btn-primary btn-lg">
@@ -203,7 +203,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
         <div id="chapters" className="landing-chapters">
           <Chapter refFn={(el) => (chapterRefs.current[0] = el)} title="It fills up while you work.">
             <p>
-              Screenpipe captures every computer's Claude Code and Codex sessions. brain-sync keeps the decisions, procedures and facts. Only this distillate goes up to the brain.
+              Screenpipe catches what no log keeps: the decisions of a meeting, an answer found with ChatGPT in the browser. brain-sync adds the Claude Code and Codex sessions, then keeps only the decisions, procedures and facts.
             </p>
             <p className="mt-5 text-[15px] text-trace">
               <span ref={counterRef} className="text-[15px] font-medium tabular-nums text-ink">
@@ -283,7 +283,7 @@ function Dashboard() {
             Claire, the CEO, sees where the company stands.
           </h2>
           <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
-            The summary starts from what the team actually did: goals, tasks in progress and who did what. And when someone runs the same prompt every morning, the brain offers to do it for them.
+            The summary starts from what the team actually did: goals, tasks in progress and who did what. And when someone repeats the same task, a prompt every morning or a copy-paste between two apps every Monday, the brain offers to automate it.
           </p>
         </div>
 
@@ -301,10 +301,13 @@ function Dashboard() {
             ))}
           </ul>
           <div className="border-t border-line px-5 py-4">
-            <p className="text-[13px] text-trace">Suggested automation</p>
+            <p className="text-[13px] text-trace">Suggested automations</p>
             <div className="inset mt-2 px-3.5 py-3">
               <p className="text-[14px]">Jean-Marc runs this prompt every day around 9am:</p>
               <p data-type className="mono mt-1.5 text-[13px] leading-relaxed">Reconcile yesterday&apos;s Qonto statements with the Pennylane invoices and list the variances</p>
+            </div>
+            <div data-later className="inset mt-2 px-3.5 py-3">
+              <p className="text-[14px]">Detected by Screenpipe: every Monday, Sarah copies the trade-show leads into HubSpot by hand.</p>
             </div>
           </div>
           <figcaption className="border-t border-line px-5 py-3 text-[12px] text-trace">Excerpt of the demo dashboard. Encore is a fictional company.</figcaption>

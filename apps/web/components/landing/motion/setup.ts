@@ -226,7 +226,8 @@ function sections(root: HTMLElement, holds: Holds) {
     }
   }
 
-  // The panel fills row by row, then Jean-Marc's prompt types itself character by character.
+  // The panel fills row by row, then Jean-Marc's prompt types itself character by character, then the workflow
+  // Screenpipe detected appears.
   for (const panel of all(root, '[data-reveal="panel"]')) {
     const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: throughHold(panel) })
     enter(tl, panel, { autoAlpha: 0, y: 40 }, { duration: 0.2, ease: "none" })
@@ -237,6 +238,8 @@ function sections(root: HTMLElement, holds: Holds) {
       const chars = SplitText.create(typed, { type: "words,chars" }).chars
       enter(tl, chars, { opacity: 0 }, { duration: 0.01, stagger: 0.4 / chars.length, ease: "none" })
     }
+    const later = all(panel, "[data-later]")
+    if (later.length) enter(tl, later, { autoAlpha: 0, y: 8 }, { duration: 0.12, ease: "none" })
     tl.to({}, { duration: 0.15 })
   }
 

@@ -88,8 +88,8 @@ import * as mcpCallbackRoute from "../app/api/connectors/mcp/callback/route"
 import * as mcpImportRoute from "../app/api/connectors/mcp/[id]/import/route"
 import * as connectedToolsRoute from "../app/api/connected-tools/route"
 import * as connectedCallRoute from "../app/api/connected-tools/call/route"
-import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceLegacyDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
-import { DEMO_ITEMS, DEMO_ORG, LEGACY_DEMO_NAMES } from "./demo-data"
+import { DEMO_VISITOR_TITLE, demoVisitorManager, replaceOutdatedDemoBrain, seedDemoBrain, upgradeDemoBrain } from "../lib/demo-seed"
+import { DEMO_ITEMS, DEMO_ORG, DEMO_SCREENPIPE_ITEMS, LEGACY_DEMO_NAMES } from "./demo-data"
 import { SkillError, canPublishSkills, listVisibleSkills, publishSkill, removeSkill, setSkillZone } from "../lib/skills"
 
 function assert(cond: unknown, msg: string) {
@@ -393,14 +393,14 @@ async function main() {
     try {
       const old = new FileStore(tmp)
       await seedDemoBrain(old)
-      assert((await replaceLegacyDemoBrain(old)) === null, "the current demo is never replaced")
+      assert((await replaceOutdatedDemoBrain(old)) === null, "the current demo is never replaced")
       await old.updateOrg({ name: LEGACY_DEMO_NAMES[LEGACY_DEMO_NAMES.length - 1] })
       const token = newToken()
       // A visitor created by an earlier (French) version: its title was still French.
       const visitor = await old.createProfile({ name: "Visitor 4321", title: "Visiteur de la démo", role: "member", token_hash: hashToken(token) })
       await old.setZoneAccess(visitor.id, [{ zone_id: "dev", can_write: true }, { zone_id: "product", can_write: false }])
       await old.insertItems([{ ...item("dev", `Smoke ${run} former demo`), author_id: visitor.id }])
-      const res = await replaceLegacyDemoBrain(old)
+      const res = await replaceOutdatedDemoBrain(old)
       const kept = await old.getProfileByTokenHash(hashToken(token))
       const hugoNow = (await old.listProfiles()).find((p) => p.name === "Hugo Bernard")
       assert(res?.visitors === 1 && (await old.getOrg()).name === DEMO_ORG.name, `the former demo becomes ${DEMO_ORG.name}`)
@@ -410,7 +410,7 @@ async function main() {
         "and keeps its zones",
       )
       assert(
-        (await old.listItems({})).length === DEMO_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-encore"),
+        (await old.listItems({})).length === DEMO_ITEMS.length + DEMO_SCREENPIPE_ITEMS.length && (await old.listSkills()).some((x) => x.name === "deploy-encore"),
         "knowledge and skills of the new demo, without those of the former one",
       )
     } finally {

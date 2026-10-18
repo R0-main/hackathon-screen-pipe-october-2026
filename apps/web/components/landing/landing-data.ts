@@ -5,7 +5,7 @@ import type { ZoneView } from "@/lib/brain"
  * Encore's brain (the demo's fictional company) as the home page shows it: same zones and
  * same volumes as `scripts/demo-data.ts`, without a server call since the visitor is not signed in.
  */
-const COUNTS: Record<string, number> = { dev: 9, product: 6, sales: 6, finance: 6, support: 3, leadership: 4 }
+const COUNTS: Record<string, number> = { dev: 10, product: 7, sales: 7, finance: 7, support: 4, leadership: 5 }
 
 export const LANDING_ZONES: ZoneView[] = DEFAULT_ZONES.map((z) => ({
   ...z,
