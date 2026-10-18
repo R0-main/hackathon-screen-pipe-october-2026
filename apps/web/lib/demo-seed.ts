@@ -1,6 +1,7 @@
 // The fictional company Butine, ready for the demo: accounts, zones, knowledge and 10 days of activity.
 // Used by `npm run seed` and, in demo mode, to seed an empty brain automatically (deployment).
 
+import { createHash } from "node:crypto"
 import {
   DEFAULT_TIMEZONE,
   SKILL_MAIN_FILE,
@@ -59,6 +60,11 @@ export const DEMO_VISITOR_TITLE = "Demo visitor"
 const LEGACY_DEMO_VISITOR_TITLE = "Visiteur de la démo"
 /** Visitors get the Dev and Product zones: they join the lead dev's team in the org chart. */
 const VISITOR_MANAGER = "hugo"
+/**
+ * md5 of Butine's description as the French versions seeded it: that brain is replaced once by the current demo, in
+ * English. Only the fingerprint is kept, as the English migration does for the default zones.
+ */
+const FRENCH_DEMO_DESCRIPTION_MD5 = "898eeac9244b7319e86384812e900a2a"
 
 /** Publishes the demo skills (one publication per version); returns the neon of each publication. */
 async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, allZoneIds: string[]): Promise<NewEvent[]> {
@@ -185,7 +191,7 @@ async function insertDemoItems(store: BrainStore, ids: Record<string, string>, l
   return events
 }
 
-/** The workflows Screenpipe detected on the computers, as brain-sync reports them (source « screenpipe »). */
+/** The workflows Screenpipe detected on the computers, as brain-sync reports them (source "screenpipe"). */
 async function seedDemoWorkflows(store: BrainStore, ids: Record<string, string>) {
   await store.upsertAutomations(
     DEMO_WORKFLOWS.map((w) => ({
@@ -304,12 +310,23 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
 }
 
 /**
- * Demo brain still on a former fictional company (LEGACY_DEMO_NAMES): replaced by the current demo.
- * Visitors are recreated with the same token and the same zones: a computer already connected to the demo stays so.
- * Returns null if the brain is not a former demo (nothing is touched).
+ * Why the brain must give way to the current demo, or null: still on a former fictional company (LEGACY_DEMO_NAMES),
+ * or Butine as the French versions seeded it (status, tasks, skills and history in French).
  */
-export async function replaceLegacyDemoBrain(store: BrainStore = getStore()) {
-  if (!LEGACY_DEMO_NAMES.includes((await store.getOrg()).name)) return null
+async function outdatedDemo(store: BrainStore): Promise<"legacy" | "french" | null> {
+  const org = await store.getOrg()
+  if (LEGACY_DEMO_NAMES.includes(org.name)) return "legacy"
+  if (org.name === DEMO_ORG.name && createHash("md5").update(org.description).digest("hex") === FRENCH_DEMO_DESCRIPTION_MD5) return "french"
+  return null
+}
+
+/**
+ * Outdated demo brain (outdatedDemo): replaced by the current demo.
+ * Visitors are recreated with the same token and the same zones: a computer already connected to the demo stays so.
+ * Returns null if the brain is not an outdated demo (nothing is touched).
+ */
+export async function replaceOutdatedDemoBrain(store: BrainStore = getStore()) {
+  if (!(await outdatedDemo(store))) return null
   const visitors: { name: string; email?: string; token_hash: string; zones: { zone_id: string; can_write: boolean }[] }[] = []
   for (const v of (await store.listProfiles()).filter((p) => p.title === DEMO_VISITOR_TITLE || p.title === LEGACY_DEMO_VISITOR_TITLE)) {
     const token_hash = await store.getTokenHash(v.id)
@@ -331,8 +348,8 @@ const g = globalThis as unknown as { __demoBootstrap?: Promise<void> }
 
 /**
  * Demo mode only: a brain without any account (fresh deployment database) is seeded with Butine.
- * A Butine brain already filled is never erased: it is only completed (upgradeDemoBrain). Only a brain still on a
- * former demo company is replaced, once, keeping its visitors (replaceLegacyDemoBrain).
+ * A Butine brain already filled is never erased: it is only completed (upgradeDemoBrain). Only an outdated demo (a
+ * former demo company, or Butine seeded in French) is replaced, once, keeping its visitors (replaceOutdatedDemoBrain).
  */
 export async function ensureDemoBrain(): Promise<void> {
   if (!isDemoMode()) return
@@ -340,7 +357,7 @@ export async function ensureDemoBrain(): Promise<void> {
     g.__demoBootstrap = (async () => {
       const store = getStore()
       if (!(await store.isEmpty())) {
-        await replaceLegacyOnce(store)
+        await replaceOutdatedOnce(store)
         return upgradeOnce(store)
       }
       // Several instances may receive the first visits at the same time: only one seeds the demo.
@@ -365,18 +382,19 @@ export async function ensureDemoBrain(): Promise<void> {
   return g.__demoBootstrap
 }
 
-/** Only one instance replaces a former demo; the others wait for it to finish, without touching the data. */
-async function replaceLegacyOnce(store: BrainStore) {
-  if (!LEGACY_DEMO_NAMES.includes((await store.getOrg()).name)) return
-  const key = `demo-replace-legacy-${DEMO_ORG.name}`
+/** Only one instance replaces an outdated demo; the others wait for it to finish, without touching the data. */
+async function replaceOutdatedOnce(store: BrainStore) {
+  const reason = await outdatedDemo(store)
+  if (!reason) return
+  const key = `demo-replace-${reason}-${DEMO_ORG.name}`
   if (!(await store.claimOnce(key))) {
     for (let i = 0; i < 60 && !(await store.isClaimDone(key)); i++) await new Promise((r) => setTimeout(r, 500))
     return
   }
   try {
-    const res = await replaceLegacyDemoBrain(store)
+    const res = await replaceOutdatedDemoBrain(store)
     await store.finishClaim(key)
-    if (res) console.log(`[demo] former demo replaced by ${DEMO_ORG.name}: ${res.items} items, ${res.visitors} visitor(s) kept.`)
+    if (res) console.log(`[demo] ${reason} demo replaced by ${DEMO_ORG.name}: ${res.items} items, ${res.visitors} visitor(s) kept.`)
   } catch (err) {
     await store.releaseClaim(key).catch(() => {})
     throw err
