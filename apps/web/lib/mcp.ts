@@ -77,13 +77,16 @@ export async function handleMcp(req: Request, orgId: string, token: string | nul
     const profile = token ? await profileFromToken(token) : null
     if (!token || !profile || profile.org_id !== orgId) return rpcError(401, "Invalid token for this company: rerun `brain setup` with a valid token.")
     const org = await storeForOrg(orgId).getOrg()
+    const baseUrl = publicBaseUrl(req)
     const server = createBrainMcpServer({
       instructions: mcpInstructions(org, profile),
       open: () => ({ api: routesApi(token), key: orgId }),
       sourceApp: "mcp",
+      // The logo comes from the same address as the server (clients may only accept icons from its origin).
+      baseUrl,
     })
     // The views (brain, automations, team), for clients that render MCP Apps.
-    registerBrainApps(server, { token, baseUrl: publicBaseUrl(req), org: org.name })
+    registerBrainApps(server, { token, baseUrl, org: org.name })
     // A new transport per request (stateless mode): nothing is shared between two clients.
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     await server.connect(transport)
