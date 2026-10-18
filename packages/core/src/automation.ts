@@ -92,7 +92,7 @@ export function detectAutomations(
       title: `Automate "${truncate(sample, 70)}"`,
       description:
         `${person} runs this prompt ${plan.rhythm} around ${hhmm(med)} ` +
-        `(${list.length} times over ${days.length} days). Suggestion: run it automatically ${lowerFirst(plan.schedule)} ` +
+        `(${list.length} times over ${days.length} days). Suggestion: run it automatically ${inSentence(plan.schedule)} ` +
         `and have the result waiting when they arrive, to free up the start of their day.`,
       schedule: plan.schedule,
       evidence: { occurrences: list.length, days: days.length, sample: truncate(sample, 200), times: days.map((d) => hhmm(d.minutes)) },
@@ -105,9 +105,9 @@ export function detectAutomations(
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
-/** "Every Monday at 09:00" → "every Monday at 09:00" (day names keep their capital). */
-function lowerFirst(s: string): string {
-  return s.charAt(0).toLowerCase() + s.slice(1)
+/** The schedule inside a sentence: "Every Monday at 09:00" → "every Monday at 09:00"; day names keep their capital. */
+function inSentence(schedule: string): string {
+  return schedule.replace(/^Every /, "every ")
 }
 
 function joinList(xs: string[]): string {

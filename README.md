@@ -48,12 +48,17 @@ the browser chats of sales and finance, the meetings and the repeated workflows 
 | **A native pipe** | `brain install-pipe` writes the `brain-sync` pipe: the sync runs from Screenpipe every 15 minutes and after each meeting | `apps/client/src/install.ts` |
 | **Privacy by design** | The raw capture never leaves the computer; `sync --dry-run --full` shows exactly what would be sent | `apps/client/src/sync.ts` |
 
+![What only Screenpipe sees: knowledge distilled from a ChatGPT chat in Chrome, a Zoom call and the Screenpipe agent](docs/screenshots/screenpipe-knowledge.png)
+
+**What only Screenpipe sees**, in the demo's Knowledge page: an answer found with ChatGPT in Chrome, a Zoom call with a
+customer, and what the Screenpipe agent found in Hugo's terminal and Vercel dashboard. No log holds any of it.
+
 ## Screenshots
 
 | | |
 |---|---|
 | ![Create your company](docs/screenshots/create-company.png) **Create your company**: three questions, Claude proposes the zones, then one prompt per colleague. | ![Where the company stands](docs/screenshots/company-status.png) **Where the company stands**: per zone, from what the team actually did. |
-| ![Team and access](docs/screenshots/team-access.png) **Team and access**: org chart, zones per person, invitations. | ![Automations](docs/screenshots/automations.png) **Automations**: a prompt run every morning at 09:04, proposed to run itself at 08:59. |
+| ![Team and access](docs/screenshots/team-access.png) **Team and access**: org chart, zones per person, invitations. | ![Automations](docs/screenshots/automations.png) **Automations**: a prompt Jean-Marc runs every morning, and two workflows Screenpipe detected on Sarah's and Léo's computers. |
 
 ## Reproduce the demo
 

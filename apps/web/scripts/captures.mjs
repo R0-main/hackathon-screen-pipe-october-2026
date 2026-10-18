@@ -88,7 +88,7 @@ log("admin:", admin.name, "| member:", member.name)
   await ctx.close()
 }
 
-// 2. Admin dashboard: 3D brain, live activity, drawer, question, admin pages
+// 2. Admin dashboard: 3D brain, live activity, drawer, admin pages
 {
   const ctx = await session(admin.id)
   const page = await ctx.newPage()
@@ -117,13 +117,7 @@ log("admin:", admin.name, "| member:", member.name)
     await page.waitForTimeout(300)
   }
 
-  const q = page.getByLabel("Question for the brain")
-  await q.fill("how do we deploy to production?")
-  await q.press("Enter")
-  await page.waitForTimeout(2500)
-  await shot(page, "06-question")
-
-  for (const [p, n] of [["/activity", "04-live-agents"], ["/status", "04b-status"], ["/knowledge", "04c-knowledge"], ["/tasks", "04d-tasks"]]) {
+  for (const [p, n] of [["/status", "04b-status"], ["/knowledge", "04c-knowledge"], ["/tasks", "04d-tasks"], ["/automations", "06-automations"]]) {
     await page.goto(`${base}${p}`)
     await settle(page)
     await shot(page, n)

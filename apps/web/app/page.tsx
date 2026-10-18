@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
   title: "NOS Brainer",
-  description: "Everything your team learns with AI, in a single brain. Screenpipe captures each workstation's sessions, the brain keeps what matters.",
+  description: "Everything your team learns with AI, in a single brain. Screenpipe captures each computer's AI chats and meetings, the brain keeps what matters.",
 }
 
 /**
