@@ -64,10 +64,11 @@ more emptiness. The rules below apply to all of `apps/web`. They are coded in
 - Sidebar on the left (bone background, 1 px line): the brain, its pages (live agents, status, knowledge,
   tasks, automations), configuration for admins (team and access, onboarding), then "view as",
   my context and sign-out. Below 768 px, it opens with the menu button.
-- A section with sub-pages (Team and access: org chart, access per zone, requests, zones; one address each under
-  `/admin`) unfolds when you are in it, without a chevron: a 1 px thread aligned with the icon, the sub-pages in
-  secondary text, and an ink bar that slides along the thread to the current page (200 ms). No tabs at the top
-  of the page.
+- A section with sub-pages (Knowledge: all knowledge, documents, entities, skills, each at its own address; Team and
+  access: org chart, access per zone, requests, zones, one address each under `/admin`) unfolds when you are in it,
+  without a chevron: a 1 px thread aligned with the icon, the sub-pages in secondary text, and an ink bar that slides
+  along the thread to the current page (200 ms). Counts stay secondary text; only a count that calls for action
+  (requests to accept) is an ink pill. No tabs at the top of the page.
 - On the right, the page. The window never scrolls: the brain fills all the space (the wheel zooms), the other
   pages scroll within their column.
 - The live state (SSE stream, lit zones) lives in the layout (`components/BrainLive.tsx`): it survives navigation.

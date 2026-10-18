@@ -25,17 +25,15 @@ import {
   LogoutIcon,
   MenuIcon,
   NavBrainIcon,
-  PaperclipIcon,
   PlusIcon,
-  SkillIcon,
   StackIcon,
-  TagIcon,
   TaskIcon,
   UsersIcon,
   WatchIcon,
 } from "./ui"
 
-type SubItem = { href: string; label: string; count?: number }
+/** `alert`: the count calls for action (requests to accept), shown as an ink pill rather than a plain number. */
+type SubItem = { href: string; label: string; count?: number; alert?: boolean }
 type NavItem = { href: string; label: string; icon: ComponentType<{ size?: number }>; count?: number; children?: SubItem[] }
 
 /**
@@ -96,10 +94,18 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
   const main: NavItem[] = [
     { href: "/dashboard", label: t.nav.brain, icon: NavBrainIcon },
     { href: "/status", label: t.nav.status, icon: DocIcon },
-    { href: "/knowledge", label: t.nav.knowledge, icon: StackIcon, count: state.totals.items },
-    { href: "/documents", label: t.nav.documents, icon: PaperclipIcon, count: state.totals.documents || undefined },
-    { href: "/entities", label: t.nav.entities, icon: TagIcon },
-    { href: "/skills", label: t.nav.skills, icon: SkillIcon, count: state.totals.skills },
+    {
+      href: "/knowledge",
+      label: t.nav.knowledge,
+      icon: StackIcon,
+      count: state.totals.items,
+      children: [
+        { href: "/knowledge", label: t.nav.allKnowledge, count: state.totals.items },
+        { href: "/documents", label: t.nav.documents, count: state.totals.documents },
+        { href: "/entities", label: t.nav.entities },
+        { href: "/skills", label: t.nav.skills, count: state.totals.skills },
+      ],
+    },
     { href: "/tasks", label: t.nav.tasks, icon: TaskIcon, count: openTasks },
     { href: "/automations", label: t.nav.automations, icon: BoltIcon, count: proposed },
   ]
@@ -110,7 +116,7 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
           label: t.nav.team,
           icon: UsersIcon,
           count: pendingJoins,
-          children: ADMIN_VIEWS.map((v) => ({ href: v.href, label: t.adminViews[v.id], count: v.id === "requests" ? pendingJoins : undefined })),
+          children: ADMIN_VIEWS.map((v) => (v.id === "requests" ? { href: v.href, label: t.adminViews[v.id], count: pendingJoins, alert: true } : { href: v.href, label: t.adminViews[v.id] })),
         },
         { href: "/onboarding", label: t.nav.onboarding, icon: ChatIcon },
         { href: "/connectors", label: t.nav.connectors, icon: LinkIcon },
@@ -234,7 +240,8 @@ function NavList({ items, isActive, pathname }: { items: NavItem[]; isActive: (h
   return (
     <ul className="space-y-0.5">
       {items.map((it) => {
-        const active = isActive(it.href)
+        // A section is also active on its sub-pages that live at their own address (Knowledge → /documents).
+        const active = isActive(it.href) || Boolean(it.children?.some((c) => isActive(c.href)))
         const Icon = it.icon
         // Section with sub-pages: open while on it; the current page is marked in the sub-menu, not on the section.
         const open = Boolean(it.children) && active
@@ -268,14 +275,17 @@ function NavList({ items, isActive, pathname }: { items: NavItem[]; isActive: (h
  */
 function SubNav({ items, open, current }: { items: SubItem[]; open: boolean; current: string }) {
   const { t } = useT()
-  const index = items.findIndex((c) => c.href === current)
+  // The deepest sub-page containing the current address: /entities/client/acme marks Entities, /admin/access marks
+  // Zone access and not the org chart at /admin.
+  const within = (href: string) => current === href || current.startsWith(`${href}/`)
+  const index = items.reduce((best, c, i) => (within(c.href) && (best < 0 || c.href.length > items[best].href.length) ? i : best), -1)
   return (
     <div className={`nav-sub ${open ? "is-open" : ""}`} inert={!open}>
       <div className="min-h-0 overflow-hidden">
         <ul className="relative mb-1.5 ml-[17px] mt-1 border-l border-line" aria-label={t.nav.subpages}>
           {index >= 0 && <span className="nav-sub-mark" style={{ transform: `translateY(${index * 32}px)` }} aria-hidden />}
-          {items.map((c) => {
-            const here = c.href === current
+          {items.map((c, i) => {
+            const here = i === index
             return (
               <li key={c.href}>
                 <Link
@@ -286,7 +296,13 @@ function SubNav({ items, open, current }: { items: SubItem[]; open: boolean; cur
                   }`}
                 >
                   <span className="min-w-0 flex-1 truncate">{c.label}</span>
-                  {c.count !== undefined && c.count > 0 && <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-ink px-1.5 text-[11px] tabular-nums text-surface">{c.count}</span>}
+                  {c.count !== undefined &&
+                    c.count > 0 &&
+                    (c.alert ? (
+                      <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-ink px-1.5 text-[11px] tabular-nums text-surface">{c.count}</span>
+                    ) : (
+                      <span className="text-[12px] tabular-nums text-trace">{c.count}</span>
+                    ))}
                 </Link>
               </li>
             )
