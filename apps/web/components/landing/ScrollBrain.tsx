@@ -98,6 +98,12 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t)
 }
 const easeOut = (t: number) => 1 - (1 - t) ** 3
+/** Share of an agent's stretch of scroll (k, before its lag) over which its ripple spreads. */
+const RIPPLE_SPAN = 0.6
+/** Radius of a ripple at k: from the zone's center to a little past its farthest knowledge. */
+const rippleFront = (k: number) => 0.04 + 0.36 * clamp01(k / RIPPLE_SPAN)
+/** A lit zone's knowledge grows as the first ripple's front goes past it: over this much of the front's travel (scene units). */
+const GROW_W = 0.12
 
 /** Zones named during the 2nd chapter, faded out when the brain steps back. */
 const labelsAt = (s: number) => smooth(0.39, 0.46, s) * (1 - smooth(0.88, 0.95, s))
@@ -563,6 +569,8 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     shadeNetwork()
     neuronMat.opacity = shellMat.opacity / 0.65
     const lit = new Set(agents.filter((a) => s > a.from && s < a.to).map((a) => a.zone))
+    /** Progress (0 → 1) of the agent lighting each zone, by zone index. */
+    const litK = new Map(agents.filter((a) => lit.has(a.zone) && index.has(a.zone)).map((a) => [index.get(a.zone)!, (s - a.from) / (a.to - a.from)]))
 
     for (let i = 0; i < nodes.length; i++) {
       const nd = nodes[i]
@@ -572,21 +580,25 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       tmp.lerpVectors(nd.start, nd.end, e)
       tmp.x += Math.sin(t * 0.0006 + nd.wobble) * float
       tmp.y += Math.cos(t * 0.0005 + nd.wobble) * float
-      const on = lit.has(gfx[nd.zone].id) && k >= 1
-      // The ripple goes through the zone's knowledge: each one swells when the ripple's front reaches it.
+      const ak = litK.get(nd.zone)
+      const on = ak !== undefined && k >= 1
+      // The ripple goes through the zone's knowledge: each one grows (and takes the zone's light) when the first
+      // ripple's front reaches it, not all at once, with a gentle swell as each front passes; it eases back down just
+      // before the agent leaves.
+      const lift = on ? smooth(-0.5, 0.5, (rippleFront(ak) - nd.d) / GROW_W) * (1 - smooth(0.9, 1, ak)) : 0
       let pulse = 0
       if (on)
         for (const rp of ripples) {
           if (rp.zone !== nd.zone || !rp.mesh.visible) continue
-          const off = (nd.d - rp.radius) / 0.07
+          const off = (nd.d - rp.radius) / 0.1
           pulse = Math.max(pulse, Math.exp(-off * off) * (1 - rp.u))
         }
-      const r = nd.r * (0.55 + 0.45 * e) * (on ? 1.3 : 1) * (1 + 1.4 * pulse)
+      const r = nd.r * (0.55 + 0.45 * e) * (1 + 0.3 * lift) * (1 + 1.1 * pulse)
       const [mesh, j] = i < split ? [nodeMesh, i] : [coreNodeMesh, i - split]
       mtx.compose(tmp, quat, scl.setScalar(r))
       mesh.setMatrixAt(j, mtx)
-      ringMesh.setMatrixAt(i, mtx.compose(tmp, quat, scl.setScalar(on ? r * RIM : 0)))
-      mesh.setColorAt(j, on ? gfx[nd.zone].glow : col.copy(rawC).lerp(gfx[nd.zone].color, e * named))
+      ringMesh.setMatrixAt(i, mtx.compose(tmp, quat, scl.setScalar(lift > 0.02 ? r * (1 + (RIM - 1) * lift) : 0)))
+      mesh.setColorAt(j, col.copy(rawC).lerp(gfx[nd.zone].color, e * named).lerp(gfx[nd.zone].glow, lift))
 
       // Line: it starts from the center at the moment the bead arrives.
       const grow = easeOut(clamp01((k - 0.55) / 0.45))
@@ -648,12 +660,12 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
 
     for (const rp of ripples) {
       const k = clamp01((s - rp.agent.from) / (rp.agent.to - rp.agent.from)) - rp.lag
-      const on = k > 0 && k < 0.6
+      const on = k > 0 && k < RIPPLE_SPAN
       rp.mesh.visible = on
       if (!on) continue
-      const u = k / 0.6
+      const u = k / RIPPLE_SPAN
       rp.u = u
-      rp.radius = 0.04 + 0.36 * u
+      rp.radius = rippleFront(k)
       rp.mesh.scale.setScalar(rp.radius)
       rp.mesh.material.opacity = 0.9 * (1 - u)
       rp.mesh.lookAt(camera.position)
