@@ -1,10 +1,11 @@
 // Claude Code hook (SessionStart, UserPromptSubmit, Stop): fast, silent, never breaks Claude Code.
 
 import { appendFileSync } from "node:fs"
-import { classifyZones, looksPersonal, promptFingerprint, redactText, truncate, type AgentEventInput } from "@brain/core"
+import { classifyZones, looksPersonal, projectZone, promptFingerprint, redactText, truncate, type AgentEventInput } from "@brain/core"
 import { BrainApi } from "./api"
 import { firstName, zoneName } from "./cache"
 import { loadCache, loadConfig, paths, type Cache } from "./config"
+import { gitRemote } from "./git-remote"
 import { isBrainSetupText, maskOwnSecrets, ownSecrets } from "./secrets"
 
 export const HOOK_GLOBAL_TIMEOUT_MS = 2500
@@ -85,7 +86,9 @@ export function eventForHook(input: HookInput, cache: Cache | null, opts: HookOp
       if (isBrainSetupText(prompt, secrets) || maskOwnSecrets(prompt, secrets).count > 0) return { agent: "claude-code", type: "query", zones: [], session_id }
       // Personal content: no zone, no fingerprint, no summary.
       if (looksPersonal(prompt)) return { agent: "claude-code", type: "query", zones: [], session_id }
-      const zones = cache?.zones?.length ? classifyZones(prompt, cache.zones, 2) : []
+      // In a project that a zone lists: that zone, as the sync will file the session.
+      const project = input.cwd && cache?.zones?.length ? projectZone({ cwd: input.cwd, repo: gitRemote(input.cwd) }, cache.zones) : undefined
+      const zones = project ? [project] : cache?.zones?.length ? classifyZones(prompt, cache.zones, 2) : []
       const event: AgentEventInput = { agent: "claude-code", type: "query", zones, fingerprint: promptFingerprint(prompt), session_id }
       if (opts.shareSummaries !== false && zones.length > 0) event.summary = truncate(redactText(prompt, { literals: secrets }).replace(/\s+/g, " "), 160)
       return event

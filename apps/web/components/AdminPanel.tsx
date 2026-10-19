@@ -14,6 +14,7 @@ import { RelTime } from "./RelTime"
 import { TeamJoin } from "./TeamJoin"
 import { ADMIN_VIEWS, type AdminTab } from "./admin-views"
 import { AutoZones } from "./AutoZones"
+import { ZoneProjects, splitProjects } from "./ZoneProjects"
 import { Moderation } from "./Moderation"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 import { possessive } from "@/lib/install-prompt"
@@ -166,6 +167,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
           <PageScroll width="max-w-[720px]">
             <div className="space-y-4">
               <ZoneForm zones={zones} reload={reload} storeKind={props.storeKind} />
+              <ZoneProjects zones={zones} reload={reload} />
               <AutoZones onZonesChanged={() => void reload()} />
               <Moderation />
             </div>
@@ -634,6 +636,7 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [keywords, setKeywords] = useState("")
+  const [projects, setProjects] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
@@ -667,10 +670,11 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
         nameRef.current?.focus()
         return
       }
-      const created = await api<Zone>("/api/admin/zones", { method: "POST", json: { name: name.trim(), description: description.trim(), keywords: words } })
+      const created = await api<Zone>("/api/admin/zones", { method: "POST", json: { name: name.trim(), description: description.trim(), keywords: words, projects: splitProjects(projects) } })
       setName("")
       setDescription("")
       setKeywords("")
+      setProjects("")
       setOk(`Zone "${created.name ?? name.trim()}" added.`)
       await reload()
     } catch (e) {
@@ -718,6 +722,16 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
         placeholder="Keywords to classify sessions automatically, separated by commas"
         value={keywords}
         onChange={(e) => setKeywords(e.target.value)}
+      />
+      <input
+        className="input mono"
+        aria-label="Projects"
+        placeholder="Projects (optional): folders or git repositories, for example encore, acme/api"
+        value={projects}
+        onChange={(e) => setProjects(e.target.value)}
+        maxLength={2000}
+        autoComplete="off"
+        spellCheck={false}
       />
       {err && <ErrorText>{err}</ErrorText>}
       {ok && (

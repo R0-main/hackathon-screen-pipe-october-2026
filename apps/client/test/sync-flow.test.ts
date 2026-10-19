@@ -5,7 +5,7 @@ import { delimiter, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import { applyPrivacy, runSync } from "../src/sync"
-import { mockServer, tempDir } from "./helpers"
+import { TEST_ZONES, mockServer, tempDir } from "./helpers"
 import { mockBrain } from "./mock-brain"
 
 const clientDir = fileURLToPath(new URL("..", import.meta.url))
@@ -146,6 +146,22 @@ test("after install-schedule (baseline): the history not reviewed does not go, t
     const json = JSON.stringify(brain.ingested)
     assert.ok(json.includes("Swile"), json)
     assert.ok(!json.includes("close on the 5th"), "an exchange from before the setup was sent")
+  } finally {
+    await brain.close()
+  }
+})
+
+test("a session in a project that a zone lists goes to that zone, whatever its content", async () => {
+  const fournil = { id: "fournil", name: "Fournil", description: "The bakery app", color: "#000", position: 2, readable: true, keywords: [], projects: ["fournil"] }
+  const brain = await mockBrain({ zones: [...TEST_ZONES, fournil] })
+  try {
+    const ws = workstation(brain.url)
+    // Content that the keywords would file under finance: the project folder (/home/hugo/fournil) decides.
+    writeFileSync(join(ws.proj, "p.jsonl"), user("p", "How do we handle the VAT on invoices?", 30) + assistant("p", "We decided to issue the invoices with VAT at 5.5% from the closing.", 29))
+    await runSync({ distiller: "heuristic", since: "1d" }, capture().io)
+    const items = brain.ingested as { zone: string }[]
+    assert.ok(items.length > 0, "nothing sent")
+    assert.deepEqual([...new Set(items.map((i) => i.zone))], ["fournil"])
   } finally {
     await brain.close()
   }

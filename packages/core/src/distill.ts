@@ -29,7 +29,12 @@ export type Conversation = {
   documents?: string[]
 }
 
-export type ZoneHint = Pick<Zone, "id" | "name" | "keywords" | "description">
+/** The session a knowledge item comes from: its `session_id` without the `#n` of a long session split into chunks (chunkConversation). */
+export function sessionOf(sessionId: string): string {
+  return sessionId.replace(/#\d+$/, "")
+}
+
+export type ZoneHint = Pick<Zone, "id" | "name" | "keywords" | "description" | "projects">
 
 export const KNOWN_TOOLS = [
   "Stripe", "Supabase", "Postgres", "PostgreSQL", "Next.js", "React", "Vue", "Svelte", "Node", "Bun", "Deno", "Python",

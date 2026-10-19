@@ -103,6 +103,10 @@ Commands:
   docs add <file>… [--zone <zone>] [--title <title>]
                      Sends documents to the brain yourself (3 MB at most each). Checked here then by the brain: a file
                      with a secret or personal data (payslip, ID, contact list…) is refused and stays on the computer.
+  rezone [--dry-run]  Once projects are added to the zones (dashboard, Team › Zones › Projects): files the knowledge already
+                     drawn from your Claude Code and Codex sessions into the zone of their project, from the folder of each
+                     session in the local logs. Nothing is distilled again; only your own knowledge moves.
+                     --dry-run: shows what would move without moving anything.
   refresh-status [--dry-run]
                      Admins: writes "where the company stands" on this computer with Claude (\`claude -p\`, your subscription;
                      otherwise the API key) and sends it to the dashboard. --dry-run: shows the summary without sending it.
@@ -259,6 +263,10 @@ async function main(argv: string[]): Promise<number> {
     case "refresh-status": {
       const { cmdRefreshStatus } = await import("./refresh-status")
       return cmdRefreshStatus({ dryRun: Boolean(flags["dry-run"]), verbose: Boolean(flags.verbose) })
+    }
+    case "rezone": {
+      const { cmdRezone } = await import("./rezone")
+      return cmdRezone({ dryRun: Boolean(flags["dry-run"]) })
     }
     case "refresh-zones": {
       const { cmdRefreshZones } = await import("./refresh-zones")
