@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { normalizeProject, slugify, zoneColor, type Zone } from "@brain/core"
+import { isCoreZone, normalizeProject, slugify, zoneColor, type Zone } from "@brain/core"
 import { getStore } from "@/lib/store"
 import { error, json, parseBody, withViewer } from "@/lib/http"
 
@@ -40,6 +40,34 @@ export const POST = withViewer(
       ...projectsOf(body.data.projects, prev),
     })
     return json(zone, prev ? 200 : 201)
+  },
+  { admin: true },
+)
+
+/**
+ * `?id=`: deletes an empty zone (a project zone emptied by `brain rezone`, a zone created by mistake), with its access
+ * rights. Never the core, nor the company's last team zone; 409 while knowledge, tasks, documents or skills are filed in it.
+ */
+export const DELETE = withViewer(
+  async (req) => {
+    const id = new URL(req.url).searchParams.get("id") ?? ""
+    if (!id) return error(400, "Missing zone id (?id=).")
+    if (isCoreZone(id)) return error(400, "The core cannot be deleted: every member reads it.")
+    const store = getStore()
+    const zones = await store.listZones()
+    const zone = zones.find((z) => z.id === id)
+    if (!zone) return error(404, `Unknown zone "${id}".`)
+    if (zones.filter((z) => !isCoreZone(z.id)).length <= 1) return error(400, "The brain keeps at least one zone besides the core.")
+    const usage = await store.zoneUsage(id)
+    const left = Object.entries(usage).filter(([, n]) => n > 0)
+    if (left.length)
+      return error(
+        409,
+        `The zone "${zone.name}" is not empty (${left.map(([k, n]) => `${n} ${n === 1 ? k.replace(/s$/, "") : k}`).join(", ")}): move them first (brain rezone).`,
+        usage,
+      )
+    await store.deleteZone(id)
+    return json({ deleted: id })
   },
   { admin: true },
 )
