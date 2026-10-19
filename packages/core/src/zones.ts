@@ -205,3 +205,27 @@ export function projectZone(session: { cwd?: string; repo?: string }, zones: Pic
   }
   return best?.zone
 }
+
+/** Keyword score a zone needs before content rezone moves knowledge into it (two exact keywords, or one and two prefixes). */
+export const CONTENT_REZONE_MIN_SCORE = 2
+
+/**
+ * Content rezone (`brain rezone --content`): the zone an item's text clearly belongs to, when it is not the one the item
+ * is in. Clearly: the best zone scores at least CONTENT_REZONE_MIN_SCORE and twice the current zone's score, so an item
+ * that fits where it is stays there. The core never gives nor receives (its knowledge is written for everyone).
+ * `to`: only these destinations; an item whose best zone is elsewhere stays put rather than going to its second best.
+ */
+export function contentZone(text: string, current: string, score: ZoneScorer, opts: { to?: string[] } = {}): { zone: string; score: number } | undefined {
+  if (isCoreZone(current)) return undefined
+  const scored = score(text, { prefer: [current] }).filter((s) => !isCoreZone(s.zone))
+  const best = scored[0]
+  if (!best || best.zone === current) return undefined
+  if (opts.to && !opts.to.includes(best.zone)) return undefined
+  const here = scored.find((s) => s.zone === current)?.score ?? 0
+  return best.score >= Math.max(CONTENT_REZONE_MIN_SCORE, 2 * here) ? best : undefined
+}
+
+/** The text content rezone scores: title, body and the names of the entities cited. */
+export function contentText(item: { title: string; body: string; entities?: { name: string }[] }): string {
+  return [item.title, item.body, ...(item.entities ?? []).map((e) => e.name)].join(" ")
+}

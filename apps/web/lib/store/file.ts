@@ -25,7 +25,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type ZoneUsage, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
@@ -435,6 +435,22 @@ export class FileStore implements BrainStore {
   async setZoneAccess(userId: string, access: { zone_id: string; can_write: boolean }[]) {
     this.mutate((d) => {
       d.zone_access = d.zone_access.filter((a) => a.user_id !== userId).concat(access.map((a) => ({ user_id: userId, ...a })))
+    })
+  }
+
+  async zoneUsage(id: string): Promise<ZoneUsage> {
+    const d = this.load()
+    const n = (rows: { zone?: string | null }[] | undefined) => (rows ?? []).filter((r) => r.zone === id).length
+    return { items: n(d.items), tasks: n(d.tasks), documents: n(d.documents), skills: n(d.skills) }
+  }
+  async deleteZone(id: string) {
+    return this.mutate((d) => {
+      const before = d.zones.length
+      d.zones = d.zones.filter((z) => z.id !== id)
+      if (d.zones.length === before) return false
+      d.zone_access = d.zone_access.filter((a) => a.zone_id !== id)
+      for (const a of d.automations) if (a.zone === id) delete a.zone
+      return true
     })
   }
 

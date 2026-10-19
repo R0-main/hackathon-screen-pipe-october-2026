@@ -102,6 +102,19 @@ export class BrainApi {
       60000,
     )
   }
+  /** Files the caller's knowledge by what it says (rezone --content). */
+  rezoneByContent(opts: { from?: string[]; to?: string[]; keep_sessions?: string[]; dry_run?: boolean }) {
+    return this.request<{
+      dry_run: boolean
+      moved: number
+      zones: Record<string, number>
+      from: Record<string, number>
+      scanned: number
+      kept: number
+      samples: { id: string; title: string; from: string; to: string; score: number }[]
+      unknown_zones: string[]
+    }>("POST", "/api/items/rezone", { by: "content", ...opts }, 60000)
+  }
   zone(id: string) {
     return this.request<ZoneSummary>("GET", `/api/zones/${encodeURIComponent(id)}`)
   }

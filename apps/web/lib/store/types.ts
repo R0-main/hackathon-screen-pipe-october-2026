@@ -74,6 +74,8 @@ export type DocumentFilter = { zones?: string[]; orAuthorId?: string; zone?: str
 export const SYNC_REPORTS_KEEP = 30
 
 export type ZoneStat = { zone: string; count: number; last_at: string | null; contributors: number }
+/** Counts of what is filed in a zone. */
+export type ZoneUsage = { items: number; tasks: number; documents: number; skills: number }
 /** Volume of an author's knowledge in a zone: places each person in the brain. */
 export type AuthorZoneStat = { author_id: string; zone: string; count: number }
 export type EntityStat = { type: EntityType; name: string; count: number; zones: string[] }
@@ -127,6 +129,13 @@ export interface BrainStore {
   /** `can_write` is kept but reserved: writing is not restricted (everyone feeds the brain). */
   listZoneAccess(userId?: string): Promise<ZoneAccess[]>
   setZoneAccess(userId: string, access: { zone_id: string; can_write: boolean }[]): Promise<void>
+  /** What is still filed in a zone (superseded knowledge included): a zone is only deleted once it is empty. */
+  zoneUsage(id: string): Promise<ZoneUsage>
+  /**
+   * Deletes a zone with its access rights; the automation suggestions filed in it lose their zone. Checks nothing:
+   * the caller makes sure it is empty (zoneUsage) and not the core. False if it did not exist.
+   */
+  deleteZone(id: string): Promise<boolean>
 
   insertItems(items: NewItem[]): Promise<KnowledgeItem[]>
   /**

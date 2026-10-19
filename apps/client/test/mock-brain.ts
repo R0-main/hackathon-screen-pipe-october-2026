@@ -24,6 +24,8 @@ export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeo
   const automations: unknown[] = []
   /** POST /api/items/rezone received. */
   const rezones: { moves: { session_id: string; zone: string }[]; dry_run?: boolean }[] = []
+  /** POST /api/items/rezone received with `by: "content"`. */
+  const contentRezones: { from?: string[]; to?: string[]; keep_sessions?: string[]; dry_run?: boolean }[] = []
   /** Item key → its id (like the real brain, a duplicate gives back the id of the item already there). */
   const keys = new Map<string, string>()
   /** POST /api/documents received, and the documents kept (by fingerprint). */
@@ -121,6 +123,12 @@ export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeo
     }
     if (req.method === "POST" && path === "/api/events") return { status: 201, body: { recorded: 1, zones: [] } }
     if (req.method === "POST" && path === "/api/items/rezone") {
+      const c = req.body as { by?: string; from?: string[]; to?: string[]; keep_sessions?: string[]; dry_run?: boolean }
+      if (c.by === "content") {
+        contentRezones.push(c)
+        const samples = Array.from({ length: 12 }, (_, i) => ({ id: `i${i}`, title: `Prefecture appointment ${i}`, from: "dev", to: c.to?.[0] ?? "sales", score: 3 }))
+        return { body: { dry_run: Boolean(c.dry_run), moved: 12, zones: { [c.to?.[0] ?? "sales"]: 12 }, from: { dev: 12 }, scanned: 40, kept: c.keep_sessions?.length ?? 0, samples, unknown_zones: [] } }
+      }
       const b = req.body as { moves: { session_id: string; zone: string }[]; dry_run?: boolean }
       rezones.push(b)
       const zones: Record<string, number> = {}
@@ -129,5 +137,5 @@ export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeo
     }
     return undefined
   })
-  return { ...srv, ingested, received, automations, uploads, documents, rezones, ingestCalls: () => ingestCalls }
+  return { ...srv, ingested, received, automations, uploads, documents, rezones, contentRezones, ingestCalls: () => ingestCalls }
 }

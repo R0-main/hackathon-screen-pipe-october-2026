@@ -7,7 +7,7 @@ import type { DistillerKind } from "./distill"
 import type { SyncSummary } from "./sync"
 
 const VERSION = "0.1.0"
-const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json", "refresh-status"])
+const BOOLEAN_FLAGS = new Set(["dry-run", "verbose", "purge", "help", "reset", "version", "full", "confirm", "scheduled", "no-open", "skip-screenpipe", "json", "refresh-status", "content"])
 
 export function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string | boolean>; positional: string[] } {
   const flags: Record<string, string | boolean> = {}
@@ -107,6 +107,11 @@ Commands:
                      drawn from your Claude Code and Codex sessions into the zone of their project, from the folder of each
                      session in the local logs. Nothing is distilled again; only your own knowledge moves.
                      --dry-run: shows what would move without moving anything.
+  rezone --content [--from <zones>] [--to <zones>] [--dry-run]
+                     Files your knowledge by what it says, with the zones' keywords: what clearly belongs to another zone
+                     moves there (a new Legal zone fills up from Dev, for instance). Knowledge from a session opened in a
+                     project that a zone lists stays filed by project. --from / --to: only from / towards these zones
+                     (ids, comma-separated). Run it with --dry-run first: it lists examples of the moves.
   refresh-status [--dry-run]
                      Admins: writes "where the company stands" on this computer with Claude (\`claude -p\`, your subscription;
                      otherwise the API key) and sends it to the dashboard. --dry-run: shows the summary without sending it.
@@ -266,7 +271,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case "rezone": {
       const { cmdRezone } = await import("./rezone")
-      return cmdRezone({ dryRun: Boolean(flags["dry-run"]) })
+      return cmdRezone({ dryRun: Boolean(flags["dry-run"]), content: Boolean(flags.content), from: flags.from, to: flags.to })
     }
     case "refresh-zones": {
       const { cmdRefreshZones } = await import("./refresh-zones")

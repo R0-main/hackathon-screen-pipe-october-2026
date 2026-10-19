@@ -25,7 +25,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type ZoneUsage, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 import { JOIN_MISSING_MESSAGE, SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
@@ -698,6 +698,34 @@ export class PostgresStore implements BrainStore {
         await tx`insert into zone_access (org_id, user_id, zone_id, can_write) values (${org}, ${userId}, ${a.zone_id}, ${a.can_write})`
       }
     })
+  }
+
+  async zoneUsage(id: string): Promise<ZoneUsage> {
+    const org = await this.orgId()
+    const [r] = await this.sql`select
+        (select count(*)::int from knowledge_items where org_id = ${org} and zone = ${id}) as items,
+        (select count(*)::int from tasks where org_id = ${org} and zone = ${id}) as tasks`
+    // Documents and skills come from later migrations: absent, nothing can be filed there.
+    const count = async (q: () => Promise<any[]>) => {
+      try {
+        return (await q())[0].n as number
+      } catch (err) {
+        if (missingTable(err)) return 0
+        throw err
+      }
+    }
+    const documents = await count(() => this.sql`select count(*)::int as n from documents where org_id = ${org} and zone = ${id}`)
+    const skills = await count(() => this.sql`select count(*)::int as n from skills where org_id = ${org} and zone = ${id}`)
+    return { items: r.items, tasks: r.tasks, documents, skills }
+  }
+  async deleteZone(id: string) {
+    const org = await this.orgId()
+    return this.sql.begin(async (tx: any) => {
+      await tx`update automation_suggestions set zone = null where org_id = ${org} and zone = ${id}`
+      // zone_access follows through its foreign key (on delete cascade).
+      const rows = await tx`delete from zones where org_id = ${org} and id = ${id} returning id`
+      return rows.length > 0
+    }) as Promise<boolean>
   }
 
   /** True if the 20261017000006 migration (superseded_by, embedding) is applied; otherwise queries do without it. */

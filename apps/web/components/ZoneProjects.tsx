@@ -22,19 +22,20 @@ export function ZoneProjects({ zones, reload }: { zones: Zone[]; reload: () => P
         <h2 className="panel-title">Projects</h2>
         <p className="text-[13px] text-trace">
           A Claude Code or Codex session opened in one of these projects always goes to its zone, on every computer. Enter a folder name (encore) or a git
-          repository (acme/encore, or its URL), separated by commas. Takes effect on each computer at its next sync.
+          repository (acme/encore, or its URL), separated by commas. Takes effect on each computer at its next sync. A zone left empty (its
+          knowledge moved with <code className="mono">brain rezone</code>) can be deleted.
         </p>
       </div>
       <ul className="divide-y divide-line">
         {editable.map((z) => (
-          <ZoneProjectsRow key={z.id} zone={z} reload={reload} />
+          <ZoneProjectsRow key={z.id} zone={z} reload={reload} deletable={editable.length > 1} />
         ))}
       </ul>
     </section>
   )
 }
 
-function ZoneProjectsRow({ zone, reload }: { zone: Zone; reload: () => Promise<Zone[] | null> }) {
+function ZoneProjectsRow({ zone, reload, deletable }: { zone: Zone; reload: () => Promise<Zone[] | null>; deletable: boolean }) {
   const saved = (zone.projects ?? []).join(", ")
   const [text, setText] = useState(saved)
   const [busy, setBusy] = useState(false)
@@ -60,12 +61,34 @@ function ZoneProjectsRow({ zone, reload }: { zone: Zone; reload: () => Promise<Z
     }
   }
 
+  // Only an empty zone goes: the server refuses (409) while knowledge, tasks, documents or skills are filed in it.
+  async function remove() {
+    if (!confirm(`Delete the zone "${zone.name}"? Its access rights go with it. Only possible once nothing is filed in it.`)) return
+    setErr(null)
+    setOk(false)
+    setBusy(true)
+    try {
+      await api(`/api/admin/zones?id=${encodeURIComponent(zone.id)}`, { method: "DELETE" })
+      await reload()
+    } catch (e) {
+      setErr(`Could not delete the zone: ${errorMessage(e)}`)
+      setBusy(false)
+    }
+  }
+
   return (
     <li className="py-3 first:pt-0 last:pb-0">
       <form onSubmit={save} className="space-y-2" aria-busy={busy}>
-        <label htmlFor={id} className="block">
-          <ZoneTag name={zone.name} color={zoneColor(zone.color, zone.position)} />
-        </label>
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor={id} className="block">
+            <ZoneTag name={zone.name} color={zoneColor(zone.color, zone.position)} />
+          </label>
+          {deletable && (
+            <button type="button" className="btn btn-ghost btn-sm shrink-0" onClick={remove} disabled={busy} aria-label={`Delete the zone ${zone.name}`}>
+              Delete
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <input
             id={id}
