@@ -124,6 +124,8 @@ const SHOCK = 0.03
 const SHOCK_AROUND = 0.22
 /** The core's shock wave reaches much farther into the network around it (its circle stays the same). */
 const CORE_SHOCK_AROUND = 0.7
+/** A lit zone's knowledge grows as the ripple's front goes past it: over this much of the front's travel (scene units). */
+const GROW_W = 0.12
 
 type ThreeModule = typeof import("three")
 
@@ -157,6 +159,8 @@ type ZoneGfx = {
   lit: boolean
   /** Displayed share of lighting, from 0 (normal) to 1 (lit), which follows `lit` gently. */
   mix: number
+  /** When it last lit up: its knowledge grows from then on, at the pace of the ripple's front. */
+  litAt: number
   outlineMat: THREE.MeshBasicMaterial
   /** When it stopped being selected: the activity of that click (coming back from the server) does not light it again. */
   dismissedAt: number
@@ -176,6 +180,11 @@ type RippleGfx = { key: string; zone: ZoneGfx; mesh: RingMesh; start: number; fa
 type View = { rx: number; ry: number; zoom: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+/** 0 → 1 with a flat start and end. */
+const smootherstep = (x: number) => {
+  const k = clamp(x, 0, 1)
+  return k * k * k * (k * (k * 6 - 15) + 10)
+}
 
 /**
  * The brain in three dimensions: a network of neurons on the surface of a brain (lobes, cerebellum,
@@ -454,6 +463,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       node.userData.zone = z.id
       node.userData.r = r
       node.userData.d = p.distanceTo(centerPos)
+      node.userData.grow = 0
       node.userData.base = p.clone()
       group.add(node)
       nodes.push(node)
@@ -468,7 +478,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     materials.push(centerMat, nodeMat, linkMat)
     const glow = core ? CORE_GLOW : new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
     const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
-    const g: ZoneGfx = { id: z.id, core, locked: z.locked, color, glow, reach, radius, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false, mix: 0, outlineMat, dismissedAt: -Infinity }
+    const g: ZoneGfx = { id: z.id, core, locked: z.locked, color, glow, reach, radius, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false, mix: 0, litAt: 0, outlineMat, dismissedAt: -Infinity }
     gfx.set(z.id, g)
     if (core)
       for (const obj of [center, outline, ...nodes, links]) {
@@ -882,8 +892,10 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   // Loop: ripples, active states, idle rotation, projected labels.
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
   const live: RippleGfx[] = []
-  /** Radius of the ripple at instant k (0 → 1): it starts from the center and dies out a little after the farthest knowledge. */
-  const rippleRadius = (r: RippleGfx, k: number) => 0.05 + (r.zone.reach + 0.08) * k
+  /** Radius of a zone's ripple `ms` after it starts: from the center to a little past the farthest knowledge in RIPPLE_MS. */
+  const frontAt = (g: ZoneGfx, ms: number) => 0.05 + (g.reach + 0.08) * (ms / RIPPLE_MS)
+  /** Radius of the ripple at instant k (0 → 1). */
+  const rippleRadius = (r: RippleGfx, k: number) => frontAt(r.zone, k * RIPPLE_MS)
   /** Front of the push on the points: the circle's, except for the core, whose push travels on to its shock reach. */
   const shockRadius = (r: RippleGfx, k: number) => (r.zone.core ? 0.05 + (r.zone.reach + CORE_SHOCK_AROUND) * k : rippleRadius(r, k))
   /** Strength of a ripple: 1, then toward 0 in SETTLE_MS once its zone is left. */
@@ -940,6 +952,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const isSel = sel === g.id
       g.selected = isSel
       const on = g.active || isSel
+      if (on && !g.lit) g.litAt = t
       g.lit = on
       // Light up and go dark gently: color, lines and ink circle follow the same share of lighting.
       const mix = g.mix + ((on ? 1 : 0) - g.mix) * Math.min(1, (dt * 1000) / (SETTLE_MS / 4))
@@ -949,18 +962,24 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
         g.linkMat.color.setHex(LINE).lerp(tone.setHex(INK), g.mix)
         g.outlineMat.opacity = g.mix
       }
-      // The ripple goes through the zone's knowledge: each one swells when the ripple's front reaches it.
+      // The ripple goes through the zone's knowledge: each one grows when the ripple's front reaches it (not all at
+      // once when the zone lights up), with a gentle swell as the front passes; it goes back down with the zone.
       for (const node of g.nodes) {
+        const d = node.userData.d as number
+        let grow = node.userData.grow as number
+        if (reduced) grow = g.mix
+        else if (on) grow = Math.max(grow, smootherstep((frontAt(g, t - g.litAt) - d) / GROW_W + 0.5))
+        else grow = Math.min(grow, g.mix)
+        node.userData.grow = grow
         let pulse = 0
         if (!reduced)
           for (const r of live) {
             if (r.zone !== g) continue
             const k = (t - r.start) / RIPPLE_MS
-            const front = rippleRadius(r, k)
-            const off = ((node.userData.d as number) - front) / 0.07
+            const off = (d - rippleRadius(r, k)) / 0.1
             pulse = Math.max(pulse, Math.exp(-off * off) * (1 - k * 0.6) * rippleGain(r, t))
           }
-        node.scale.setScalar((node.userData.r as number) * (1 + 0.6 * g.mix) * (1 + 1.4 * pulse))
+        node.scale.setScalar((node.userData.r as number) * (1 + 0.6 * grow) * (1 + 1.1 * pulse))
       }
       g.outline.visible = g.mix > 0.01
       g.center.scale.setScalar(g.radius * (1 + 0.3 * g.mix))
