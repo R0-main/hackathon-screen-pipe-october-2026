@@ -419,9 +419,9 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       spokes.push({ a: core.index, b, mat, base: 0.6, arc })
     })
   const links = [...syn, ...spokes]
-  // The flow, as on the dashboard: small light beads in each arc. Under reduced motion, none.
+  // The flow, as on the dashboard: glossy beads of light in each arc. Under reduced motion, none.
   const flows = [arcBeads(T, syn.map((sy) => sy.arc)), arcBeads(T, spokes.map((sy) => sy.arc))]
-  flows[1].mesh.renderOrder = SPOKE_BEADS_ON_TOP
+  flows[1].order(SPOKE_BEADS_ON_TOP)
   for (const f of flows) {
     f.mesh.visible = !still
     group.add(f.mesh)
@@ -629,7 +629,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     }
     if (!still)
       for (const f of flows) {
-        f.material.opacity = arcsIn
+        f.opacity(arcsIn)
         f.frame(t / 1000)
       }
 

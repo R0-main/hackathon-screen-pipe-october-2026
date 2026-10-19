@@ -714,11 +714,11 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     }
   const links = [...syn, ...spokes]
 
-  // The flow: small light beads in each arc, which speed up when one of the two zones is active. Those of the spokes
+  // The flow: glossy beads of light in each arc, which speed up when one of the two zones is active. Those of the spokes
   // are drawn on top, like their arcs, and always just after them: with the same render order, three.js would sort
   // tubes and beads by distance, and from some angles a spoke would cover its beads, leaving only their swell.
   const flows = [arcBeads(T, syn.map((s) => s.arc)), arcBeads(T, spokes.map((s) => s.arc))]
-  flows[1].mesh.renderOrder = SPOKE_BEADS_ON_TOP
+  flows[1].order(SPOKE_BEADS_ON_TOP)
   for (const f of flows) {
     f.mesh.visible = !reducedFlow
     group.add(f.mesh)
