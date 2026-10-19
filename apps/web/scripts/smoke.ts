@@ -598,6 +598,43 @@ async function main() {
   assert(rzAgain.data.moved === 0 && rzAgain.data.already === 2, "run again: already in place")
   for (const it of [rzA, rzB, rzOther]) await store.deleteItem(it.id)
 
+  console.log("\n— API: rezone by content, then deleting the emptied zone")
+  const side = await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: claireSession, body: { name: `Side ${run}` } })
+  const legal = await call(adminZonesRoute.POST, "/api/admin/zones", {
+    method: "POST",
+    session: claireSession,
+    body: { name: `Legal ${run}`, keywords: ["prefecture", "visa", "residence", "permit"] },
+  })
+  assert(side.status === 201 && legal.status === 201, "two zones created (a project zone, and Legal with its keywords)")
+  const [sideId, legalId] = [side.data.id as string, legal.data.id as string]
+  const keptSession = `smoke-${run}-project`
+  const [paper, code, pinned] = await store.insertItems([
+    { ...item(sideId, `Smoke ${run} residence permit: prefecture appointment, visa renewal`), author_id: hugo.profile.id },
+    { ...item(sideId, `Smoke ${run} fix the build`), author_id: hugo.profile.id },
+    { ...item(sideId, `Smoke ${run} visa and residence permit checklist`), source: { app: "Claude Code", tool: "claude-code", at: new Date().toISOString(), session_id: `${keptSession}#0` }, author_id: hugo.profile.id },
+  ])
+  const content = { by: "content", from: [sideId], to: [legalId, "nope"], keep_sessions: [keptSession] }
+  const crDry = await call(rezoneRoute.POST, "/api/items/rezone", { method: "POST", session: hugoSession, body: { ...content, dry_run: true } })
+  assert(
+    crDry.status === 200 && crDry.data.moved === 1 && crDry.data.zones[legalId] === 1 && crDry.data.scanned === 3 && crDry.data.kept === 1 && crDry.data.unknown_zones[0] === "nope",
+    `dry run: the paperwork would go to Legal, the build stays, the project session is kept (${JSON.stringify(crDry.data)})`,
+  )
+  assert(crDry.data.samples[0]?.id === paper.id && (await store.getItem(paper.id))?.zone === sideId, "dry run: an example of the move, nothing moved")
+  const cr = await call(rezoneRoute.POST, "/api/items/rezone", { method: "POST", session: hugoSession, body: content })
+  assert(cr.data.moved === 1 && (await store.getItem(paper.id))?.zone === legalId && (await store.getItem(code.id))?.zone === sideId && (await store.getItem(pinned.id))?.zone === sideId, "moved by what it says")
+  const delOf = (id: string, session = claireSession) => call(adminZonesRoute.DELETE, `/api/admin/zones?id=${encodeURIComponent(id)}`, { method: "DELETE", session })
+  assert((await delOf(sideId, hugoSession)).status === 403, "deleting a zone: admins only (403)")
+  assert((await delOf("core")).status === 400, "the core cannot be deleted (400)")
+  assert((await delOf(`nope-${run}`)).status === 404, "unknown zone: 404")
+  const busy = await delOf(sideId)
+  assert(busy.status === 409 && busy.data.details?.items === 2 && /move them first/.test(busy.data.error), `a zone still holding knowledge is not deleted (409: "${busy.data.error}")`)
+  await store.setZoneAccess(hugo.profile.id, [...(await store.listZoneAccess(hugo.profile.id)), { zone_id: sideId, can_write: true }])
+  for (const it of [paper, code, pinned]) await store.deleteItem(it.id)
+  const del = await delOf(sideId)
+  assert(del.status === 200 && !(await store.listZones()).some((z) => z.id === sideId), "the emptied zone is deleted")
+  assert(!(await store.listZoneAccess(hugo.profile.id)).some((a) => a.zone_id === sideId), "with its access rights")
+  assert((await delOf(legalId)).status === 200, "and the other one")
+
   console.log("\n— API: MCP servers (catalog, manual OAuth client, secrets never sent back)")
   assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: hugoSession })).status === 403, "MCP servers: admins only (403)")
   const mcpLinear = await call(mcpConnectorsRoute.POST, "/api/connectors/mcp", { method: "POST", session: claireSession, body: { catalog_id: "linear" } })

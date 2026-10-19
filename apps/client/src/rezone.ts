@@ -1,13 +1,14 @@
 // `rezone`: files the knowledge already in the brain into its project's zone, once projects are added to the zones.
 // The computer knows the folder of each Claude Code / Codex session (its logs); the brain knows which session each
 // knowledge item comes from. Nothing is distilled again: the brain moves the caller's own knowledge.
+// `rezone --content`: the brain files that knowledge by what it says instead (the zones' keywords).
 
 import { readFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { projectZone, type ZoneHint } from "@brain/core"
 import { ApiError, BrainApi } from "./api"
 import { refreshCache, zoneHints, zoneName } from "./cache"
-import { UserError, claudeDir, codexDir, requireConfig } from "./config"
+import { UserError, claudeDir, codexDir, requireConfig, type Cache } from "./config"
 import { remoteReader } from "./git-remote"
 import { codexSessionId, parseCodexLine } from "./sources/codex-logs"
 import { listJsonlFiles } from "./sources/jsonl"
@@ -67,13 +68,31 @@ export function projectMoves(sessions: Map<string, string>, zones: ZoneHint[], r
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
-/** `brain.mjs rezone [--dry-run]`. */
-export async function cmdRezone(opts: { dryRun?: boolean } = {}, log: Log = console.log): Promise<number> {
+/** Sessions sent with `--content` so that their knowledge stays filed by project (the brain accepts 20000). */
+export const KEEP_SESSIONS_MAX = 20000
+
+/** "legal, Sales" → zone ids, by id or name (case-insensitive). Undefined without the flag; an unknown zone is an error. */
+export function zoneIds(raw: string | boolean | undefined, zones: ZoneHint[], flag: string): string[] | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== "string" || !raw.trim()) throw new UserError(`--${flag} needs zones, comma-separated (for example --${flag} dev,legal).`)
+  return [...new Set(raw.split(",").map((w) => w.trim().toLowerCase()).filter(Boolean))].map((w) => {
+    const zone = zones.find((z) => z.id === w || z.name.toLowerCase() === w)
+    if (!zone) throw new UserError(`--${flag}: unknown zone "${w}". Zones: ${zones.map((z) => z.id).join(", ")}.`)
+    return zone.id
+  })
+}
+
+type RezoneOpts = { dryRun?: boolean; content?: boolean; from?: string | boolean; to?: string | boolean }
+
+/** `brain.mjs rezone [--content [--from <zones>] [--to <zones>]] [--dry-run]`. */
+export async function cmdRezone(opts: RezoneOpts = {}, log: Log = console.log): Promise<number> {
+  if (!opts.content && (opts.from !== undefined || opts.to !== undefined)) throw new UserError("--from and --to go with --content.")
   const cfg = requireConfig()
   const api = new BrainApi(cfg.url, cfg.token)
   const { cache, errors } = await refreshCache(api)
   if (errors.length) throw new UserError(`Could not read the zones from the brain: ${errors[0]}`)
   const zones = zoneHints(cache)
+  if (opts.content) return rezoneByContent(api, cache, zones, opts, log)
   if (!zones.some((z) => z.projects?.length))
     throw new UserError("No zone lists a project yet: add them in the dashboard (Team › Zones › Projects), then run rezone again.")
 
@@ -104,5 +123,30 @@ export async function cmdRezone(opts: { dryRun?: boolean } = {}, log: Log = cons
   log(`${plural(total.moved, "knowledge item")} ${verb}${detail ? ` (${detail})` : ""}, ${total.already} already in place, from ${plural(total.sessions, "session")} known to the brain.`)
   if (total.unknown.size) log(`Zones unknown to the brain (ignored): ${[...total.unknown].join(", ")}.`)
   if (opts.dryRun && total.moved > 0) log("Dry run: nothing was moved. Run rezone without --dry-run to apply.")
+  return 0
+}
+
+async function rezoneByContent(api: BrainApi, cache: Cache | null, zones: ZoneHint[], opts: RezoneOpts, log: Log): Promise<number> {
+  const from = zoneIds(opts.from, zones, "from")
+  const to = zoneIds(opts.to, zones, "to")
+  // Knowledge from a session opened in a project stays filed by project, whatever it talks about.
+  const keep = zones.some((z) => z.projects?.length) ? projectMoves(localSessions({ claude: claudeDir(), codex: codexDir() }), zones).map((m) => m.session_id) : []
+  let r: Awaited<ReturnType<BrainApi["rezoneByContent"]>>
+  try {
+    r = await api.rezoneByContent({ from, to, keep_sessions: keep.slice(-KEEP_SESSIONS_MAX), dry_run: Boolean(opts.dryRun) })
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 400))
+      throw new UserError(`This brain does not know rezone --content yet (${err.status}): update the server.`)
+    throw err
+  }
+  const names = (counts: Record<string, number>) => Object.entries(counts).map(([z, n]) => `${zoneName(cache, z)} ${n}`).join(", ")
+  const kept = r.kept ? `, ${r.kept} kept in their project's zone` : ""
+  log(`rezone --content — ${plural(r.scanned, "knowledge item")} of yours read${kept}.`)
+  const verb = opts.dryRun ? "would be moved" : "moved"
+  log(r.moved ? `${plural(r.moved, "knowledge item")} ${verb} (${names(r.zones)}), from ${names(r.from)}.` : "Nothing clearly belongs to another zone: nothing moves.")
+  for (const s of r.samples.slice(0, 10)) log(`  · ${s.title} — ${zoneName(cache, s.from)} → ${zoneName(cache, s.to)}`)
+  if (r.moved > 10) log(`  … and ${r.moved - Math.min(10, r.samples.length)} more.`)
+  if (r.unknown_zones.length) log(`Zones unknown to the brain (ignored): ${r.unknown_zones.join(", ")}.`)
+  if (opts.dryRun && r.moved > 0) log("Dry run: nothing was moved. Run rezone --content without --dry-run to apply.")
   return 0
 }
