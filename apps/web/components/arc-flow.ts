@@ -11,24 +11,28 @@ const TUBULAR = 384
 const RADIAL = 6
 /**
  * The beads: per direction and per arc, their number; their speed (in arc turns per second); their radius, relative to
- * the arc's (well over 1: a pearl threaded on the line).
+ * the arc's (under 1: they stay inside the line).
  */
 const BEADS_PER_WAY = 4
 const BEAD_SPEED = 0.1
-const BEAD_R = 3.4
-/** Stretch of the beads along the arc: their length is BEAD_STRETCH times their width (barely: they stay round). */
-const BEAD_STRETCH = 1.35
+const BEAD_R = 0.6
+/** Stretch of the beads along the arc: their length is BEAD_STRETCH times their width. */
+const BEAD_STRETCH = 3
 /** Swelling of the arc around each bead: radius added at the bead's core, as a share of the arc's radius. */
 const BEAD_BULGE = 0.55
 /** Speed-up of the beads on the arc of an active zone. */
 const FAST = 1.8
-/** The halo around each bead (radius, relative to the bead's) and its strength. */
-const HALO = 2.6
-const HALO_ALPHA = 0.75
-/** The comet tail: glows trailing behind the bead along the arc, each a bit smaller and fainter, `TAIL_STEP` bead lengths apart. */
+/** The halo around each bead (radius, relative to the arc's: it shines around the line) and its strength. */
+const HALO = 7
+const HALO_ALPHA = 0.9
+/**
+ * The comet tail: glows trailing behind the bead along the arc, each a bit smaller and fainter, `TAIL_STEP` bead
+ * lengths apart; their radius, relative to the arc's.
+ */
 const TAIL = 6
 const TAIL_STEP = 0.9
-const TAIL_ALPHA = 0.55
+const TAIL_R = 3.2
+const TAIL_ALPHA = 0.7
 /** The wake: how far behind the bead the arc stays lit (in bead lengths), and how much it takes the bead's color. */
 const WAKE = 9
 const WAKE_LIGHT = 0.85
@@ -108,7 +112,7 @@ const FAINT_FOG = /* glsl */ `
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor * 0.35);
 #endif`
 
-// The bead: a glass pearl lit from within. Its color deepens at the rim and whitens at the heart, a glint catches the
+// The bead: a sliver of glass lit from within. Its color shows at the rim and whitens at the heart, a glint catches the
 // light (top left, toward the viewer) and a thin rim of light outlines it. Normals follow the bead's stretch.
 const PEARL_VERTEX = /* glsl */ `
 #include <common>
@@ -141,7 +145,7 @@ void main() {
   vec3 n = normalize(vNormalV);
   vec3 v = normalize(vViewV);
   float facing = clamp(dot(n, v), 0.0, 1.0);
-  vec3 color = mix(vTone * 0.6, mix(vTone, vec3(1.0), 0.25), pow(facing, 1.2));
+  vec3 color = mix(mix(vTone, vec3(1.0), 0.35), mix(vTone, vec3(1.0), 0.8), pow(facing, 1.2));
   vec3 h = normalize(normalize(vec3(-0.45, 0.65, 0.6)) + v);
   color += pow(max(dot(n, h), 0.0), 60.0) * 1.2;
   color += mix(vTone, vec3(1.0), 0.6) * pow(1.0 - facing, 3.0) * 0.6;
@@ -182,8 +186,8 @@ varying vec2 vAt;
 void main() {
   float d2 = dot(vAt, vAt);
   if (d2 >= 1.0) discard;
-  float a = exp(-d2 * 4.5) * (1.0 - d2);
-  vec3 color = mix(vTone, vec3(1.0), exp(-d2 * 40.0) * 0.35);
+  float a = exp(-d2 * 3.5) * (1.0 - d2);
+  vec3 color = mix(vTone, vec3(1.0), exp(-d2 * 50.0) * 0.85);
   gl_FragColor = vec4(color, a * vGlow * opacity);
   #include <colorspace_fragment>
   ${FAINT_FOG}
@@ -300,7 +304,7 @@ export function arcBeads(T: ThreeModule, arcs: FlowArc[]) {
           const inArc = back > 0 && back < 1
           if (inArc && k > 0) a.curve.getPointAt(back, at)
           const ease = inArc ? Math.min(1, back / 0.1, (1 - back) / 0.1) : 0
-          const radius = k === 0 ? a.radius * BEAD_R * HALO * fade : a.radius * BEAD_R * 0.95 * (1 - k / (TAIL + 2)) * ease
+          const radius = k === 0 ? a.radius * HALO * fade : a.radius * TAIL_R * (1 - k / (TAIL + 2)) * ease
           halos.setMatrixAt(g, mtx.compose(at, still, size.setScalar(radius)))
           halos.setColorAt(g, k === 0 ? tone : colorAt(a, back, tone))
           glowAlpha.setX(g, k === 0 ? HALO_ALPHA : TAIL_ALPHA * Math.pow(1 - k / (TAIL + 1), 1.5))
