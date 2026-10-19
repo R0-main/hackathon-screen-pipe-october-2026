@@ -10,6 +10,7 @@ import {
   formatBytes,
   looksPersonal,
   personalSignals,
+  projectZone,
   redact,
   redactText,
   truncate,
@@ -39,6 +40,7 @@ import {
   type State,
 } from "./config"
 import { DISTILLER_LABELS, apiAuthHelp, claudeAuthHelp, createDistiller, finalizeItems, type DistillerKind, type Failure } from "./distill"
+import { remoteReader } from "./git-remote"
 import { documentCandidate, documentsLine, readDocument, sendDocuments, type DocumentJob, type DocumentOutcome } from "./documents"
 import { isBrainSetupText, maskOwnSecrets, ownSecrets } from "./secrets"
 import { readClaudeLogs } from "./sources/claude-logs"
@@ -506,6 +508,10 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
   const zones: ZoneHint[] = zoneHints(cache.zones ? cache : loadCache())
   const defaultZone = cache.whoami?.writable[0] ?? zones[0]?.id ?? "general"
 
+  // A session in a project that a zone lists goes to that zone, whatever Claude would have chosen (projectZone).
+  const remoteOf = remoteReader()
+  const zoneOfProject = (conv: Conversation) => (conv.cwd ? projectZone({ cwd: conv.cwd, repo: remoteOf(conv.cwd) }, zones) : undefined)
+
   const distiller = await createDistiller(cfg, opts.distiller)
   io.log(`Distillation: ${DISTILLER_LABELS[distiller.kind]} — ${distiller.reason}`)
 
@@ -621,7 +627,8 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
       return
     }
     const text = chunk.messages.map((m) => m.text).join("\n")
-    const fallbackZone = classifyZones(text, zones, 1)[0] ?? defaultZone
+    const project = zoneOfProject(conv)
+    const fallbackZone = project ?? classifyZones(text, zones, 1)[0] ?? defaultZone
     const res = await distiller.distill(chunk, zones, fallbackZone)
     if (res.failed) {
       const f: Failure = { error: maskOwnSecrets(res.error ?? "failure", secrets).text, failure: res.failure ?? "conversation", signature: res.signature }
@@ -636,7 +643,7 @@ async function collectAndSend(cfg: Config, opts: SyncOptions, io: Io): Promise<S
     } else {
       alive++
       outageStreak = 0
-      distilled[i] = res.items
+      distilled[i] = project ? res.items.map((item) => ({ ...item, zone: project })) : res.items
     }
     if (verbose) io.log(`    ${conv.tool} ${truncate(conv.title ?? conv.id, 60)} → ${res.failed ? `failed (${truncate(res.error ?? "?", 120)})` : plural(res.items.length, "item")} (${DISTILLER_LABELS[res.used]})`)
   })

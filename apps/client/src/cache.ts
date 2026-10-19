@@ -18,7 +18,7 @@ export function cacheFrom(who: WhoAmI | null, zones: ApiZone[] | null, prev: Cac
         }
       : prev?.whoami,
     zones: zones
-      ? zones.map((z): CachedZone => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords ?? [], readable: Boolean(z.readable) }))
+      ? zones.map((z): CachedZone => ({ id: z.id, name: z.name, description: z.description, keywords: z.keywords ?? [], ...(z.projects?.length ? { projects: z.projects } : {}), readable: Boolean(z.readable) }))
       : prev?.zones,
   }
 }

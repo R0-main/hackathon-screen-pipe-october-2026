@@ -42,7 +42,7 @@ Your job: extract only the knowledge the company can REUSE.
 ${KNOWLEDGE_RULES}`
 
 export function renderZones(zones: ZoneHint[]): string {
-  return zones.map((z) => `- ${z.id}: ${z.name} — ${z.description}`).join("\n")
+  return zones.map((z) => `- ${z.id}: ${z.name} — ${z.description}${z.projects?.length ? ` (projects: ${z.projects.join(", ")})` : ""}`).join("\n")
 }
 
 export function buildTriagePrompt(conv: Conversation, zones: ZoneHint[]): string {

@@ -130,6 +130,13 @@ test("eventForHook: prompt without a zone → fingerprint only, no summary", () 
   assert.equal(ev.fingerprint, promptFingerprint(p))
 })
 
+test("eventForHook: prompt in a project that a zone lists → that zone", () => {
+  const cache: Cache = { updated_at: "", zones: [...TEST_ZONES, { id: "fournil", name: "Fournil", description: "", keywords: [], projects: ["fournil"], readable: true }] }
+  const p = "How do I deploy the Supabase migration to production?"
+  assert.deepEqual(eventForHook({ ...prompt(p), cwd: "/home/hugo/fournil/api" }, cache)!.zones, ["fournil"])
+  assert.deepEqual(eventForHook({ ...prompt(p), cwd: "/home/hugo/other" }, cache)!.zones, ["dev"])
+})
+
 test("eventForHook: prompt classified in a zone → redacted summary; share_prompt_summaries=false → never a summary", () => {
   const p = "How do I deploy the Supabase migration to production?"
   const ev = eventForHook(prompt(p), CACHE)!

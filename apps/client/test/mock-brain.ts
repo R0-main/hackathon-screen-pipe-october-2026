@@ -18,7 +18,7 @@ export const DEPLOY_ITEM = {
 }
 
 /** Fake brain. `failIngestAt`: numbers (1, 2…) of the /api/ingest calls that fail with a 500. */
-export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
+export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeof TEST_ZONES)[number] & { projects?: string[] })[] } = {}) {
   const ingested: unknown[] = []
   const received: unknown[] = []
   const automations: unknown[] = []
@@ -51,7 +51,7 @@ export async function mockBrain(opts: { failIngestAt?: number[] } = {}) {
           },
         },
       }
-    if (req.method === "GET" && path === "/api/zones") return { body: { zones: TEST_ZONES.map((z) => ({ ...z, count: z.readable ? 3 : undefined })) } }
+    if (req.method === "GET" && path === "/api/zones") return { body: { zones: (opts.zones ?? TEST_ZONES).map((z) => ({ ...z, count: z.readable ? 3 : undefined })) } }
     if (req.method === "GET" && path === "/api/zones/dev")
       return { body: { zone: TEST_ZONES[0], status: null, items: [DEPLOY_ITEM], entities: [{ type: "tool", name: "Vercel", count: 2 }], tasks: [{ id: "t", title: "Write the runbook", status: "open", assignee: "Hugo" }] } }
     if (req.method === "GET" && path === "/api/zones/finance") return { status: 403, body: { error: "You don't have access to this zone." } }

@@ -96,6 +96,11 @@ export type Zone = {
   color: string
   keywords: string[]
   position: number
+  /**
+   * Projects whose AI sessions always land in this zone: folder names or git repositories (`owner/repo`), see
+   * projectZone. Absent from a brain created before them.
+   */
+  projects?: string[]
 }
 
 export type ZoneAccess = { user_id: string; zone_id: string; can_write: boolean }

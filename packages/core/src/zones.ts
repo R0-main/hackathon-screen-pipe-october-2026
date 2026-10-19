@@ -165,3 +165,43 @@ export function zoneScorer(zones: Pick<Zone, "id" | "name" | "keywords">[]): Zon
     return out.sort((a, b) => b.score - a.score || rank(a.zone) - rank(b.zone))
   }
 }
+
+/**
+ * A project as a zone lists it: `owner/repo` for a git repository (from its URL, SSH or HTTPS, or written as is),
+ * otherwise a folder name (the last segment of a path), lowercase. Empty if there is nothing usable.
+ */
+export function normalizeProject(raw: string): string {
+  let p = raw.trim().toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "").replace(/\.git$/, "")
+  const remote = p.match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?[^/:]+\.[a-z]{2,}(?::\d+)?[:/](.+)$/)
+  if (remote) p = remote[1].split("/").filter(Boolean).slice(-2).join("/")
+  else if (/^(~|\.{1,2}|[a-z]:)?\//.test(p) || p.startsWith("~")) p = p.split("/").filter(Boolean).pop() ?? ""
+  return p.replace(/^\/+/, "")
+}
+
+/**
+ * The zone a session belongs to by its project, before any classification: its git repository (`owner/repo`, or the
+ * repository's name alone) or one of the folders of its path. Whoever runs it and wherever the folder sits on their
+ * computer: "encore" matches ~/dev/encore/api as well as /work/encore. Several matches: the most precise wins (the
+ * full repository, then the deepest folder), then the zone order. Undefined if no zone lists the project.
+ */
+export function projectZone(session: { cwd?: string; repo?: string }, zones: Pick<Zone, "id" | "projects">[]): string | undefined {
+  const repo = session.repo ? normalizeProject(session.repo) : ""
+  const repoName = repo.split("/").pop() ?? ""
+  const folders = (session.cwd ?? "").toLowerCase().replace(/\\/g, "/").split("/").filter(Boolean)
+  let best: { zone: string; score: number } | undefined
+  for (const z of zones) {
+    for (const raw of z.projects ?? []) {
+      const p = normalizeProject(raw)
+      if (!p) continue
+      let score = 0
+      if (repo && p === repo) score = 2000
+      else if (!p.includes("/")) {
+        if (repoName && p === repoName) score = 1000
+        const depth = folders.lastIndexOf(p)
+        if (depth >= 0) score = Math.max(score, 1 + depth)
+      }
+      if (score > (best?.score ?? 0)) best = { zone: z.id, score }
+    }
+  }
+  return best?.zone
+}

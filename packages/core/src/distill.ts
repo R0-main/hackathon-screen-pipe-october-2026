@@ -29,7 +29,7 @@ export type Conversation = {
   documents?: string[]
 }
 
-export type ZoneHint = Pick<Zone, "id" | "name" | "keywords" | "description">
+export type ZoneHint = Pick<Zone, "id" | "name" | "keywords" | "description" | "projects">
 
 export const KNOWN_TOOLS = [
   "Stripe", "Supabase", "Postgres", "PostgreSQL", "Next.js", "React", "Vue", "Svelte", "Node", "Bun", "Deno", "Python",

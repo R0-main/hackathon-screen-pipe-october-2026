@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { slugify, zoneColor } from "@brain/core"
+import { normalizeProject, slugify, zoneColor, type Zone } from "@brain/core"
 import { getStore } from "@/lib/store"
 import { error, json, parseBody, withViewer } from "@/lib/http"
 
@@ -12,11 +12,13 @@ const Schema = z.object({
   description: z.string().max(300).optional(),
   keywords: z.array(z.string().max(40)).max(80).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  /** Folder names or git repositories whose sessions always land in the zone (projectZone). */
+  projects: z.array(z.string().max(200)).max(40).optional(),
 })
 
 /**
  * Without `id`: creates a zone (409 if its id, derived from the name, already exists: an existing zone is never overwritten).
- * With `id`: updates that zone; description and keywords absent from the body are kept.
+ * With `id`: updates that zone; description, keywords and projects absent from the body are kept.
  */
 export const POST = withViewer(
   async (req) => {
@@ -35,8 +37,15 @@ export const POST = withViewer(
       keywords: (body.data.keywords ?? prev?.keywords ?? []).map((k) => k.toLowerCase()),
       color: body.data.color ?? prev?.color ?? zoneColor(zones.length),
       position: prev?.position ?? zones.length,
+      ...projectsOf(body.data.projects, prev),
     })
     return json(zone, prev ? 200 : 201)
   },
   { admin: true },
 )
+
+/** The projects sent, normalized (owner/repo or folder name) and without duplicates; otherwise those of the zone. */
+function projectsOf(sent: string[] | undefined, prev: Zone | undefined): Pick<Zone, "projects"> {
+  if (sent === undefined) return prev?.projects ? { projects: prev.projects } : {}
+  return { projects: [...new Set(sent.map(normalizeProject).filter(Boolean))] }
+}

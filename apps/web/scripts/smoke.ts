@@ -567,6 +567,16 @@ async function main() {
   const edited = (await store.listZones()).find((z) => z.id === existing.id)!
   assert(edit.status === 200 && edited.keywords.length === existing.keywords.length && edited.description === existing.description, "with its id: updated, keywords and description kept")
   assert((await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: hugoSession, body: { name: `Smoke ${run}` } })).status === 403, "admins only (403)")
+  const withProjects = await call(adminZonesRoute.POST, "/api/admin/zones", {
+    method: "POST",
+    session: claireSession,
+    body: { id: existing.id, name: existing.name, projects: ["~/dev/Encore/", "git@github.com:acme/api.git", "encore", " "] },
+  })
+  assert(withProjects.status === 200 && JSON.stringify(withProjects.data?.projects) === JSON.stringify(["encore", "acme/api"]), `projects normalized, without duplicates (${JSON.stringify(withProjects.data?.projects)})`)
+  const keptProjects = await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: claireSession, body: { id: existing.id, name: existing.name } })
+  assert(JSON.stringify((await store.listZones()).find((z) => z.id === existing.id)?.projects) === JSON.stringify(["encore", "acme/api"]) && keptProjects.status === 200, "projects stored, kept when absent from the body")
+  await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: claireSession, body: { id: existing.id, name: existing.name, projects: [] } })
+  assert(!(await store.listZones()).find((z) => z.id === existing.id)?.projects?.length, "projects emptied")
 
   console.log("\n— API: MCP servers (catalog, manual OAuth client, secrets never sent back)")
   assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: hugoSession })).status === 403, "MCP servers: admins only (403)")

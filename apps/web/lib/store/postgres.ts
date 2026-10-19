@@ -52,7 +52,7 @@ function toProfile(r: Row): Profile {
   }
 }
 function toZone(r: Row): Zone {
-  return { id: r.id, name: r.name, description: r.description, color: r.color, keywords: r.keywords ?? [], position: r.position }
+  return { id: r.id, name: r.name, description: r.description, color: r.color, keywords: r.keywords ?? [], position: r.position, ...(r.projects?.length ? { projects: r.projects } : {}) }
 }
 function toItem(r: Row): KnowledgeItem {
   return {
@@ -117,6 +117,8 @@ function toTask(r: Row): Task {
 
 const QUALITY_MISSING_MESSAGE =
   "The database needs an update: superseded_by / embedding columns missing from knowledge_items. Apply the migrations (npm run db:migrate)."
+const ZONE_PROJECTS_MISSING_MESSAGE =
+  "The database needs an update: the projects column is missing from zones. Apply the migrations (npm run db:migrate)."
 const TASKS_EXTERNAL_MISSING_MESSAGE =
   "The database needs an update: external_* columns missing from tasks (connectors). Apply the migrations (npm run db:migrate)."
 
@@ -670,6 +672,15 @@ export class PostgresStore implements BrainStore {
       values (${await this.orgId()}, ${z.id}, ${z.name}, ${z.description}, ${z.color}, ${this.sql.array(z.keywords)}, ${z.position})
       on conflict (org_id, id) do update set name = excluded.name, description = excluded.description,
         color = excluded.color, keywords = excluded.keywords, position = excluded.position`
+    // Apart: a database not migrated yet (a preview sharing production's) keeps working for everything else.
+    if (z.projects !== undefined) {
+      try {
+        await this.sql`update zones set projects = ${this.sql.array(z.projects)} where org_id = ${await this.orgId()} and id = ${z.id}`
+      } catch (err) {
+        if (!missingColumn(err)) throw err
+        if (z.projects.length) throw new StoreSetupError(ZONE_PROJECTS_MISSING_MESSAGE)
+      }
+    }
     return z
   }
   async listZoneAccess(userId?: string): Promise<ZoneAccess[]> {

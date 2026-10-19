@@ -99,7 +99,7 @@ export type State = {
   }
 }
 
-export type CachedZone = Pick<Zone, "id" | "name" | "description" | "keywords"> & { readable: boolean }
+export type CachedZone = Pick<Zone, "id" | "name" | "description" | "keywords" | "projects"> & { readable: boolean }
 
 export type Cache = {
   updated_at: string
