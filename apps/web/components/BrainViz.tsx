@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { isCoreZone } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { CENTER, HEMISPHERES, VIEW_H, VIEW_W, gyriPaths, hemispherePolygon, layoutZones, neuronPositions, polygonPath, round2, smoothPath, type Pt } from "./brain-geometry"
+import { BRAIN_PALETTE, brainZoneColor, useTheme } from "./theme"
 import { zoneColor } from "./ui"
 
 export type ZoneActivity = { until: number; startedAt: number; who?: string; label?: string }
@@ -11,9 +12,11 @@ export type Ripple = { key: string; zone: string }
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
 
-const INK = "#0a0a0a"
-const TRACE = "#78786f"
-const LINE = "#e2e2dc"
+/** The interface's tokens (globals.css), per theme: ink, secondary text, line, panel and page. */
+const TONES = {
+  light: { INK: "#0a0a0a", TRACE: "#78786f", LINE: "#e2e2dc", PAPER: "#ffffff", BONE: "#f6f6f3" },
+  dark: { INK: "#f2f2ee", TRACE: "#9a9a91", LINE: "#2a2a27", PAPER: "#161615", BONE: "#0e0e0d" },
+}
 const PHOSPHOR = "#c7ff3e"
 /** The core: a disc on the fissure, between the two hemispheres, with a thread to each zone. */
 const CORE_R = 34
@@ -35,8 +38,11 @@ export function BrainViz(props: {
   onSelect?: (zone: string) => void
 }) {
   const { zones, synapses, activity, ripples, now, selected, onSelect } = props
+  const theme = useTheme()
+  const { INK, TRACE, LINE, PAPER, BONE } = TONES[theme]
   const ids = useMemo(() => zones.map((z) => z.id).filter((id) => !isCoreZone(id)), [zones])
   const core = zones.find((z) => isCoreZone(z.id))
+  const coreColor = core ? brainZoneColor(core, BRAIN_PALETTE[theme]) : ""
   const cells = useMemo(() => layoutZones(ids), [ids])
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.id, c])), [cells])
   const outlines = useMemo(() => HEMISPHERES.map((h) => smoothPath(hemispherePolygon(h, 140, 1))), [])
@@ -62,7 +68,7 @@ export function BrainViz(props: {
       </defs>
 
       {outlines.map((d, i) => (
-        <path key={i} d={d} fill="#ffffff" stroke={INK} strokeWidth={1.2} />
+        <path key={i} d={d} fill={PAPER} stroke={INK} strokeWidth={1.2} />
       ))}
 
       <g clipPath="url(#brain-clip)">
@@ -73,7 +79,7 @@ export function BrainViz(props: {
           const isSel = selected === z.id
           return (
             <g key={z.id} onClick={() => onSelect?.(z.id)} style={{ cursor: "pointer" }}>
-              <path d={polygonPath(cell.polygon)} fill={it > 0 ? PHOSPHOR : isSel ? "#f6f6f3" : "#ffffff"} fillOpacity={it > 0 ? 0.35 + 0.5 * it : 1} />
+              <path d={polygonPath(cell.polygon)} fill={it > 0 ? PHOSPHOR : isSel ? BONE : PAPER} fillOpacity={it > 0 ? 0.35 + 0.5 * it : 1} />
               {z.locked && <path d={polygonPath(cell.polygon)} fill="url(#hatch)" />}
               <path d={polygonPath(cell.polygon)} fill="none" stroke={INK} strokeOpacity={isSel ? 1 : 0.25} strokeWidth={isSel ? 1.5 : 1} />
             </g>
@@ -184,7 +190,7 @@ export function BrainViz(props: {
                   width={Math.min(236, bubble(act.label).length * 6.6 + 28)}
                   height={22}
                   rx={4}
-                  fill="#ffffff"
+                  fill={PAPER}
                   stroke={INK}
                 />
                 <text x={x} y={y + 39} textAnchor="middle" fontSize={11} fill={INK}>
@@ -204,11 +210,11 @@ export function BrainViz(props: {
             cx={CENTER[0]}
             cy={CENTER[1]}
             r={CORE_R}
-            fill={intensity(core.id) > 0 ? PHOSPHOR : selected === core.id ? "#f6f6f3" : "#ffffff"}
-            stroke={zoneColor(core.color, core.position)}
+            fill={intensity(core.id) > 0 ? PHOSPHOR : selected === core.id ? BONE : PAPER}
+            stroke={coreColor}
             strokeWidth={selected === core.id ? 2.5 : 1.5}
           />
-          <circle cx={CENTER[0]} cy={CENTER[1] - 14} r={4} fill={zoneColor(core.color, core.position)} />
+          <circle cx={CENTER[0]} cy={CENTER[1] - 14} r={4} fill={coreColor} />
           <text x={CENTER[0]} y={CENTER[1] + 4} textAnchor="middle" fontSize={14} fontWeight={500} fill={INK}>
             {core.name}
           </text>

@@ -30,6 +30,7 @@ import {
 import { arcBeads, arcTube, type FlowArc } from "./arc-flow"
 import { assignLooks, dotKit, type DotLook } from "./dot-model"
 import { firstName } from "./format"
+import { BRAIN_PALETTE, brainZoneColor, hex, useTheme, type BrainPalette } from "./theme"
 import { Dot, LockIcon, MinusIcon, PlusIcon, zoneColor } from "./ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
@@ -58,8 +59,8 @@ export type Brain3DProps = {
   people?: BrainPerson[]
   /** Zoom buttons and "drag to rotate" help (default: yes); not in a preview (company creation). */
   controls?: boolean
-  /** Color of the background the brain blends into (background, fog, fading): white by default, bone on /create. */
-  paper?: number
+  /** The background the brain blends into (background, fog, fading): the panel's by default, the page's (bone) on /create. */
+  paper?: "surface" | "bone"
   /**
    * Brain as a page background (/create): the canvas covers its whole container, the brain frames itself on this element,
    * and zooming goes right into the brain without ever hitting a frame.
@@ -67,16 +68,13 @@ export type Brain3DProps = {
   anchor?: React.RefObject<HTMLElement | null>
 }
 
-// Ink on white. A zone touched live (an agent, a click) lights up in its own color, brightened.
-const INK = 0x0a0a0a
-const LINE = 0xd6d6cf
-const NEUTRAL = 0xb8b8b8
+// Ink on white, or white on ink (the theme's BrainPalette). A zone touched live (an agent, a click) lights up in its own
+// color, brightened.
 const WHITE = 0xffffff
 /** Network lines in ink, slightly softened toward white. */
 const SOFTEN = 0.35
 /** Small neurons in their zone's color, slightly softened; gray outside zones (cerebellum, brainstem, locked zone). */
 const DOT_SOFTEN = 0.2
-const BARE = 0xc4c4bc
 /** Each inner layer is a bit paler and its neurons a bit smaller: depth reads. */
 const DEPTH_SOFTEN = 0.15
 /** Share of white on the hidden side: only a breath of it remains, which keeps the silhouette. */
@@ -92,10 +90,7 @@ const CENTER_R = 0.042
  * the home page: brain-geometry).
  */
 const CORE_R = 0.062
-/** The core's color when it lights up: graphite, its gray deepened. */
-const CORE_GLOW = 0x3a3a35
-/** Its orbits (thin tubes, a little thicker than the network's lines) and its halo (a ring facing the screen). */
-const CORE_LINE = 0x9a9a93
+/** Its halo: a ring facing the screen, around its orbits (colors: BrainPalette.coreGlow, coreLine). */
 const CORE_HALO = 1.75
 const ORBIT_R = 0.0028
 /** The core is drawn over the rest of the brain, seen through it: it reads at once, whatever the side you look from. */
@@ -194,8 +189,11 @@ const smootherstep = (x: number) => {
  * the wheel only zooms. Without WebGL, it falls back to the 2D view.
  */
 export function Brain3D(props: Brain3DProps) {
-  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [], controls = true, paper = WHITE, anchor } = props
-  const paperCss = `#${paper.toString(16).padStart(6, "0")}`
+  const { zones, synapses, activity, ripples, now, selected, onSelect, people = [], controls = true, paper: paperTone = "surface", anchor } = props
+  const theme = useTheme()
+  const palette = BRAIN_PALETTE[theme]
+  const paper = palette[paperTone]
+  const paperCss = hex(paper)
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const labelsRef = useRef(new Map<string, HTMLButtonElement>())
@@ -215,7 +213,7 @@ export function Brain3D(props: Brain3DProps) {
   onSelectRef.current = onSelect
 
   // The scene is only rebuilt when the structure changes (zones, locks, volumes, links).
-  const sceneKey = `${zones.map((z) => `${z.id}:${z.locked ? 1 : 0}:${z.count}:${zoneColor(z.color, z.position)}`).join("|")}#${synapses
+  const sceneKey = `${theme}#${zones.map((z) => `${z.id}:${z.locked ? 1 : 0}:${z.count}:${zoneColor(z.color, z.position)}`).join("|")}#${synapses
     .map((s) => `${s.a}-${s.b}:${s.weight}`)
     .join("|")}#${people.map((p) => `${p.id}:${p.zone ?? ""}`).join("|")}`
   const placed = people.filter((p) => p.zone && zones.some((z) => z.id === p.zone))
@@ -233,7 +231,7 @@ export function Brain3D(props: Brain3DProps) {
       .then((T) => {
         if (disposed) return
         try {
-          dispose = build(T, container, canvas, zones, synapses, placed.map((p) => ({ ...p, look: looks.get(p.id)! })), paper, { labelsRef, dotsRef, peopleRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef, anchor })
+          dispose = build(T, container, canvas, zones, synapses, placed.map((p) => ({ ...p, look: looks.get(p.id)! })), palette, paper, { labelsRef, dotsRef, peopleRef, activityRef, ripplesRef, selectedRef, onSelectRef, viewRef, zoomRef, anchor })
         } catch {
           setFallback(true)
         }
@@ -307,7 +305,7 @@ export function Brain3D(props: Brain3DProps) {
               onClick={() => onSelect?.(z.id)}
             >
               <span className="flex items-start gap-1.5 rounded-[4px] px-1.5 py-0.5" style={{ background: `color-mix(in srgb, ${paperCss} 70%, transparent)` }}>
-                <Dot color={zoneColor(z.color, z.position)} size={7} className="mt-[4px]" />
+                <Dot color={brainZoneColor(z, palette)} size={7} className="mt-[4px]" />
                 <span>
                   <span className={`block whitespace-nowrap text-[11px] font-medium leading-tight sm:text-[12px] ${isSel ? "underline underline-offset-4" : ""}`}>{z.name}</span>
                   <span className="hidden whitespace-nowrap text-[10.5px] tabular-nums leading-tight text-trace sm:block">
@@ -323,7 +321,7 @@ export function Brain3D(props: Brain3DProps) {
               </span>
               {live && (
                 <span key={act!.startedAt} className="bubble-in mt-1 hidden max-w-[260px] items-start gap-1.5 rounded-[4px] border border-ink bg-surface px-2 py-1 text-[11.5px] leading-snug sm:flex">
-                  <span className="mt-[3px] size-2 shrink-0 rounded-full border border-ink" style={{ background: z.locked ? "#b8b8b8" : zoneColor(z.color, z.position) }} aria-hidden />
+                  <span className="mt-[3px] size-2 shrink-0 rounded-full border border-ink" style={{ background: z.locked ? hex(palette.neutral) : brainZoneColor(z, palette) }} aria-hidden />
                   <span className="whitespace-normal">{act!.label}</span>
                 </span>
               )}
@@ -387,13 +385,13 @@ function AnchoredFallback({ anchor, zones, synapses, activity, ripples, now, sel
 }
 
 /** Builds the scene and starts the render loop. Returns the cleanup function. */
-function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], paper: number, refs: Refs): () => void {
+function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElement, zones: ZoneView[], synapses: Synapse[], people: PlacedPerson[], P: BrainPalette, paper: number, refs: Refs): () => void {
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   renderer.setClearColor(0x000000, 0)
 
   const scene = new T.Scene()
-  // White fog: the back side fades, the front links stay readable.
+  // Fog in the background's color: the back side fades, the front links stay readable.
   const fog = new T.Fog(paper, 1, 10)
   scene.fog = fog
   const camera = new T.PerspectiveCamera(36, 1, 0.02, 50)
@@ -433,16 +431,16 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   /** A zone: its center, and its knowledge at the given spots (each draws its own position from the zone's seed). */
   const addZone = (z: ZoneView, centerPos: THREE.Vector3, spots: ((rand: () => number) => THREE.Vector3)[], core = false) => {
     const rand = seeded(hashString(z.id))
-    const color = new T.Color(zoneColor(z.color, z.position)).getHex()
+    const color = new T.Color(brainZoneColor(z, P)).getHex()
     const radius = core ? CORE_R : CENTER_R
 
     // A colored dot, without outline: the ink circle only marks the chosen or active zone.
-    const centerMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : color })
+    const centerMat = new T.MeshBasicMaterial({ color: z.locked ? P.neutral : color })
     const center: SphereMesh = new T.Mesh(geoSphere, centerMat)
     center.position.copy(centerPos)
     center.scale.setScalar(radius)
     center.userData.zone = z.id
-    const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide, transparent: true, opacity: 0 })
+    const outlineMat = new T.MeshBasicMaterial({ color: P.ink, side: T.BackSide, transparent: true, opacity: 0 })
     materials.push(outlineMat)
     const outline: SphereMesh = new T.Mesh(geoSphere, outlineMat)
     outline.position.copy(centerPos)
@@ -451,7 +449,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     group.add(outline, center)
     pickables.push(center)
 
-    const nodeMat = new T.MeshBasicMaterial({ color: z.locked ? NEUTRAL : color })
+    const nodeMat = new T.MeshBasicMaterial({ color: z.locked ? P.neutral : color })
     const nodes: SphereMesh[] = []
     const linkPts: THREE.Vector3[] = []
     for (const spot of spots) {
@@ -470,13 +468,13 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       pickables.push(node)
       linkPts.push(centerPos.clone(), p)
     }
-    const linkMat = new T.LineBasicMaterial({ color: LINE, transparent: true, opacity: 0.7 })
+    const linkMat = new T.LineBasicMaterial({ color: P.line, transparent: true, opacity: 0.7 })
     const linkGeo = new T.BufferGeometry().setFromPoints(linkPts)
     const links = new T.LineSegments(linkGeo, linkMat)
     group.add(links)
     geometries.push(linkGeo)
     materials.push(centerMat, nodeMat, linkMat)
-    const glow = core ? CORE_GLOW : new T.Color(z.locked ? NEUTRAL : color).offsetHSL(0, 0.18, 0.06).getHex()
+    const glow = core ? P.coreGlow : new T.Color(z.locked ? P.neutral : color).offsetHSL(0, 0.18, 0.06).getHex()
     const reach = Math.max(0.3, ...nodes.map((n) => n.userData.d as number))
     const g: ZoneGfx = { id: z.id, core, locked: z.locked, color, glow, reach, radius, center, outline, nodes, nodeMat, linkMat, linkGeo, centerPos, active: false, selected: false, lit: false, mix: 0, litAt: 0, outlineMat, dismissedAt: -Infinity }
     gfx.set(z.id, g)
@@ -507,7 +505,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const count = beads(coreZone)
     const spots = Array.from({ length: count }, (_, k) => (rand: () => number) => new T.Vector3(...coreSpot(c, k, count, rand)))
     const g = addZone(coreZone, new T.Vector3(...c), spots, true)
-    const lineMat = new T.MeshBasicMaterial({ color: CORE_LINE, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false })
+    const lineMat = new T.MeshBasicMaterial({ color: P.coreLine, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false })
     materials.push(lineMat)
     for (const o of CORE_ORBITS) {
       const path = new T.CatmullRomCurve3(Array.from({ length: 48 }, (_, k) => new T.Vector3(...orbitPoint(c, o, (k / 48) * Math.PI * 2))), true)
@@ -517,7 +515,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       group.add(ring)
       geometries.push(ringGeo)
     }
-    const haloMat = new T.MeshBasicMaterial({ color: CORE_LINE, side: T.DoubleSide, transparent: true, depthWrite: false, depthTest: false })
+    const haloMat = new T.MeshBasicMaterial({ color: P.coreLine, side: T.DoubleSide, transparent: true, depthWrite: false, depthTest: false })
     materials.push(haloMat)
     const halo: RingMesh = new T.Mesh(geoRing, haloMat)
     halo.position.set(...c)
@@ -546,10 +544,10 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   geometries.push(netGeo)
   materials.push(netMat, neuronMat)
 
-  const inkC = new T.Color(INK)
+  const inkC = new T.Color(P.ink)
   // The "white" everything fades toward: the background color, so the brain blends into it.
   const whiteC = new T.Color(paper)
-  const bareC = new T.Color(BARE)
+  const bareC = new T.Color(P.bare)
   const zoneList = [...gfx.values()]
   const tone = new T.Color()
   // Base colors per neuron (link and point), then faded every frame depending on the visible side.
@@ -575,7 +573,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   }
 
   // Knowledge items linked to each other by straight lines, each to its nearest neighbors, whatever their zone.
-  const known = [...gfx.values()].flatMap((g) => g.nodes.map((node) => ({ p: node.position.toArray(), color: new T.Color(g.locked ? NEUTRAL : g.color).toArray() })))
+  const known = [...gfx.values()].flatMap((g) => g.nodes.map((node) => ({ p: node.position.toArray(), color: new T.Color(g.locked ? P.neutral : g.color).toArray() })))
   const knownPairs = knowledgeLinks(known.map((k) => k.p))
   const knownSeg = gradientSegments(knownPairs.map(([a, b]) => ({ pts: [known[a].p, known[b].p], from: known[a].color, to: known[b].color })))
   const knownGeo = new T.BufferGeometry()
@@ -697,8 +695,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     const pts = arcBetween(A.center.position.toArray(), B.center.position.toArray()).map((p) => new T.Vector3(...p))
     const baseOpacity = 0.45 + Math.min(0.3, Math.log2(1 + s.weight) * 0.08)
     const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
-    const from = new T.Color(A.locked ? NEUTRAL : A.color)
-    const to = new T.Color(B.locked ? NEUTRAL : B.color)
+    const from = new T.Color(A.locked ? P.neutral : A.color)
+    const to = new T.Color(B.locked ? P.neutral : B.color)
     const { geo, arc } = arcTube(T, pts, from, to, SYNAPSE_R, `${s.a}|${s.b}`)
     group.add(new T.Mesh(geo, mat))
     geometries.push(geo)
@@ -713,7 +711,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const pts = spokeCurve(coreG.centerPos.toArray(), g.centerPos.toArray(), spokes.length % 2 === 0 ? 0.12 : -0.12).map((p) => new T.Vector3(...p))
       const baseOpacity = 0.6
       const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity, depthWrite: false })
-      const { geo, arc } = arcTube(T, pts, new T.Color(coreG.color), new T.Color(g.locked ? NEUTRAL : g.color), SPOKE_R, `${coreG.id}|${g.id}`)
+      const { geo, arc } = arcTube(T, pts, new T.Color(coreG.color), new T.Color(g.locked ? P.neutral : g.color), SPOKE_R, `${coreG.id}|${g.id}`)
       // Over the brain near the core, like it: the spokes leave from its bead.
       const tube = new T.Mesh(geo, mat)
       tube.renderOrder = CORE_ON_TOP
@@ -754,7 +752,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
   const dots = new Map<string, { model: THREE.Group; zone: ZoneGfx; phase: number }>()
   for (const { zone, members } of dotGroups)
     for (const p of members) {
-      const model = kit.make(zone.locked ? NEUTRAL : zone.color, p.look)
+      const model = kit.make(zone.locked ? P.neutral : zone.color, p.look)
       model.scale.setScalar(DOT_R)
       model.visible = false
       scene.add(model)
@@ -958,8 +956,8 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
       const mix = g.mix + ((on ? 1 : 0) - g.mix) * Math.min(1, (dt * 1000) / (SETTLE_MS / 4))
       if (Math.abs(mix - g.mix) > 1e-4 || (on ? mix < 1 : mix > 0)) {
         g.mix = Math.abs(mix - (on ? 1 : 0)) < 0.003 ? (on ? 1 : 0) : mix
-        g.center.material.color.setHex(g.locked ? NEUTRAL : g.color).lerp(tone.setHex(g.glow), g.mix)
-        g.linkMat.color.setHex(LINE).lerp(tone.setHex(INK), g.mix)
+        g.center.material.color.setHex(g.locked ? P.neutral : g.color).lerp(tone.setHex(g.glow), g.mix)
+        g.linkMat.color.setHex(P.line).lerp(tone.setHex(P.ink), g.mix)
         g.outlineMat.opacity = g.mix
       }
       // The ripple goes through the zone's knowledge: each one grows when the ripple's front reaches it (not all at
@@ -988,7 +986,7 @@ function build(T: ThreeModule, container: HTMLDivElement, canvas: HTMLCanvasElem
     // The core's orbits and halo take the ink of its links when it lights up; the halo always faces the screen.
     if (coreGfx) {
       const { g, lineMat, haloMat, halo } = coreGfx
-      lineMat.color.setHex(CORE_LINE).lerp(tone.setHex(INK), g.mix)
+      lineMat.color.setHex(P.coreLine).lerp(tone.setHex(P.ink), g.mix)
       haloMat.color.copy(lineMat.color)
       halo.scale.setScalar(g.center.scale.x * CORE_HALO)
       halo.lookAt(camera.position)

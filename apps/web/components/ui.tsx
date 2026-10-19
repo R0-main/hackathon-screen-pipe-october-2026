@@ -273,6 +273,23 @@ export function LogoutIcon(props: IconProps) {
   )
 }
 
+export function MoonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6Z" />
+    </Icon>
+  )
+}
+
+export function SunIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="2.6" />
+      <path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M3.6 12.4l1-1M11.4 4.6l1-1" />
+    </Icon>
+  )
+}
+
 /** NOS Brainer logo (same drawing as the favicon): six linked ink beads, the central bead in phosphor. */
 export function LogoMark({ size = 26, className = "" }: { size?: number; className?: string }) {
   return (

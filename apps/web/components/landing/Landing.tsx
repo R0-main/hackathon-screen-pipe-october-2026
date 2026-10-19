@@ -14,6 +14,7 @@ import { InstallActions } from "./InstallActions"
 import { Hosting, Pricing, REPO } from "./Offer"
 import { PrivacyFlow } from "./PrivacyFlow"
 import { ScrollBrain } from "./ScrollBrain"
+import { ThemeToggle } from "../theme"
 import { LANDING_AGENTS, LANDING_SYNAPSES, LANDING_TOTAL, LANDING_ZONES } from "./landing-data"
 import { setupLandingMotion } from "./motion/setup"
 
@@ -149,6 +150,7 @@ export function Landing({ demo, signup, signedIn = false }: { demo: boolean; sig
                 <span className="text-[15px] font-medium">NOS Brainer</span>
               </Link>
               <div className="flex items-center gap-2">
+                <ThemeToggle className="btn btn-ghost btn-icon" />
                 <a href="#pricing" onClick={toSection} className="btn btn-ghost hidden sm:inline-flex">
                   Pricing
                 </a>

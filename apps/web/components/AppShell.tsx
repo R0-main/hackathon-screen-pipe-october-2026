@@ -10,6 +10,7 @@ import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
 import { PersonAvatar } from "./PersonDot"
 import { usePendingJoins } from "./TeamJoin"
+import { ThemeToggle } from "./theme"
 import { ADMIN_VIEWS } from "./admin-views"
 import {
   ArchiveIcon,
@@ -226,6 +227,7 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
               <span className="block truncate text-[12px] leading-tight text-trace">{t.shell.myContext}</span>
             </span>
           </Link>
+          <ThemeToggle className="btn btn-icon shrink-0" />
           <button type="button" className="btn btn-icon shrink-0" onClick={logout} disabled={busy} aria-label={t.shell.logout} title={t.shell.logout}>
             <LogoutIcon />
           </button>

@@ -27,7 +27,8 @@ import {
   zoneNodes,
 } from "../brain-geometry"
 import { arcBeads, arcTube, type FlowArc } from "../arc-flow"
-import { Dot, zoneColor } from "../ui"
+import { BRAIN_PALETTE, brainZoneColor, useTheme, type BrainPalette } from "../theme"
+import { Dot } from "../ui"
 
 type Synapse = { a: string; b: string; weight: number; via: string[] }
 type Agent = { zone: string; from: number; to: number; label: string }
@@ -42,10 +43,8 @@ export type ScrollBrainProps = {
   still: boolean
 }
 
-// Same values as the dashboard brain: ink on bone; a zone an agent touches lights up in its own color, brightened.
-const INK = 0x0a0a0a
-const LINE = 0xd6d6cf
-const RAW = 0xc6c6bf
+// Same palette as the dashboard brain (BrainPalette): ink on bone, or white on ink in dark theme; a zone an agent touches
+// lights up in its own color, brightened.
 const WHITE = 0xffffff
 /** The ink circle around a lit zone (or knowledge item), relative to its bead. */
 const RIM = 1.14
@@ -56,8 +55,6 @@ const CENTER_R = 0.034
  * tubes), a spoke to each zone. It is drawn over the network, seen through it.
  */
 const CORE_R = 0.05
-const CORE_LINE = 0x9a9a93
-const CORE_GLOW = 0x3a3a35
 const CORE_HALO = 1.75
 const ORBIT_R = 0.0024
 const SPOKE_R = 0.0036
@@ -73,7 +70,6 @@ const EXTENT = { w: 1.65, h: 1.45 }
 // Long focal length: little perspective, the beads keep the same size from one edge to the other.
 const FOV = 26
 const DUST = 160
-const BONE = 0xf6f6f3
 /** Network lines in ink, slightly softened toward white. */
 const SOFTEN = 0.35
 /** Small neurons in their zone's color, slightly softened. */
@@ -119,6 +115,7 @@ export function ScrollBrain({ zones, synapses, agents, progress, still }: Scroll
   const labelsRef = useRef(new Map<string, HTMLDivElement>())
   const bubblesRef = useRef(new Map<string, HTMLDivElement>())
   const [fallback, setFallback] = useState(false)
+  const palette = BRAIN_PALETTE[useTheme()]
 
   useEffect(() => {
     if (fallback) return
@@ -131,7 +128,7 @@ export function ScrollBrain({ zones, synapses, agents, progress, still }: Scroll
       .then((T) => {
         if (disposed) return
         try {
-          dispose = build(T, { container, canvas, zones, synapses, agents, progress, still, labels: labelsRef.current, bubbles: bubblesRef.current })
+          dispose = build(T, { container, canvas, zones, synapses, agents, progress, still, palette, labels: labelsRef.current, bubbles: bubblesRef.current })
         } catch {
           setFallback(true)
         }
@@ -141,7 +138,7 @@ export function ScrollBrain({ zones, synapses, agents, progress, still }: Scroll
       disposed = true
       dispose?.()
     }
-  }, [zones, synapses, agents, progress, still, fallback])
+  }, [zones, synapses, agents, progress, still, palette, fallback])
 
   if (fallback) {
     return (
@@ -169,7 +166,7 @@ export function ScrollBrain({ zones, synapses, agents, progress, still }: Scroll
               className="brain-label absolute left-0 top-0 opacity-0"
             >
               <span className="flex items-start gap-1.5 rounded-[4px] bg-bone/90 px-1.5 py-0.5">
-                <Dot color={zoneColor(z.color, z.position)} className="mt-[5px] sm:mt-[6px]" />
+                <Dot color={brainZoneColor(z, palette)} className="mt-[5px] sm:mt-[6px]" />
                 <span>
                   <span className="block whitespace-nowrap text-[13px] font-medium leading-tight sm:text-[15px]">{z.name}</span>
                   <span className="hidden whitespace-nowrap text-[12px] tabular-nums leading-tight text-trace sm:block sm:text-[13px]">
@@ -185,7 +182,7 @@ export function ScrollBrain({ zones, synapses, agents, progress, still }: Scroll
                   }}
                   className="mt-1.5 flex max-w-[240px] items-start gap-1.5 rounded-[4px] border border-ink bg-surface px-2 py-1 text-[12px] leading-snug opacity-0 sm:max-w-[280px] sm:text-[13px]"
                 >
-                  <span className="mt-[4px] size-2 shrink-0 rounded-full border border-ink" style={{ background: zoneColor(z.color, z.position) }} />
+                  <span className="mt-[4px] size-2 shrink-0 rounded-full border border-ink" style={{ background: brainZoneColor(z, palette) }} />
                   <span className="whitespace-normal">{agent.label}</span>
                 </div>
               )}
@@ -209,6 +206,7 @@ type BuildArgs = {
   agents: Agent[]
   progress: React.RefObject<number>
   still: boolean
+  palette: BrainPalette
   labels: Map<string, HTMLDivElement>
   bubbles: Map<string, HTMLDivElement>
 }
@@ -222,7 +220,7 @@ type Layout = { heroZ: number; fullZ: number; endZ: number; hero: [number, numbe
 
 /** Builds the scene and starts the render loop. Returns the cleanup function. */
 function build(T: ThreeModule, args: BuildArgs): () => void {
-  const { container, canvas, zones, synapses, agents, progress, still, labels, bubbles } = args
+  const { container, canvas, zones, synapses, agents, progress, still, palette: P, labels, bubbles } = args
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   renderer.setClearColor(0x000000, 0)
@@ -232,7 +230,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const group = new T.Group()
   scene.add(group)
   // Bone-colored fog: what is behind fades, depth reads without shadow or gradient.
-  const fog = new T.Fog(BONE, 1, 10)
+  const fog = new T.Fog(P.bone, 1, 10)
   scene.fog = fog
 
   const geoSphere = new T.SphereGeometry(1, 18, 12)
@@ -270,7 +268,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   materials.push(shellMat, neuronMat)
 
   // Zones: a colored center ringed with ink, and its knowledge around it.
-  const outlineMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
+  const outlineMat = new T.MeshBasicMaterial({ color: P.ink, side: T.BackSide })
   materials.push(outlineMat)
   const gfx: ZoneGfx[] = []
   const nodes: Node[] = []
@@ -298,7 +296,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(1.5 + rand() * 0.45)
       nodes.push({ zone: i, end, start, r: 0.0065 + rand() * 0.005, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2, d: end.distanceTo(pos) })
     }
-    const color = new T.Color(zoneColor(z.color, z.position))
+    const color = new T.Color(brainZoneColor(z, P))
     gfx.push({ id: z.id, color, glow: color.clone().offsetHSL(0, 0.18, 0.06), r: CENTER_R, center, outline, pos, first, last: nodes.length })
   })
 
@@ -326,9 +324,9 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
       const start = new T.Vector3(away[0], away[1], away[2]).multiplyScalar(1.5 + rand() * 0.45)
       nodes.push({ zone: gfx.length, end, start, r: 0.0065 + rand() * 0.005, delay: rand() * MAX_DELAY, wobble: rand() * Math.PI * 2, d: end.distanceTo(pos) })
     }
-    const g: ZoneGfx = { id: coreZone.id, color: new T.Color(zoneColor(coreZone.color, coreZone.position)), glow: new T.Color(CORE_GLOW), r: CORE_R, center, outline, pos, first, last: nodes.length }
+    const g: ZoneGfx = { id: coreZone.id, color: new T.Color(brainZoneColor(coreZone, P)), glow: new T.Color(P.coreGlow), r: CORE_R, center, outline, pos, first, last: nodes.length }
     gfx.push(g)
-    const lineMat = new T.MeshBasicMaterial({ color: CORE_LINE, transparent: true, opacity: 0, depthTest: false, depthWrite: false })
+    const lineMat = new T.MeshBasicMaterial({ color: P.coreLine, transparent: true, opacity: 0, depthTest: false, depthWrite: false })
     materials.push(lineMat)
     for (const o of CORE_ORBITS) {
       const path = new T.CatmullRomCurve3(Array.from({ length: 48 }, (_, k) => new T.Vector3(...orbitPoint(c, o, (k / 48) * Math.PI * 2))), true)
@@ -354,7 +352,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const coreNodeMesh = new T.InstancedMesh(geoSphere, coreNodeMat, Math.max(1, nodes.length - split))
   coreNodeMesh.count = nodes.length - split
   coreNodeMesh.renderOrder = CORE_ON_TOP + 1
-  const ringMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide })
+  const ringMat = new T.MeshBasicMaterial({ color: P.ink, side: T.BackSide })
   const ringMesh = new T.InstancedMesh(geoSphere, ringMat, nodes.length)
   group.add(ringMesh, nodeMesh, coreNodeMesh)
   materials.push(nodeMat, coreNodeMat, ringMat)
@@ -376,7 +374,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     const d = scatter([dustRand() - 0.5, dustRand() - 0.5, dustRand() - 0.5], dustRand, 2)
     return { p: new T.Vector3(d[0], d[1] * 0.8, d[2]).multiplyScalar(1.55 + dustRand() * 0.55), r: 0.005 + dustRand() * 0.006, w: dustRand() * Math.PI * 2 }
   })
-  const dustMat = new T.MeshBasicMaterial({ color: RAW, transparent: true, opacity: 0, depthWrite: false })
+  const dustMat = new T.MeshBasicMaterial({ color: P.raw, transparent: true, opacity: 0, depthWrite: false })
   const dustMesh = new T.InstancedMesh(geoSphere, dustMat, DUST)
   group.add(dustMesh)
   materials.push(dustMat)
@@ -494,12 +492,12 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
   const scl = new T.Vector3()
   const tmp = new T.Vector3()
   const col = new T.Color()
-  const inkC = new T.Color(INK)
-  const rawC = new T.Color(RAW)
-  const lineC = new T.Color(LINE)
-  const whiteC = new T.Color(WHITE)
+  const inkC = new T.Color(P.ink)
+  const rawC = new T.Color(P.raw)
+  const lineC = new T.Color(P.line)
+  const whiteC = new T.Color(P.surface)
 
-  const boneC = new T.Color(BONE)
+  const boneC = new T.Color(P.bone)
   const netC = new T.Color()
   const linkBase = new Float32Array(net.points.length * 3)
   const dotBase = net.points.map(() => new T.Color())
@@ -626,7 +624,7 @@ function build(T: ThreeModule, args: BuildArgs): () => void {
     if (core) {
       // Its orbits and its halo, gray once named, ink when an agent touches it; the halo faces the screen.
       core.lineMat.opacity = 0.9 * named
-      core.lineMat.color.setHex(lit.has(core.g.id) ? INK : CORE_LINE)
+      core.lineMat.color.setHex(lit.has(core.g.id) ? P.ink : P.coreLine)
       core.halo.scale.setScalar(core.g.center.scale.x * CORE_HALO)
       core.halo.lookAt(camera.position)
     }

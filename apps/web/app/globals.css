@@ -40,6 +40,35 @@
   --danger: var(--color-danger);
 }
 
+/*
+  Dark theme (<html data-theme="dark">, the sun / moon button): the same monochrome, inverted. A near-black page, panels
+  one step lighter, light ink. Zone colors and phosphor do not change. The Tailwind utilities read these tokens,
+  so the whole interface follows; the brain reads its own palette (components/theme.tsx).
+*/
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bone: #0e0e0d;
+  --color-surface: #161615;
+  --color-ink: #f2f2ee;
+  --color-signal: #d2d2cc;
+  --color-trace: #9a9a91;
+  --color-line: #2a2a27;
+  --color-line-strong: #44443f;
+  --color-danger: #ff7a6b;
+}
+/* Veils behind dialogs and drawers: they darken the page in both themes (ink is light in dark). */
+:root[data-theme="dark"] .bg-ink\/20 {
+  background-color: rgb(0 0 0 / 0.6);
+}
+/* Phosphor is a light color: the text on it stays dark. */
+:root[data-theme="dark"] ::selection {
+  color: #0a0a0a;
+}
+/* The select arrow is an image: light ink. */
+:root[data-theme="dark"] select.input {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23f2f2ee' stroke-width='1.5'><path d='M2.5 4.5 6 8l3.5-3.5'/></svg>");
+}
+
 html,
 body {
   background: var(--bg);

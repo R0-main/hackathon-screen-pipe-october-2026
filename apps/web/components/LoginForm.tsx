@@ -7,6 +7,7 @@ import { fmt } from "@/lib/i18n"
 import { api, errorMessage } from "./format"
 import { useT } from "./I18n"
 import { PersonAvatar } from "./PersonDot"
+import { ThemeToggle } from "./theme"
 import { CloseIcon, ErrorText, LogoMark, PlusIcon } from "./ui"
 
 /**
@@ -84,7 +85,8 @@ export function LoginForm({
   const hasList = list.length > 0
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4 py-10">
+    <main className="relative grid min-h-dvh place-items-center px-4 py-10">
+      <ThemeToggle className="btn btn-ghost btn-icon absolute right-4 top-4" />
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
           <Link href="/" className="rounded-[6px]" aria-label={t.login.home}>

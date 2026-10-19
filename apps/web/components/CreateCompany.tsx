@@ -13,6 +13,7 @@ import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
 import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage } from "./format"
+import { ThemeToggle } from "./theme"
 import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
 import { possessive } from "@/lib/install-prompt"
 
@@ -55,8 +56,6 @@ const STORAGE_KEY = "nos-brainer:create"
  */
 const DRAFT_PARAM = "draft"
 const POLL_MS = 3000
-/** Page background (--color-bone): the preview brain blends into it, as on the landing. */
-const BONE = 0xf6f6f3
 
 function load(): Partial<Saved> | null {
   try {
@@ -289,6 +288,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
               Step {index + 1} of {STEPS.length}
             </span>
           )}
+          <ThemeToggle className="btn btn-ghost btn-icon" />
           {created ? (
             <Link href="/dashboard" className="btn">
               Open the dashboard
@@ -966,7 +966,7 @@ function MiniBrain(props: { frame: React.RefObject<HTMLDivElement | null>; zones
     .map((p, i) => ({ id: p.id, name: p.name, zone: zones[0]?.id ?? null, working: p.connected, me: i === 0 }))
   return (
     <div className="fixed inset-0 hidden lg:block">
-      <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} paper={BONE} anchor={frame} />
+      <Brain3D zones={views} synapses={[]} activity={activity} ripples={[]} now={now} people={dots} controls={false} paper="bone" anchor={frame} />
     </div>
   )
 }
