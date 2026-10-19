@@ -13,9 +13,9 @@ const RADIAL = 6
  * The beads: per direction and per arc, their number; their speed (in arc turns per second); their radius, relative to
  * the arc's (under 1: they stay inside the line).
  */
-const BEADS_PER_WAY = 4
+const BEADS_PER_WAY = 2
 const BEAD_SPEED = 0.1
-const BEAD_R = 0.6
+const BEAD_R = 0.45
 /** Stretch of the beads along the arc: their length is BEAD_STRETCH times their width. */
 const BEAD_STRETCH = 3
 /** Swelling of the arc around each bead: radius added at the bead's core, as a share of the arc's radius. */
@@ -23,7 +23,7 @@ const BEAD_BULGE = 0.55
 /** Speed-up of the beads on the arc of an active zone. */
 const FAST = 1.8
 /** The halo around each bead (radius, relative to the arc's: it shines around the line) and its strength. */
-const HALO = 7
+const HALO = 5
 const HALO_ALPHA = 0.9
 /**
  * The comet tail: glows trailing behind the bead along the arc, each a bit smaller and fainter, `TAIL_STEP` bead
@@ -31,7 +31,7 @@ const HALO_ALPHA = 0.9
  */
 const TAIL = 6
 const TAIL_STEP = 0.9
-const TAIL_R = 3.2
+const TAIL_R = 2.3
 const TAIL_ALPHA = 0.7
 /** The wake: how far behind the bead the arc stays lit (in bead lengths), and how much it takes the bead's color. */
 const WAKE = 9
