@@ -93,6 +93,15 @@ export class BrainApi {
   zones() {
     return this.request<{ zones: ApiZone[] }>("GET", "/api/zones").then((r) => r.zones)
   }
+  /** Files the caller's knowledge drawn from these sessions into the given zones (rezone). */
+  rezone(moves: { session_id: string; zone: string }[], dryRun = false) {
+    return this.request<{ dry_run: boolean; moved: number; zones: Record<string, number>; already: number; sessions: number; unknown_zones: string[] }>(
+      "POST",
+      "/api/items/rezone",
+      { moves, dry_run: dryRun },
+      60000,
+    )
+  }
   zone(id: string) {
     return this.request<ZoneSummary>("GET", `/api/zones/${encodeURIComponent(id)}`)
   }

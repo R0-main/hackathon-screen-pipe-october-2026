@@ -139,6 +139,8 @@ export interface BrainStore {
   getItem(id: string): Promise<KnowledgeItem | null>
   /** Deletes the knowledge item and the tasks drawn from it (not those imported from an external tool). False if it did not exist. */
   deleteItem(id: string): Promise<boolean>
+  /** The author's knowledge drawn from these sessions (`session_id` without its `#n` chunk suffix, see sessionOf), superseded included. */
+  listItemsBySessions(authorId: string, sessionIds: string[]): Promise<{ id: string; zone: string; session_id: string }[]>
   /** Files these items into `zone`, with the tasks derived from them; returns the number of items moved. */
   moveItems(ids: string[], zone: string): Promise<number>
   /**

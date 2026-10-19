@@ -52,6 +52,7 @@ import * as connectorRoute from "../app/api/connector/route"
 import * as zoneRoute from "../app/api/zones/[id]/route"
 import * as healthRoute from "../app/api/health/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
+import * as rezoneRoute from "../app/api/items/rezone/route"
 import * as adminNewZonesRoute from "../app/api/admin/zones/auto/route"
 import * as adminNewZonesInputRoute from "../app/api/admin/zones/auto/input/route"
 import * as cronNewZonesRoute from "../app/api/cron/new-zones/route"
@@ -577,6 +578,25 @@ async function main() {
   assert(JSON.stringify((await store.listZones()).find((z) => z.id === existing.id)?.projects) === JSON.stringify(["encore", "acme/api"]) && keptProjects.status === 200, "projects stored, kept when absent from the body")
   await call(adminZonesRoute.POST, "/api/admin/zones", { method: "POST", session: claireSession, body: { id: existing.id, name: existing.name, projects: [] } })
   assert(!(await store.listZones()).find((z) => z.id === existing.id)?.projects?.length, "projects emptied")
+
+  console.log("\n— API: rezone (knowledge already in the brain filed into its project's zone)")
+  const sid = `smoke-${run}-session`
+  const [rzA, rzB] = await store.insertItems([
+    { ...item("dev", `Smoke ${run} rezone chunk 0`), source: { app: "Claude Code", tool: "claude-code", at: new Date().toISOString(), session_id: `${sid}#0` }, author_id: hugo.profile.id },
+    { ...item("dev", `Smoke ${run} rezone chunk 1`), source: { app: "Claude Code", tool: "claude-code", at: new Date().toISOString(), session_id: `${sid}#1` }, author_id: hugo.profile.id },
+  ])
+  const [rzOther] = await store.insertItems([
+    { ...item("dev", `Smoke ${run} rezone other author`), source: { app: "Claude Code", tool: "claude-code", at: new Date().toISOString(), session_id: sid }, author_id: claire.profile.id },
+  ])
+  const rzDry = await call(rezoneRoute.POST, "/api/items/rezone", { method: "POST", session: hugoSession, body: { moves: [{ session_id: sid, zone: "product" }, { session_id: "x", zone: "nope" }], dry_run: true } })
+  assert(rzDry.status === 200 && rzDry.data.moved === 2 && rzDry.data.zones.product === 2 && rzDry.data.unknown_zones[0] === "nope", `dry run: 2 chunks of the session found, unknown zone reported (${JSON.stringify(rzDry.data)})`)
+  assert((await store.getItem(rzA.id))?.zone === "dev", "dry run: nothing moved")
+  const rz = await call(rezoneRoute.POST, "/api/items/rezone", { method: "POST", session: hugoSession, body: { moves: [{ session_id: sid, zone: "product" }] } })
+  assert(rz.status === 200 && rz.data.moved === 2 && (await store.getItem(rzA.id))?.zone === "product" && (await store.getItem(rzB.id))?.zone === "product", "the author's knowledge from the session moved, every chunk")
+  assert((await store.getItem(rzOther.id))?.zone === "dev", "another author's knowledge from a session with the same id does not move")
+  const rzAgain = await call(rezoneRoute.POST, "/api/items/rezone", { method: "POST", session: hugoSession, body: { moves: [{ session_id: sid, zone: "product" }] } })
+  assert(rzAgain.data.moved === 0 && rzAgain.data.already === 2, "run again: already in place")
+  for (const it of [rzA, rzB, rzOther]) await store.deleteItem(it.id)
 
   console.log("\n— API: MCP servers (catalog, manual OAuth client, secrets never sent back)")
   assert((await call(mcpConnectorsRoute.GET, "/api/connectors/mcp", { session: hugoSession })).status === 403, "MCP servers: admins only (403)")

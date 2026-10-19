@@ -886,6 +886,14 @@ export class PostgresStore implements BrainStore {
       return true
     }) as Promise<boolean>
   }
+  async listItemsBySessions(authorId: string, sessionIds: string[]) {
+    if (sessionIds.length === 0 || !UUID_RE.test(authorId)) return []
+    const org = await this.orgId()
+    const rows = await this.sql`select id, zone, split_part(source->>'session_id', '#', 1) as session_id from knowledge_items
+      where org_id = ${org} and author_id = ${authorId} and split_part(source->>'session_id', '#', 1) in ${this.sql(sessionIds)}`
+    return rows.map((r) => ({ id: r.id, zone: r.zone, session_id: r.session_id }))
+  }
+
   async moveItems(ids: string[], zone: string) {
     const valid = ids.filter((id) => UUID_RE.test(id))
     if (valid.length === 0) return 0

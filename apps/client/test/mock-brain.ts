@@ -22,6 +22,8 @@ export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeo
   const ingested: unknown[] = []
   const received: unknown[] = []
   const automations: unknown[] = []
+  /** POST /api/items/rezone received. */
+  const rezones: { moves: { session_id: string; zone: string }[]; dry_run?: boolean }[] = []
   /** Item key → its id (like the real brain, a duplicate gives back the id of the item already there). */
   const keys = new Map<string, string>()
   /** POST /api/documents received, and the documents kept (by fingerprint). */
@@ -118,7 +120,14 @@ export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeo
       return { status: 201, body: { saved: list.length } }
     }
     if (req.method === "POST" && path === "/api/events") return { status: 201, body: { recorded: 1, zones: [] } }
+    if (req.method === "POST" && path === "/api/items/rezone") {
+      const b = req.body as { moves: { session_id: string; zone: string }[]; dry_run?: boolean }
+      rezones.push(b)
+      const zones: Record<string, number> = {}
+      for (const m of b.moves) zones[m.zone] = (zones[m.zone] ?? 0) + 2
+      return { body: { dry_run: Boolean(b.dry_run), moved: b.moves.length * 2, zones, already: 0, sessions: b.moves.length, unknown_zones: [] } }
+    }
     return undefined
   })
-  return { ...srv, ingested, received, automations, uploads, documents, ingestCalls: () => ingestCalls }
+  return { ...srv, ingested, received, automations, uploads, documents, rezones, ingestCalls: () => ingestCalls }
 }

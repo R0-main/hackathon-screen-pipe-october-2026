@@ -7,6 +7,7 @@ import {
   CORE_ZONE,
   DEFAULT_ZONES,
   normalize,
+  sessionOf,
   tokenize,
   type AgentEvent,
   type AutomationSuggestion,
@@ -571,6 +572,13 @@ export class FileStore implements BrainStore {
       return true
     })
   }
+  async listItemsBySessions(authorId: string, sessionIds: string[]) {
+    const wanted = new Set(sessionIds)
+    return this.load()
+      .items.filter((i) => i.author_id === authorId && typeof i.source?.session_id === "string" && wanted.has(sessionOf(i.source.session_id)))
+      .map((i) => ({ id: i.id, zone: i.zone, session_id: sessionOf(i.source.session_id!) }))
+  }
+
   async moveItems(ids: string[], zone: string) {
     const wanted = new Set(ids)
     return this.mutate((d) => {
