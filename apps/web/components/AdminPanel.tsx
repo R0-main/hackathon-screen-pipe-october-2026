@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { isCoreZone, slugify, type Profile, type Zone } from "@brain/core"
 import { PageScroll } from "./AppShell"
-import { ConnectAiButton } from "./ConnectAi"
+import { ConnectAiButton, ConnectorSetup } from "./ConnectAi"
 import { useBrainLive } from "./BrainLive"
 import { AgentLogos } from "./brand-logos"
 import { OrgChart, type Presence } from "./OrgChart"
@@ -49,7 +49,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
   const [zones, setZones] = useState(props.initialZones)
   const [selected, setSelected] = useState<string | null>(null)
   const [invite, setInvite] = useState<{ managerId: string | null } | null>(null)
-  const [prompt, setPrompt] = useState<{ name: string; prompt: string } | null>(null)
+  const [prompt, setPrompt] = useState<{ userId: string; name: string; prompt: string } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
 
@@ -107,7 +107,7 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
     setErr(null)
     try {
       const r = await api<{ prompt: string }>(`/api/admin/users/${u.id}/token`, { method: "POST" })
-      setPrompt({ name: u.name, prompt: r.prompt })
+      setPrompt({ userId: u.id, name: u.name, prompt: r.prompt })
     } catch (e) {
       setErr(`Could not create a new prompt for ${u.name}: ${errorMessage(e)}`)
     } finally {
@@ -201,15 +201,15 @@ export function AdminPanel(props: { tab: AdminTab; orgName: string; meId: string
             zones={zones}
             users={users}
             defaultManager={invite.managerId}
-            onInvited={(name, p) => {
+            onInvited={(userId, name, p) => {
               setInvite(null)
-              setPrompt({ name, prompt: p })
+              setPrompt({ userId, name, prompt: p })
               void reload()
             }}
           />
         </Modal>
       )}
-      {prompt && <PromptModal name={prompt.name} orgName={props.orgName} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
+      {prompt && <PromptModal userId={prompt.userId} name={prompt.name} orgName={props.orgName} prompt={prompt.prompt} onClose={() => setPrompt(null)} />}
     </div>
   )
 }
@@ -528,7 +528,7 @@ function InviteForm({
   zones: Zone[]
   users: User[]
   defaultManager: string | null
-  onInvited: (name: string, prompt: string) => void
+  onInvited: (userId: string, name: string, prompt: string) => void
 }) {
   const [name, setName] = useState("")
   const [manager, setManager] = useState(defaultManager ?? "")
@@ -545,11 +545,11 @@ function InviteForm({
     setBusy(true)
     setErr(null)
     try {
-      const r = await api<{ prompt: string }>("/api/admin/users", {
+      const r = await api<{ profile: { id: string }; prompt: string }>("/api/admin/users", {
         method: "POST",
         json: { name, email, title, role, zones: selected, manager_id: manager || null, can_publish_skills: role === "member" && publishSkills },
       })
-      onInvited(name, r.prompt)
+      onInvited(r.profile.id, name, r.prompt)
       setName("")
       setEmail("")
       setTitle("")
@@ -749,11 +749,12 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
   )
 }
 
-function PromptModal({ name, orgName, prompt, onClose }: { name: string; orgName: string; prompt: string; onClose: () => void }) {
+function PromptModal({ userId, name, orgName, prompt, onClose }: { userId: string; name: string; orgName: string; prompt: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const [copyErr, setCopyErr] = useState<string | null>(null)
   const copyRef = useRef<HTMLButtonElement>(null)
-  const preRef = useRef<HTMLPreElement>(null)
+  const fallbackRef = useRef<HTMLTextAreaElement>(null)
+  const first = name.split(" ")[0]
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -766,16 +767,17 @@ function PromptModal({ name, orgName, prompt, onClose }: { name: string; orgName
     }
   }, [onClose])
 
-  /** Selects the prompt: manual copy is possible even without a clipboard. */
-  function selectPrompt(): boolean {
-    const el = preRef.current
-    const sel = typeof window !== "undefined" ? window.getSelection() : null
-    if (!el || !sel) return false
-    const range = document.createRange()
-    range.selectNodeContents(el)
-    sel.removeAllRanges()
-    sel.addRange(range)
-    return true
+  // When copying failed, the prompt shows up, selected, to copy by hand.
+  useEffect(() => {
+    if (copyErr) fallbackRef.current?.select()
+  }, [copyErr])
+
+  /** Selects the hidden prompt and copies it the old way. */
+  function execCopy(): boolean {
+    const el = fallbackRef.current
+    if (!el) return false
+    el.select()
+    return document.execCommand("copy")
   }
 
   async function copy() {
@@ -783,48 +785,77 @@ function PromptModal({ name, orgName, prompt, onClose }: { name: string; orgName
     try {
       // navigator.clipboard only exists in a secure context (https or localhost), not on http://<lan-ip>.
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(prompt)
-      else if (!(selectPrompt() && document.execCommand("copy"))) throw new Error("clipboard unavailable")
+      else if (!execCopy()) throw new Error("clipboard unavailable")
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      selectPrompt()
-      setCopyErr("Automatic copy is not possible here: the prompt is selected, copy it with Ctrl+C (⌘C on a Mac).")
+      setCopyErr("Automatic copy is not possible here: the prompt is selected below, copy it with Ctrl+C (⌘C on a Mac).")
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/20 p-4" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-labelledby="prompt-modal-title" className="panel w-full max-w-3xl p-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 grid items-start justify-items-center overscroll-contain bg-ink/20 p-4 sm:pt-[6vh]" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prompt-modal-title"
+        className="panel scroll-thin max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-6vh-1rem)]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 id="prompt-modal-title" className="panel-title">
-              Invitation for {name} to {orgName}
-            </h2>
-            <p className="mt-1 text-[13px] text-trace">
-              Send it to {name.split(" ")[0]} through a private channel: it contains their token, shown only once. They just paste it into Claude Code or Codex, on their computer.
-            </p>
-          </div>
-          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Close">
+          <h2 id="prompt-modal-title" className="panel-title">
+            Invitation for {name} to {orgName}
+          </h2>
+          <button type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Close">
             <CloseIcon />
           </button>
         </div>
-        <pre ref={preRef} className="scroll-thin mono inset mt-4 max-h-[55vh] overflow-auto whitespace-pre-wrap p-4 text-[12px] leading-relaxed">
-          {prompt}
-        </pre>
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-          {copyErr && <ErrorText className="mr-auto text-[12px]">{copyErr}</ErrorText>}
-          <button ref={copyRef} type="button" className="btn btn-primary" onClick={copy}>
-            {copied ? (
-              <>
-                <CheckIcon size={14} /> Copied
-              </>
-            ) : (
-              <>
-                <AgentLogos /> Copy the prompt
-              </>
+
+        <section className="mt-4" aria-labelledby="prompt-modal-install">
+          <h3 id="prompt-modal-install" className="text-[14px] font-medium">
+            Their install prompt
+          </h3>
+          <p className="mt-1 text-[13px] leading-relaxed text-trace">
+            Send it to {first} through a private channel: it contains their token, shown only once. They paste it into Claude Code or Codex, on their
+            computer: it installs everything, then opens {possessive(orgName)} brain for them.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button ref={copyRef} type="button" className="btn btn-primary" onClick={copy}>
+              {copied ? (
+                <>
+                  <CheckIcon size={14} /> Copied
+                </>
+              ) : (
+                <>
+                  <AgentLogos /> Copy the prompt
+                </>
+              )}
+            </button>
+            {copied && (
+              <span className="text-[13px] text-trace" aria-live="polite">
+                Send it to {first} (Slack, email).
+              </span>
             )}
-          </button>
-        </div>
+          </div>
+          {copyErr && <ErrorText className="mt-3 text-[12px]">{copyErr}</ErrorText>}
+          {/* The prompt is not shown: only to copy it when the clipboard is missing, and by hand if that fails too. */}
+          <textarea
+            ref={fallbackRef}
+            readOnly
+            value={prompt}
+            tabIndex={copyErr ? 0 : -1}
+            aria-hidden={!copyErr}
+            aria-label={`${first}'s install prompt`}
+            className={copyErr ? "input scroll-thin mono mt-2 h-40 w-full resize-y text-[12px] leading-relaxed" : "sr-only"}
+          />
+        </section>
+
+        <section className="mt-6 border-t border-line pt-5" aria-labelledby="prompt-modal-mcp">
+          <h3 id="prompt-modal-mcp" className="text-[14px] font-medium">
+            Or connect their AI directly, over MCP
+          </h3>
+          <ConnectorSetup userId={userId} isSelf={false} />
+        </section>
       </div>
     </div>
   )
