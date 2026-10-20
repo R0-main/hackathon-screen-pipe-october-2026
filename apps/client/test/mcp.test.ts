@@ -40,7 +40,7 @@ after(async () => {
 
 test("MCP: list of tools", async () => {
   const { tools } = await client.listTools()
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "get_document", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "explore_entity", "get_document", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
   const search = tools.find((t) => t.name === "search_brain")!
   assert.match(search.description ?? "", /decisions, procedures/)
   assert.deepEqual(search.inputSchema.required, ["query"])
@@ -76,6 +76,19 @@ test("MCP search_brain: results in markdown, then \"nothing found\" + restricted
   assert.match(empty, /No knowledge found/)
   assert.match(empty, /zones you do not have access to might know more/)
   assert.ok(!empty.includes("finance"), "must not name the restricted zone")
+})
+
+test("MCP explore_entity: the knowledge citing an entity and what it is cited with, else the closest names", async () => {
+  const t = text(await client.callTool({ name: "explore_entity", arguments: { name: "vercel", type: "tool" } }))
+  assert.match(t, /^## Vercel \(tool\) in the company brain\n1 knowledge item cites it \(zones: Dev\)/m)
+  assert.match(t, /- \*\*Deploy Fournil to production\*\* \(Dev · procedure · Hugo Bernard · 08 Oct 2026\)\n {2}1\. Merge into main\. 2\. Tag/)
+  assert.match(t, /### Often cited with it\n- Sentry \(tool\), 2 times/)
+  const req = brain.requests.find((x) => x.url.startsWith("/api/entities"))!
+  assert.equal(req.url, "/api/entities?name=vercel&type=tool&agent=mcp")
+
+  const none = text(await client.callTool({ name: "explore_entity", arguments: { name: "Vercell" } }))
+  assert.match(none, /Nothing in the brain cites "Vercell" in the zones you can read/)
+  assert.match(none, /Closest names in the brain: Vercel \(tool\)\. Try explore_entity with one of them/)
 })
 
 test("MCP get_zone_summary / list_zones / whoami_context / company_status", async () => {

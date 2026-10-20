@@ -162,6 +162,12 @@ export interface BrainStore {
    * notably in Postgres until the "quality" migration is applied: ingestion never fails because of it.
    */
   markSuperseded(oldId: string, newId: string): Promise<boolean>
+  /**
+   * The knowledge graph around some entities (`type:normalized name` keys, see entityKey): the items (not superseded)
+   * of the given zones, or by this author, that cite at least one of them, most recent first, and each key's degree:
+   * how many of those items cite it in the whole scope, not only among the `limit` returned.
+   */
+  entityNeighborhood(f: { keys: string[]; zones: string[]; authorId?: string; limit?: number }): Promise<{ items: KnowledgeItem[]; degree: Record<string, number> }>
   /** Items (not superseded) citing an entity, in the given zones (or by this author). */
   listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }): Promise<KnowledgeItem[]>
   /** Semantic vectors of the non-superseded items of the given zones (most recent first), for ranking. */

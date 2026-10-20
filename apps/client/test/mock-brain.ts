@@ -73,6 +73,12 @@ export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeo
         },
       }
     if (req.method === "GET" && path.startsWith("/api/documents/")) return { status: 404, body: { error: "Document not found." } }
+    if (req.method === "GET" && path === "/api/entities") {
+      const name = new URLSearchParams(req.url.split("?")[1]).get("name") ?? ""
+      if (name.toLowerCase() === "vercel")
+        return { body: { entity: { type: "tool", name: "Vercel" }, total: 1, zones: ["dev"], items: [DEPLOY_ITEM], related: [{ type: "tool", name: "Sentry", count: 2 }], suggestions: [] } }
+      return { body: { entity: null, zones: [], items: [], related: [], suggestions: [{ type: "tool", name: "Vercel", count: 2 }] } }
+    }
     if (req.method === "POST" && path === "/api/query") {
       const q = String((req.body as { query: string }).query)
       const found = /deploy/i.test(q)
