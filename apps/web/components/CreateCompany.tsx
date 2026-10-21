@@ -8,6 +8,7 @@ import { AgentLogos } from "./brand-logos"
 import { AgentRun, AgentToasts, useAgentOnboarding, type AgentEvent, type RunState } from "./AgentProgress"
 import { Brain3D, type BrainPerson } from "./Brain3D"
 import type { ZoneActivity } from "./BrainViz"
+import { ConnectAiButton } from "./ConnectAi"
 import { McpConnectors } from "./McpConnectors"
 import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
@@ -858,12 +859,14 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
                 ) : (
                   <span className="text-[12px] text-trace">Through the team message</span>
                 )}
+                <ConnectAiButton userId={i.id} isSelf={false} className="btn" />
               </li>
             )
           })}
         </ul>
       )}
       {copied && <p className="mt-3 text-[13px] text-trace" aria-live="polite">Prompt copied: send it to them (Slack, email), they paste it into Claude Code or Codex.</p>}
+      {invites.length > 0 && <p className="mt-1.5 text-[12px] text-trace">No install? “Connect an AI” gives their MCP address, for Claude, ChatGPT, Cursor and the rest.</p>}
 
       <h2 className="mt-12 text-[19px] font-medium">Or a single message for the whole team</h2>
       <div className="mt-3">

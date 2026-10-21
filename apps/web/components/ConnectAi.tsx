@@ -41,18 +41,8 @@ export function ConnectAiButton({ userId, isSelf, className = "btn btn-sm" }: { 
 }
 
 function ConnectorModal({ userId, isSelf, onClose }: { userId: string; isSelf: boolean; onClose: () => void }) {
-  const [data, setData] = useState<Connector | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const [shown, setShown] = useState(false)
-  const [copied, setCopied] = useState<string | null>(null)
-  const [app, setApp] = useState<AppId>("claude")
+  const [name, setName] = useState<string | null>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    api<Connector>(`/api/connector?user=${encodeURIComponent(userId)}`)
-      .then(setData)
-      .catch((e) => setErr(`Could not get the address: ${errorMessage(e)}`))
-  }, [userId])
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -64,6 +54,52 @@ function ConnectorModal({ userId, isSelf, onClose }: { userId: string; isSelf: b
       previous?.focus?.()
     }
   }, [onClose])
+
+  const first = name?.split(" ")[0]
+  return (
+    <div className="fixed inset-0 z-50 grid items-start justify-items-center overscroll-contain bg-ink/20 p-4 sm:pt-[6vh]" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connector-title"
+        className="panel scroll-thin max-h-[calc(100dvh-2rem)] w-full max-w-2xl sm:max-h-[calc(100dvh-6vh-1rem)] overflow-y-auto overscroll-contain p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="connector-title" className="panel-title">
+            {isSelf || !first ? "Connect the brain to an AI" : `Connect ${first}'s brain to an AI`}
+          </h2>
+          <button ref={closeRef} type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Close">
+            <CloseIcon />
+          </button>
+        </div>
+        <ConnectorSetup userId={userId} isSelf={isSelf} onLoaded={(c) => setName(c.name)} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The MCP server's address and how to add it to each AI app: in "Connect an AI", and in a new member's invitation,
+ * for whoever plugs the brain in without the install prompt.
+ */
+export function ConnectorSetup({ userId, isSelf, onLoaded }: { userId: string; isSelf: boolean; onLoaded?: (c: Connector) => void }) {
+  const [data, setData] = useState<Connector | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [shown, setShown] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+  const [app, setApp] = useState<AppId>("claude")
+  const loaded = useRef(onLoaded)
+  loaded.current = onLoaded
+
+  useEffect(() => {
+    api<Connector>(`/api/connector?user=${encodeURIComponent(userId)}`)
+      .then((c) => {
+        setData(c)
+        loaded.current?.(c)
+      })
+      .catch((e) => setErr(`Could not get the address: ${errorMessage(e)}`))
+  }, [userId])
 
   async function copy(what: string, text: string): Promise<boolean> {
     try {
@@ -90,177 +126,161 @@ function ConnectorModal({ userId, isSelf, onClose }: { userId: string; isSelf: b
   const current = APPS.find((a) => a.id === app)!
 
   return (
-    <div className="fixed inset-0 z-50 grid items-start justify-items-center overscroll-contain bg-ink/20 p-4 sm:pt-[6vh]" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="connector-title"
-        className="panel scroll-thin max-h-[calc(100dvh-2rem)] w-full max-w-2xl sm:max-h-[calc(100dvh-6vh-1rem)] overflow-y-auto overscroll-contain p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 id="connector-title" className="panel-title">
-            {isSelf || !data ? "Connect the brain to an AI" : `Connect ${first}'s brain to an AI`}
-          </h2>
-          <button ref={closeRef} type="button" className="btn btn-icon shrink-0" onClick={onClose} aria-label="Close">
-            <CloseIcon />
-          </button>
-        </div>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-trace">
-          The brain's tools (search, zones, company status, remember…) work in each of these apps. In those marked “views”, the live brain,
-          the automations and the team also open right in the conversation.
-        </p>
+    <>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-trace">
+        The brain's tools (search, zones, company status, remember…) work in each of these apps. In those marked “views”, the live brain,
+        the automations and the team also open right in the conversation.
+      </p>
 
-        {err && <ErrorText className="mt-3">{err}</ErrorText>}
-        {!data && !err && <p className="mt-4 text-[13px] text-trace">Preparing the address…</p>}
-        {data && (
-          <>
-            <div className="mt-4">
-              <span className="mb-1.5 block text-[13px] font-medium">Server address</span>
-              <div className="flex gap-1.5">
-                <input
-                  className="input mono min-w-0 flex-1 text-[12px]"
-                  readOnly
-                  value={mask(data.url)}
-                  onFocus={(e) => shown && e.currentTarget.select()}
-                  aria-label="Server address"
-                />
-                <button type="button" className="btn btn-sm shrink-0" onClick={() => setShown((s) => !s)}>
-                  {shown ? "Hide" : "Show"}
-                </button>
-                <button type="button" className="btn btn-sm shrink-0" onClick={() => void copy("url", data.url)}>
-                  {copied === "url" ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <p className="mt-2 text-[12px] leading-relaxed text-trace">
-                {isSelf ? "It reads and writes the brain as you, with your zones" : `It reads and writes the brain as ${first}, with their zones`}: keep
-                it private. It stays the same until the token is regenerated, which revokes it.
-              </p>
+      {err && <ErrorText className="mt-3">{err}</ErrorText>}
+      {!data && !err && <p className="mt-4 text-[13px] text-trace">Preparing the address…</p>}
+      {data && (
+        <>
+          <div className="mt-4">
+            <span className="mb-1.5 block text-[13px] font-medium">Server address</span>
+            <div className="flex gap-1.5">
+              <input
+                className="input mono min-w-0 flex-1 text-[12px]"
+                readOnly
+                value={mask(data.url)}
+                onFocus={(e) => shown && e.currentTarget.select()}
+                aria-label="Server address"
+              />
+              <button type="button" className="btn btn-sm shrink-0" onClick={() => setShown((s) => !s)}>
+                {shown ? "Hide" : "Show"}
+              </button>
+              <button type="button" className="btn btn-sm shrink-0" onClick={() => void copy("url", data.url)}>
+                {copied === "url" ? "Copied" : "Copy"}
+              </button>
             </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-trace">
+              {isSelf ? "It reads and writes the brain as you, with your zones" : `It reads and writes the brain as ${first}, with their zones`}: keep
+              it private. It stays the same until the token is regenerated, which revokes it.
+            </p>
+          </div>
 
-            <div className="mt-5 flex flex-wrap gap-1.5" role="tablist" aria-label="AI app">
-              {APPS.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={a.id === app}
-                  className={`chip ${a.id === app ? "chip-on" : ""}`}
-                  onClick={() => setApp(a.id)}
-                >
-                  {a.label}
-                  {a.views && <span className={a.id === app ? "opacity-70" : "text-trace"}>· views</span>}
-                </button>
-              ))}
-            </div>
+          <div className="mt-5 flex flex-wrap gap-1.5" role="tablist" aria-label="AI app">
+            {APPS.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="tab"
+                aria-selected={a.id === app}
+                className={`chip ${a.id === app ? "chip-on" : ""}`}
+                onClick={() => setApp(a.id)}
+              >
+                {a.label}
+                {a.views && <span className={a.id === app ? "opacity-70" : "text-trace"}>· views</span>}
+              </button>
+            ))}
+          </div>
 
-            <div className="mt-3" role="tabpanel" aria-label={current.label}>
-              {app === "claude" && (
-                <ol className="space-y-3">
-                  <Step n={1} title="Copy the address and open Claude's connectors">
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => void copyAndOpen("open", data.url, CLAUDE_CONNECTORS_URL)}>
-                      {copied === "open" ? "Copied, opening Claude…" : "Copy and open Claude"}
-                    </button>
-                    <p className="mt-1.5 text-[12px] text-trace">
-                      Or <ExternalLink href={CLAUDE_CONNECTORS_URL}>claude.ai/customize/connectors</ExternalLink>; in the desktop app, Customize then
-                      Connectors. A connector added on claude.ai also shows up in the desktop app.
-                    </p>
-                  </Step>
-                  <Step n={2} title="Click “Add custom connector”" picture={<PictureConnectors />} />
-                  <Step n={3} title="Name it, paste the address, click “Add”" picture={<PictureAddDialog name={data.connector_name} />}>
-                    <p className="text-[12px] text-trace">
-                      Name: <span className="font-medium text-ink">{data.connector_name}</span>. No sign-in or OAuth: leave the rest as is.
-                    </p>
-                  </Step>
-                  <Step n={4} title="In a new chat, turn it on and ask for the brain" picture={<PictureChat name={data.connector_name} />}>
-                    <p className="text-[12px] text-trace">“+” button, then Connectors, then turn on {data.connector_name}. Then ask: “Show me the brain”.</p>
-                  </Step>
-                  <Note>
-                    Illustrations simplified from Claude's screens, which may vary a little. On the Free plan, Claude allows one custom connector; on
-                    a Team or Enterprise plan, only an Owner can add one.
-                  </Note>
-                </ol>
-              )}
+          <div className="mt-3" role="tabpanel" aria-label={current.label}>
+            {app === "claude" && (
+              <ol className="space-y-3">
+                <Step n={1} title="Copy the address and open Claude's connectors">
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => void copyAndOpen("open", data.url, CLAUDE_CONNECTORS_URL)}>
+                    {copied === "open" ? "Copied, opening Claude…" : "Copy and open Claude"}
+                  </button>
+                  <p className="mt-1.5 text-[12px] text-trace">
+                    Or <ExternalLink href={CLAUDE_CONNECTORS_URL}>claude.ai/customize/connectors</ExternalLink>; in the desktop app, Customize then
+                    Connectors. A connector added on claude.ai also shows up in the desktop app.
+                  </p>
+                </Step>
+                <Step n={2} title="Click “Add custom connector”" picture={<PictureConnectors />} />
+                <Step n={3} title="Name it, paste the address, click “Add”" picture={<PictureAddDialog name={data.connector_name} />}>
+                  <p className="text-[12px] text-trace">
+                    Name: <span className="font-medium text-ink">{data.connector_name}</span>. No sign-in or OAuth: leave the rest as is.
+                  </p>
+                </Step>
+                <Step n={4} title="In a new chat, turn it on and ask for the brain" picture={<PictureChat name={data.connector_name} />}>
+                  <p className="text-[12px] text-trace">“+” button, then Connectors, then turn on {data.connector_name}. Then ask: “Show me the brain”.</p>
+                </Step>
+                <Note>
+                  Illustrations simplified from Claude's screens, which may vary a little. On the Free plan, Claude allows one custom connector; on
+                  a Team or Enterprise plan, only an Owner can add one.
+                </Note>
+              </ol>
+            )}
 
-              {app === "chatgpt" && (
-                <ol className="space-y-3">
-                  <Step n={1} title="Copy the address and open ChatGPT's settings">
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => void copyAndOpen("open", data.url, CHATGPT_SETTINGS_URL)}>
-                      {copied === "open" ? "Copied, opening ChatGPT…" : "Copy and open ChatGPT"}
-                    </button>
-                  </Step>
-                  <Step n={2} title="Turn on Developer mode">
-                    <p className="text-[12px] text-trace">
-                      Settings, then Apps & Connectors (or Security), then Advanced settings: Developer mode. ChatGPT moves this toggle from time to
-                      time; on a Business or Enterprise workspace, an admin may have to allow custom apps first.
-                    </p>
-                  </Step>
-                  <Step n={3} title="Create the app: name, address, “No authentication”">
-                    <p className="text-[12px] text-trace">
-                      Create (or “+”), name it <span className="font-medium text-ink">{data.connector_name}</span>, paste the address as the MCP server
-                      URL, choose No authentication, confirm that you trust it, then Create.
-                    </p>
-                  </Step>
-                  <Step n={4} title="In a new chat, add it and ask for the brain">
-                    <p className="text-[12px] text-trace">“+” button, then the app ({data.connector_name}). Then ask: “Show me the brain”.</p>
-                  </Step>
-                  <Note>Developer mode depends on the ChatGPT plan (paid plans).</Note>
-                </ol>
-              )}
+            {app === "chatgpt" && (
+              <ol className="space-y-3">
+                <Step n={1} title="Copy the address and open ChatGPT's settings">
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => void copyAndOpen("open", data.url, CHATGPT_SETTINGS_URL)}>
+                    {copied === "open" ? "Copied, opening ChatGPT…" : "Copy and open ChatGPT"}
+                  </button>
+                </Step>
+                <Step n={2} title="Turn on Developer mode">
+                  <p className="text-[12px] text-trace">
+                    Settings, then Apps & Connectors (or Security), then Advanced settings: Developer mode. ChatGPT moves this toggle from time to
+                    time; on a Business or Enterprise workspace, an admin may have to allow custom apps first.
+                  </p>
+                </Step>
+                <Step n={3} title="Create the app: name, address, “No authentication”">
+                  <p className="text-[12px] text-trace">
+                    Create (or “+”), name it <span className="font-medium text-ink">{data.connector_name}</span>, paste the address as the MCP server
+                    URL, choose No authentication, confirm that you trust it, then Create.
+                  </p>
+                </Step>
+                <Step n={4} title="In a new chat, add it and ask for the brain">
+                  <p className="text-[12px] text-trace">“+” button, then the app ({data.connector_name}). Then ask: “Show me the brain”.</p>
+                </Step>
+                <Note>Developer mode depends on the ChatGPT plan (paid plans).</Note>
+              </ol>
+            )}
 
-              {app === "cursor" && (
-                <ol className="space-y-3">
-                  <Step n={1} title="Add it to Cursor in one click">
-                    <a className="btn btn-primary btn-sm" href={cursorInstallLink(data)}>
-                      Add to Cursor
-                    </a>
-                    <p className="mt-1.5 text-[12px] text-trace">Cursor opens and asks to confirm the install.</p>
-                  </Step>
-                  <Step n={2} title="Or by hand, in ~/.cursor/mcp.json">
-                    <Code id="cursor" text={JSON.stringify({ mcpServers: { [data.server_name]: { url: data.url } } }, null, 2)} />
-                  </Step>
-                </ol>
-              )}
+            {app === "cursor" && (
+              <ol className="space-y-3">
+                <Step n={1} title="Add it to Cursor in one click">
+                  <a className="btn btn-primary btn-sm" href={cursorInstallLink(data)}>
+                    Add to Cursor
+                  </a>
+                  <p className="mt-1.5 text-[12px] text-trace">Cursor opens and asks to confirm the install.</p>
+                </Step>
+                <Step n={2} title="Or by hand, in ~/.cursor/mcp.json">
+                  <Code id="cursor" text={JSON.stringify({ mcpServers: { [data.server_name]: { url: data.url } } }, null, 2)} />
+                </Step>
+              </ol>
+            )}
 
-              {app === "vscode" && (
-                <ol className="space-y-3">
-                  <Step n={1} title="Add it to VS Code in one click">
-                    <a className="btn btn-primary btn-sm" href={vscodeInstallLink(data)}>
-                      Add to VS Code
-                    </a>
-                    <p className="mt-1.5 text-[12px] text-trace">VS Code opens and asks to confirm; the tools are then in Copilot's agent mode.</p>
-                  </Step>
-                  <Step n={2} title="Or by hand, in .vscode/mcp.json">
-                    <Code id="vscode" text={JSON.stringify({ servers: { [data.server_name]: { type: "http", url: data.url } } }, null, 2)} />
-                  </Step>
-                </ol>
-              )}
+            {app === "vscode" && (
+              <ol className="space-y-3">
+                <Step n={1} title="Add it to VS Code in one click">
+                  <a className="btn btn-primary btn-sm" href={vscodeInstallLink(data)}>
+                    Add to VS Code
+                  </a>
+                  <p className="mt-1.5 text-[12px] text-trace">VS Code opens and asks to confirm; the tools are then in Copilot's agent mode.</p>
+                </Step>
+                <Step n={2} title="Or by hand, in .vscode/mcp.json">
+                  <Code id="vscode" text={JSON.stringify({ servers: { [data.server_name]: { type: "http", url: data.url } } }, null, 2)} />
+                </Step>
+              </ol>
+            )}
 
-              {app === "claude-code" && (
-                <ol className="space-y-3">
-                  <Step n={1} title="Run this command in a terminal">
-                    <Code id="claude-code" text={`claude mcp add --transport http --scope user ${data.server_name} ${data.url}`} />
-                  </Step>
-                  <Note>
-                    A computer set up with the install prompt already has it, with its own token. This command is for another computer, or to plug
-                    the brain in without installing anything.
-                  </Note>
-                </ol>
-              )}
+            {app === "claude-code" && (
+              <ol className="space-y-3">
+                <Step n={1} title="Run this command in a terminal">
+                  <Code id="claude-code" text={`claude mcp add --transport http --scope user ${data.server_name} ${data.url}`} />
+                </Step>
+                <Note>
+                  A computer set up with the install prompt already has it, with its own token. This command is for another computer, or to plug
+                  the brain in without installing anything.
+                </Note>
+              </ol>
+            )}
 
-              {app === "codex" && (
-                <ol className="space-y-3">
-                  <Step n={1} title="Run this command in a terminal">
-                    <Code id="codex" text={`codex mcp add ${data.server_name} --url ${data.url}`} />
-                  </Step>
-                  <Note>Check it with codex mcp list. A computer set up with the install prompt already has it.</Note>
-                </ol>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+            {app === "codex" && (
+              <ol className="space-y-3">
+                <Step n={1} title="Run this command in a terminal">
+                  <Code id="codex" text={`codex mcp add ${data.server_name} --url ${data.url}`} />
+                </Step>
+                <Note>Check it with codex mcp list. A computer set up with the install prompt already has it.</Note>
+              </ol>
+            )}
+          </div>
+        </>
+      )}
+    </>
   )
 
   function Code({ id, text }: { id: string; text: string }) {
