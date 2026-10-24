@@ -16,6 +16,7 @@ import { PostgresStore } from "../lib/store/postgres"
 import { getAccess, redactEvent } from "../lib/access"
 import {
   createEventPoller,
+  exploreEntity,
   getEntityContext,
   getPersonContext,
   getState,
@@ -49,6 +50,7 @@ import {
 import { isBlockedAddress, scrapeUrl, scrapeUrlWith } from "../lib/scrape"
 import * as automationsRoute from "../app/api/automations/route"
 import * as connectorRoute from "../app/api/connector/route"
+import * as entitiesRoute from "../app/api/entities/route"
 import * as zoneRoute from "../app/api/zones/[id]/route"
 import * as healthRoute from "../app/api/health/route"
 import * as adminZonesRoute from "../app/api/admin/zones/route"
@@ -1043,7 +1045,7 @@ async function main() {
       const mcpTools = await rpc(acme.id, token, { jsonrpc: "2.0", id: 2, method: "tools/list" })
       assert(
         mcpTools.data.result.tools.map((t: { name: string }) => t.name).join() ===
-          "search_brain,get_document,get_zone_summary,list_zones,whoami_context,company_status,remember,connected_tools,use_connected_tool,show_brain,brain_activity,show_automations,set_automation_status,show_team",
+          "search_brain,explore_entity,get_document,get_zone_summary,list_zones,whoami_context,company_status,remember,connected_tools,use_connected_tool,show_brain,brain_activity,show_automations,set_automation_status,show_team",
         "MCP: the brain's tools (connector tools and MCP Apps included), without a company parameter (one company per server)",
       )
       assert(!JSON.stringify(mcpTools.data).includes('"company"'), "MCP: no company parameter")
@@ -1481,6 +1483,46 @@ async function main() {
   )
   // Cleanup: a next run on the same storage must not find these decisions as near-duplicates.
   for (const id of [firstDecision.ids[0], revised.ids[0]]) assert(await store.deleteItem(id), "test decision deleted")
+
+  console.log("\n— Knowledge graph: one hop from the best results, an entity's neighborhood (explore_entity)")
+  // A customer of this run only, whose name shares no word with the search: the run's tag, reversed. Facts only: a
+  // decision or a procedure could replace one of the demo's.
+  const rev = [...run].reverse().join("")
+  const lumen = { type: "client" as const, name: `Lumen ${rev}` }
+  const fact = (zone: string, title: string, body: string): KnowledgeItemInput => ({
+    zone, kind: "fact", title, body, entities: [lumen], source: { app: "Terminal", tool: "claude-code", at: new Date().toISOString() }, confidence: 0.8,
+  })
+  const linked = await ingestItems(hugo, [
+    fact("dev", `Smoke ${run}: the webhook signing secret rotates every quarter`, `For this customer's integration (run ${run}).`),
+    fact("dev", "Twelve-month pilot contract", `Renewal in March, invoiced yearly (ref ${rev}).`),
+  ])
+  const discount = await ingestItems(jm, [fact("finance", "Pilot invoiced at a discount", `Half price the first quarter (ref ${rev}).`)])
+  assert(linked.inserted === 2 && discount.inserted === 1, "three items citing the same customer, one of them in finance")
+  const [rotate, pilot] = linked.ids
+  const graphQuery = `${run} webhook signing secret`
+  const forHugo = (await queryBrain(hugo, { query: graphQuery })).items
+  const firstLinked = forHugo.findIndex((i) => i.via)
+  const viaPilot = forHugo.find((i) => i.id === pilot)?.via
+  assert(forHugo[0]?.id === rotate, "graph: the knowledge with the query's words comes first")
+  assert(viaPilot?.entity.name === lumen.name && viaPilot.from.id === rotate, "graph: the contract with the same customer comes too, without any word of the query, saying which entity links it")
+  assert(firstLinked > 0 && forHugo.slice(firstLinked).every((i) => i.via), "graph: linked knowledge only takes the last places")
+  assert(!forHugo.some((i) => i.id === discount.ids[0]), "graph: nothing from a zone the search does not read (finance)")
+  assert((await queryBrain(claire, { query: graphQuery })).items.some((i) => i.id === discount.ids[0] && i.via), "graph: the admin, who reads finance, gets the discount too")
+  const explored = await exploreEntity(hugo, { name: lumen.name.toUpperCase() })
+  assert(
+    explored.entity?.name === lumen.name && explored.items.map((i) => i.id).sort().join() === [rotate, pilot].sort().join() && explored.zones.join() === "dev",
+    "explore_entity: whatever the case, the knowledge citing the customer in the zones read",
+  )
+  const jmLumen = await exploreEntity(jm, { name: lumen.name })
+  assert(jmLumen.items.map((i) => i.id).join() === discount.ids[0] && jmLumen.zones.join() === "finance", "explore_entity: finance only gets finance's knowledge")
+  assert((await call(entitiesRoute.GET, "/api/entities", { session: hugoSession })).status === 400, "GET /api/entities without a name: 400")
+  const byRoute = await call(entitiesRoute.GET, `/api/entities?name=${rev}&agent=mcp`, { session: hugoSession })
+  assert(byRoute.status === 200 && byRoute.data.entity?.name === lumen.name, "GET /api/entities: a part of the name is enough when only one entity has it")
+  const explores = await lastEvent(hugo)
+  assert(explores.agent === "mcp" && explores.summary === `Explores ${lumen.name}` && explores.zones.join() === "dev", "explore_entity by an agent: its zone lights up")
+  const unknownLumen = await exploreEntity(hugo, { name: `Lumen ${rev}x` })
+  assert(unknownLumen.entity === null && unknownLumen.suggestions.some((e) => e.name === lumen.name), "explore_entity: an unknown name, the closest names instead")
+  for (const id of [rotate, pilot, discount.ids[0]]) assert(await store.deleteItem(id), "graph test item deleted")
 
   console.log("\n— Connectors: external tasks inserted, updated, closed")
   // Only count this run's tasks: the closing loop also returns the open tasks of a previous run.

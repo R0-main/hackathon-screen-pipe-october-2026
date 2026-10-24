@@ -8,7 +8,10 @@ import {
   classifyZones,
   isCoreZone,
   detectAutomations,
+  entityKey,
   expandQuery,
+  graphNeighbors,
+  graphSlots,
   heuristicStatus,
   likeness,
   looksPersonal,
@@ -19,11 +22,14 @@ import {
   rrf,
   scoreZones,
   strongEnough,
+  tokenize,
   truncate,
   type AgentEvent,
   type AgentEventInput,
   type AgentName,
   type CompanyStatus,
+  type EntityType,
+  type GraphVia,
   type KnowledgeItem,
   type KnowledgeItemInput,
   type Profile,
@@ -222,7 +228,7 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
   const filter = input.zones?.length ? input.zones : null
   const searched = filter ? filter.filter((z) => readable.includes(z)) : readable
   // Readable zones + the user's own items, even filed in a zone they don't read (right of review).
-  const results = (await hybridSearch(input.query, searched, input.limit ?? 8, viewer.profile.id)).filter((r) => !filter || filter.includes(r.zone))
+  const results = (await searchWithGraph(input.query, searched, input.limit ?? 8, viewer.profile.id)).filter((r) => !filter || filter.includes(r.zone))
   // Only readable zones light up: a search is never broadcast into a zone you don't read.
   let hit = [...new Set(results.filter((r) => readable.includes(r.zone)).slice(0, 3).map((r) => r.zone))]
   if (hit.length === 0) hit = classifyZones(input.query, allZones, 2).filter((z) => readable.includes(z))
@@ -308,6 +314,36 @@ export async function hybridSearch(query: string, zones: string[], limit: number
     .slice(0, limit)
 }
 
+/** A search result; `via` when the knowledge graph brought it rather than the words of the query. */
+export type SearchHit = ScoredItem & { via?: GraphVia }
+
+/** Results the graph starts from: the first direct ones. */
+const GRAPH_SEEDS = 3
+/** Items read around the seeds' entities, most recent first. */
+const GRAPH_CANDIDATES = 200
+
+/**
+ * hybridSearch, completed by the knowledge graph: the items that cite the same customers, projects, tools or people
+ * as the first results, even without any word of the query (the staging migration that times out, next to "how do we
+ * deploy?"). They take the last places only (graphSlots: 2 out of 8), never above a direct result, with `via` saying
+ * which entity links them to which result. Same scope as the search: the zones searched and the user's own items,
+ * nothing superseded.
+ */
+export async function searchWithGraph(query: string, zones: string[], limit: number, authorId?: string): Promise<SearchHit[]> {
+  const direct: SearchHit[] = await hybridSearch(query, zones, limit, authorId)
+  const slots = graphSlots(limit)
+  const seeds = direct.slice(0, GRAPH_SEEDS)
+  const keys = [...new Set(seeds.flatMap((s) => s.entities.map(entityKey)))]
+  if (slots === 0 || keys.length === 0) return direct
+  const { items, degree } = await store().entityNeighborhood({ keys, zones, authorId, limit: GRAPH_CANDIDATES })
+  const known = new Set(direct.map((d) => d.id))
+  const hits = graphNeighbors(seeds, items, degree).filter((h) => !known.has(h.id)).slice(0, slots)
+  if (hits.length === 0) return direct
+  const byId = new Map(items.map((i) => [i.id, i]))
+  const linked: SearchHit[] = hits.map((h) => ({ ...byId.get(h.id)!, score: 0, via: h.via }))
+  return [...direct.slice(0, Math.min(direct.length, limit - linked.length)), ...linked]
+}
+
 /** Entities (clients, projects, tools…) most cited in the viewer's readable zones. */
 export async function listEntitiesFor(viewer: Viewer, limit = 200) {
   return store().topEntities({ zones: viewer.access.readable, limit })
@@ -345,6 +381,48 @@ export async function getEntityContext(viewer: Viewer, type: string, name: strin
     related: [...related.values()].sort((a, b) => b.count - a.count).slice(0, 20),
     names: Object.fromEntries(items.map((i) => [i.author_id, names.get(i.author_id) ?? "?"])),
   }
+}
+
+/** Knowledge read by explore_entity around one entity. */
+const ENTITY_ITEMS = 30
+
+/**
+ * MCP explore_entity: an entity's place in the knowledge graph, in the zones the viewer reads (and their own
+ * knowledge): the knowledge that cites it and the entities most often cited with it, to walk on from. Without a type,
+ * the most cited entity of that name; a single entity whose name contains it ("Kalia" → "Kalia Santé") is taken as
+ * well; otherwise nothing, with the closest names as suggestions. `agent`: the zones concerned light up, without the
+ * name when it is a person's.
+ */
+export async function exploreEntity(viewer: Viewer, input: { name: string; type?: EntityType; agent?: AgentName }) {
+  const s = store()
+  const wanted = normalize(input.name.trim())
+  const known = (await s.topEntities({ zones: viewer.access.readable, limit: 500 })).filter((e) => !input.type || e.type === input.type)
+  const partial = wanted.length >= 3 ? known.filter((e) => normalize(e.name).includes(wanted)) : []
+  const match = known.find((e) => normalize(e.name) === wanted) ?? (partial.length === 1 ? partial[0] : undefined) ?? (input.type ? { type: input.type, name: input.name.trim() } : undefined)
+  const ctx = match ? await getEntityContext(viewer, match.type, match.name) : null
+  if (!ctx) {
+    const words = new Set(tokenize(input.name))
+    const suggestions = known
+      .filter((e) => normalize(e.name).includes(wanted) || tokenize(e.name).some((w) => words.has(w)))
+      .slice(0, 8)
+      .map(({ type, name, count }) => ({ type, name, count }))
+    return { entity: null, zones: [] as string[], items: [], related: [], suggestions }
+  }
+  const zones = ctx.zones.filter((z) => canRead(viewer.access, z))
+  if (input.agent && zones.length) {
+    await s.insertEvents([
+      {
+        user_id: viewer.real.id,
+        agent: input.agent,
+        type: "query",
+        zones,
+        summary: ctx.type === "person" ? undefined : truncate(redactText(`Explores ${ctx.name}`), 200),
+        at: new Date().toISOString(),
+      },
+    ])
+  }
+  const items = (await withDocuments(viewer, ctx.items.slice(0, ENTITY_ITEMS))).map((i) => ({ ...i, author: ctx.names[i.author_id] ?? "?" }))
+  return { entity: { type: ctx.type, name: ctx.name }, total: ctx.items.length, zones, items, related: ctx.related, suggestions: [] }
 }
 
 export type ZoneView = Zone & {

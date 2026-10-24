@@ -131,7 +131,8 @@ connector address to paste, nothing to install). That is how sales and finance u
 
 | Tool                                   | What the agent gets                                                                                                        |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `search_brain`                         | The team's decisions, procedures, facts, tasks and questions, with the documents behind them, in the zones its owner reads. |
+| `search_brain`                         | The team's decisions, procedures, facts, tasks and questions, with the documents behind them, in the zones its owner reads. The last results come through the knowledge graph: what cites the same customer or project as the best ones. |
+| `explore_entity`                       | Everything the team knows about a customer, project, tool or person, and the entities most often cited with it, to walk the graph. |
 | `get_document`                         | The full text of a document kept in the brain: the revenue report behind a figure, a price list, a spec.                   |
 | `get_zone_summary`, `list_zones`       | What a zone knows (summary, goals, next steps, who did what), and which zones exist.                                       |
 | `company_status`                       | Where the company stands, per zone: goals, progress, next steps.                                                           |
