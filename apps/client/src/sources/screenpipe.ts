@@ -756,7 +756,8 @@ export async function readScreenpipe(
     const at = c.ended_at < final ? c.ended_at : final
     result.commits.push({ covers, apply: (s) => bump(s, at) })
   }
-  for (const [id, l] of grouped.lines) result.commits.push({ covers: [id], apply: (s) => rememberLines(s, l) })
+  // The 7 days are counted from the end of the read, not from the clock: the same read keeps the same lines.
+  for (const [id, l] of grouped.lines) result.commits.push({ covers: [id], apply: (s) => rememberLines(s, l, until.getTime()) })
   result.commits.push({ covers: conversations.map((c) => c.id), apply: (s) => bump(s, final) })
   result.commits.push({
     covers: [],
