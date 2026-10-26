@@ -1,9 +1,11 @@
 // Search evaluation on the Encore demo company: npm run eval (after npm run seed).
 // For each question, a given knowledge item (recognized by part of its title) is expected in the top 3
 // results. Prints precision@1, success@3 and MRR, with or without embeddings depending on the configuration.
-// To add a case: one line in CASES. A case that regresses shows up right away.
+// Then the context the knowledge graph adds: knowledge that shares no word with the question, expected among the 8
+// results of search_brain, with the graph and without it.
+// To add a case: one line in CASES (or GRAPH_CASES). A case that regresses shows up right away.
 
-import { hybridSearch } from "../lib/brain"
+import { hybridSearch, searchWithGraph } from "../lib/brain"
 import { getEmbeddings } from "../lib/embeddings"
 import { getStore, runInOrg } from "../lib/store"
 
@@ -39,6 +41,22 @@ export const CASES: Case[] = [
   { query: "Fleet & Mobility convention leads", expect: "40% of the year's B2B leads" },
 ]
 
+/**
+ * Knowledge only the graph reaches: no word in common with the question, but the same customer, project or tool as
+ * the best results (the B2B lease next to the Kalia Santé pilot, the price freeze next to a failing migration, the
+ * backup restore next to the deployment).
+ */
+export const GRAPH_CASES: Case[] = [
+  { query: "Kalia Santé pilot", expect: "New B2B lease" },
+  { query: "VAT return", expect: "bank reconciliation" },
+  { query: "Groupe Vallière", expect: "Prepare an Encore B2B demo" },
+  { query: "staging migration fails", expect: "Black Friday prices freeze" },
+  { query: "how do we deploy", expect: "Restore a Supabase backup" },
+]
+
+/** Results of search_brain (MCP), where the graph cases are expected. */
+const CONTEXT_LIMIT = 8
+
 async function main() {
   const store = getStore()
   const profiles = await store.listProfiles()
@@ -52,10 +70,14 @@ async function main() {
   let s3 = 0
   let mrr = 0
   const failures: string[] = []
+  const found = (rs: { title: string }[], c: Case) => rs.findIndex((r) => r.title.toLowerCase().includes(c.expect.toLowerCase()))
+  let withGraph = 0
+  let withoutGraph = 0
   await runInOrg(admin.org_id, async () => {
     for (const c of CASES) {
-      const results = await hybridSearch(c.query, c.zones ?? zones, 5)
-      const rank = results.findIndex((r) => r.title.toLowerCase().includes(c.expect.toLowerCase()))
+      // What agents get: the direct results first, the graph only takes the last places.
+      const results = await searchWithGraph(c.query, c.zones ?? zones, 5)
+      const rank = found(results, c)
       if (rank === 0) p1++
       if (rank >= 0 && rank < 3) s3++
       if (rank >= 0) mrr += 1 / (rank + 1)
@@ -63,10 +85,25 @@ async function main() {
       console.log(`${mark} ${c.query.padEnd(44)} → ${rank >= 0 ? `rank ${rank + 1}` : "missing"}  (${c.expect})`)
       if (rank < 0 || rank >= 3) failures.push(`${c.query}: ${results.map((r) => r.title).slice(0, 3).join(" | ") || "no results"}`)
     }
+    console.log("")
+    console.log(`Context through the knowledge graph (expected among the ${CONTEXT_LIMIT} results, without any word of the question):`)
+    for (const c of GRAPH_CASES) {
+      const results = await searchWithGraph(c.query, c.zones ?? zones, CONTEXT_LIMIT)
+      const rank = found(results, c)
+      const direct = found(await hybridSearch(c.query, c.zones ?? zones, CONTEXT_LIMIT), c) >= 0
+      if (rank >= 0) withGraph++
+      if (direct) withoutGraph++
+      const via = rank >= 0 ? results[rank].via : undefined
+      const how = rank < 0 ? "missing" : via ? `rank ${rank + 1}, via ${via.entity.name} (${via.entity.type})` : `rank ${rank + 1}, direct`
+      console.log(`${rank >= 0 ? "✓" : "✗"} ${c.query.padEnd(44)} → ${how}  (${c.expect})`)
+      if (rank < 0) failures.push(`${c.query} (graph): ${results.map((r) => r.title).join(" | ") || "no results"}`)
+    }
   })
   const n = CASES.length
   console.log("")
   console.log(`precision@1 ${((p1 / n) * 100).toFixed(0)}%   success@3 ${((s3 / n) * 100).toFixed(0)}%   MRR ${(mrr / n).toFixed(2)}   (${n} questions)`)
+  const g = GRAPH_CASES.length
+  console.log(`context@${CONTEXT_LIMIT} ${((withGraph / g) * 100).toFixed(0)}% with the graph, ${((withoutGraph / g) * 100).toFixed(0)}% without   (${g} questions)`)
   if (failures.length) {
     console.log("")
     console.log("To look at:")

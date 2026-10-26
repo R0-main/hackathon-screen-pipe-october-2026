@@ -4,10 +4,11 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
-import type { AgentName, Entity, KnowledgeItemInput, KnowledgeKind, Profile, Zone } from "./types"
+import type { AgentName, Entity, EntityType, KnowledgeItemInput, KnowledgeKind, Profile, Zone } from "./types"
+import type { GraphVia } from "./graph"
 import type { BrainDocument, DocumentRef } from "./documents"
 import { formatBytes } from "./documents"
-import { KNOWLEDGE_KINDS } from "./types"
+import { ENTITY_TYPES, KNOWLEDGE_KINDS } from "./types"
 import { DEFAULT_ZONES, classifyZones } from "./zones"
 import { extractEntities, type ZoneHint } from "./distill"
 import { redactText } from "./privacy"
@@ -48,6 +49,8 @@ export type ApiItem = {
   score?: number
   /** Documents (PDF, Word, Excel…) attached to the knowledge, among those the user can open. */
   documents?: DocumentRef[]
+  /** Brought by the knowledge graph, not by the words of the query: the entity it shares with which result. */
+  via?: GraphVia
 }
 
 /** A document found by a search or listed in a zone. */
@@ -61,6 +64,20 @@ export type QueryResult = {
   items: ApiItem[]
   /** Missing from an older brain. */
   documents?: ApiDocument[]
+}
+
+/**
+ * GET /api/entities?name=…: an entity's place in the knowledge graph, in the zones the user reads: the knowledge that
+ * cites it and the entities most often cited with it. `entity` null: nothing cites that name, `suggestions` are close ones.
+ */
+export type EntityResult = {
+  entity: { type: string; name: string } | null
+  /** Knowledge items citing it, when more than `items` were returned. */
+  total?: number
+  zones: string[]
+  items: ApiItem[]
+  related: { type: string; name: string; count: number }[]
+  suggestions: { type: string; name: string; count: number }[]
 }
 
 /** GET /api/documents/:id: the document, its text, and the knowledge it backs. */
@@ -123,6 +140,8 @@ export interface BrainToolsApi {
   ingest(items: KnowledgeItemInput[], agent?: AgentName): Promise<IngestResult>
   /** A document and its text (the zone lights up for `agent`). */
   document?(id: string, agent?: AgentName): Promise<DocumentResult>
+  /** An entity's neighborhood in the knowledge graph (its zones light up for `agent`); missing from an older brain. */
+  entity?(input: { name: string; type?: EntityType }, agent?: AgentName): Promise<EntityResult>
   /** Connector tools (Notion, Linear, GitHub…) the admin opened to agents. */
   connectedTools?(input: { connector?: string; query?: string }): Promise<ConnectedTools>
   callConnectedTool?(input: { connector: string; tool: string; arguments: Record<string, unknown> }): Promise<ConnectedCall>
@@ -172,7 +191,8 @@ function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
     .join(" · ")
   const ents = i.entities?.length ? `\nEntities: ${i.entities.map((e) => e.name).join(", ")}` : ""
   const docs = i.documents?.length ? `\nDocuments: ${i.documents.map(docLabel).join(", ")}` : ""
-  return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}${docs}`
+  const via = i.via ? `\nLinked through the knowledge graph: shares ${i.via.entity.name} (${i.via.entity.type}) with "${i.via.from.title}".` : ""
+  return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}${docs}${via}`
 }
 
 /** "revenus-T3.pdf (20 KB, id `…`)": the id is what get_document takes. */
@@ -196,9 +216,39 @@ export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
       `Try other keywords (customer, tool or project name) or list_zones to see the available areas.${restricted}`
     )
   }
-  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched})`
+  const linked = r.items.filter((i) => i.via).length
+  const graph = linked ? `, ${linked} of them linked through the knowledge graph` : ""
+  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched}${graph})`
   const docs = r.documents?.length ? `\n\n${documentsBlock(r.documents, zoneName, "Matching documents")}` : ""
   return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${docs}${restricted}`
+}
+
+/** Knowledge listed by explore_entity: the most recent, each in a few lines (search_brain gives the full text). */
+export const ENTITY_ITEMS_FOR_AGENT = 12
+
+export function formatEntity(r: EntityResult, asked: string, zoneName: ZoneNamer): string {
+  if (!r.entity) {
+    const close = r.suggestions.length
+      ? `\n\nClosest names in the brain: ${r.suggestions.map((e) => `${e.name} (${e.type})`).join(", ")}. Try explore_entity with one of them.`
+      : "\n\nTry search_brain with words instead, or list_zones to see the available areas."
+    return `Nothing in the brain cites "${asked}" in the zones you can read.${close}`
+  }
+  const e = r.entity
+  const shown = r.items.slice(0, ENTITY_ITEMS_FOR_AGENT)
+  const lines = shown.map((i) => {
+    const meta = [zoneName(i.zone), KIND_LABELS[i.kind] ?? i.kind, i.author ?? "?", shortDate(i.source?.at ?? i.created_at)].join(" · ")
+    return `- **${i.title}** (${meta})\n  ${truncate(i.body.replace(/\s+/g, " ").trim(), 280)}`
+  })
+  const total = Math.max(r.total ?? 0, r.items.length)
+  const more = total > shown.length ? `\n- …and ${total - shown.length} more (search_brain "${e.name}" for the full text).` : ""
+  const related = r.related.length
+    ? `\n\n### Often cited with it\n${r.related.slice(0, 10).map((x) => `- ${x.name} (${x.type}), ${x.count} time${x.count > 1 ? "s" : ""}`).join("\n")}\n\nWalk on with explore_entity on one of them.`
+    : ""
+  const zones = r.zones.length ? r.zones.map(zoneName).join(", ") : "none you can read"
+  return (
+    `## ${e.name} (${e.type}) in the company brain\n${total} knowledge item${total > 1 ? "s" : ""} cite${total > 1 ? "" : "s"} it (zones: ${zones})\n\n` +
+    `${lines.join("\n")}${more}${related}`
+  )
 }
 
 /** Text given to the agent: enough for a quarterly report or a price list, bounded for its context. */
@@ -404,6 +454,8 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         "projects and tools, open tasks and questions, fed by the whole team's AI sessions, and the documents (PDF, Word, " +
         "Excel…) that back them (read one with get_document). Use it BEFORE guessing " +
         "whenever a question touches the company's context (\"how do we deploy?\", \"what did we decide for X?\", \"who handles customer Y?\"). " +
+        "The last results can come from the knowledge graph: knowledge that cites the same customer, project or tool as the " +
+        "best results, even without the query's words (each says which entity links it). " +
         "Only the zones the user has access to are searched.",
       inputSchema: {
         query: z.string().min(1).max(500).describe("The question or the keywords, in natural language (e.g. \"deploy to production\")."),
@@ -418,6 +470,30 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         await ensureZones(c)
         const r = await c.api.query({ query, zones: zones?.map((x) => resolveZone(c, x)), limit, agent: "mcp" })
         return formatQuery(r, namer(c))
+      }),
+  )
+
+  server.registerTool(
+    "explore_entity",
+    {
+      title: "Explore a customer, project, tool or person",
+      description:
+        "Walks the company brain's knowledge graph from one entity (a customer, a project, a tool, a person or a document): " +
+        "everything the team knows that cites it, and the entities most often cited with it, to explore further. Use it to " +
+        "gather the whole context around a name (\"what do we know about Kalia Santé?\", \"everything about the CSR report\"). " +
+        "Only the zones the user has access to are read.",
+      inputSchema: {
+        name: z.string().min(1).max(200).describe("The entity's name, as the team writes it (e.g. \"Kalia Santé\", \"Supabase\")."),
+        type: z.enum(ENTITY_TYPES).optional().describe("Optional: client, project, tool, person or doc, when a name has several (otherwise the most cited)."),
+        ...companyParam,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ name, type, company }) =>
+      guard(company, async (c) => {
+        if (!c.api.entity) return "This brain does not know explore_entity yet: update the server."
+        await ensureZones(c)
+        return formatEntity(await c.api.entity({ name: name.trim(), type }, "mcp"), name.trim(), namer(c))
       }),
   )
 

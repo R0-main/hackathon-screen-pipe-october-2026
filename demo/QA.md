@@ -80,8 +80,8 @@ own items and admins any item.
 ## Agents and MCP
 
 **"How does an agent actually use the brain?"**
-Through the company MCP server, installed in Claude Code and Codex by the prompt: `search_brain`, `get_document`,
-`get_zone_summary`, `company_status`, `remember` and more (14 tools). Each query lights up the zone it read on the
+Through the company MCP server, installed in Claude Code and Codex by the prompt: `search_brain`, `explore_entity`,
+`get_document`, `get_zone_summary`, `company_status`, `remember` and more (15 tools). Each query lights up the zone it read on the
 dashboard. For Claude, ChatGPT, Cursor or VS Code there is "Connect an AI" on each person's page: a connector address,
 no install needed. That is how sales and finance use it.
 
@@ -95,6 +95,13 @@ Retrieval is one piece. The product is upstream and around it: capture from plac
 filtering on the computer, distillation into typed knowledge (decision, procedure, fact, task), zones and rights,
 documents that travel with their knowledge, automations detected from behavior, and agents that can write back with
 `remember`.
+
+**"Is there a knowledge graph?"**
+Yes. Each knowledge item is linked to the customers, projects, tools, people and documents it cites. `search_brain`
+follows it one hop: after the direct results, it adds the knowledge that cites the same customer or project as the best
+ones, even with none of the query's words, and says which entity links it. Rare entities weigh more, ones cited
+everywhere are skipped, and only readable zones are read. `explore_entity` lets an agent walk it: everything known
+about Kalia Santé, then what it is most often cited with.
 
 ## Product
 

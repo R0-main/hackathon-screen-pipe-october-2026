@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from "node:crypto"
 import {
   CORE_ZONE,
   DEFAULT_ZONES,
+  entityKey,
   normalize,
   sessionOf,
   tokenize,
@@ -485,6 +486,20 @@ export class FileStore implements BrainStore {
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, f.limit ?? 100)
       .map(publicItem)
+  }
+
+  async entityNeighborhood(f: { keys: string[]; zones: string[]; authorId?: string; limit?: number }) {
+    const wanted = new Set(f.keys)
+    const allowed = new Set(f.zones)
+    const degree: Record<string, number> = {}
+    const citing = this.load().items.filter((i) => {
+      if (i.superseded_by || !(allowed.has(i.zone) || (f.authorId && i.author_id === f.authorId))) return false
+      const hit = [...new Set(i.entities.map(entityKey))].filter((k) => wanted.has(k))
+      for (const k of hit) degree[k] = (degree[k] ?? 0) + 1
+      return hit.length > 0
+    })
+    const items = citing.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, f.limit ?? 200).map(publicItem)
+    return { items, degree }
   }
 
   async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }) {

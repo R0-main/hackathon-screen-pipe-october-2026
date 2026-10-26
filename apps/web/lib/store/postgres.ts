@@ -852,6 +852,32 @@ export class PostgresStore implements BrainStore {
     return rows.map(toItem)
   }
 
+  async entityNeighborhood(f: { keys: string[]; zones: string[]; authorId?: string; limit?: number }) {
+    const sql = this.sql
+    const author = f.authorId && UUID_RE.test(f.authorId) ? f.authorId : null
+    const keys = [...new Set(f.keys)]
+    if (keys.length === 0 || (f.zones.length === 0 && !author)) return { items: [], degree: {} }
+    const org = await this.orgId()
+    const live = this.live(await this.hasQuality(), "k")
+    const scope = f.zones.length && author ? sql`(k.zone in ${sql(f.zones)} or k.author_id = ${author})` : f.zones.length ? sql`k.zone in ${sql(f.zones)}` : sql`k.author_id = ${author}`
+    // Types and names follow the entities' unique index (org, type, name); the key then checks each pair exactly.
+    const types = [...new Set(keys.map((k) => k.slice(0, k.indexOf(":"))))]
+    const names = [...new Set(keys.map((k) => k.slice(k.indexOf(":") + 1)))]
+    const cited = sql`e.org_id = ${org} and e.type in ${sql(types)} and e.norm_name in ${sql(names)} and (e.type || ':' || e.norm_name) in ${sql(keys)}`
+    const [counts, rows] = await Promise.all([
+      sql`select e.type || ':' || e.norm_name as key, count(distinct k.id)::int as n
+        from entities e join edges ed on ed.entity_id = e.id join knowledge_items k on k.id = ed.item_id
+        where ${cited} and k.org_id = ${org} and ${scope} ${live}
+        group by 1`,
+      sql`select distinct k.* from knowledge_items k
+        join edges ed on ed.item_id = k.id join entities e on e.id = ed.entity_id
+        where ${cited} and k.org_id = ${org} and ${scope} ${live}
+        order by k.created_at desc
+        limit ${f.limit ?? 200}`,
+    ])
+    return { items: rows.map(toItem), degree: Object.fromEntries(counts.map((r: Row) => [r.key, r.n])) }
+  }
+
   async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }) {
     if (!(await this.hasQuality())) return []
     const sql = this.sql
