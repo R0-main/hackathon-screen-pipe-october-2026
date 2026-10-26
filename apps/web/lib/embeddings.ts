@@ -93,7 +93,7 @@ export async function embedDocuments(texts: string[]): Promise<number[][] | null
   return out
 }
 
-const QUERY_CACHE_MAX = 300
+const QUERY_CACHE_MAX = 500
 
 /** Vector of a query (cached: the dashboard and the MCP often ask the same questions); null without a provider or on failure. */
 export async function embedQuery(query: string): Promise<number[] | null> {
@@ -112,6 +112,25 @@ export async function embedQuery(query: string): Promise<number[] | null> {
     console.error("[embeddings]", err instanceof Error ? err.message : err)
     return null
   }
+}
+
+/**
+ * Vectors of many queries in a few requests (`batch` per request), into the cache embedQuery reads. For the
+ * evaluation, which asks ~170 questions in a row: one request per question would exceed a provider's rate limit
+ * (Voyage without a payment method: 3 requests a minute). Returns how many queries were embedded.
+ */
+export async function primeQueryCache(queries: string[], batch = 128): Promise<number> {
+  const p = getEmbeddings()
+  if (!p) return 0
+  const cache = (g.__brainQueryCache ??= new Map())
+  const keyOf = (q: string) => `${p.id}:${p.model}:${q.trim().toLowerCase()}`
+  const todo = [...new Map(queries.filter((q) => !cache.has(keyOf(q))).map((q) => [keyOf(q), q])).values()]
+  for (let i = 0; i < todo.length; i += batch) {
+    const part = todo.slice(i, i + batch)
+    const vectors = await p.embed(part.map(clip), "query")
+    part.forEach((q, n) => cache.set(keyOf(q), vectors[n]))
+  }
+  return todo.length
 }
 
 /** Ranks the candidates by cosine similarity with the query (closest first), above a threshold. */

@@ -10,7 +10,7 @@
 import type { KnowledgeItem } from "@brain/core"
 import { getAccess } from "../lib/access"
 import { hybridSearch, searchWithGraph } from "../lib/brain"
-import { getEmbeddings } from "../lib/embeddings"
+import { getEmbeddings, primeQueryCache } from "../lib/embeddings"
 import { getStore, runInOrg } from "../lib/store"
 import { DEMO_USERS } from "./demo-data"
 import { ACCESS_CASES, CASE_SETS, GRAPH_CASES, UNANSWERABLE, type Case } from "./eval-cases"
@@ -35,6 +35,12 @@ async function main() {
   if (!admin) throw new Error("No admin: run npm run seed first.")
   const provider = getEmbeddings()
   console.log(`Search: lexical + synonyms${provider ? ` + embeddings (${provider.id}, ${provider.model})` : " (no embeddings: VOYAGE_API_KEY or BRAIN_EMBEDDING_URL not set)"}`)
+  // Every question's vector in a few requests, before the searches: one request per question would hit the
+  // provider's rate limit, and a refused embedding silently falls back to words, which would skew the comparison.
+  if (provider) {
+    const queries = [...CASE_SETS.flatMap((set) => set.cases.map((c) => c.query)), ...GRAPH_CASES.map((c) => c.query), ...UNANSWERABLE, ...ACCESS_CASES.map((c) => c.query)]
+    console.log(`Query vectors: ${await primeQueryCache(queries)} computed in advance`)
+  }
   const failures: string[] = []
   const totals = { n: 0, p1: 0, s3: 0, mrr: 0, traps: 0, fell: 0 }
   const summary: string[] = []
