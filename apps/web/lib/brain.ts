@@ -45,7 +45,7 @@ import { canRead, canSeeEventContent, redactEvent } from "./access"
 import type { Viewer } from "./auth"
 import { getClaude } from "./ai"
 import { claudeKeyInfo } from "./claude-key"
-import { embedDocuments, embedQuery, embeddingText, getEmbeddings, rankBySimilarity } from "./embeddings"
+import { backfillEmbeddings, embedDocuments, embedQuery, embeddingText, getEmbeddings, rankBySimilarity } from "./embeddings"
 import { canPublishSkills, canSeeSkill } from "./skills"
 import { documentRef, listDocumentsFor, searchDocumentsFor, withDocuments } from "./documents"
 
@@ -147,6 +147,8 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     }
   }
   const inserted = prepared.length ? await store().insertItems(prepared) : []
+  // Knowledge from before embeddings were set up catches up, one batch per ingestion.
+  if (provider) await backfillEmbeddings(store(), provider).catch((err) => console.error("[embeddings] catch-up:", err instanceof Error ? err.message : err))
   for (const s of supersedes) {
     const next = inserted[s.index]
     if (!next) continue

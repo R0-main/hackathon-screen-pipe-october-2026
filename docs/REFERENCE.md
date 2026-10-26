@@ -105,11 +105,12 @@ demo/                 Demo script
   routes (`/etat`, `/connecteurs`, `/creer`…) redirect permanently to the English ones.
 - **Real-time feed**: the storage notifies the SSE stream as soon as an event is inserted (local emitter, or
   `LISTEN/NOTIFY` on Postgres); the periodic reread is only a safety net.
-- **Brain quality**: synonyms in search, optional semantic search (`VOYAGE_API_KEY` or an OpenAI-compatible
-  endpoint, Ollama included: `npm run embed` for existing data), automatic replacement of a revised decision or
-  procedure (the old one leaves the searches), graph search (the last results cite the same customers, projects or
-  tools as the best ones: rare entities weigh more, people and tools less, hubs not at all), Entities pages
-  (`/entities`), and `npm run eval` which measures search on the Encore demo.
+- **Brain quality**: synonyms in search, optional semantic search (`VOYAGE_API_KEY`, model `voyage-4-lite` by default, or an
+  OpenAI-compatible endpoint, Ollama included; knowledge already there gets its vectors a batch at a time with each
+  ingestion, or all at once with `npm run embed`), automatic replacement of a revised decision or procedure (the old
+  one leaves the searches), graph search (the last results cite the same customers, projects or tools as the best
+  ones: rare entities weigh more, people and tools less, hubs not at all), Entities pages (`/entities`), and
+  `npm run eval` which measures search on the Encore demo.
 
 ## Brain API
 
