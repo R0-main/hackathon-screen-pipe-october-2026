@@ -6,7 +6,13 @@
 /** Demo people the access cases search as (the key of DEMO_USERS). */
 export type DemoPerson = "claire" | "hugo" | "ines" | "jeanmarc" | "sarah" | "leo"
 
-export type Case = { query: string; expect: string | string[] }
+export type Case = {
+  query: string
+  expect: string | string[]
+  /** A tempting wrong item (part of its title): the question's words point to it. The case falls into the trap when it
+   * comes before the expected item, or when only it comes back. */
+  trap?: string
+}
 
 export type CaseSet = {
   name: string
@@ -119,11 +125,101 @@ const AGENT_QUESTIONS: Case[] = [
   { query: "Prepare the numbers for the board: what were revenue and margin last quarter?", expect: "Q3 2026 revenue" },
 ]
 
+/** The words point to the wrong item: only the meaning tells them apart. */
+const TRAPS: Case[] = [
+  { query: "the price we promised Kalia Santé per phone", expect: "Kalia Santé: 40-phone pilot", trap: "New B2B lease" },
+  { query: "price of our standard B2B lease", expect: "New B2B lease", trap: "Kalia Santé: 40-phone pilot" },
+  { query: "what is the VAT deadline", expect: "File the September VAT return", trap: "VAT margin scheme" },
+  { query: "why do we show the battery percentage on product pages", expect: "Customers choose on the battery", trap: "Measure the battery health" },
+  { query: "Stripe event fires before the return is scanned at the workshop", expect: "charge.refunded", trap: "Stripe payouts land" },
+  { query: "the workshop app gives no battery reading after a swap", expect: "Measure the battery health", trap: "The workshop sets the pace" },
+  { query: "when does Alma's money reach Qonto", expect: "Stripe payouts land on Qonto", trap: "bank reconciliation" },
+  { query: "eSIM problems among this month's support tickets", expect: "Top 3 October tickets", trap: "Transfer a customer's eSIM" },
+  { query: "a Supabase migration of the orders table that times out", expect: "Staging migration 0042", trap: "Restore a Supabase backup" },
+  { query: "the Groupe Vallière demo on November 5", expect: "Groupe Vallière (1,200 employees)", trap: "Prepare an Encore B2B demo" },
+  { query: "do laptops change the grading rules", expect: "No refurbished laptops before April", trap: "Screen grading" },
+  { query: "the WhatsApp history lost when moving to a new phone", expect: "WhatsApp chats lost", trap: "Transfer a customer's eSIM" },
+  // Harder: the wrong item shares more words with the question than the right one.
+  { query: "how do we restore the shop if a production deploy breaks", expect: "Deploy Encore to production", trap: "Restore a Supabase backup" },
+  { query: "battery health shown on the product page lifts sales", expect: "Customers choose on the battery", trap: "Measure the battery health" },
+  { query: "the return rate we present to the board", expect: "Quarterly board", trap: "Priority of the quarter" },
+  { query: "reconciling Stripe and Alma payouts every morning", expect: "bank reconciliation", trap: "Stripe payouts land on Qonto" },
+  { query: "spec of the CO₂ and e-waste report", expect: "Write the spec of the automatic CSR report", trap: "Groupe Vallière considers" },
+  { query: "customers afraid of losing their data when they transfer to a new phone", expect: "Customer interviews", trap: "Transfer a customer's eSIM" },
+  { query: "what do the grades Excellent, Very good and Fair mean", expect: "Encore words", trap: "Screen grading" },
+  { query: "someone to own grading quality at the workshop", expect: "Hire a workshop lead", trap: "Screen grading" },
+  { query: "VAT on phones sold to Belgian companies", expect: "Belgian companies", trap: "VAT margin scheme" },
+]
+
+/** The answer is a number, a date or a detail inside the text, not in the title. */
+const FIGURES: Case[] = [
+  { query: "how much does each return cost us", expect: "Priority of the quarter" },
+  { query: "how big is the Groupe Vallière deal in euros", expect: "Groupe Vallière (1,200 employees)" },
+  { query: "what is our gross margin", expect: ["Key figures", "Q3 2026 revenue"] },
+  { query: "how many technicians work at the workshop", expect: ["The workshop sets the pace", "Hire a workshop lead"] },
+  { query: "how much VAT do we expect to pay for September", expect: "File the September VAT return" },
+  { query: "what happens on November 17", expect: "Black Friday prices freeze" },
+  { query: "what is planned on November 5", expect: "Groupe Vallière (1,200 employees)" },
+  { query: "what must be done before December 15", expect: "Fleet & Mobility convention brings" },
+  { query: "when did the board approve postponing the raise", expect: "Series A postponed" },
+  { query: "how much money is tied up in phone stock", expect: "Monthly burn" },
+  { query: "what share of tickets does the AI answer on its own", expect: "Top 3 October tickets" },
+  { query: "the minimum battery health we guarantee", expect: "Customers choose on the battery" },
+  { query: "how many iPhones do we buy for Black Friday", expect: "Black Friday prices freeze" },
+  { query: "what does a buyback record keep for the tax office", expect: "VAT margin scheme" },
+]
+
+/** Who does what: the answer names a person or a partner, often in the text only. */
+const PEOPLE: Case[] = [
+  { query: "who is our accountant", expect: "Month-end close" },
+  { query: "who validates a price outside the usual band", expect: "Selling prices recomputed" },
+  { query: "who checks the CSR report before it is sent", expect: "Write the spec of the automatic CSR report" },
+  { query: "who decides on the Groupe Vallière side", expect: "Groupe Vallière (1,200 employees)" },
+  { query: "who prepares the financials for the board", expect: "Quarterly board" },
+  { query: "who should I ask about the workshop app", expect: "Who to ask at Encore" },
+  { query: "who was in the meeting that froze prices", expect: "Black Friday prices freeze" },
+]
+
+/** Asked in French, as the team does: the knowledge is written in English. */
+const FRENCH: Case[] = [
+  { query: "comment on déploie en production", expect: "Deploy Encore to production" },
+  { query: "restaurer une sauvegarde de la base", expect: "Restore a Supabase backup" },
+  { query: "TVA sur les téléphones rachetés à des particuliers", expect: "VAT margin scheme" },
+  { query: "quand est-ce qu'on lève des fonds", expect: "Series A postponed" },
+  { query: "combien nous coûte un retour", expect: "Priority of the quarter" },
+  { query: "rapprochement bancaire quotidien", expect: "bank reconciliation" },
+  { query: "transférer l'eSIM d'un client", expect: "Transfer a customer's eSIM" },
+  { query: "le prix du leasing pour les entreprises", expect: "New B2B lease" },
+  { query: "qui contacter pour la paie", expect: "Who to ask at Encore" },
+  { query: "objectif de ventes pour Noël", expect: "Q4 goal" },
+  { query: "pourquoi les clients abandonnent leur panier", expect: "Customer interviews" },
+  { query: "les horaires de l'atelier", expect: "The workshop sets the pace" },
+]
+
 export const CASE_SETS: CaseSet[] = [
   { name: "baseline", about: "the first questions, close to the titles", cases: BASELINE },
   { name: "paraphrases", about: "other words than the title", cases: PARAPHRASES },
   { name: "typos", about: "typos, missing accents, half names", cases: TYPOS },
   { name: "agent questions", about: "whole questions in the middle of a task", cases: AGENT_QUESTIONS },
+  { name: "traps", about: "the words point to the wrong item", cases: TRAPS },
+  { name: "figures & dates", about: "the answer is inside the text", cases: FIGURES },
+  { name: "people", about: "who does what", cases: PEOPLE },
+  { name: "french", about: "asked in French, written in English", cases: FRENCH },
+]
+
+/**
+ * Nothing in the brain answers these: the best search says so (no result) rather than serving whatever shares a word.
+ * Measured, not counted in the scores: answering nothing is a trade-off with finding the rest.
+ */
+export const UNANSWERABLE: string[] = [
+  "what is our parental leave policy",
+  "how do we handle GDPR data deletion requests",
+  "who is our insurance provider",
+  "what is the wifi password at the office",
+  "how many vacation days do employees get",
+  "do we ship to Canada",
+  "how is our Kubernetes cluster set up",
+  "what did we sign with Tesla",
 ]
 
 /**
@@ -152,4 +248,12 @@ export const ACCESS_CASES: (Partial<Case> & { as: DemoPerson; query: string })[]
   { as: "sarah", query: "Kalia Santé pilot", expect: "Kalia Santé: 40-phone pilot" },
   { as: "hugo", query: "Series A fundraising after Christmas" },
   { as: "leo", query: "VAT margin scheme on buybacks" },
+  { as: "leo", query: "monthly burn and runway" },
+  { as: "hugo", query: "how much VAT for September" },
+  { as: "hugo", query: "transfer a customer's eSIM", expect: "Transfer a customer's eSIM" },
+  { as: "sarah", query: "staging migration that times out" },
+  { as: "sarah", query: "Series A postponed to April" },
+  { as: "ines", query: "WhatsApp chats lost after switching phones" },
+  { as: "ines", query: "how do we deploy to production", expect: "Deploy Encore to production" },
+  { as: "jeanmarc", query: "how big is the Groupe Vallière deal" },
 ]

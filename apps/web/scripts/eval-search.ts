@@ -3,7 +3,8 @@
 // in what search_brain returns: precision@1, success@3 and MRR per set of questions, with or without embeddings
 // depending on the configuration. Then the context the knowledge graph adds (knowledge that shares no word with the
 // question, among the 8 results, with the graph and without it), and the access cases: a search as one person never
-// returns anything from a zone they do not read. An access failure makes the command fail.
+// returns anything from a zone they do not read. An access failure makes the command fail. Traps count the questions
+// whose words led the search to the tempting wrong item; unanswerable questions, how often the search returns nothing.
 // To add a case: one line in scripts/eval-cases.ts. A case that regresses shows up right away.
 
 import type { KnowledgeItem } from "@brain/core"
@@ -12,7 +13,7 @@ import { hybridSearch, searchWithGraph } from "../lib/brain"
 import { getEmbeddings } from "../lib/embeddings"
 import { getStore, runInOrg } from "../lib/store"
 import { DEMO_USERS } from "./demo-data"
-import { ACCESS_CASES, CASE_SETS, GRAPH_CASES, type Case } from "./eval-cases"
+import { ACCESS_CASES, CASE_SETS, GRAPH_CASES, UNANSWERABLE, type Case } from "./eval-cases"
 
 /** Results agents get from search_brain by default. */
 const LIMIT = 8
@@ -35,11 +36,12 @@ async function main() {
   const provider = getEmbeddings()
   console.log(`Search: lexical + synonyms${provider ? ` + embeddings (${provider.id}, ${provider.model})` : " (no embeddings: VOYAGE_API_KEY or BRAIN_EMBEDDING_URL not set)"}`)
   const failures: string[] = []
-  const totals = { n: 0, p1: 0, s3: 0, mrr: 0 }
+  const totals = { n: 0, p1: 0, s3: 0, mrr: 0, traps: 0, fell: 0 }
   const summary: string[] = []
   let withGraph = 0
   let withoutGraph = 0
   let accessFailed = 0
+  let silent = 0
 
   await runInOrg(admin.org_id, async () => {
     const zones = (await store.listZones()).map((z) => z.id)
@@ -49,6 +51,8 @@ async function main() {
       let p1 = 0
       let s3 = 0
       let mrr = 0
+      let traps = 0
+      let fell = 0
       for (const c of set.cases) {
         // What agents get: the direct results first, the graph only takes the last places.
         const results = await searchWithGraph(c.query, zones, LIMIT)
@@ -56,13 +60,18 @@ async function main() {
         if (rank === 0) p1++
         if (rank >= 0 && rank < 3) s3++
         if (rank >= 0) mrr += 1 / (rank + 1)
+        const trapRank = c.trap ? rankOf(results, { expect: c.trap }) : -1
+        const trapped = trapRank >= 0 && (rank < 0 || trapRank < rank)
+        if (c.trap) traps++
+        if (trapped) fell++
         const mark = rank === 0 ? "✓" : rank >= 0 && rank < 3 ? "~" : "✗"
-        console.log(`${mark} ${c.query.slice(0, 60).padEnd(60)} → ${rank >= 0 ? `rank ${rank + 1}` : "missing"}  (${label(c)})`)
+        const trapNote = trapped ? `, trapped by ${c.trap} (rank ${trapRank + 1})` : ""
+        console.log(`${mark} ${c.query.slice(0, 60).padEnd(60)} → ${rank >= 0 ? `rank ${rank + 1}` : "missing"}${trapNote}  (${label(c)})`)
         if (rank < 0 || rank >= 3) failures.push(`[${set.name}] ${c.query}: ${results.map((r) => r.title).slice(0, 3).join(" | ") || "no results"}`)
       }
       const n = set.cases.length
-      Object.assign(totals, { n: totals.n + n, p1: totals.p1 + p1, s3: totals.s3 + s3, mrr: totals.mrr + mrr })
-      summary.push(`${set.name.padEnd(16)} ${String(n).padStart(3)}   ${pct(p1, n)}         ${pct(s3, n)}       ${(mrr / n).toFixed(2)}`)
+      Object.assign(totals, { n: totals.n + n, p1: totals.p1 + p1, s3: totals.s3 + s3, mrr: totals.mrr + mrr, traps: totals.traps + traps, fell: totals.fell + fell })
+      summary.push(`${set.name.padEnd(16)} ${String(n).padStart(3)}   ${pct(p1, n)}         ${pct(s3, n)}       ${(mrr / n).toFixed(2)}${traps ? `   ${fell}/${traps}` : ""}`)
     }
 
     console.log(`\ngraph (expected among the ${LIMIT} results, without any word of the question)`)
@@ -76,6 +85,13 @@ async function main() {
       const how = rank < 0 ? "missing" : via ? `rank ${rank + 1}, via ${via.entity.name} (${via.entity.type})` : `rank ${rank + 1}, direct`
       console.log(`${rank >= 0 ? "✓" : "✗"} ${c.query.padEnd(60)} → ${how}  (${label(c)})`)
       if (rank < 0) failures.push(`[graph] ${c.query}: ${results.map((r) => r.title).join(" | ") || "no results"}`)
+    }
+
+    console.log("\nunanswerable (nothing in the brain answers: the best search returns nothing)")
+    for (const q of UNANSWERABLE) {
+      const results = await searchWithGraph(q, zones, LIMIT)
+      if (results.length === 0) silent++
+      console.log(`${results.length === 0 ? "✓" : "✗"} ${q.padEnd(60)} → ${results.length === 0 ? "nothing" : `${results.length} results, first: ${results[0].title}`}`)
     }
 
     console.log("\naccess (a search as one person: nothing from a zone they do not read)")
@@ -95,11 +111,12 @@ async function main() {
     }
   })
 
-  console.log(`\nset              questions  precision@1  success@3  MRR`)
+  console.log(`\nset              questions  precision@1  success@3  MRR    trapped`)
   for (const line of summary) console.log(line)
-  console.log(`${"all".padEnd(16)} ${String(totals.n).padStart(3)}   ${pct(totals.p1, totals.n)}         ${pct(totals.s3, totals.n)}       ${(totals.mrr / totals.n).toFixed(2)}`)
+  console.log(`${"all".padEnd(16)} ${String(totals.n).padStart(3)}   ${pct(totals.p1, totals.n)}         ${pct(totals.s3, totals.n)}       ${(totals.mrr / totals.n).toFixed(2)}   ${totals.fell}/${totals.traps}`)
   const g = GRAPH_CASES.length
   console.log(`\ncontext@${LIMIT}: ${withGraph}/${g} with the graph, ${withoutGraph}/${g} without`)
+  console.log(`unanswerable: ${silent}/${UNANSWERABLE.length} with no result`)
   console.log(`access: ${ACCESS_CASES.length - accessFailed}/${ACCESS_CASES.length} without a leak`)
   if (failures.length) {
     console.log("\nTo look at:")
