@@ -14,7 +14,8 @@ import { getEmbeddings, primeQueryCache } from "../lib/embeddings"
 import { getReranker, paceReranker, rerankFailures } from "../lib/rerank"
 import { getStore, runInOrg } from "../lib/store"
 import { DEMO_USERS } from "./demo-data"
-import { ACCESS_CASES, CASE_SETS, GRAPH_CASES, UNANSWERABLE, type Case } from "./eval-cases"
+import { ACCESS_CASES, CASE_SETS as ALL_SETS, GRAPH_CASES, UNANSWERABLE, type Case } from "./eval-cases"
+import { CORPUS_MARKER } from "./eval-corpus"
 
 /** Results agents get from search_brain by default. */
 const LIMIT = 8
@@ -46,11 +47,15 @@ async function main() {
   // Every question's vector in a few requests, before the searches: one request per question would hit the
   // provider's rate limit, and a refused embedding silently falls back to words, which would skew the comparison.
   if (provider) {
-    const queries = [...CASE_SETS.flatMap((set) => set.cases.map((c) => c.query)), ...GRAPH_CASES.map((c) => c.query), ...UNANSWERABLE, ...ACCESS_CASES.map((c) => c.query)]
+    const queries = [...ALL_SETS.flatMap((set) => set.cases.map((c) => c.query)), ...GRAPH_CASES.map((c) => c.query), ...UNANSWERABLE, ...ACCESS_CASES.map((c) => c.query)]
     console.log(`Query vectors: ${await primeQueryCache(queries)} computed in advance`)
   }
   const failures: string[] = []
-  const totals = { n: 0, p1: 0, s3: 0, mrr: 0, traps: 0, fell: 0 }
+  const totals = { n: 0, p1: 0, s3: 0, mrr: 0, traps: 0, fell: 0, outdated: 0 }
+  // The corpus sets run only with the evaluation corpus loaded (npm run eval:seed).
+  const withCorpus = (await store.listItems({ limit: 5000 })).some((i) => i.title === CORPUS_MARKER)
+  const CASE_SETS = ALL_SETS.filter((set) => !set.corpus || withCorpus)
+  console.log(`Corpus: ${withCorpus ? "demo + evaluation corpus" : "demo only (npm run eval:seed adds the evaluation corpus)"}`)
   const summary: string[] = []
   let withGraph = 0
   let withoutGraph = 0
@@ -81,7 +86,9 @@ async function main() {
         if (c.trap) traps++
         if (trapped) fell++
         const mark = rank === 0 ? "✓" : rank >= 0 && rank < 3 ? "~" : "✗"
-        const trapNote = trapped ? `, trapped by ${c.trap} (rank ${trapRank + 1})` : ""
+        const staleRank = c.outdated ? rankOf(results, { expect: c.outdated }) : -1
+        if (staleRank >= 0) totals.outdated++
+        const trapNote = (trapped ? `, trapped by ${c.trap} (rank ${trapRank + 1})` : "") + (staleRank >= 0 ? `, serves the outdated ${c.outdated} (rank ${staleRank + 1})` : "")
         console.log(`${mark} ${c.query.slice(0, 60).padEnd(60)} → ${rank >= 0 ? `rank ${rank + 1}` : "missing"}${trapNote}  (${label(c)})`)
         if (rank < 0 || rank >= 3) failures.push(`[${set.name}] ${c.query}: ${results.map((r) => r.title).slice(0, 3).join(" | ") || "no results"}`)
       }
@@ -135,6 +142,7 @@ async function main() {
   console.log(`${"all".padEnd(16)} ${String(totals.n).padStart(3)}   ${pct(totals.p1, totals.n)}         ${pct(totals.s3, totals.n)}       ${(totals.mrr / totals.n).toFixed(2)}   ${totals.fell}/${totals.traps}`)
   const g = GRAPH_CASES.length
   console.log(`\ncontext@${LIMIT}: ${withGraph}/${g} with the graph, ${withoutGraph}/${g} without`)
+  if (withCorpus) console.log(`outdated versions served: ${totals.outdated}`)
   console.log(`unanswerable: ${silent}/${UNANSWERABLE.length} with no result`)
   if (reranker) {
     const sorted = (xs: number[]) => [...xs].sort((a, b) => a - b)
@@ -150,7 +158,7 @@ async function main() {
     console.log("\nTo look at:")
     for (const f of failures) console.log(`  - ${f}`)
   }
-  if (accessFailed || (reranker && rerankFailures() > 0)) process.exitCode = 1
+  if (accessFailed || totals.outdated > 0 || (reranker && rerankFailures() > 0)) process.exitCode = 1
   const s = store as { end?: () => Promise<void> }
   if (typeof s.end === "function") await s.end()
 }
