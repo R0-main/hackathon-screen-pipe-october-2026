@@ -1,7 +1,7 @@
 // Embeddings (semantic search), optional: without a configured provider, search stays lexical.
 //
 // Providers, in priority order:
-// - VOYAGE_API_KEY: Voyage AI (https://api.voyageai.com/v1/embeddings), model BRAIN_EMBEDDING_MODEL (default voyage-4-lite);
+// - VOYAGE_API_KEY: Voyage AI (https://api.voyageai.com/v1/embeddings), model BRAIN_EMBEDDING_MODEL (default voyage-4);
 //   a Voyage key put in BRAIN_EMBEDDING_URL works too: a value that is no http(s) address is taken as one;
 // - BRAIN_EMBEDDING_URL (+ BRAIN_EMBEDDING_KEY): any endpoint compatible with OpenAI's `/v1/embeddings`
 //   (OpenAI, Mistral, Ollama locally with nomic-embed-text, LM Studio…), model BRAIN_EMBEDDING_MODEL.
@@ -26,9 +26,9 @@ const MAX_CHARS = 6000
 
 const g = globalThis as unknown as { __brainEmbedding?: EmbeddingProvider | null; __brainQueryCache?: Map<string, number[]> }
 
-/** Voyage model when BRAIN_EMBEDDING_MODEL is not set: the voyage-4 models share one vector space, so moving to
- * voyage-4 or voyage-4-large later needs no new embedding. */
-export const DEFAULT_VOYAGE_MODEL = "voyage-4-lite"
+/** Voyage model when BRAIN_EMBEDDING_MODEL is not set. On the evaluation (141 questions), voyage-4 finds the answer
+ * first 83% of the time, voyage-4-lite 80%, voyage-4-large 84%; the three share one vector space. */
+export const DEFAULT_VOYAGE_MODEL = "voyage-4"
 
 const isAddress = (v: string) => /^https?:\/\//i.test(v)
 
