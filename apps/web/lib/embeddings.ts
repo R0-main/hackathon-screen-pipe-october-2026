@@ -1,12 +1,14 @@
 // Embeddings (semantic search), optional: without a configured provider, search stays lexical.
 //
 // Providers, in priority order:
-// - VOYAGE_API_KEY: Voyage AI (https://api.voyageai.com/v1/embeddings), model BRAIN_EMBEDDING_MODEL (default voyage-3.5-lite);
+// - VOYAGE_API_KEY: Voyage AI (https://api.voyageai.com/v1/embeddings), model BRAIN_EMBEDDING_MODEL (default voyage-4-lite);
+//   a Voyage key put in BRAIN_EMBEDDING_URL works too: a value that is no http(s) address is taken as one;
 // - BRAIN_EMBEDDING_URL (+ BRAIN_EMBEDDING_KEY): any endpoint compatible with OpenAI's `/v1/embeddings`
 //   (OpenAI, Mistral, Ollama locally with nomic-embed-text, LM Studio…), model BRAIN_EMBEDDING_MODEL.
 // Vectors are stored as is (array of floats) and compared by cosine on the server: no pgvector extension required.
 
 import { cosine } from "@brain/core"
+import type { BrainStore } from "./store/types"
 
 export type EmbeddingKind = "query" | "document"
 
@@ -24,10 +26,19 @@ const MAX_CHARS = 6000
 
 const g = globalThis as unknown as { __brainEmbedding?: EmbeddingProvider | null; __brainQueryCache?: Map<string, number[]> }
 
-function build(): EmbeddingProvider | null {
-  const voyage = process.env.VOYAGE_API_KEY
+/** Voyage model when BRAIN_EMBEDDING_MODEL is not set: the voyage-4 models share one vector space, so moving to
+ * voyage-4 or voyage-4-large later needs no new embedding. */
+export const DEFAULT_VOYAGE_MODEL = "voyage-4-lite"
+
+const isAddress = (v: string) => /^https?:\/\//i.test(v)
+
+/** The provider the environment configures, or null. Exported for the tests; the app goes through getEmbeddings. */
+export function providerFromEnv(env: Record<string, string | undefined> = process.env): EmbeddingProvider | null {
+  const endpoint = env.BRAIN_EMBEDDING_URL?.trim()
+  // A Voyage key filled in BRAIN_EMBEDDING_URL: never called as an address (it would end up in the error logs).
+  const voyage = env.VOYAGE_API_KEY?.trim() || (endpoint && !isAddress(endpoint) ? endpoint : undefined)
   if (voyage) {
-    const model = process.env.BRAIN_EMBEDDING_MODEL || "voyage-3.5-lite"
+    const model = env.BRAIN_EMBEDDING_MODEL || DEFAULT_VOYAGE_MODEL
     return {
       id: "voyage",
       model,
@@ -35,11 +46,10 @@ function build(): EmbeddingProvider | null {
         post("https://api.voyageai.com/v1/embeddings", voyage, { input: texts.map(clip), model, input_type: kind, truncation: true }),
     }
   }
-  const url = process.env.BRAIN_EMBEDDING_URL
-  if (url) {
-    const model = process.env.BRAIN_EMBEDDING_MODEL || "text-embedding-3-small"
-    const key = process.env.BRAIN_EMBEDDING_KEY || ""
-    return { id: "openai", model, embed: (texts) => post(url.replace(/\/+$/, ""), key, { input: texts.map(clip), model }) }
+  if (endpoint && isAddress(endpoint)) {
+    const model = env.BRAIN_EMBEDDING_MODEL || "text-embedding-3-small"
+    const key = env.BRAIN_EMBEDDING_KEY || ""
+    return { id: "openai", model, embed: (texts) => post(endpoint.replace(/\/+$/, ""), key, { input: texts.map(clip), model }) }
   }
   return null
 }
@@ -65,7 +75,7 @@ async function post(url: string, key: string, body: unknown): Promise<number[][]
 
 /** The configured provider, or null (lexical search only). */
 export function getEmbeddings(): EmbeddingProvider | null {
-  if (g.__brainEmbedding === undefined) g.__brainEmbedding = build()
+  if (g.__brainEmbedding === undefined) g.__brainEmbedding = providerFromEnv()
   return g.__brainEmbedding
 }
 
@@ -113,4 +123,21 @@ export function rankBySimilarity<T extends { embedding?: number[] | null }>(quer
     .filter((c) => c.similarity >= min)
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, opts.limit ?? 50)
+}
+
+/**
+ * Knowledge that came in before embeddings were set up (or under another model): one batch of it gets its vectors
+ * with each ingestion, so semantic search catches up on its own, without npm run embed. Returns how many.
+ */
+export async function backfillEmbeddings(
+  store: Pick<BrainStore, "listItemsWithoutEmbedding" | "setEmbeddings">,
+  provider: EmbeddingProvider | null = getEmbeddings(),
+  limit = EMBED_BATCH,
+): Promise<number> {
+  if (!provider) return 0
+  const old = await store.listItemsWithoutEmbedding(provider.model, limit)
+  if (old.length === 0) return 0
+  const vectors = await provider.embed(old.map((it) => clip(embeddingText(it))), "document")
+  await store.setEmbeddings(old.map((it, n) => ({ id: it.id, embedding: vectors[n], model: provider.model })))
+  return old.length
 }
