@@ -87,7 +87,7 @@ async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, al
 }
 
 /** Encore team accounts found by their email (null if one is missing: this is not the demo brain). */
-function demoTeam(profiles: Profile[]): Record<string, string> | null {
+export function demoTeam(profiles: Profile[]): Record<string, string> | null {
   const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [p.email, p.id]))
   const ids: Record<string, string> = {}
   for (const u of DEMO_USERS) {

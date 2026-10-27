@@ -1262,6 +1262,34 @@ export class PostgresStore implements BrainStore {
     const [r] = await this.sql`select content from company_status where org_id = ${await this.orgId()}`
     return r ? (r.content as CompanyStatus) : null
   }
+  async shiftTimeline(ms: number, until: string) {
+    const org = await this.orgId()
+    const secs = ms / 1000
+    return this.sql.begin(async (tx: any) => {
+      // source.at stays an ISO string in UTC, the form ingestion writes it in.
+      const iso = (expr: any) => tx`to_jsonb(to_char((${expr} + make_interval(secs => ${secs})) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))`
+      const isIso = tx`(source->>'at') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'`
+      const moved = await tx`update knowledge_items set created_at = created_at + make_interval(secs => ${secs}),
+          source = case when ${isIso} then jsonb_set(source, '{at}', ${iso(tx`(source->>'at')::timestamptz`)}) else source end
+        where org_id = ${org} and created_at <= ${until} returning id`
+      await tx`update agent_events set at = at + make_interval(secs => ${secs}) where org_id = ${org} and at <= ${until}`
+      await tx`update tasks set created_at = created_at + make_interval(secs => ${secs}), updated_at = updated_at + make_interval(secs => ${secs})
+        where org_id = ${org} and created_at <= ${until}`
+      await tx`update automation_suggestions set created_at = created_at + make_interval(secs => ${secs}) where org_id = ${org} and created_at <= ${until}`
+      // Documents come from a later migration: without the table, there is nothing to move.
+      await tx`savepoint docs`
+      try {
+        await tx`update documents set created_at = created_at + make_interval(secs => ${secs}),
+            source = case when ${isIso} then jsonb_set(source, '{at}', ${iso(tx`(source->>'at')::timestamptz`)}) else source end
+          where org_id = ${org} and created_at <= ${until}`
+      } catch (err) {
+        if (!missingTable(err)) throw err
+        await tx`rollback to savepoint docs`
+      }
+      return moved.length
+    }) as Promise<number>
+  }
+
   async setStatus(s: CompanyStatus) {
     await this.sql`insert into company_status (org_id, content, generated_at) values (${await this.orgId()}, ${this.sql.json(s as any)}, now())
       on conflict (org_id) do update set content = excluded.content, generated_at = now()`

@@ -970,6 +970,32 @@ export class FileStore implements BrainStore {
   async getStatus() {
     return this.load().status
   }
+  async shiftTimeline(ms: number, until: string) {
+    const move = (iso: string | undefined) => (iso && iso <= until ? new Date(Date.parse(iso) + ms).toISOString() : iso)
+    return this.mutate((d) => {
+      let moved = 0
+      for (const i of d.items) {
+        if (i.created_at > until) continue
+        i.created_at = move(i.created_at)!
+        if (i.source?.at) i.source.at = move(i.source.at)!
+        moved++
+      }
+      for (const e of d.events) e.at = move(e.at)!
+      for (const t of d.tasks) {
+        if (t.created_at > until) continue
+        t.created_at = move(t.created_at)!
+        t.updated_at = new Date(Date.parse(t.updated_at) + ms).toISOString()
+      }
+      for (const doc of d.documents ?? []) {
+        if (doc.created_at > until) continue
+        doc.created_at = move(doc.created_at)!
+        if (doc.source?.at) doc.source.at = new Date(Date.parse(doc.source.at) + ms).toISOString()
+      }
+      for (const a of d.automations) a.created_at = move(a.created_at)!
+      return moved
+    })
+  }
+
   async setStatus(s: CompanyStatus) {
     this.mutate((d) => {
       d.status = s
