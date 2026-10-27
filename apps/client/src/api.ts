@@ -1,7 +1,7 @@
 // HTTP client of the brain's API (personal Bearer token).
 
 import type { AddDocumentResult, AgentEventInput, AgentName, DocumentUploadInput, EntityType, KnowledgeItemInput, ModerationInput, ModerationVerdict, NewZonesInput, Skill, SkillFile, StatusInput, SyncReport, ZoneStatus } from "@brain/core"
-import type { ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, DocumentResult, EntityResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
+import type { ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, DocumentResult, EntityResult, IngestResult, QueryInput, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
 
 // API responses read by the MCP tools: shared with the brain's MCP endpoint (@brain/core/mcp).
 export type { ApiItem, ApiZone, CompanyStatusResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
@@ -154,7 +154,7 @@ export class BrainApi {
   callConnectedTool(input: { connector: string; tool: string; arguments: Record<string, unknown> }) {
     return this.request<ConnectedCall>("POST", "/api/connected-tools/call", input, 70000)
   }
-  query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
+  query(input: QueryInput) {
     return this.request<QueryResult>("POST", "/api/query", input)
   }
   events(events: AgentEventInput[], timeoutMs?: number) {

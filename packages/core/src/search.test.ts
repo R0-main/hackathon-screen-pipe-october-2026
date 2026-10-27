@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { cosine, expandQuery, jaccard, likeness, matchStrength, rrf, strongEnough } from "./search"
+import { cosine, expandQuery, jaccard, likeness, matchStrength, matchesFilter, rrf, strongEnough } from "./search"
 
 test("expandQuery: synonyms, multi-word expressions, no duplicates", () => {
   const { tokens, added } = expandQuery("how do we deploy to prod?")
@@ -53,4 +53,23 @@ test("cosine", () => {
   assert.equal(cosine([1, 0], [0, 1]), 0)
   assert.equal(cosine([1, 0], [1]), 0)
   assert.equal(cosine([0, 0], [1, 1]), 0)
+})
+
+test("rrf: a list's weight multiplies its votes; the question as asked can lead its rewordings", () => {
+  const asked = ["a", "b"]
+  const reworded = ["b", "a"]
+  assert.equal(rrf([asked, reworded])[0].score, rrf([asked, reworded])[1].score, "equal weights: a tie")
+  assert.deepEqual(rrf([asked, reworded], 60, [2]).map((r) => r.id), ["a", "b"], "the first list weighing 2 wins the tie")
+  assert.deepEqual(rrf([asked, reworded, reworded, reworded], 60, [2]).map((r) => r.id), ["b", "a"], "three rewordings agreeing still outvote it")
+})
+
+test("matchesFilter: dated by the source, from `since` included to `until` excluded, by one of the authors", () => {
+  const item = { author_id: "sarah", created_at: "2026-10-25T09:00:00.000Z", source: { at: "2026-10-10T09:00:00.000Z" } }
+  assert.ok(matchesFilter(item, undefined))
+  assert.ok(matchesFilter(item, { since: "2026-10-10T09:00:00.000Z", until: "2026-10-11T00:00:00.000Z" }))
+  assert.ok(!matchesFilter(item, { since: "2026-10-20T00:00:00.000Z" }), "the date said is the source's, not the ingestion's")
+  assert.ok(!matchesFilter(item, { until: "2026-10-10T09:00:00.000Z" }))
+  assert.ok(matchesFilter(item, { authors: ["hugo", "sarah"] }))
+  assert.ok(!matchesFilter(item, { authors: [] }), "nobody of that name: nothing")
+  assert.ok(matchesFilter({ author_id: "x", created_at: "2026-10-25T09:00:00.000Z" }, { since: "2026-10-20T00:00:00.000Z" }), "without a source, the creation date")
 })

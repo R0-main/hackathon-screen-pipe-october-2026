@@ -111,6 +111,16 @@ demo/                 Demo script
   one leaves the searches), graph search (the last results cite the same customers, projects or tools as the best
   ones: rare entities weigh more, people and tools less, hubs not at all), Entities pages (`/entities`), and
   `npm run eval` which measures search on the Encore demo.
+- **Search keywords**: at ingestion, when the company has Claude, Haiku reads each new knowledge item alone with its
+  source (zone, author, app, date) and writes the terms a colleague might type that its text does not contain (another
+  word for the same thing, the question it answers, the French terms). Stored apart and indexed with the lowest weight
+  (Postgres: weight D, migration `20261027000001`): they bring an item into a search, never above a title that names
+  the subject. `npm run keywords` writes them for the knowledge already there (`--cli` through `claude -p`, `--all`
+  after a change of the prompt); `BRAIN_KEYWORDS=off` turns them off.
+- **Phrasings**: `search_brain` takes the question as asked and up to 4 `phrasings` the agent writes (in English, with
+  the team's terms, numbers and proper nouns kept as given). One search per phrasing, fused by rank, then reranked once
+  (if `BRAIN_RERANK_MODEL`) with the question as asked. Filters `since`, `until` (the knowledge's date, `until`
+  included) and `author` (name, first name or email); each result says who wrote it, when, and from which tool and app.
 
 ## Brain API
 
@@ -122,7 +132,7 @@ Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-
 | GET/POST | `/api/documents` | Readable documents (`?zone=`, `?q=` search on name and text). POST `{name, content (base64), zone?, title?, item_ids?, auto?}`: a document, linked to knowledge items; `{name, sha256, item_ids}` without content links a file the brain already has (404 otherwise). 201 new, 200 already there, 413 over 3 MB, 422 refused (secret, personal data; `auto`: no readable text). |
 | GET/DELETE | `/api/documents/:id` | The document, its text and the knowledge it backs (`?agent=mcp`: its zone lights up); `?download=1`: the file itself. DELETE: its author or an admin. |
 | POST | `/api/events` | `AgentEventInput` or `{events: [...]}` — what makes the brain light up. |
-| POST | `/api/query` | `{query, zones?, limit?}` — search limited to readable zones; flags restricted zones without saying anything about them. Results brought by the graph carry `via` (the entity and the result they share it with). |
+| POST | `/api/query` | `{query, phrasings?, zones?, since?, until?, author?, limit?}` — search limited to readable zones; flags restricted zones without saying anything about them. `phrasings`: the agent's rewordings, fused with the query; `filter` in the answer: the dates and the people `author` named. Results brought by the graph carry `via` (the entity and the result they share it with). |
 | GET | `/api/entities` | `?name=` (and `type=` when a name has several) — an entity's neighborhood in readable zones: the knowledge citing it and the entities cited with it (MCP `explore_entity`; `?agent=mcp`: its zones light up). |
 | GET | `/api/zones`, `/api/zones/:id` | Zones (with keywords for the hooks), summary of a zone. |
 | GET | `/api/whoami`, `/api/people/:id` | Context of the computer (handover). |
@@ -326,4 +336,8 @@ npm test                 # unit tests (core + client)
 npm run typecheck
 npm run smoke            # end to end on the current storage (file, or Postgres if DATABASE_URL)
 npm run eval             # search quality on the Encore demo (after npm run seed)
+npm run eval:seed        # adds the evaluation corpus and the versioned keywords (local databases only)
 ```
+
+The evaluation's model-written data is versioned in `apps/web/scripts/eval-data` (keywords per item, the agents'
+rephrasings, the prompts' versions and the measurements): see its README.

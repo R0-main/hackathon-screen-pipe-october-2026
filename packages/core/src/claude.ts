@@ -25,6 +25,7 @@ import type { NewZoneProposal, NewZonesInput } from "./new-zones"
 import { ModerationVerdictsSchema, type ModerationInput, type ModerationVerdict } from "./moderation"
 import { CORE_ZONE, classifyZones, isCoreZone, slugify } from "./zones"
 import { truncate } from "./text"
+import { KEYWORDS_SYSTEM, buildKeywordsPrompt, cleanKeywords, type KeywordsInput } from "./keywords"
 
 /** Haiku to triage the volume, Sonnet to extract and summarize (see ARCHITECTURE.md). */
 export const TRIAGE_MODEL = "claude-haiku-5-5"
@@ -150,6 +151,29 @@ export async function distillWithClaude(
   if (triage && !triage.useful) return []
   const zone = triage && zones.some((z) => z.id === triage.zone) ? triage.zone : fallbackZone
   return extractKnowledge(client, conv, zones, zone)
+}
+
+const KeywordsSchema = z.object({ keywords: z.array(z.string()) })
+
+/** Model of the search keywords: one short call per knowledge item. */
+export const KEYWORDS_MODEL = TRIAGE_MODEL
+
+/** Search keywords for one knowledge item (keywords.ts), seen alone with its source. Null if Claude did not answer. */
+export async function suggestKeywords(client: Anthropic, item: KeywordsInput, model = KEYWORDS_MODEL): Promise<string[] | null> {
+  try {
+    const response = await client.messages.parse({
+      model,
+      max_tokens: 1000,
+      system: KEYWORDS_SYSTEM,
+      messages: [{ role: "user", content: buildKeywordsPrompt(item) }],
+      output_config: { effort: "low", format: zodOutputFormat(KeywordsSchema) },
+    })
+    if (response.stop_reason === "refusal" || !response.parsed_output) return null
+    return cleanKeywords(response.parsed_output.keywords, item.title)
+  } catch (err) {
+    logError("keywords", err)
+    return null
+  }
 }
 
 const StatusSchema = z.object({

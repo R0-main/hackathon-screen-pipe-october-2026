@@ -142,12 +142,29 @@ export function likeness(
 
 /**
  * Rank fusion (Reciprocal Rank Fusion): each list votes for its results by rank, without
- * depending on the scale of its scores. `k` = 60 (classic value). Returns the ids by decreasing score.
+ * depending on the scale of its scores. `k` = 60 (classic value). `weights`: how much each list's vote counts (1 by
+ * default). Returns the ids by decreasing score.
  */
-export function rrf(lists: string[][], k = 60): { id: string; score: number }[] {
+export function rrf(lists: string[][], k = 60, weights: number[] = []): { id: string; score: number }[] {
   const scores = new Map<string, number>()
-  for (const list of lists) list.forEach((id, rank) => scores.set(id, (scores.get(id) ?? 0) + 1 / (k + rank + 1)))
+  lists.forEach((list, n) => {
+    const w = weights[n] ?? 1
+    list.forEach((id, rank) => scores.set(id, (scores.get(id) ?? 0) + w / (k + rank + 1)))
+  })
   return [...scores.entries()].map(([id, score]) => ({ id, score })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+}
+
+/**
+ * Narrows a search: knowledge dated (source.at, ISO) from `since` and before `until`, written by one of `authors`
+ * (profile ids). Dates are compared as ISO strings, the form ingestion stores them in.
+ */
+export type SearchFilter = { since?: string; until?: string; authors?: string[] }
+
+/** True if the item passes the filter (none: always). The stores apply the same rule in their queries. */
+export function matchesFilter(item: { author_id: string; created_at: string; source?: { at?: string } }, f: SearchFilter | undefined): boolean {
+  if (!f) return true
+  const at = item.source?.at ?? item.created_at
+  return (!f.since || at >= f.since) && (!f.until || at < f.until) && (!f.authors || f.authors.includes(item.author_id))
 }
 
 /** Cosine similarity between two vectors of the same dimension (0 if one is zero or the sizes differ). */

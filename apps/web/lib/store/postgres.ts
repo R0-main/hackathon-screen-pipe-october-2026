@@ -7,6 +7,7 @@ import postgres from "postgres"
 import {
   CORE_ZONE,
   DEFAULT_ZONES,
+  keywordsSearchText,
   normalize,
   tokenize,
   type AgentEvent,
@@ -25,7 +26,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type ZoneUsage, type AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type SearchFilter, type ZoneStat, type ZoneUsage, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 import { JOIN_MISSING_MESSAGE, SETTINGS_MISSING_MESSAGE, StoreSetupError, missingTable } from "./errors"
 
@@ -68,6 +69,7 @@ function toItem(r: Row): KnowledgeItem {
     confidence: Number(r.confidence),
     created_at: iso(r.created_at),
     superseded_by: r.superseded_by ?? null,
+    ...(r.keywords?.length ? { keywords: r.keywords as string[] } : {}),
   }
 }
 function toEvent(r: Row): AgentEvent {
@@ -117,6 +119,8 @@ function toTask(r: Row): Task {
 
 const QUALITY_MISSING_MESSAGE =
   "The database needs an update: superseded_by / embedding columns missing from knowledge_items. Apply the migrations (npm run db:migrate)."
+const KEYWORDS_MISSING_MESSAGE =
+  "The database needs an update: the keywords columns are missing from knowledge_items. Apply the migrations (npm run db:migrate)."
 const ZONE_PROJECTS_MISSING_MESSAGE =
   "The database needs an update: the projects column is missing from zones. Apply the migrations (npm run db:migrate)."
 const TASKS_EXTERNAL_MISSING_MESSAGE =
@@ -269,6 +273,7 @@ export class PostgresStore implements BrainStore {
   /** Do the columns of the "quality" migration (superseded_by, embedding) exist? Checked once. */
   private qualityColumns: boolean | null = null
   private taskExternalColumns: boolean | null = null
+  private keywordColumns: boolean | null = null
   private qualityWarned = false
 
   constructor(url: string | { sql: Sql; orgId: string; listen: ListenState; url: string | null }) {
@@ -736,6 +741,28 @@ export class PostgresStore implements BrainStore {
     return this.qualityColumns
   }
 
+  /** keywords / search_keywords columns (migration 20261027000001): absent, knowledge is searched without keywords. */
+  private async hasKeywords(): Promise<boolean> {
+    if (this.keywordColumns !== null) return this.keywordColumns
+    const [r] = await this.sql`select exists (select 1 from information_schema.columns where table_name = 'knowledge_items' and column_name = 'search_keywords') as ok`
+    this.keywordColumns = Boolean(r.ok)
+    return this.keywordColumns
+  }
+
+  /**
+   * The search filter (SearchFilter) as a fragment, on the table `k` or bare: the date is the knowledge's (source.at),
+   * compared as ISO strings, the form ingestion stores it in.
+   */
+  private filterSql(f: SearchFilter | undefined, alias: "" | "k" = "k") {
+    const sql = this.sql
+    if (!f) return sql``
+    const at = alias === "k" ? sql`(k.source->>'at')` : sql`(source->>'at')`
+    const author = alias === "k" ? sql`k.author_id` : sql`author_id`
+    const authors = f.authors?.filter((a) => UUID_RE.test(a))
+    return sql`${f.since ? sql`and ${at} >= ${f.since}` : sql``} ${f.until ? sql`and ${at} < ${f.until}` : sql``}
+      ${authors ? (authors.length ? sql`and ${author} in ${sql(authors)}` : sql`and false`) : sql``}`
+  }
+
   /** external_* columns of tasks (connectors migration): absent, no task is imported. */
   private async hasTaskExternal(): Promise<boolean> {
     if (this.taskExternalColumns !== null) return this.taskExternalColumns
@@ -753,6 +780,7 @@ export class PostgresStore implements BrainStore {
   async insertItems(items: NewItem[]) {
     const org = await this.orgId()
     const quality = await this.hasQuality()
+    const withKeywords = await this.hasKeywords()
     return this.sql.begin(async (tx: any) => {
       const out: KnowledgeItem[] = []
       for (const i of items) {
@@ -770,18 +798,20 @@ export class PostgresStore implements BrainStore {
           values (${org}, ${i.author_id}, ${i.zone}, ${i.kind}, ${i.title}, ${i.body}, ${tx.json(i.entities)}, ${tx.json(i.source)},
             ${i.confidence}, ${searchTitle}, ${searchBody}, ${i.created_at ?? new Date().toISOString()})
           returning *`
+        if (i.keywords?.length && withKeywords)
+          await tx`update knowledge_items set keywords = ${tx.array(i.keywords)}, search_keywords = ${keywordsSearchText(i.keywords)} where id = ${r.id}`
         for (const e of i.entities) {
           const [ent] = await tx`insert into entities (org_id, type, name, norm_name) values (${org}, ${e.type}, ${e.name}, ${normalize(e.name)})
             on conflict (org_id, type, norm_name) do update set name = excluded.name returning id`
           await tx`insert into edges (org_id, item_id, entity_id) values (${org}, ${r.id}, ${ent.id}) on conflict do nothing`
         }
-        out.push(toItem(r))
+        out.push(i.keywords?.length && withKeywords ? { ...toItem(r), keywords: i.keywords } : toItem(r))
       }
       return out
     }) as Promise<KnowledgeItem[]>
   }
 
-  async searchItems(query: string, zones: string[], limit: number, opts: { authorId?: string } = {}): Promise<ScoredItem[]> {
+  async searchItems(query: string, zones: string[], limit: number, opts: { authorId?: string; filter?: SearchFilter } = {}): Promise<ScoredItem[]> {
     const terms = tsTerms(query)
     const sql = this.sql
     const author = opts.authorId && UUID_RE.test(opts.authorId) ? opts.authorId : null
@@ -799,7 +829,7 @@ export class PostgresStore implements BrainStore {
           (select count(*) from unnest(${sql.array(terms)}::text[]) t where k.search @@ to_tsquery('simple', t))::float / ${terms.length}
         ) as score
       from knowledge_items k, to_tsquery('simple', ${terms.join(" | ")}) q
-      where k.org_id = ${await this.orgId()} and ${scope} and k.search @@ q ${this.live(await this.hasQuality(), "k")}
+      where k.org_id = ${await this.orgId()} and ${scope} and k.search @@ q ${this.live(await this.hasQuality(), "k")} ${this.filterSql(opts.filter)}
       order by score desc, k.created_at desc
       limit ${limit}`
     return rows.map((r) => ({ ...toItem(r), score: Math.round(Number(r.score) * 1000) / 100 }))
@@ -878,14 +908,14 @@ export class PostgresStore implements BrainStore {
     return { items: rows.map(toItem), degree: Object.fromEntries(counts.map((r: Row) => [r.key, r.n])) }
   }
 
-  async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }) {
+  async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number; filter?: SearchFilter }) {
     if (!(await this.hasQuality())) return []
     const sql = this.sql
     const author = f.authorId && UUID_RE.test(f.authorId) ? f.authorId : null
     if (f.zones.length === 0 && !author) return []
     const scope = f.zones.length && author ? sql`(zone in ${sql(f.zones)} or author_id = ${author})` : f.zones.length ? sql`zone in ${sql(f.zones)}` : sql`author_id = ${author}`
     const rows = await sql`select id, embedding from knowledge_items where org_id = ${await this.orgId()} and ${scope}
-      and embedding is not null and superseded_by is null order by created_at desc limit ${f.limit ?? 2000}`
+      and embedding is not null and superseded_by is null ${this.filterSql(f.filter, "")} order by created_at desc limit ${f.limit ?? 2000}`
     return rows.map((r) => ({ id: r.id as string, embedding: (r.embedding as number[]).map(Number) }))
   }
 
@@ -897,6 +927,18 @@ export class PostgresStore implements BrainStore {
       for (const r of rows) {
         if (!UUID_RE.test(r.id)) continue
         await tx`update knowledge_items set embedding = ${tx.array(r.embedding)}::real[], embedding_model = ${r.model} where id = ${r.id} and org_id = ${org}`
+      }
+    })
+  }
+
+  async setKeywords(rows: { id: string; keywords: string[] }[]) {
+    if (!rows.length) return
+    if (!(await this.hasKeywords())) throw new StoreSetupError(KEYWORDS_MISSING_MESSAGE)
+    const org = await this.orgId()
+    await this.sql.begin(async (tx: any) => {
+      for (const r of rows) {
+        if (!UUID_RE.test(r.id)) continue
+        await tx`update knowledge_items set keywords = ${tx.array(r.keywords)}, search_keywords = ${keywordsSearchText(r.keywords)} where id = ${r.id} and org_id = ${org}`
       }
     })
   }

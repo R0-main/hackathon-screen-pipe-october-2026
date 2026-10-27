@@ -20,6 +20,7 @@ export const KnowledgeItemInputSchema = z.object({
     session_id: z.string().max(200).optional(),
   }),
   confidence: z.number().min(0).max(1).default(0.6),
+  keywords: z.array(z.string().max(60)).max(16).optional(),
 })
 
 export const IngestPayloadSchema = z.object({ items: z.array(KnowledgeItemInputSchema).min(1).max(200) })
@@ -41,9 +42,13 @@ export const EventsPayloadSchema = z.union([
 
 export const QueryPayloadSchema = z.object({
   query: z.string().min(1).max(500),
+  phrasings: z.array(z.string().min(1).max(500)).max(4).optional(),
   zones: z.array(z.string().max(64)).max(20).optional(),
   limit: z.number().int().min(1).max(50).optional(),
   agent: z.enum(AGENTS).optional(),
+  since: z.string().max(40).optional(),
+  until: z.string().max(40).optional(),
+  author: z.string().max(120).optional(),
 })
 
 /** A workstation's sync report (POST /api/sync/report). */

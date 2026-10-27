@@ -56,8 +56,24 @@ export type ApiItem = {
 /** A document found by a search or listed in a zone. */
 export type ApiDocument = DocumentRef & { title: string; summary: string; author?: string; created_at: string; score?: number }
 
+/** POST /api/query: a search, its phrasings and its filters (QueryPayloadSchema). */
+export type QueryInput = {
+  query: string
+  phrasings?: string[]
+  zones?: string[]
+  limit?: number
+  agent?: AgentName
+  since?: string
+  until?: string
+  author?: string
+}
+
 export type QueryResult = {
   query: string
+  /** The agent's other phrasings, searched with the query. */
+  phrasings?: string[]
+  /** The filter applied (dates as ISO strings, the people `author` named); missing from an older brain. */
+  filter?: { since?: string; until?: string; authors?: string[] }
   zones_searched: string[]
   zones_hit: string[]
   zones_restricted: string[]
@@ -136,7 +152,7 @@ export interface BrainToolsApi {
   zones(): Promise<ApiZone[]>
   zone(id: string): Promise<ZoneSummary>
   status(): Promise<CompanyStatusResult>
-  query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }): Promise<QueryResult>
+  query(input: QueryInput): Promise<QueryResult>
   ingest(items: KnowledgeItemInput[], agent?: AgentName): Promise<IngestResult>
   /** A document and its text (the zone lights up for `agent`). */
   document?(id: string, agent?: AgentName): Promise<DocumentResult>
@@ -167,6 +183,16 @@ export function formatConnectedTools(r: ConnectedTools, withSchemas: boolean): s
     .join("\n\n")
 }
 
+/**
+ * How an agent rewords a question for search_brain (`phrasings`): the evaluation writes its rewordings with this same
+ * text (scripts/eval-data/prompts), so what it measures is what agents are asked to do.
+ */
+export const PHRASINGS_GUIDANCE =
+  "Optional but recommended: 1 to 3 other phrasings of the same question, searched with it, to find knowledge written in " +
+  "other words. In English (the brain is written in English), with the terms the team would write rather than the " +
+  "user's (\"payroll\" for \"who pays salaries\", \"ship to production\" for \"put online\"). Keep every number, date, " +
+  "amount and proper noun (customer, tool, project, person) exactly as given; add no fact the question does not state."
+
 // --- Formatting (markdown) ------------------------------------------------------------------------------------------
 
 const KIND_LABELS: Record<string, string> = { fact: "fact", decision: "decision", task: "task", procedure: "procedure", question: "question" }
@@ -185,7 +211,7 @@ function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
     `Type: ${KIND_LABELS[i.kind] ?? i.kind}`,
     `By: ${i.author ?? "?"}`,
     `Date: ${shortDate(i.source?.at ?? i.created_at)}`,
-    i.source?.tool ? `Source: ${i.source.tool}` : "",
+    sourceLabel(i.source),
   ]
     .filter(Boolean)
     .join(" · ")
@@ -193,6 +219,24 @@ function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
   const docs = i.documents?.length ? `\nDocuments: ${i.documents.map(docLabel).join(", ")}` : ""
   const via = i.via ? `\nLinked through the knowledge graph: shares ${i.via.entity.name} (${i.via.entity.type}) with "${i.via.from.title}".` : ""
   return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}${docs}${via}`
+}
+
+/** Where a knowledge item comes from: "Source: claude-code in Terminal", the tool alone, or nothing. */
+function sourceLabel(src: ApiItem["source"] | undefined): string {
+  const app = src?.app && src.app !== "unknown" ? src.app : ""
+  if (!src?.tool) return app ? `Source: ${app}` : ""
+  return `Source: ${src.tool}${app && normalize(app) !== normalize(src.tool) ? ` in ${app}` : ""}`
+}
+
+/** The filter of a search, in words: "by Sarah Cohen, from 01 Oct 2026, until 20 Oct 2026". */
+function filterLabel(f: QueryResult["filter"]): string {
+  if (!f) return ""
+  const parts = [
+    f.authors ? (f.authors.length ? `by ${f.authors.join(" or ")}` : "by nobody of that name") : "",
+    f.since ? `from ${shortDate(f.since)}` : "",
+    f.until ? `before ${shortDate(f.until)}` : "",
+  ].filter(Boolean)
+  return parts.length ? `; filter: ${parts.join(", ")}` : ""
 }
 
 /** "revenus-T3.pdf (20 KB, id `…`)": the id is what get_document takes. */
@@ -212,13 +256,13 @@ export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
     : ""
   if (!r.items.length) {
     return (
-      `No knowledge found in the brain for "${r.query}" (zones searched: ${searched}).\n` +
+      `No knowledge found in the brain for "${r.query}" (zones searched: ${searched}${filterLabel(r.filter)}).\n` +
       `Try other keywords (customer, tool or project name) or list_zones to see the available areas.${restricted}`
     )
   }
   const linked = r.items.filter((i) => i.via).length
   const graph = linked ? `, ${linked} of them linked through the knowledge graph` : ""
-  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched}${graph})`
+  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched}${filterLabel(r.filter)}${graph})`
   const docs = r.documents?.length ? `\n\n${documentsBlock(r.documents, zoneName, "Matching documents")}` : ""
   return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${docs}${restricted}`
 }
@@ -456,19 +500,24 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         "whenever a question touches the company's context (\"how do we deploy?\", \"what did we decide for X?\", \"who handles customer Y?\"). " +
         "The last results can come from the knowledge graph: knowledge that cites the same customer, project or tool as the " +
         "best results, even without the query's words (each says which entity links it). " +
+        "Each result says who wrote it, when, and from which tool and app. " +
         "Only the zones the user has access to are searched.",
       inputSchema: {
-        query: z.string().min(1).max(500).describe("The question or the keywords, in natural language (e.g. \"deploy to production\")."),
+        query: z.string().min(1).max(500).describe("The question as the user asked it, in their language (e.g. \"comment on déploie en prod ?\")."),
+        phrasings: z.array(z.string().min(1).max(500)).max(4).optional().describe(PHRASINGS_GUIDANCE),
         zones: z.array(z.string()).max(20).optional().describe("Optional: limit to some zones (ids from list_zones, e.g. [\"dev\"])."),
+        since: z.string().max(40).optional().describe("Optional: only knowledge dated from this day (ISO, e.g. \"2026-10-01\")."),
+        until: z.string().max(40).optional().describe("Optional: only knowledge dated up to this day included (ISO)."),
+        author: z.string().max(120).optional().describe("Optional: only knowledge written by this person (name or first name, e.g. \"Sarah\")."),
         limit: z.number().int().min(1).max(50).optional().describe("Maximum number of results (8 by default)."),
         ...companyParam,
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ query, zones, limit, company }) =>
+    async ({ query, phrasings, zones, since, until, author, limit, company }) =>
       guard(company, async (c) => {
         await ensureZones(c)
-        const r = await c.api.query({ query, zones: zones?.map((x) => resolveZone(c, x)), limit, agent: "mcp" })
+        const r = await c.api.query({ query, phrasings, zones: zones?.map((x) => resolveZone(c, x)), since, until, author, limit, agent: "mcp" })
         return formatQuery(r, namer(c))
       }),
   )

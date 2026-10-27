@@ -7,6 +7,7 @@ import {
   CORE_ZONE,
   DEFAULT_ZONES,
   entityKey,
+  matchesFilter,
   normalize,
   sessionOf,
   tokenize,
@@ -26,7 +27,7 @@ import {
   type Zone,
   type ZoneAccess,
 } from "@brain/core"
-import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type ZoneStat, type ZoneUsage, type AuthorZoneStat } from "./types"
+import { SYNC_REPORTS_KEEP, type BrainStore, type DocumentFilter, type EntityStat, type JoinRequest, type JoinStatus, type NewEvent, type NewItem, type NewDocument, type NewJoinRequest, type NewProfile, type NewSkill, type NewTask, type NewTenantOrg, type ProfilePatch, type SearchFilter, type ZoneStat, type ZoneUsage, type AuthorZoneStat } from "./types"
 import { newJoinCode } from "./codes"
 
 type StoredProfile = Profile & { token_hash: string }
@@ -36,6 +37,9 @@ type StoredItem = KnowledgeItem & { embedding?: number[]; embedding_model?: stri
 function publicItem({ embedding: _e, embedding_model: _m, ...i }: StoredItem): KnowledgeItem {
   return i
 }
+
+/** Weight of a keyword match next to the title (3), an entity (2) and the body (1): it brings an item, never outranks. */
+const KEYWORD_WEIGHT = 0.5
 type StoredJoinRequest = JoinRequest & { token_hash: string }
 
 type Data = {
@@ -502,10 +506,10 @@ export class FileStore implements BrainStore {
     return { items, degree }
   }
 
-  async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }) {
+  async listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number; filter?: SearchFilter }) {
     const allowed = new Set(f.zones)
     return (this.load().items as StoredItem[])
-      .filter((i) => !i.superseded_by && Array.isArray(i.embedding) && (allowed.has(i.zone) || (f.authorId && i.author_id === f.authorId)))
+      .filter((i) => !i.superseded_by && Array.isArray(i.embedding) && (allowed.has(i.zone) || (f.authorId && i.author_id === f.authorId)) && matchesFilter(i, f.filter))
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, f.limit ?? 2000)
       .map((i) => ({ id: i.id, embedding: i.embedding as number[] }))
@@ -525,6 +529,19 @@ export class FileStore implements BrainStore {
     })
   }
 
+  async setKeywords(rows: { id: string; keywords: string[] }[]) {
+    if (!rows.length) return
+    this.mutate((d) => {
+      const by = new Map(rows.map((r) => [r.id, r.keywords]))
+      for (const i of d.items) {
+        const k = by.get(i.id)
+        if (!k) continue
+        if (k.length) i.keywords = k
+        else delete i.keywords
+      }
+    })
+  }
+
   async listItemsWithoutEmbedding(model: string, limit: number) {
     return (this.load().items as StoredItem[])
       .filter((i) => !i.superseded_by && (!Array.isArray(i.embedding) || i.embedding_model !== model))
@@ -533,7 +550,7 @@ export class FileStore implements BrainStore {
       .map(publicItem)
   }
 
-  async searchItems(query: string, zones: string[], limit: number, opts: { authorId?: string } = {}): Promise<ScoredItem[]> {
+  async searchItems(query: string, zones: string[], limit: number, opts: { authorId?: string; filter?: SearchFilter } = {}): Promise<ScoredItem[]> {
     const q = [...new Set(tokenize(query))]
     if (q.length === 0) return []
     const allowed = new Set(zones)
@@ -543,13 +560,15 @@ export class FileStore implements BrainStore {
     for (const item of this.load().items) {
       if (item.superseded_by) continue
       if (!allowed.has(item.zone) && !(opts.authorId && item.author_id === opts.authorId)) continue
+      if (!matchesFilter(item, opts.filter)) continue
       const title = tokenize(item.title)
       const body = tokenize(item.body)
       const ents = item.entities.flatMap((e) => tokenize(e.name))
+      const keywords = tokenize((item.keywords ?? []).join(" "))
       let score = 0
       let hits = 0
       for (const t of q) {
-        const s = (matches(title, t) ? 3 : 0) + (matches(ents, t) ? 2 : 0) + (matches(body, t) ? 1 : 0)
+        const s = (matches(title, t) ? 3 : 0) + (matches(ents, t) ? 2 : 0) + (matches(body, t) ? 1 : 0) + (matches(keywords, t) ? KEYWORD_WEIGHT : 0)
         if (s > 0) hits++
         score += s
       }

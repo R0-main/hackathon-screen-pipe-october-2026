@@ -15,6 +15,7 @@ import type {
   Role,
   ScoredDocument,
   ScoredItem,
+  SearchFilter,
   Skill,
   SkillFile,
   SyncReport,
@@ -36,6 +37,7 @@ export type NewProfile = {
 }
 export type ProfilePatch = Partial<NewProfile>
 export type NewItem = KnowledgeItemInput & { author_id: string; created_at?: string; embedding?: number[]; embedding_model?: string }
+export type { SearchFilter }
 export type NewEvent = Omit<AgentEvent, "id" | "org_id">
 export type NewTask = Omit<Task, "id" | "created_at" | "updated_at"> & { created_at?: string }
 
@@ -140,9 +142,9 @@ export interface BrainStore {
   insertItems(items: NewItem[]): Promise<KnowledgeItem[]>
   /**
    * `authorId`: also includes this author's items, whatever their zone (right of review).
-   * Superseded knowledge (superseded_by) is never returned.
+   * Superseded knowledge (superseded_by) is never returned. The keywords count, with a low weight.
    */
-  searchItems(query: string, zones: string[], limit: number, opts?: { authorId?: string }): Promise<ScoredItem[]>
+  searchItems(query: string, zones: string[], limit: number, opts?: { authorId?: string; filter?: SearchFilter }): Promise<ScoredItem[]>
   /** `excludeSuperseded`: without superseded knowledge (dashboard lists, status summary). */
   listItems(f: { zones?: string[]; authorId?: string; limit?: number; sinceIso?: string; excludeSuperseded?: boolean }): Promise<KnowledgeItem[]>
   getItem(id: string): Promise<KnowledgeItem | null>
@@ -171,10 +173,12 @@ export interface BrainStore {
   /** Items (not superseded) citing an entity, in the given zones (or by this author). */
   listItemsByEntity(f: { type: string; normName: string; zones: string[]; authorId?: string; limit?: number }): Promise<KnowledgeItem[]>
   /** Semantic vectors of the non-superseded items of the given zones (most recent first), for ranking. */
-  listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number }): Promise<{ id: string; embedding: number[] }[]>
+  listEmbeddings(f: { zones: string[]; authorId?: string; limit?: number; filter?: SearchFilter }): Promise<{ id: string; embedding: number[] }[]>
   setEmbeddings(rows: { id: string; embedding: number[]; model: string }[]): Promise<void>
   /** Items without a vector (or from another model), for the catch-up (scripts/embed-backfill.ts). */
   listItemsWithoutEmbedding(model: string, limit: number): Promise<KnowledgeItem[]>
+  /** Sets the search keywords of items (keywords.ts); an empty list clears them. */
+  setKeywords(rows: { id: string; keywords: string[] }[]): Promise<void>
   zoneStats(): Promise<ZoneStat[]>
   authorZoneStats(): Promise<AuthorZoneStat[]>
   topEntities(f: { zones?: string[]; authorId?: string; limit: number }): Promise<EntityStat[]>
