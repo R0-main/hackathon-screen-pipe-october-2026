@@ -252,7 +252,7 @@ function ZoneSection({
   )
 }
 
-/** A zone's progress: one bead per task (filled when it is done), then "1 of 2". Beyond `max`, to scale. */
+/** A zone's progress: one bead per task (filled when it is done), then "1 of 2 tasks done". Beyond `max`, to scale. */
 function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max: number }) {
   const { t } = useT()
   const done = counts?.done ?? 0
@@ -260,7 +260,8 @@ function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max
   if (total === 0) return <span className="text-[12px] text-trace">{t.status.noTasks}</span>
   const beads = Math.min(total, max)
   const filled = total <= max ? done : Math.round((done / total) * max)
-  const long = plural(done, t.status.tasksLong, t.status.tasksLongPlural, { total })
+  // Agreed with the total: "0 of 1 task done", "1 of 2 tasks done".
+  const long = plural(total, t.status.tasksLong, t.status.tasksLongPlural, { n: done, total })
   return (
     <span className="inline-flex shrink-0 items-center gap-2 text-[12px] tabular-nums text-trace" title={long}>
       <span aria-hidden className="flex gap-[3px]">
@@ -268,8 +269,7 @@ function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max
           <span key={i} className={`block size-2 rounded-full border ${i < filled ? "border-ink bg-ink" : "border-trace"}`} />
         ))}
       </span>
-      <span aria-hidden>{fmt(t.status.tasks, { n: done, total })}</span>
-      <span className="sr-only">{long}</span>
+      <span>{long}</span>
     </span>
   )
 }
