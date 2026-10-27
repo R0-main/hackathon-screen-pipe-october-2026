@@ -13,6 +13,7 @@ import { DEFAULT_ZONES, classifyZones } from "./zones"
 import { extractEntities, type ZoneHint } from "./distill"
 import { redactText } from "./privacy"
 import { normalize, truncate } from "./text"
+import { keywordsOf } from "./keywords"
 
 // --- API responses read by the tools -----------------------------------------------------------------------------------
 
@@ -644,11 +645,20 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         body: z.string().min(1).max(4000).describe("1 to 5 sentences a colleague can understand, with the why."),
         kind: z.enum(KNOWLEDGE_KINDS).describe("fact | decision | task | procedure | question"),
         zone: z.string().max(64).optional().describe("Optional: zone id; otherwise classified automatically (the answer gives the zone chosen)."),
+        keywords: z
+          .array(z.string().max(60))
+          .max(16)
+          .optional()
+          .describe(
+            "Recommended: 6 to 14 search terms a colleague might type to find it that the title and body do not contain: other " +
+              "words for the same thing, the question it answers, the user's own words and the French for the key terms. " +
+              "Never a fact or name that is not in the item.",
+          ),
         ...companyParam,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ title, body, kind, zone, company }) =>
+    async ({ title, body, kind, zone, keywords, company }) =>
       guard(company, async (c) => {
         await ensureZones(c)
         const cache = cacheOf(c)
@@ -673,6 +683,7 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
           entities: extractEntities(`${cleanTitle}\n${cleanBody}`),
           source: { app: opts.sourceApp ?? "claude-code", tool: "agent", at: new Date().toISOString() },
           confidence: 0.8,
+          ...keywordsOf(keywords?.map(clean), cleanTitle),
         }
         const r = await c.api.ingest([item], "mcp")
         const where = r.zones[0] ?? chosen

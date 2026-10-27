@@ -111,12 +111,15 @@ demo/                 Demo script
   one leaves the searches), graph search (the last results cite the same customers, projects or tools as the best
   ones: rare entities weigh more, people and tools less, hubs not at all), Entities pages (`/entities`), and
   `npm run eval` which measures search on the Encore demo.
-- **Search keywords**: at ingestion, when the company has Claude, Haiku reads each new knowledge item alone with its
-  source (zone, author, app, date) and writes the terms a colleague might type that its text does not contain (another
-  word for the same thing, the question it answers, the French terms). Stored apart and indexed with the lowest weight
-  (Postgres: weight D, migration `20261027000001`): they bring an item into a search, never above a title that names
-  the subject. `npm run keywords` writes them for the knowledge already there (`--cli` through `claude -p`, `--all`
-  after a change of the prompt); `BRAIN_KEYWORDS=off` turns them off.
+- **Search keywords**: the terms a colleague might type that a knowledge item's text does not contain (another word
+  for the same thing, the question it answers, the employee's own words, the French terms). The distillation writes
+  them with each item, in the same `claude -p` call on the computer (no extra call, no server key); so do the
+  connectors' import and agents through `remember`. Knowledge that arrives without any (heuristic distillation, an
+  older computer) catches up at ingestion when the company has Claude: Haiku reads each item alone with its source
+  (zone, author, app, date). Stored apart and indexed with the lowest weight (Postgres: weight D, migration
+  `20261027000001`): they bring an item into a search, never above a title that names the subject.
+  `npm run keywords` writes them for the knowledge already there (`--cli` through `claude -p`, `--all` after a change
+  of the prompt); `BRAIN_KEYWORDS=off` turns off the server's catch-up.
 - **Phrasings**: `search_brain` takes the question as asked and up to 4 `phrasings` the agent writes (in English, with
   the team's terms, numbers and proper nouns kept as given). One search per phrasing, fused by rank, then reranked once
   (if `BRAIN_RERANK_MODEL`) with the question as asked. Filters `since`, `until` (the knowledge's date, `until`

@@ -7,6 +7,7 @@ import {
   buildStatusInput,
   classifyZones,
   isCoreZone,
+  keywordsOf,
   detectAutomations,
   entityKey,
   expandQuery,
@@ -110,6 +111,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     // Defense in depth: redact again on the server even if the workstation already did it.
     const title = redactText(i.title)
     const body = redactText(i.body)
+    const keywords = i.keywords ? keywordsOf(i.keywords.map((k) => redactText(k)), title) : {}
     const zone = resolveZone(i.zone, `${title} ${body}`, zones)
     const key = dedupeKey(zone, title, body)
     if (seen.has(key)) {
@@ -137,7 +139,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     seen.set(key, prepared.length)
     outcome.push(prepared.length)
     if (old) supersedes.push({ index: prepared.length, oldId: old })
-    prepared.push({ ...i, title, body, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
+    prepared.push({ ...i, title, body, keywords: undefined, ...keywords, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
   }
   // Semantic vectors (if a provider is configured): a provider outage never prevents ingestion.
   const provider = getEmbeddings()
@@ -196,9 +198,11 @@ const KEYWORDS_CONCURRENCY = 6
 const KEYWORDS_BUDGET_MS = 15_000
 
 /**
- * Search keywords for new knowledge without any (keywords.ts): a model reads each item alone, with its source, when
- * the company has Claude (its key or the deployment's) and BRAIN_KEYWORDS is not "off". No new call after
- * KEYWORDS_BUDGET_MS; a failure or the items left over stay without keywords: `npm run keywords` catches up.
+ * The distillation writes the keywords with the knowledge (KNOWLEDGE_RULES, on the workstation), and so do the
+ * connectors' import and agents through `remember`. Knowledge that arrives without any (heuristic distillation, an
+ * older workstation, a connector read without a model) catches up here: a model reads each item alone, with its source
+ * (keywords.ts), when the company has Claude (its key or the deployment's) and BRAIN_KEYWORDS is not "off". No new
+ * call after KEYWORDS_BUDGET_MS; a failure or the items left over stay without keywords: `npm run keywords` catches up.
  */
 async function addKeywords(items: KnowledgeItem[], zones: Zone[], author: string) {
   const todo = items.filter((i) => !i.keywords?.length)

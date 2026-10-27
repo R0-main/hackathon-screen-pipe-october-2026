@@ -11,6 +11,7 @@ import {
   buildCliExtractionPrompt,
   classifyZones,
   distillHeuristic,
+  keywordsOf,
   redactText,
   truncate,
   type Conversation,
@@ -182,7 +183,7 @@ export function normalizeItems(raw: unknown, conv: Conversation, zones: ZoneHint
       .map((e) => ({ type: e.type, name: truncate(String(e.name).trim(), 120) }))
       .slice(0, 10)
     const confidence = typeof o.confidence === "number" && Number.isFinite(o.confidence) ? Math.max(0, Math.min(1, o.confidence)) : 0.6
-    const parsed = KnowledgeItemInputSchema.safeParse({ zone, kind: o.kind, title, body, entities, source, confidence })
+    const parsed = KnowledgeItemInputSchema.safeParse({ zone, kind: o.kind, title, body, entities, source, confidence, ...keywordsOf(o.keywords, title) })
     if (parsed.success) out.push(parsed.data)
   }
   return out
@@ -451,7 +452,8 @@ export async function createDistiller(cfg: Config, force?: DistillerKind): Promi
 export function finalizeItems(items: KnowledgeItemInput[], seen = new Set<string>(), literals: string[] = []): KnowledgeItemInput[] {
   const out: KnowledgeItemInput[] = []
   for (const i of items) {
-    const parsed = KnowledgeItemInputSchema.safeParse({ ...i, title: redactText(i.title, { literals }), body: redactText(i.body, { literals }) })
+    const keywords = i.keywords ? keywordsOf(i.keywords.map((k) => redactText(k, { literals })), i.title) : {}
+    const parsed = KnowledgeItemInputSchema.safeParse({ ...i, title: redactText(i.title, { literals }), body: redactText(i.body, { literals }), keywords: undefined, ...keywords })
     if (!parsed.success) continue
     const key = `${parsed.data.zone}:${parsed.data.kind}:${parsed.data.title.toLowerCase()}`
     if (seen.has(key)) continue

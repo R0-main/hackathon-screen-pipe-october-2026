@@ -39,3 +39,18 @@ test("keywordsSearchText: normalized like the title and the body", () => {
   assert.equal(keywordsSearchText(["Plafond de dépense", "TVA"]), "plafond de depense tva")
   assert.equal(keywordsSearchText(undefined), "")
 })
+
+test("distillation: the rules ask for keywords with each item, and the items keep them", async () => {
+  const { buildCliExtractionPrompt, buildAgentPrompt } = await import("./index")
+  const { toKnowledgeInput } = await import("./claude")
+  const conv = { id: "s1", tool: "claude-code" as const, app: "Terminal", started_at: "2026-10-20T09:00:00.000Z", ended_at: "2026-10-20T10:00:00.000Z", messages: [{ role: "user" as const, text: "comment on met en prod ?" }] }
+  const zones = [{ id: "dev", name: "Dev", description: "", keywords: [] }]
+  for (const p of [buildCliExtractionPrompt(conv, zones), buildAgentPrompt({ zones, start: conv.started_at, end: conv.ended_at })]) {
+    assert.match(p, /- keywords: 6 to 14 search terms/)
+    assert.ok(p.includes('"keywords":["…"]'), "in the JSON asked for")
+  }
+  const parsed = { zone: "dev", kind: "procedure" as const, title: "Deploy the shop", body: "Tag, then Vercel deploys.", entities: [], confidence: 0.9 }
+  const source = { app: "Terminal", tool: "claude-code" as const, at: conv.ended_at }
+  assert.deepEqual(toKnowledgeInput({ ...parsed, keywords: ["mise en prod", "MISE EN PROD"] }, zones, source, "dev").keywords, ["mise en prod"])
+  assert.equal("keywords" in toKnowledgeInput({ ...parsed, keywords: [] }, zones, source, "dev"), false, "none written: the field stays absent")
+})

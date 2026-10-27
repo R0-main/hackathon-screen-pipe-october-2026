@@ -10,6 +10,9 @@ which prompt version and which model wrote it.
 | `rephrasings.json` | For each of the 181 questions, the 2 phrasings an agent would send to `search_brain`. | `tsx scripts/eval-rephrase.ts --model sonnet`: one call per question, the question alone with the company's description, and the tool's own guidance (`PHRASINGS_GUIDANCE`, `packages/core/src/mcp.ts`). Prompt `rephrase-v2`. |
 | `rephrasings-haiku.json` | The same, by Haiku: a lower bound, a small model as the agent. | `--model haiku`. |
 
+In the product, the distillation writes the keywords with each item, seeing the session (the employee's own words);
+the demo has no sessions, so the evaluation approximates them one item at a time, as the server's catch-up does.
+
 A model never sees another item or another question, nor the expected answers: an earlier set of rephrasings, written
 for all the questions at once, borrowed words from the other questions ("Valiere" became "Groupe Vallière") and
 measured 84% found first instead of 76%. Change a prompt: bump its version, write the files again (`--all`), measure.

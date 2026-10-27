@@ -83,6 +83,12 @@ export function cleanKeywords(list: unknown, title = ""): string[] {
   return out
 }
 
+/** `{keywords}` for an item when a model wrote some worth keeping, nothing otherwise (the field stays absent). */
+export function keywordsOf(list: unknown, title = ""): { keywords?: string[] } {
+  const kept = cleanKeywords(list, title)
+  return kept.length ? { keywords: kept } : {}
+}
+
 /** Keywords from a model's answer: the JSON asked for, or a code block around it, or a list one per line or comma. */
 export function parseKeywords(text: string, title = ""): string[] | null {
   const s = text.trim()

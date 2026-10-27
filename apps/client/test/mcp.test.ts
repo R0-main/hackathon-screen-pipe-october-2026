@@ -107,18 +107,25 @@ test("MCP remember: POST /api/ingest with agent mcp, agent source, secret redact
   const r = text(
     await client.callTool({
       name: "remember",
-      arguments: { title: "We deploy on Friday before 4pm", body: "Team decision for the API migration; key sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZ", kind: "decision" },
+      arguments: {
+        title: "We deploy on Friday before 4pm",
+        body: "Team decision for the API migration; key sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZ",
+        kind: "decision",
+        keywords: ["mise en prod le vendredi", "release cutoff", "sk-ant-api03-YYYYYYYYYYYYYYYYYYYY"],
+      },
     }),
   )
   assert.match(r, /Knowledge saved in the Dev \(`dev`\) zone/)
   const req = brain.requests.filter((x) => x.url === "/api/ingest").at(-1)!
-  const body = req.body as { agent: string; items: { zone: string; source: { tool: string; app: string }; confidence: number; body: string }[] }
+  const body = req.body as { agent: string; items: { zone: string; source: { tool: string; app: string }; confidence: number; body: string; keywords?: string[] }[] }
   assert.equal(body.agent, "mcp")
   assert.equal(body.items[0].zone, "dev")
   assert.equal(body.items[0].source.tool, "agent")
   assert.equal(body.items[0].source.app, "claude-code")
   assert.equal(body.items[0].confidence, 0.8)
   assert.ok(!body.items[0].body.includes("sk-ant"))
+  assert.deepEqual(body.items[0].keywords?.slice(0, 2), ["mise en prod le vendredi", "release cutoff"], "the agent's keywords go with it")
+  assert.ok(!body.items[0].keywords?.some((k) => k.includes("sk-ant")), "redacted like the body")
 })
 
 test("MCP remember: the answer names the zone chosen, flags a zone outside reading, and a duplicate", async () => {

@@ -222,7 +222,7 @@ test("import: Claude explores read-only then saves knowledge (simulated Claude)"
           name: "save_knowledge",
           input: {
             items: [
-              { title: "Deploy on Tuesdays", body: "We deploy on Tuesdays to have the week to fix things.", kind: "decision", zone: "dev", url: "https://notion.so/p1" },
+              { title: "Deploy on Tuesdays", body: "We deploy on Tuesdays to have the week to fix things.", kind: "decision", zone: "dev", url: "https://notion.so/p1", keywords: ["release day", "jour de mise en prod", "Release Day"] },
               { title: "", body: "empty", kind: "fact" },
               { title: "Acme customer", body: "Acme pays the invoice at 60 days.", kind: "unknown", zone: "missing-zone" },
             ],
@@ -261,6 +261,8 @@ test("import: Claude explores read-only then saves knowledge (simulated Claude)"
   assert.equal(out.items[0].source.app, "Notion")
   assert.equal(out.items[0].source.screenpipe_ref, "https://notion.so/p1")
   assert.match(out.items[0].source.session_id ?? "", /^mcp:notion:[0-9a-f]{16}$/)
+  assert.deepEqual(out.items[0].keywords, ["release day", "jour de mise en prod"], "its keywords, without duplicates")
+  assert.equal(out.items[1].keywords, undefined, "none written: none kept")
   assert.equal(out.items[1].kind, "fact", "unknown kind: fact")
   assert.equal(out.items[1].zone, "finance", "missing zone: classified by keywords")
   assert.equal(out.calls, 1)
