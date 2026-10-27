@@ -42,7 +42,7 @@ File storage:
 | voyage-4 + phrasings | 81% | 96% | 0.88 | 8 |
 | voyage-4 + keywords + phrasings | **85%** | 96% | 0.91 | 4 |
 | voyage-4 + keywords + phrasings (Haiku as the agent) | 83% | 97% | 0.90 | 6 |
-| voyage-4 + keywords + phrasings + rerank-3 | being measured | | | |
+| voyage-4 + keywords + phrasings + rerank-3 (once, with the question as asked) | **95%** | **99%** | 0.97 | 2 |
 
 Postgres (keywords at weight D):
 
@@ -61,3 +61,8 @@ In every configuration: no access leak (16/16), no outdated version served. The 
 file storage (0.25, 0.5, 1: 66%, 66%, 67% found first): they stay at 0.5, under the body (1). What they cost:
 unanswerable questions almost always get a result now (0 of 8 come back empty, 1 before), and the graph has fewer empty
 places to fill when the direct results are better (2 of 5 linked items found instead of 3).
+
+With rerank-3, the relevance of a right first answer is never under 0.42 (148 questions, median 0.79), and the first
+result of an unanswerable question never above 0.37 (8 questions): a threshold around 0.4 would answer "nothing found"
+to all 8 without losing a right first answer. For comparison, voyage-4 + rerank-3 alone, one phrasing: 93% first, 97%
+in the top 3.
