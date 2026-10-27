@@ -13,9 +13,17 @@ import { hybridSearch, searchWithGraph } from "../lib/brain"
 import { getEmbeddings, primeQueryCache } from "../lib/embeddings"
 import { getReranker, paceReranker, rerankFailures } from "../lib/rerank"
 import { getStore, runInOrg } from "../lib/store"
+import fs from "node:fs"
 import { DEMO_USERS } from "./demo-data"
 import { ACCESS_CASES, CASE_SETS as ALL_SETS, GRAPH_CASES, UNANSWERABLE, type Case } from "./eval-cases"
 import { CORPUS_MARKER } from "./eval-corpus"
+
+/**
+ * EVAL_REPHRASINGS=file.json ({question: [rewording, …]}): each question is searched together with the rewordings an
+ * agent would send (search_brain takes several phrasings), to measure what the agent's rewording adds.
+ */
+const REPHRASINGS: Record<string, string[]> = process.env.EVAL_REPHRASINGS ? JSON.parse(fs.readFileSync(process.env.EVAL_REPHRASINGS, "utf8")) : {}
+const asked = (q: string) => [q, ...(REPHRASINGS[q] ?? [])]
 
 /** Results agents get from search_brain by default. */
 const LIMIT = 8
@@ -41,6 +49,7 @@ async function main() {
   // A rate-limited account (Voyage without a payment method: 3 requests a minute): EVAL_RERANK_GAP_MS spaces the calls.
   const gap = Number(process.env.EVAL_RERANK_GAP_MS ?? 0)
   if (gap > 0) paceReranker(gap)
+  if (process.env.EVAL_REPHRASINGS) console.log(`Rephrasings: ${Object.keys(REPHRASINGS).length} questions searched with the agent's rewordings`)
   console.log(reranker ? `Rerank: ${reranker.model}${gap > 0 ? `, one call every ${gap / 1000} s` : ""}` : "Rerank: off (BRAIN_RERANK_MODEL not set)")
   /** Relevance the reranker gives to a right first answer, and to the first result of an unanswerable question. */
   const relevance = { right: [] as number[], unanswerable: [] as number[] }
@@ -74,7 +83,7 @@ async function main() {
       let fell = 0
       for (const c of set.cases) {
         // What agents get: the direct results first, the graph only takes the last places.
-        const results = await searchWithGraph(c.query, zones, LIMIT)
+        const results = await searchWithGraph(asked(c.query), zones, LIMIT)
         const rank = rankOf(results, c)
         const top = (results[0] as { relevance?: number } | undefined)?.relevance
         if (rank === 0 && top !== undefined) relevance.right.push(top)
@@ -99,7 +108,7 @@ async function main() {
 
     console.log(`\ngraph (expected among the ${LIMIT} results, without any word of the question)`)
     for (const c of GRAPH_CASES) {
-      const results = await searchWithGraph(c.query, zones, LIMIT)
+      const results = await searchWithGraph(asked(c.query), zones, LIMIT)
       const rank = rankOf(results, c)
       const direct = rankOf(await hybridSearch(c.query, zones, LIMIT), c) >= 0
       if (rank >= 0) withGraph++
@@ -112,7 +121,7 @@ async function main() {
 
     console.log("\nunanswerable (nothing in the brain answers: the best search returns nothing)")
     for (const q of UNANSWERABLE) {
-      const results = await searchWithGraph(q, zones, LIMIT)
+      const results = await searchWithGraph(asked(q), zones, LIMIT)
       if (results.length === 0) silent++
       const top = (results[0] as { relevance?: number } | undefined)?.relevance
       if (top !== undefined) relevance.unanswerable.push(top)
@@ -126,7 +135,7 @@ async function main() {
       const person = profiles.find((p) => p.email === email)
       if (!person) throw new Error(`${c.as} is not in this brain: run npm run seed first.`)
       const { readable } = await getAccess(person)
-      const results = (await searchWithGraph(c.query, readable, LIMIT, person.id)) as KnowledgeItem[]
+      const results = (await searchWithGraph(asked(c.query), readable, LIMIT, person.id)) as KnowledgeItem[]
       const leaks = results.filter((r) => !readable.includes(r.zone) && r.author_id !== person.id)
       const missing = c.expect !== undefined && rankOf(results, { expect: c.expect }) < 0
       const ok = leaks.length === 0 && !missing

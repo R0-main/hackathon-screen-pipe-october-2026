@@ -332,6 +332,21 @@ export async function hybridSearch(query: string, zones: string[], limit: number
   return (await rerankItems(query, ranked)).slice(0, limit)
 }
 
+/**
+ * The same question in several phrasings (the agent's own words, an English rewording, key terms): one search per
+ * phrasing, fused by rank. The calling agent does the rewording, which a search by words cannot.
+ */
+async function searchPhrasings(queries: string[], zones: string[], limit: number, authorId?: string): Promise<ScoredItem[]> {
+  const phrasings = [...new Set(queries.map((q) => q.trim()).filter(Boolean))]
+  if (phrasings.length <= 1) return hybridSearch(phrasings[0] ?? "", zones, limit, authorId)
+  const lists = await Promise.all(phrasings.map((q) => hybridSearch(q, zones, limit, authorId)))
+  const byId = new Map<string, ScoredItem>()
+  for (const r of lists.flat()) if (!byId.has(r.id)) byId.set(r.id, r)
+  return rrf(lists.map((l) => l.map((r) => r.id)))
+    .slice(0, limit)
+    .map(({ id, score }) => ({ ...byId.get(id)!, score: Math.round(score * 1000) / 10 }))
+}
+
 /** A search result; `via` when the knowledge graph brought it rather than the words of the query. */
 export type SearchHit = ScoredItem & { via?: GraphVia }
 
@@ -347,8 +362,8 @@ const GRAPH_CANDIDATES = 200
  * which entity links them to which result. Same scope as the search: the zones searched and the user's own items,
  * nothing superseded.
  */
-export async function searchWithGraph(query: string, zones: string[], limit: number, authorId?: string): Promise<SearchHit[]> {
-  const direct: SearchHit[] = await hybridSearch(query, zones, limit, authorId)
+export async function searchWithGraph(query: string | string[], zones: string[], limit: number, authorId?: string): Promise<SearchHit[]> {
+  const direct: SearchHit[] = await searchPhrasings(Array.isArray(query) ? query : [query], zones, limit, authorId)
   const slots = graphSlots(limit, direct.length)
   const seeds = direct.slice(0, GRAPH_SEEDS)
   const keys = [...new Set(seeds.flatMap((s) => s.entities.map(entityKey)))]
