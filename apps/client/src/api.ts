@@ -1,7 +1,7 @@
 // HTTP client of the brain's API (personal Bearer token).
 
 import type { AddDocumentResult, AgentEventInput, AgentName, DocumentUploadInput, EntityType, KnowledgeItemInput, ModerationInput, ModerationVerdict, NewZonesInput, Skill, SkillFile, StatusInput, SyncReport, ZoneStatus } from "@brain/core"
-import type { ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, DocumentResult, EntityResult, IngestResult, QueryInput, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
+import type { ApiItem, ApiZone, CompanyStatusResult, ConnectedCall, ConnectedTools, DocumentResult, EntityResult, IngestResult, QueryInput, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
 
 // API responses read by the MCP tools: shared with the brain's MCP endpoint (@brain/core/mcp).
 export type { ApiItem, ApiZone, CompanyStatusResult, IngestResult, QueryResult, WhoAmI, ZoneSummary } from "@brain/core/mcp"
@@ -167,6 +167,10 @@ export class BrainApi {
   /** A document and its text; `agent`: its zone lights up on the dashboard. */
   document(id: string, agent: AgentName = "mcp") {
     return this.request<DocumentResult>("GET", `/api/documents/${encodeURIComponent(id)}?agent=${agent}`, undefined, 30000)
+  }
+  /** One readable knowledge item, by id (get_knowledge). */
+  item(id: string) {
+    return this.request<{ item: ApiItem }>("GET", `/api/items/${encodeURIComponent(id)}`)
   }
   /** An entity's neighborhood in the knowledge graph; `agent`: its zones light up on the dashboard. */
   entity(input: { name: string; type?: EntityType }, agent: AgentName = "mcp") {

@@ -11,6 +11,7 @@ import * as documentRoute from "@/app/api/documents/[id]/route"
 import * as entitiesRoute from "@/app/api/entities/route"
 import * as ingestRoute from "@/app/api/ingest/route"
 import * as queryRoute from "@/app/api/query/route"
+import * as itemRoute from "@/app/api/items/[id]/route"
 import * as statusRoute from "@/app/api/status/route"
 import * as whoamiRoute from "@/app/api/whoami/route"
 import * as zoneRoute from "@/app/api/zones/[id]/route"
@@ -49,6 +50,7 @@ function routesApi(token: string): BrainToolsApi {
     ingest: (items, agent = "mcp") => call(ingestRoute.POST as Route, "POST", "/api/ingest", { items, agent }),
     document: (id, agent = "mcp") =>
       call(documentRoute.GET as Route, "GET", `/api/documents/${encodeURIComponent(id)}?agent=${agent}`, undefined, { id }),
+    item: (id) => call(itemRoute.GET as Route, "GET", `/api/items/${encodeURIComponent(id)}`, undefined, { id }),
     entity: (input, agent = "mcp") => {
       const q = new URLSearchParams({ name: input.name, ...(input.type ? { type: input.type } : {}), agent })
       return call(entitiesRoute.GET as Route, "GET", `/api/entities?${q}`)

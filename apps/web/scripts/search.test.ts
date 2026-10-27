@@ -140,3 +140,31 @@ test("vectors: stored at insertion and by the catch-up, listed back as numbers, 
   assert.ok((await inOrg(() => store.searchItems("controle vecteur", ["dev"], 5))).some((r) => r.id === inserted.id), "found by its keywords")
   await inOrg(() => store.deleteItem(inserted.id))
 })
+
+test("compact format: the 3 best in full, the next ones in one line with their id, 2 documents at most", async () => {
+  const { COMPACT_FORMAT } = await import("@brain/core/mcp")
+  const leo = await viewer("leo")
+  const r = await inOrg(() => queryBrain(leo, { query: "customers" }))
+  assert.ok(r.items.length > 3)
+  const text = formatQuery(r, (z) => z, COMPACT_FORMAT)
+  for (const i of r.items.slice(0, 3)) assert.ok(text.includes(i.body.trim().split("\n")[0]), "the first ones with their text")
+  for (const i of r.items.slice(3)) {
+    assert.ok(text.includes(`id \`${i.id}\``), "the next ones with the id get_knowledge reads")
+    if (!r.items.slice(0, 3).some((f) => f.body.includes(i.body))) assert.ok(!text.includes(i.body.trim()), "without their text")
+  }
+  assert.ok((text.match(/^- \*\*/gm) ?? []).length <= 2, "2 documents at most")
+  assert.ok(text.length < formatQuery(r, (z) => z).length)
+})
+
+test("get_knowledge: an item by id, with its author, only for whoever reads its zone or wrote it", async () => {
+  const { getKnowledgeFor } = await import("../lib/brain")
+  const jm = await viewer("jeanmarc")
+  const hugo = await viewer("hugo")
+  const items = await inOrg(() => getRootStore().listItems({ zones: ["finance"], limit: 5 }))
+  const finance = items.find((i) => i.author_id === tokens.jeanmarc.id)!
+  const read = await inOrg(() => getKnowledgeFor(jm, finance.id))
+  assert.equal(read?.title, finance.title)
+  assert.equal(read?.author, "Jean-Marc Dubois")
+  assert.equal(await inOrg(() => getKnowledgeFor(hugo, finance.id)), null, "dev does not read finance: nothing, as for an unknown id")
+  assert.equal(await inOrg(() => getKnowledgeFor(hugo, "00000000-0000-0000-0000-000000000000")), null)
+})

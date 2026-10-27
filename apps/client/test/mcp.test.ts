@@ -40,7 +40,7 @@ after(async () => {
 
 test("MCP: list of tools", async () => {
   const { tools } = await client.listTools()
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "explore_entity", "get_document", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "explore_entity", "get_document", "get_knowledge", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
   const search = tools.find((t) => t.name === "search_brain")!
   assert.match(search.description ?? "", /decisions, procedures/)
   assert.deepEqual(search.inputSchema.required, ["query"])
@@ -62,6 +62,12 @@ test("MCP get_document: the document's text and the knowledge it backs; its zone
 
 test("MCP, a single company: no \"Company:\" header in the answers", async () => {
   assert.doesNotMatch(text(await client.callTool({ name: "company_status", arguments: {} })), /^Company:/)
+})
+
+test("MCP get_knowledge: each id read in full, an unknown or unreadable one says so", async () => {
+  const r = text(await client.callTool({ name: "get_knowledge", arguments: { ids: ["i1", "nope"] } }))
+  assert.match(r, /### 1\. .+\nZone: Dev/)
+  assert.match(r, /### 2\. Not found\nNo knowledge you can read has the id `nope`/)
 })
 
 test("MCP search_brain: results in markdown, then \"nothing found\" + restricted zones", async () => {

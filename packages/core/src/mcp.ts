@@ -157,6 +157,8 @@ export interface BrainToolsApi {
   ingest(items: KnowledgeItemInput[], agent?: AgentName): Promise<IngestResult>
   /** A document and its text (the zone lights up for `agent`). */
   document?(id: string, agent?: AgentName): Promise<DocumentResult>
+  /** One knowledge item the user can read, by id (search_brain gives them); missing from an older brain. */
+  item?(id: string): Promise<{ item: ApiItem }>
   /** An entity's neighborhood in the knowledge graph (its zones light up for `agent`); missing from an older brain. */
   entity?(input: { name: string; type?: EntityType }, agent?: AgentName): Promise<EntityResult>
   /** Connector tools (Notion, Linear, GitHub…) the admin opened to agents. */
@@ -250,7 +252,29 @@ function documentsBlock(docs: ApiDocument[], zoneName: ZoneNamer, heading: strin
   return `### ${heading}\n${lines.join("\n")}\n\nOpen one with get_document (its id) to read its full text.`
 }
 
-export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
+/** get_knowledge's answer: each item in full, or a line saying it cannot be read (`null`, in the ids' order). */
+export function formatKnowledge(items: (ApiItem | null)[], ids: string[], zoneName: ZoneNamer): string {
+  return items
+    .map((i, n) => (i ? itemBlock(i, n + 1, zoneName) : `### ${n + 1}. Not found\nNo knowledge you can read has the id \`${ids[n]}\`.`))
+    .join("\n\n---\n\n")
+}
+
+/** One line for a result past the first ones: what it is, who, when, and the id get_knowledge reads it by. */
+function itemLine(i: ApiItem, n: number, zoneName: ZoneNamer): string {
+  const via = i.via ? ` · linked through ${i.via.entity.name} (${i.via.entity.type})` : ""
+  return `${n}. ${i.title} — ${zoneName(i.zone)}, ${KIND_LABELS[i.kind] ?? i.kind}, ${i.author ?? "?"}, ${shortDate(i.source?.at ?? i.created_at)}${via} · id \`${i.id}\``
+}
+
+/**
+ * How search_brain answers. `full`: the first results in full (the others in one line each, read with
+ * get_knowledge); `documents`: matching documents listed at most. Without options, everything in full.
+ */
+export type QueryFormat = { full?: number; documents?: number }
+
+/** search_brain by default: the 3 best results in full, the next ones in one line, 2 documents at most. */
+export const COMPACT_FORMAT: Required<QueryFormat> = { full: 3, documents: 2 }
+
+export function formatQuery(r: QueryResult, zoneName: ZoneNamer, format: QueryFormat = {}): string {
   const searched = r.zones_searched.length ? r.zones_searched.map(zoneName).join(", ") : "none"
   const restricted = r.zones_restricted?.length
     ? "\n\nNote: zones you do not have access to might know more (ask an admin or the person concerned)."
@@ -264,8 +288,17 @@ export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
   const linked = r.items.filter((i) => i.via).length
   const graph = linked ? `, ${linked} of them linked through the knowledge graph` : ""
   const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched}${filterLabel(r.filter)}${graph})`
-  const docs = r.documents?.length ? `\n\n${documentsBlock(r.documents, zoneName, "Matching documents")}` : ""
-  return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${docs}${restricted}`
+  const shownDocs = r.documents?.slice(0, format.documents ?? Infinity) ?? []
+  const moreDocs = (r.documents?.length ?? 0) - shownDocs.length
+  const docs = shownDocs.length
+    ? `\n\n${documentsBlock(shownDocs, zoneName, "Matching documents")}${moreDocs > 0 ? ` ${moreDocs} more document${moreDocs > 1 ? "s" : ""} match: narrow the search to see them.` : ""}`
+    : ""
+  const full = r.items.slice(0, format.full ?? r.items.length)
+  const rest = r.items.slice(full.length)
+  const lines = rest.length
+    ? `\n\n---\n\n### Also relevant (read one with get_knowledge and its id)\n${rest.map((i, n) => itemLine(i, full.length + n + 1, zoneName)).join("\n")}`
+    : ""
+  return `${head}\n\n${full.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${lines}${docs}${restricted}`
 }
 
 /** Knowledge listed by explore_entity: the most recent, each in a few lines (search_brain gives the full text). */
@@ -510,16 +543,39 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         since: z.string().max(40).optional().describe("Optional: only knowledge dated from this day (ISO, e.g. \"2026-10-01\")."),
         until: z.string().max(40).optional().describe("Optional: only knowledge dated up to this day included (ISO)."),
         author: z.string().max(120).optional().describe("Optional: only knowledge written by this person (name or first name, e.g. \"Sarah\")."),
+        detail: z
+          .enum(["compact", "full"])
+          .optional()
+          .describe("compact (default): the 3 best results in full, the next ones in one line (get_knowledge reads them); full: every result in full."),
         limit: z.number().int().min(1).max(50).optional().describe("Maximum number of results (8 by default)."),
         ...companyParam,
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ query, phrasings, zones, since, until, author, limit, company }) =>
+    async ({ query, phrasings, zones, since, until, author, detail, limit, company }) =>
       guard(company, async (c) => {
         await ensureZones(c)
         const r = await c.api.query({ query, phrasings, zones: zones?.map((x) => resolveZone(c, x)), since, until, author, limit, agent: "mcp" })
-        return formatQuery(r, namer(c))
+        return formatQuery(r, namer(c), detail === "full" ? {} : COMPACT_FORMAT)
+      }),
+  )
+
+  server.registerTool(
+    "get_knowledge",
+    {
+      title: "Read knowledge by id",
+      description:
+        "Reads in full the knowledge items search_brain lists in one line (its \"Also relevant\" part), by their ids: the " +
+        "text, who wrote it, when, its entities and documents. Only knowledge the user can read is returned.",
+      inputSchema: { ids: z.array(z.string().min(1).max(64)).min(1).max(8).describe("Ids as given by search_brain."), ...companyParam },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ ids, company }) =>
+      guard(company, async (c) => {
+        if (!c.api.item) return "This brain cannot read knowledge by id yet: update the server, or search_brain with detail \"full\"."
+        await ensureZones(c)
+        const found = await Promise.all(ids.map((id) => c.api.item!(id.trim()).then((r) => r.item).catch(() => null)))
+        return formatKnowledge(found, ids, namer(c))
       }),
   )
 

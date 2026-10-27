@@ -920,6 +920,18 @@ export function visibleEvent(viewer: Viewer, e: AgentEvent) {
   return redactEvent(e, viewer.access, viewer.profile.id)
 }
 
+/**
+ * One knowledge item by id, if the viewer reads its zone or wrote it (the same scope as search), with its author's name
+ * and its documents; null otherwise, whether it does not exist or is not readable (nothing tells them apart).
+ */
+export async function getKnowledgeFor(viewer: Viewer, id: string) {
+  const item = await store().getItem(id)
+  if (!item || !(viewer.access.readable.includes(item.zone) || item.author_id === viewer.profile.id)) return null
+  const [withDocs] = await withDocuments(viewer, [item])
+  const author = (await store().getProfile(item.author_id))?.name ?? "?"
+  return { ...withDocs, author }
+}
+
 export function itemAuthorOrAdmin(viewer: Viewer, item: KnowledgeItem): boolean {
   return viewer.real.role === "admin" || item.author_id === viewer.real.id
 }
