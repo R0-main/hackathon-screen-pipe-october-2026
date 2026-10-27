@@ -1045,7 +1045,7 @@ async function main() {
       const mcpTools = await rpc(acme.id, token, { jsonrpc: "2.0", id: 2, method: "tools/list" })
       assert(
         mcpTools.data.result.tools.map((t: { name: string }) => t.name).join() ===
-          "search_brain,explore_entity,get_document,get_knowledge,get_zone_summary,list_zones,whoami_context,company_status,remember,connected_tools,use_connected_tool,show_brain,brain_activity,show_automations,set_automation_status,show_team",
+          "search_brain,get_knowledge,explore_entity,get_document,get_zone_summary,list_zones,whoami_context,company_status,remember,connected_tools,use_connected_tool,show_brain,brain_activity,show_automations,set_automation_status,show_team",
         "MCP: the brain's tools (connector tools and MCP Apps included), without a company parameter (one company per server)",
       )
       assert(!JSON.stringify(mcpTools.data).includes('"company"'), "MCP: no company parameter")

@@ -69,3 +69,19 @@ With rerank-3, the relevance of a right first answer is never under 0.42 (148 qu
 result of an unanswerable question never above 0.37 (8 questions): a threshold around 0.4 would answer "nothing found"
 to all 8 without losing a right first answer. For comparison, voyage-4 + rerank-3 alone, one phrasing: 93% first, 97%
 in the top 3.
+
+## What an answer costs to read (`npm run eval:tokens -- --count`)
+
+The 155 questions with the agent's phrasings (keywords + phrasings, no embeddings), as an admin, 8 results each.
+Tokens counted by Claude itself (`claude -p`, Haiku: the prompt's tokens minus an empty prompt's).
+
+| search_brain's answer | Mean | Median | 90th percentile | Max |
+|---|---|---|---|---|
+| full (every result's text) | 1,509 | 1,514 | 1,735 | 1,940 |
+| compact (3 in full, 5 in one line, 2 documents) | 1,093 | 1,064 | 1,289 | 1,393 |
+| compact + the get_knowledge reads it calls for | 1,101 | 1,074 | 1,293 | 1,505 |
+
+27% less to read, reads included: 6 questions of 155 (4 with voyage-4) have their expected answer only in a one-line
+result, a get_knowledge call on top. The demo's items are short (1 to 4 sentences): the saving grows with longer
+knowledge. What the compact answer still spends: about 2.4 characters per token, a knowledge id (a UUID) costs some 25
+tokens, about 125 for the 5 one-line results.
