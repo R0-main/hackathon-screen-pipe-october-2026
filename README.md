@@ -374,6 +374,23 @@ rollout, a company still has to settle employee consent, works council informati
 
 <br/>
 
+## License
+
+Copyright © 2026 Romain, Anas Tazzit, Adem and Raphael Goldenberg.
+
+NOS Brainer is free software under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). You can
+use it, study it, change it and host it yourself. If you let other people use a changed version over a network, you
+must give them its source code under the same license. For other terms, such as a commercial license, contact the
+authors.
+
+Two exceptions:
+
+- The skills copied into `.claude/skills/` keep their own licenses, listed in
+  [.claude/skill-licenses/README.md](.claude/skill-licenses/README.md).
+- Screenpipe is not part of this repository. `brain setup` downloads it on each computer, under its own license.
+
+<br/>
+
 ## Team
 
 Built at **42 Paris** for the Screenpipe hackathon *"Build Agents That Remember"* (October 2026) by
