@@ -1,5 +1,6 @@
 import { z } from "zod"
-import { getStore } from "@/lib/store"
+import { demoPulse } from "@/lib/demo-live"
+import { getStore, runInOrg } from "@/lib/store"
 import { isDemoMode } from "@/lib/auth"
 import { error, internalError, json, parseBody } from "@/lib/http"
 import { openSession } from "@/lib/session"
@@ -31,6 +32,8 @@ export async function POST(req: Request) {
     const profile = await getStore().getProfile(body.data.userId)
     if (!profile) return error(404, "Member not found.")
     await openSession(profile.id)
+    // The visitor lands on a team at work: the first beat comes now, not with the dashboard's first poll.
+    await runInOrg(profile.org_id, () => demoPulse()).catch((err) => console.error("[demo]", err instanceof Error ? err.message : err))
     return json({ ok: true, profile })
   } catch (err) {
     return internalError(err)
