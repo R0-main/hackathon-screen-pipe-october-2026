@@ -88,3 +88,27 @@ test("another company is never touched", async () => {
     await root.updateOrg({ name: "Encore" })
   }
 })
+
+test("test accounts: removed with what is theirs; the six people, the visitors and the admins stay", async () => {
+  const { removeDemoTestAccounts, DEMO_VISITOR_TITLE } = await import("../lib/demo-seed")
+  const { hashToken, newToken } = await import("../lib/auth")
+  const make = (name: string, title: string, role: "admin" | "member" = "member") =>
+    inOrg(() => root.createProfile({ name, title, role, token_hash: hashToken(newToken()) }))
+  const junk = await make("fwqfwq", "fwqfqf")
+  const blank = await make("fwqfqfqf", "")
+  const visitor = await make("Visitor 4242", DEMO_VISITOR_TITLE)
+  const admin = await make("Second admin", "Ops", "admin")
+  await inOrg(() =>
+    root.insertItems([{ zone: "dev", kind: "fact", title: "A test account's note", body: "Typed while trying the demo.", entities: [], source: { app: "Terminal", tool: "claude-code", at: new Date().toISOString() }, confidence: 0.5, author_id: junk.id }]),
+  )
+  await inOrg(() => root.insertEvents([{ user_id: junk.id, agent: "claude-code", type: "started", zones: [], at: new Date().toISOString() }]))
+  const removed = await inOrg(() => removeDemoTestAccounts(root))
+  assert.deepEqual(removed.sort(), ["fwqfqfqf", "fwqfwq"])
+  const left = (await inOrg(() => root.listProfiles())).map((p) => p.id)
+  assert.ok(!left.includes(junk.id) && !left.includes(blank.id))
+  assert.ok(left.includes(visitor.id) && left.includes(admin.id), "a visitor and an admin stay")
+  assert.equal(left.length, DEMO_USERS.length + 2, "the six people stay")
+  assert.ok(!(await inOrg(() => root.listItems({ limit: 5000 }))).some((i) => i.author_id === junk.id), "their knowledge goes")
+  assert.ok(!(await inOrg(() => root.listEvents({ limit: 100_000 }))).some((e) => e.user_id === junk.id), "their events go")
+  assert.deepEqual(await inOrg(() => removeDemoTestAccounts(root)), [], "nothing left to remove")
+})

@@ -641,6 +641,13 @@ export class PostgresStore implements BrainStore {
         ${p.can_publish_skills ?? false}, ${p.token_hash}) returning *`
     return toProfile(r)
   }
+  async deleteProfile(id: string) {
+    if (!UUID_RE.test(id)) return false
+    // The foreign keys do the rest: knowledge, events, access, reports and documents go; tasks, skills and the reports' manager lose them.
+    const rows = await this.sql`delete from profiles where id = ${id} and org_id = ${await this.orgId()} returning id`
+    return rows.length > 0
+  }
+
   async updateProfile(id: string, patch: ProfilePatch) {
     const current = await this.sql`select * from profiles where id = ${id} and org_id = ${await this.orgId()}`
     if (!current[0]) return null

@@ -123,6 +123,11 @@ export interface BrainStore {
   listProfiles(): Promise<Profile[]>
   createProfile(p: NewProfile): Promise<Profile>
   updateProfile(id: string, patch: ProfilePatch): Promise<Profile | null>
+  /**
+   * Removes a person from the company with everything that is theirs (knowledge, events, access, sync reports,
+   * documents); their tasks, skills and reports lose them. False if they did not exist.
+   */
+  deleteProfile(id: string): Promise<boolean>
 
   listZones(): Promise<Zone[]>
   upsertZone(z: Zone): Promise<Zone>
