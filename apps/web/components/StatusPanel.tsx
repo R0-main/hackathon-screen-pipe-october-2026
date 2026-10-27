@@ -297,8 +297,9 @@ function CommandHint() {
     }
   }
   return (
-    <div className="mt-6 max-w-2xl">
-      <p className="text-[13px] leading-relaxed text-trace">{t.status.claudeHint}</p>
+    <details className="mt-6 max-w-2xl">
+      <summary className="cursor-pointer text-[13px] text-trace hover:text-ink">{t.status.forDevelopers}</summary>
+      <p className="mt-2 text-[13px] leading-relaxed text-trace">{t.status.claudeHint}</p>
       <div className="mt-2 flex items-center gap-2 rounded-[6px] border border-line bg-surface py-1 pl-3 pr-1">
         <code className="mono min-w-0 flex-1 select-all text-[12.5px] [overflow-wrap:anywhere]">{REFRESH_COMMAND}</code>
         <button type="button" className="btn btn-sm shrink-0" onClick={copy} aria-label={copied ? t.status.copied : t.status.copyCommand}>
@@ -309,7 +310,7 @@ function CommandHint() {
       <span role="status" className="sr-only">
         {copied ? t.status.copied : ""}
       </span>
-    </div>
+    </details>
   )
 }
 

@@ -27,7 +27,7 @@ const AGENT_LABEL: Record<string, string> = { "claude-code": "Claude Code", code
 type Incoming = Omit<Draft, "generator" | "pages"> & { received_at: string }
 const fromAgent = (d: Incoming): Draft => withUniqueZones({ ...d, generator: "agent", pages: [] })
 
-const GENERATOR_LABEL = (d: Draft) => (d.generator === "agent" ? `from ${AGENT_LABEL[d.source ?? ""] ?? "your agent"}` : d.generator === "claude" ? "from Claude" : "(heuristic)")
+const GENERATOR_LABEL = (d: Draft) => (d.generator === "agent" ? `from ${AGENT_LABEL[d.source ?? ""] ?? "your agent"}` : d.generator === "claude" ? "from Claude" : "(simplified summary)")
 
 /** One zone per id (the synthesis may return two identical ones): unique React keys and applied zones. */
 function withUniqueZones(d: Draft): Draft {
@@ -141,7 +141,7 @@ export function Onboarding({ questions, orgName, claude }: { questions: Question
       <header className="mb-5">
         <h1 className="text-[22px] font-medium leading-tight">Company onboarding</h1>
         <p className="mt-1 text-[13px] text-trace">
-          5 to 10 minutes to give {orgName}&apos;s brain its first memory, {claude ? "with a synthesis by Claude" : "without Claude (heuristic synthesis)"}.
+          5 to 10 minutes to give {orgName}&apos;s brain its first memory, {claude ? "with a synthesis by Claude" : "with a simplified summary (no Claude key)"}.
         </p>
       </header>
       {!draft && (

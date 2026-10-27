@@ -26,7 +26,7 @@ export const GET = withViewer<Ctx>(async (_req, viewer, { params }) => {
   ])
   const names = new Map(profiles.map((p) => [p.id, p.name]))
   await store.insertEvents([
-    { user_id: viewer.real.id, agent: "dashboard", type: "query", zones: [id], summary: `Viewing the ${zone.name} zone`, at: new Date().toISOString() },
+    { user_id: viewer.real.id, agent: "dashboard", type: "query", zones: [id], summary: `the ${zone.name} zone`, at: new Date().toISOString() },
   ])
   return json({
     zone,
