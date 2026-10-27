@@ -9,7 +9,7 @@
 
 import type { KnowledgeItem } from "@brain/core"
 import { getAccess } from "../lib/access"
-import { hybridSearch, searchWithGraph } from "../lib/brain"
+import { ORIGINAL_PHRASING_WEIGHT, hybridSearch, searchWithGraph } from "../lib/brain"
 import { getEmbeddings, primeQueryCache } from "../lib/embeddings"
 import { getReranker, paceReranker, rerankFailures } from "../lib/rerank"
 import { getStore, runInOrg } from "../lib/store"
@@ -22,8 +22,12 @@ import { CORPUS_MARKER } from "./eval-corpus"
  * EVAL_REPHRASINGS=file.json ({question: [rewording, …]}): each question is searched together with the rewordings an
  * agent would send (search_brain takes several phrasings), to measure what the agent's rewording adds.
  */
-const REPHRASINGS: Record<string, string[]> = process.env.EVAL_REPHRASINGS ? JSON.parse(fs.readFileSync(process.env.EVAL_REPHRASINGS, "utf8")) : {}
+const rephrasingsFile = process.env.EVAL_REPHRASINGS ? JSON.parse(fs.readFileSync(process.env.EVAL_REPHRASINGS, "utf8")) : null
+/** scripts/eval-data/rephrasings*.json ({prompt, model, questions}), or a bare {question: [rewording, …]}. */
+const REPHRASINGS: Record<string, string[]> = rephrasingsFile?.questions ?? rephrasingsFile ?? {}
 const asked = (q: string) => [q, ...(REPHRASINGS[q] ?? [])]
+/** EVAL_ORIGINAL_WEIGHT: weight of the question as asked in the fusion of phrasings (ORIGINAL_PHRASING_WEIGHT otherwise). */
+const originalWeight = process.env.EVAL_ORIGINAL_WEIGHT ? Number(process.env.EVAL_ORIGINAL_WEIGHT) : undefined
 
 /** Results agents get from search_brain by default. */
 const LIMIT = 8
@@ -49,14 +53,18 @@ async function main() {
   // A rate-limited account (Voyage without a payment method: 3 requests a minute): EVAL_RERANK_GAP_MS spaces the calls.
   const gap = Number(process.env.EVAL_RERANK_GAP_MS ?? 0)
   if (gap > 0) paceReranker(gap)
-  if (process.env.EVAL_REPHRASINGS) console.log(`Rephrasings: ${Object.keys(REPHRASINGS).length} questions searched with the agent's rewordings`)
+  if (process.env.EVAL_REPHRASINGS)
+    console.log(
+      `Rephrasings: ${Object.keys(REPHRASINGS).length} questions searched with the agent's rewordings${rephrasingsFile?.prompt ? ` (${rephrasingsFile.prompt}, ${rephrasingsFile.model})` : ""}, ` +
+        `the question as asked weighing ${originalWeight ?? ORIGINAL_PHRASING_WEIGHT}`,
+    )
   console.log(reranker ? `Rerank: ${reranker.model}${gap > 0 ? `, one call every ${gap / 1000} s` : ""}` : "Rerank: off (BRAIN_RERANK_MODEL not set)")
   /** Relevance the reranker gives to a right first answer, and to the first result of an unanswerable question. */
   const relevance = { right: [] as number[], unanswerable: [] as number[] }
   // Every question's vector in a few requests, before the searches: one request per question would hit the
   // provider's rate limit, and a refused embedding silently falls back to words, which would skew the comparison.
   if (provider) {
-    const queries = [...ALL_SETS.flatMap((set) => set.cases.map((c) => c.query)), ...GRAPH_CASES.map((c) => c.query), ...UNANSWERABLE, ...ACCESS_CASES.map((c) => c.query)]
+    const queries = [...ALL_SETS.flatMap((set) => set.cases.map((c) => c.query)), ...GRAPH_CASES.map((c) => c.query), ...UNANSWERABLE, ...ACCESS_CASES.map((c) => c.query), ...Object.values(REPHRASINGS).flat()]
     console.log(`Query vectors: ${await primeQueryCache(queries)} computed in advance`)
   }
   const failures: string[] = []
@@ -65,6 +73,8 @@ async function main() {
   const withCorpus = (await store.listItems({ limit: 5000 })).some((i) => i.title === CORPUS_MARKER)
   const CASE_SETS = ALL_SETS.filter((set) => !set.corpus || withCorpus)
   console.log(`Corpus: ${withCorpus ? "demo + evaluation corpus" : "demo only (npm run eval:seed adds the evaluation corpus)"}`)
+  const live = (await store.listItems({ limit: 5000, excludeSuperseded: true }))
+  console.log(`Keywords: ${live.filter((i) => i.keywords?.length).length}/${live.length} knowledge items${live.some((i) => i.keywords?.length) ? "" : " (npm run eval:seed applies scripts/eval-data/keywords.json)"}`)
   const summary: string[] = []
   let withGraph = 0
   let withoutGraph = 0
@@ -83,7 +93,7 @@ async function main() {
       let fell = 0
       for (const c of set.cases) {
         // What agents get: the direct results first, the graph only takes the last places.
-        const results = await searchWithGraph(asked(c.query), zones, LIMIT)
+        const results = await searchWithGraph(asked(c.query), zones, LIMIT, { originalWeight })
         const rank = rankOf(results, c)
         const top = (results[0] as { relevance?: number } | undefined)?.relevance
         if (rank === 0 && top !== undefined) relevance.right.push(top)
@@ -108,7 +118,7 @@ async function main() {
 
     console.log(`\ngraph (expected among the ${LIMIT} results, without any word of the question)`)
     for (const c of GRAPH_CASES) {
-      const results = await searchWithGraph(asked(c.query), zones, LIMIT)
+      const results = await searchWithGraph(asked(c.query), zones, LIMIT, { originalWeight })
       const rank = rankOf(results, c)
       const direct = rankOf(await hybridSearch(c.query, zones, LIMIT), c) >= 0
       if (rank >= 0) withGraph++
@@ -121,7 +131,7 @@ async function main() {
 
     console.log("\nunanswerable (nothing in the brain answers: the best search returns nothing)")
     for (const q of UNANSWERABLE) {
-      const results = await searchWithGraph(asked(q), zones, LIMIT)
+      const results = await searchWithGraph(asked(q), zones, LIMIT, { originalWeight })
       if (results.length === 0) silent++
       const top = (results[0] as { relevance?: number } | undefined)?.relevance
       if (top !== undefined) relevance.unanswerable.push(top)
@@ -135,7 +145,7 @@ async function main() {
       const person = profiles.find((p) => p.email === email)
       if (!person) throw new Error(`${c.as} is not in this brain: run npm run seed first.`)
       const { readable } = await getAccess(person)
-      const results = (await searchWithGraph(asked(c.query), readable, LIMIT, person.id)) as KnowledgeItem[]
+      const results = (await searchWithGraph(asked(c.query), readable, LIMIT, { authorId: person.id, originalWeight })) as KnowledgeItem[]
       const leaks = results.filter((r) => !readable.includes(r.zone) && r.author_id !== person.id)
       const missing = c.expect !== undefined && rankOf(results, { expect: c.expect }) < 0
       const ok = leaks.length === 0 && !missing

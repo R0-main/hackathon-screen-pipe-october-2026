@@ -2,7 +2,12 @@
 // npm run seed. Near misses in every zone, and older versions of four decisions marked as superseded. Run it again:
 // what is already there is skipped. Refuses a database that is not local: the corpus must never reach a real brain
 // (EVAL_SEED_FORCE=1 to override). Then npm run embed computes their vectors, if embeddings are on.
+// The search keywords of the demo and the corpus come from scripts/eval-data/keywords.json (written by npm run keywords,
+// one item at a time, with the prompt version and the model): EVAL_KEYWORDS=<file> for another set, "off" for none.
 
+import fs from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import type { KnowledgeItemInput } from "@brain/core"
 import { getStore, runInOrg } from "../lib/store"
 import { DEMO_USERS } from "./demo-data"
@@ -23,6 +28,15 @@ function checkNoAnswerInTitles(items: CorpusItem[]) {
     .map((e) => e.toLowerCase())
   const clashes = items.flatMap((i) => expected.filter((e) => i.title.toLowerCase().includes(e)).map((e) => `"${i.title}" contains "${e}"`))
   if (clashes.length) throw new Error(`Corpus titles that contain an expected answer:\n${clashes.join("\n")}`)
+}
+
+const KEYWORDS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "eval-data/keywords.json")
+
+/** Keywords by title (npm run keywords -- --export), null with EVAL_KEYWORDS=off. */
+function keywordsByTitle(): { file: string; prompt: string; model: string; items: Record<string, string[]> } | null {
+  const file = process.env.EVAL_KEYWORDS || KEYWORDS_FILE
+  if (file === "off") return null
+  return { file, ...JSON.parse(fs.readFileSync(file, "utf8")) }
 }
 
 async function main() {
@@ -56,6 +70,13 @@ async function main() {
       if (await store.markSuperseded(inserted.id, current.id)) superseded++
     }
     console.log(`✓ evaluation corpus: ${fresh.length} near misses and ${superseded} superseded versions added (${CORPUS_ITEMS.length - fresh.length} already there).`)
+    const kw = keywordsByTitle()
+    if (kw) {
+      const items = await store.listItems({ limit: 5000, excludeSuperseded: true })
+      const rows = items.filter((i) => kw.items[i.title]?.length).map((i) => ({ id: i.id, keywords: kw.items[i.title] }))
+      await store.setKeywords(rows)
+      console.log(`✓ search keywords (${kw.prompt}, ${kw.model}): ${rows.length}/${items.length} knowledge items, from ${path.relative(process.cwd(), kw.file)}.`)
+    }
   })
   const s = store as { end?: () => Promise<void> }
   if (typeof s.end === "function") await s.end()
