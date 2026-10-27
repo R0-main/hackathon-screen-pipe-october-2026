@@ -274,6 +274,8 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
 
 /** Lexical and semantic candidates re-read before fusion, relative to the requested limit. */
 const HYBRID_FACTOR = 4
+/** Similarity down to which semantic search fills a list the other results leave short (the fusion stops at 0.3). */
+const FILL_SIMILARITY = 0.2
 
 /**
  * Hybrid search: the query is expanded to its synonyms (lexical), then, if an embeddings provider is
@@ -298,8 +300,9 @@ export async function hybridSearch(query: string, zones: string[], limit: number
   for (const r of [...lexical, ...expanded]) if (!byId.has(r.id)) byId.set(r.id, r)
   const lists: string[][] = [lexical.map((r) => r.id)]
   if (expanded.length) lists.push(expanded.map((r) => r.id))
+  const vectors = qvec ? await s.listEmbeddings({ zones, authorId }) : []
   if (qvec) {
-    const close = rankBySimilarity(qvec, await s.listEmbeddings({ zones, authorId }), { limit: want })
+    const close = rankBySimilarity(qvec, vectors, { limit: want })
     if (close.length) {
       lists.push(close.map((c) => c.id))
       const missing = close.filter((c) => !byId.has(c.id))
@@ -307,7 +310,7 @@ export async function hybridSearch(query: string, zones: string[], limit: number
       for (const it of fetched) if (it && !it.superseded_by) byId.set(it.id, { ...it, score: 0 })
     }
   }
-  const ranked =
+  let ranked =
     lists.length === 1
       ? lexical
       : rrf(lists)
@@ -316,6 +319,15 @@ export async function hybridSearch(query: string, zones: string[], limit: number
             return it ? { ...it, score: Math.round(score * 1000) / 10 } : null
           })
           .filter((x): x is ScoredItem => x !== null)
+  // Too few results to fill the list: the next closest by meaning, down to a lower floor, take the empty places after
+  // the others ("who handles salaries" → "Who to ask at Encore"). The fusion keeps its floor: below it, near misses
+  // would outrank right answers.
+  if (qvec && ranked.length < limit) {
+    const have = new Set(ranked.map((r) => r.id))
+    const extra = rankBySimilarity(qvec, vectors, { minScore: FILL_SIMILARITY, limit: want }).filter((c) => !have.has(c.id)).slice(0, limit - ranked.length)
+    const found = await Promise.all(extra.map((c) => byId.get(c.id) ?? s.getItem(c.id)))
+    ranked = [...ranked, ...found.filter((it): it is KnowledgeItem => it !== null && it !== undefined && !it.superseded_by).map((it) => ({ ...it, score: 0 }))]
+  }
   // Optional (BRAIN_RERANK_MODEL): a model rereads the first candidates with the question and orders them.
   return (await rerankItems(query, ranked)).slice(0, limit)
 }
@@ -331,13 +343,13 @@ const GRAPH_CANDIDATES = 200
 /**
  * hybridSearch, completed by the knowledge graph: the items that cite the same customers, projects, tools or people
  * as the first results, even without any word of the query (the staging migration that times out, next to "how do we
- * deploy?"). They take the last places only (graphSlots: 2 out of 8), never above a direct result, with `via` saying
+ * deploy?"). They take the last places only (graphSlots: 2 out of 8, or the places the direct results leave empty), never above a direct result, with `via` saying
  * which entity links them to which result. Same scope as the search: the zones searched and the user's own items,
  * nothing superseded.
  */
 export async function searchWithGraph(query: string, zones: string[], limit: number, authorId?: string): Promise<SearchHit[]> {
   const direct: SearchHit[] = await hybridSearch(query, zones, limit, authorId)
-  const slots = graphSlots(limit)
+  const slots = graphSlots(limit, direct.length)
   const seeds = direct.slice(0, GRAPH_SEEDS)
   const keys = [...new Set(seeds.flatMap((s) => s.entities.map(entityKey)))]
   if (slots === 0 || keys.length === 0) return direct

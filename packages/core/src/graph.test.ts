@@ -71,9 +71,12 @@ test("graphNeighbors: people mostly strengthen a link; one person in common neve
   assert.ok(hits[0].score > entityWeight("project", 2), "the person in common strengthens the project's link")
 })
 
-test("graphSlots: a quarter of the results, none in a short list", () => {
+test("graphSlots: a quarter of the results or the empty places, none in a short list", () => {
   assert.equal(graphSlots(8), 2)
   assert.equal(graphSlots(5), 1)
   assert.equal(graphSlots(3), 0)
   assert.equal(graphSlots(20), 5)
+  assert.equal(graphSlots(8, 5), 3, "the places the direct results leave empty")
+  assert.equal(graphSlots(8, 7), 2)
+  assert.equal(graphSlots(3, 0), 0, "a short list stays without neighbors")
 })
