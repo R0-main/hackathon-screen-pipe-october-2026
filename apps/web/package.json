@@ -19,6 +19,7 @@
     "eval:tokens": "tsx scripts/eval-tokens.ts",
     "embed": "tsx scripts/embed-backfill.ts",
     "keywords": "tsx scripts/keywords.ts",
+    "demo:keywords": "tsx scripts/demo-keywords.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "test": "node --import tsx --test scripts/*.test.ts"
   },

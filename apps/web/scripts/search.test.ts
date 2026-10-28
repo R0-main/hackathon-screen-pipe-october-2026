@@ -49,11 +49,22 @@ after(async () => {
 
 test("phrasings: the agent's English rewording finds what the question's words miss", async () => {
   const hugo = await viewer("hugo")
-  const alone = await inOrg(() => queryBrain(hugo, { query: "comment on met le site en ligne ?" }))
-  assert.ok(!alone.items.some((i) => i.title === "Deploy Encore to production"), "the French words alone miss it")
-  const helped = await inOrg(() => queryBrain(hugo, { query: "comment on met le site en ligne ?", phrasings: ["deploy the shop to production"] }))
-  assert.ok(helped.items.slice(0, 3).some((i) => i.title === "Deploy Encore to production"), "among the first results")
-  assert.deepEqual(helped.phrasings, ["deploy the shop to production"])
+  const items = structuredClone(await inOrg(() => root.listItems({ limit: 5000 })))
+  const deploy = items.find((i) => i.title === "Deploy Encore to production")!
+  const found = (r: { items: { id: string }[] }, n = r.items.length) => r.items.slice(0, n).some((i) => i.id === deploy.id)
+  // A brain without keywords (knowledge ingested without a Claude key): the demo's carry French ones.
+  await inOrg(() => root.setKeywords(items.map((i) => ({ id: i.id, keywords: [] }))))
+  try {
+    const alone = await inOrg(() => queryBrain(hugo, { query: "comment on met le site en ligne ?" }))
+    assert.ok(!found(alone), "the French words alone miss it")
+    const helped = await inOrg(() => queryBrain(hugo, { query: "comment on met le site en ligne ?", phrasings: ["deploy the shop to production"] }))
+    assert.ok(found(helped, 3), "among the first results")
+    assert.deepEqual(helped.phrasings, ["deploy the shop to production"])
+  } finally {
+    await inOrg(() => root.setKeywords(items.filter((i) => i.keywords?.length).map((i) => ({ id: i.id, keywords: i.keywords! }))))
+  }
+  const withKeywords = await inOrg(() => queryBrain(hugo, { query: "comment on met le site en ligne ?" }))
+  assert.ok(found(withKeywords), "its French keywords find it")
 })
 
 test("filters: by author (first name, full name, nobody of that name), by the knowledge's date", async () => {

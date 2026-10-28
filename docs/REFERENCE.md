@@ -119,7 +119,9 @@ demo/                 Demo script
   (zone, author, app, date). Stored apart and indexed with the lowest weight (Postgres: weight D, migration
   `20261027000001`): they bring an item into a search, never above a title that names the subject.
   `npm run keywords` writes them for the knowledge already there (`--cli` through `claude -p`, `--all` after a change
-  of the prompt); `BRAIN_KEYWORDS=off` turns off the server's catch-up.
+  of the prompt); `BRAIN_KEYWORDS=off` turns off the server's catch-up. The demo's knowledge carries its own
+  (`apps/web/scripts/demo-keywords.json`, written by `npm run demo:keywords`): the seed gives them, and a demo brain
+  already online gets them once.
 - **Phrasings**: `search_brain` takes the question as asked and up to 4 `phrasings` the agent writes (in English, with
   the team's terms, numbers and proper nouns kept as given). One search per phrasing, fused by rank, then reranked once
   (if `BRAIN_RERANK_MODEL`) with the question as asked. Filters `since`, `until` (the knowledge's date, `until`

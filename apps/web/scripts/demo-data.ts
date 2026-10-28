@@ -1,6 +1,10 @@
 // Fictional company for the demo: Encore, refurbished smartphones with a 2-year warranty, for individuals and company fleets.
 
 import type { Entity, KnowledgeItemInput, KnowledgeKind, Role, SkillFile } from "@brain/core"
+import demoKeywords from "./demo-keywords.json"
+
+/** Search keywords of the demo's knowledge, by title (npm run demo:keywords writes them). */
+export const DEMO_KEYWORDS: Record<string, string[]> = demoKeywords.items
 
 export const DEMO_ORG = {
   name: "Encore",

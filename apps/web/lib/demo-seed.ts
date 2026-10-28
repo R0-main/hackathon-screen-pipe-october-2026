@@ -26,6 +26,7 @@ import {
   DEMO_FOLLOWUP_ITEMS,
   DEMO_FOLLOWUP_SEARCHES,
   DEMO_ITEMS,
+  DEMO_KEYWORDS,
   DEMO_ORG,
   DEMO_PROMPTS,
   DEMO_SCREENPIPE_ITEMS,
@@ -188,6 +189,7 @@ async function insertDemoItems<T extends Omit<DemoItem, "daysAgo"> & { daysAgo?:
         title: it.title,
         body: it.body,
         entities: it.entities,
+        ...(DEMO_KEYWORDS[it.title] ? { keywords: DEMO_KEYWORDS[it.title] } : {}),
         source: {
           app: demoApp(it),
           tool: it.tool ?? "claude",
@@ -415,6 +417,23 @@ export async function removeDemoNotion(store: BrainStore = getStore()): Promise<
   return true
 }
 
+/**
+ * The demo brain already online gets the keywords of its knowledge (demo-keywords.json), those it does not have yet.
+ * Returns how many items got some, or null while the keywords columns are missing (tried again on a later start).
+ */
+export async function addDemoKeywords(store: BrainStore = getStore()): Promise<number | null> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name || !demoTeam(await store.listProfiles())) return 0
+  const items = await store.listItems({ limit: 100_000, excludeSuperseded: true })
+  const rows = items.filter((i) => !i.keywords?.length && DEMO_KEYWORDS[i.title]).map((i) => ({ id: i.id, keywords: DEMO_KEYWORDS[i.title] }))
+  try {
+    await store.setKeywords(rows)
+  } catch (err) {
+    if (isStoreSetupError(err)) return null
+    throw err
+  }
+  return rows.length
+}
+
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
 
 /** Empties the brain and fills it with Encore. Returns the accounts' tokens (shown only once). */
@@ -619,6 +638,11 @@ async function upgradeOnce(store: BrainStore) {
   })
   await claimed(store, "demo-remove-notion", async () => {
     if (await removeDemoNotion(store)) console.log("[demo] the Notion connector and its tokens removed.")
+  })
+  await claimed(store, "demo-keywords-v1", async () => {
+    const n = await addDemoKeywords(store)
+    if (n === null) return false
+    if (n) console.log(`[demo] search keywords added to ${n} piece(s) of knowledge.`)
   })
   // Documents migration not applied yet: tried again on the next start (the claim is released).
   await claimed(store, "demo-upgrade-documents", async () => {
