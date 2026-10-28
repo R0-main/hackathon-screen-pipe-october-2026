@@ -763,7 +763,7 @@ export class PostgresStore implements BrainStore {
             (org_id, author_id, zone, kind, title, body, entities, source, confidence, search_title, search_body, created_at, embedding, embedding_model)
           values (${org}, ${i.author_id}, ${i.zone}, ${i.kind}, ${i.title}, ${i.body}, ${tx.json(i.entities)}, ${tx.json(i.source)},
             ${i.confidence}, ${searchTitle}, ${searchBody}, ${i.created_at ?? new Date().toISOString()},
-            ${i.embedding ? tx.array(i.embedding) : null}, ${i.embedding ? (i.embedding_model ?? null) : null})
+            ${i.embedding ? tx.array(i.embedding) : null}::real[], ${i.embedding ? (i.embedding_model ?? null) : null})
           returning *`
           : await tx`insert into knowledge_items
             (org_id, author_id, zone, kind, title, body, entities, source, confidence, search_title, search_body, created_at)
@@ -896,7 +896,7 @@ export class PostgresStore implements BrainStore {
     await this.sql.begin(async (tx: any) => {
       for (const r of rows) {
         if (!UUID_RE.test(r.id)) continue
-        await tx`update knowledge_items set embedding = ${tx.array(r.embedding)}, embedding_model = ${r.model} where id = ${r.id} and org_id = ${org}`
+        await tx`update knowledge_items set embedding = ${tx.array(r.embedding)}::real[], embedding_model = ${r.model} where id = ${r.id} and org_id = ${org}`
       }
     })
   }
