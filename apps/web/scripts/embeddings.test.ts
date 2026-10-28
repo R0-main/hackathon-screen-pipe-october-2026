@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { DEFAULT_VOYAGE_MODEL, providerFromEnv } from "../lib/embeddings"
 import type { NewItem } from "../lib/store/types"
 
-test("embeddings: Voyage from VOYAGE_API_KEY, voyage-4-lite by default", () => {
+test("embeddings: Voyage from VOYAGE_API_KEY, voyage-4 by default", () => {
   const p = providerFromEnv({ VOYAGE_API_KEY: "pa-test" })
   assert.equal(p?.id, "voyage")
   assert.equal(p?.model, DEFAULT_VOYAGE_MODEL)

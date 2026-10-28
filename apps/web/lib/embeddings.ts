@@ -1,7 +1,7 @@
 // Embeddings (semantic search), optional: without a configured provider, search stays lexical.
 //
 // Providers, in priority order:
-// - VOYAGE_API_KEY: Voyage AI (https://api.voyageai.com/v1/embeddings), model BRAIN_EMBEDDING_MODEL (default voyage-4-lite);
+// - VOYAGE_API_KEY: Voyage AI (https://api.voyageai.com/v1/embeddings), model BRAIN_EMBEDDING_MODEL (default voyage-4);
 //   a Voyage key put in BRAIN_EMBEDDING_URL works too: a value that is no http(s) address is taken as one;
 // - BRAIN_EMBEDDING_URL (+ BRAIN_EMBEDDING_KEY): any endpoint compatible with OpenAI's `/v1/embeddings`
 //   (OpenAI, Mistral, Ollama locally with nomic-embed-text, LM Studio…), model BRAIN_EMBEDDING_MODEL.
@@ -26,9 +26,9 @@ const MAX_CHARS = 6000
 
 const g = globalThis as unknown as { __brainEmbedding?: EmbeddingProvider | null; __brainQueryCache?: Map<string, number[]> }
 
-/** Voyage model when BRAIN_EMBEDDING_MODEL is not set: the voyage-4 models share one vector space, so moving to
- * voyage-4 or voyage-4-large later needs no new embedding. */
-export const DEFAULT_VOYAGE_MODEL = "voyage-4-lite"
+/** Voyage model when BRAIN_EMBEDDING_MODEL is not set. On the evaluation (141 questions), voyage-4 finds the answer
+ * first 83% of the time, voyage-4-lite 80%, voyage-4-large 84%; the three share one vector space. */
+export const DEFAULT_VOYAGE_MODEL = "voyage-4"
 
 const isAddress = (v: string) => /^https?:\/\//i.test(v)
 
@@ -93,7 +93,7 @@ export async function embedDocuments(texts: string[]): Promise<number[][] | null
   return out
 }
 
-const QUERY_CACHE_MAX = 300
+const QUERY_CACHE_MAX = 500
 
 /** Vector of a query (cached: the dashboard and the MCP often ask the same questions); null without a provider or on failure. */
 export async function embedQuery(query: string): Promise<number[] | null> {
@@ -112,6 +112,25 @@ export async function embedQuery(query: string): Promise<number[] | null> {
     console.error("[embeddings]", err instanceof Error ? err.message : err)
     return null
   }
+}
+
+/**
+ * Vectors of many queries in a few requests (`batch` per request), into the cache embedQuery reads. For the
+ * evaluation, which asks ~170 questions in a row: one request per question would exceed a provider's rate limit
+ * (Voyage without a payment method: 3 requests a minute). Returns how many queries were embedded.
+ */
+export async function primeQueryCache(queries: string[], batch = 128): Promise<number> {
+  const p = getEmbeddings()
+  if (!p) return 0
+  const cache = (g.__brainQueryCache ??= new Map())
+  const keyOf = (q: string) => `${p.id}:${p.model}:${q.trim().toLowerCase()}`
+  const todo = [...new Map(queries.filter((q) => !cache.has(keyOf(q))).map((q) => [keyOf(q), q])).values()]
+  for (let i = 0; i < todo.length; i += batch) {
+    const part = todo.slice(i, i + batch)
+    const vectors = await p.embed(part.map(clip), "query")
+    part.forEach((q, n) => cache.set(keyOf(q), vectors[n]))
+  }
+  return todo.length
 }
 
 /** Ranks the candidates by cosine similarity with the query (closest first), above a threshold. */
