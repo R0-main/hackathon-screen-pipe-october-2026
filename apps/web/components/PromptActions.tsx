@@ -122,8 +122,8 @@ export function PromptActions({ getPrompt, size = "lg", sends = false, terminal 
       {sends && (
         <p className="mt-2 text-[13px] leading-relaxed text-trace">
           Upload blocked? In auto mode, Claude Code refuses for safety to send data to a website. Switch to the default mode (Shift+Tab) and
-          accept the upload command when it proposes it, or run <span className="mono text-ink">claude --dangerously-skip-permissions</span> for this
-          session (no more confirmations: keep it for this prompt). Codex asks to leave its sandbox: accept.
+          accept the upload command when it proposes it: it only sends to this brain, and Claude Code keeps asking for everything else. Codex
+          asks to leave its sandbox for that command: accept.
         </p>
       )}
 

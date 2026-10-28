@@ -30,7 +30,7 @@ export const PUT = withViewer<Ctx>(
     }
     return json(await updateConnector(id, body.data))
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )
 
 /** DELETE /api/connectors/:id — disconnects the tool (the token is erased; imported knowledge stays). */
@@ -41,5 +41,5 @@ export const DELETE = withViewer<Ctx>(
     await removeConnector(id)
     return json({ removed: true })
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )

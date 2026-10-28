@@ -64,3 +64,15 @@ test("follow-up: a current demo waits, ten days later the team's next days come 
 
   assert.equal(await inOrg(() => upgradeFollowupDemo(root, now + 86400_000)), 0, "a second run adds nothing")
 })
+
+test("the Notion connected to the public demo leaves it, with its tokens; the other servers stay", async () => {
+  const { removeDemoNotion } = await import("../lib/demo-seed")
+  const { addFromCatalog, listMcpConnectors } = await import("../lib/remote-mcp")
+  await inOrg(() => addFromCatalog("notion"))
+  await inOrg(() => addFromCatalog("pennylane"))
+  assert.equal(await inOrg(() => removeDemoNotion(root)), true)
+  const left = (await inOrg(() => listMcpConnectors())).map((c) => c.id)
+  assert.ok(!left.includes("notion"))
+  assert.ok(left.includes("pennylane"), "only Notion")
+  assert.equal(await inOrg(() => removeDemoNotion(root)), false, "already gone")
+})

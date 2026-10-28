@@ -1,6 +1,6 @@
 // Fictional company for the demo: Encore, refurbished smartphones with a 2-year warranty, for individuals and company fleets.
 
-import type { Entity, KnowledgeKind, Role, SkillFile } from "@brain/core"
+import type { Entity, KnowledgeItemInput, KnowledgeKind, Role, SkillFile } from "@brain/core"
 
 export const DEMO_ORG = {
   name: "Encore",
@@ -825,4 +825,66 @@ export const DEMO_FOLLOWUP_SEARCHES: { daysAfter: number; hour: number; user: st
   { daysAfter: 7, hour: 10, user: "sarah", agent: "claude-code", asked: "Prepare the B2B demo for a school group", searched: "prepare an Encore B2B demo lease price", zones: ["sales"] },
   { daysAfter: 10, hour: 9, user: "hugo", agent: "claude-code", asked: "Can I deploy at 10am today?", searched: "deploy rules workshop hours", zones: ["dev", "core"] },
   { daysAfter: 10, hour: 10, user: "claire", agent: "claude-code", asked: "Where do we stand on the quarter's goals?", searched: "Q4 goal phones sold B2B signed", zones: ["leadership", "sales"] },
+]
+
+/** Questions an agent asks the brain through the MCP (search_brain). */
+export const DEMO_AGENT_QUERIES: Record<string, string[]> = {
+  dev: ["production deployment procedure", "AI screen grading", "nightly pricing job", "restore a backup"],
+  product: ["quarter priority returns", "Groupe Vallière CSR report", "battery health on the product page"],
+  sales: ["October B2B pipeline negotiations", "B2B lease pricing", "prepare a demo"],
+  finance: ["Qonto Pennylane reconciliation", "VAT margin scheme", "Stripe and Alma payouts on Qonto"],
+  support: ["eSIM transfer", "top October tickets"],
+  leadership: ["Q4 goals phones sold", "Series A postponed", "quarterly board KPIs"],
+}
+
+/** Fresh knowledge that brain-sync "distills" during the demo (npm run simulate, and the live demo's pulse). */
+export const DEMO_FRESH_ITEMS: (KnowledgeItemInput & { author: string })[] = [
+  {
+    author: "hugo", zone: "dev", kind: "decision", title: "Bench photos go through a Supabase Queues queue before grading",
+    body: "Avoids blocking the technician while Claude grades the screen; the grade shows up on the tablet in under 5 seconds.",
+    entities: [{ type: "tool", name: "Supabase" }, { type: "tool", name: "Claude" }, { type: "project", name: "AI grading" }],
+    source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.82,
+  },
+  {
+    author: "sarah", zone: "sales", kind: "fact", title: "Transports Ondine asks for a discount for its 300 drivers",
+    body: "They would sign at €16 per phone per month over 36 months. To validate with Claire before Friday.",
+    entities: [{ type: "client", name: "Transports Ondine" }, { type: "person", name: "Claire Martin" }],
+    source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.78,
+  },
+  {
+    author: "jeanmarc", zone: "finance", kind: "procedure", title: "Prepare the monthly export for Durand Accounting",
+    body: "1. Close the Qonto reconciliations.\n2. Export the general ledger from Pennylane.\n3. Attach the stock valuation and the buyback records.\n4. Send before the 5th of the month.",
+    entities: [{ type: "tool", name: "Pennylane" }, { type: "client", name: "Durand Accounting" }, { type: "project", name: "Trade-in" }],
+    source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.85,
+  },
+  {
+    author: "leo", zone: "product", kind: "decision", title: "Every listing shows photos of the real phone, no more stock pictures",
+    body: "Customers who return a phone \"not as described\" mostly say the photo looked better: the bench photos already exist, we show them.",
+    entities: [{ type: "project", name: "Product page" }, { type: "project", name: "Returns" }],
+    source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.8,
+  },
+  {
+    author: "ines", zone: "dev", kind: "fact", title: "The trade-in quote ignores the storage size on Samsung phones",
+    body: "The model name sent by the form drops the \"256 GB\": the customer gets the 128 GB price. Repro: e2e script trade-in-quote.spec.ts.",
+    entities: [{ type: "project", name: "Trade-in" }, { type: "tool", name: "Playwright" }],
+    source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.76,
+  },
+  {
+    author: "sarah", zone: "support", kind: "procedure", title: "Answer a return request within the 30 days",
+    body: "1. Check the delivery date in Zendesk.\n2. Under 30 days: send the prepaid label, refund in Stripe once the workshop has scanned the parcel.\n3. Note the reason (battery, cosmetic, network) for the returns dashboard.",
+    entities: [{ type: "tool", name: "Zendesk" }, { type: "tool", name: "Stripe" }, { type: "project", name: "Returns" }],
+    source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.8,
+  },
+  {
+    author: "claire", zone: "leadership", kind: "decision", title: "Four seasonal technicians hired for Black Friday",
+    body: "Orders double from mid-November; budget approved on current cash, without waiting for the round.",
+    entities: [{ type: "project", name: "Hiring" }],
+    source: { app: "Claude", tool: "claude", at: "" }, confidence: 0.79,
+  },
+  {
+    author: "hugo", zone: "dev", kind: "procedure", title: "Replay a Stripe webhook locally",
+    body: "stripe listen --forward-to localhost:3000/api/stripe then stripe events resend <id>. Never replay in production without checking idempotency.",
+    entities: [{ type: "tool", name: "Stripe" }],
+    source: { app: "Terminal", tool: "claude-code", at: "" }, confidence: 0.84,
+  },
 ]

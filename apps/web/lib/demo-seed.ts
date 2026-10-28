@@ -16,6 +16,7 @@ import {
   type Profile,
 } from "@brain/core"
 import { hashToken, isDemoMode, newToken } from "./auth"
+import { listMcpConnectors, removeMcp } from "./remote-mcp"
 import { simplePdf } from "./simple-pdf"
 import { getStore, isStoreSetupError, type BrainStore } from "./store"
 import type { NewEvent } from "./store/types"
@@ -90,7 +91,17 @@ async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, al
 }
 
 /** Encore team accounts found by their email (null if one is missing: this is not the demo brain). */
-function demoTeam(profiles: Profile[]): Record<string, string> | null {
+/**
+ * The demo's six people, in DEMO_USERS order: who /demo offers to enter as. Never a visitor (who has a token of their
+ * own) nor an account made by hand. Every account if the brain has none of them (a demo seeded otherwise).
+ */
+export function demoPeople<P extends Pick<Profile, "email">>(profiles: P[]): P[] {
+  const order = new Map(DEMO_USERS.map((u, n) => [u.email, n]))
+  const people = profiles.filter((p) => p.email && order.has(p.email)).sort((a, b) => order.get(a.email!)! - order.get(b.email!)!)
+  return people.length ? people : profiles
+}
+
+export function demoTeam(profiles: Profile[]): Record<string, string> | null {
   const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [p.email, p.id]))
   const ids: Record<string, string> = {}
   for (const u of DEMO_USERS) {
@@ -375,6 +386,35 @@ export async function upgradeFollowupDemo(store: BrainStore = getStore(), now = 
   return missing.length
 }
 
+/**
+ * Accounts that are neither one of the demo's people nor a visitor who entered the demo (DEMO_VISITOR_TITLE): test
+ * accounts made by hand on the public demo ("fwqfwq", "Test"), which crowd the team, the org chart and Monitoring.
+ * Never an admin. Removed with what is theirs; returns their names.
+ */
+export async function removeDemoTestAccounts(store: BrainStore = getStore()): Promise<string[]> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name) return []
+  const profiles = await store.listProfiles()
+  if (!demoTeam(profiles)) return []
+  const people = new Set(DEMO_USERS.map((u) => u.email))
+  const test = profiles.filter(
+    (p) => p.role !== "admin" && !(p.email && people.has(p.email)) && p.title !== DEMO_VISITOR_TITLE && p.title !== LEGACY_DEMO_VISITOR_TITLE,
+  )
+  for (const p of test) await store.deleteProfile(p.id)
+  return test.map((p) => p.name)
+}
+
+/**
+ * The Notion workspace someone connected to the public demo through OAuth (a real account, open to four zones): its
+ * server and its tokens leave the demo brain. Revoking the access stays to do on Notion's side. Returns whether it was
+ * there.
+ */
+export async function removeDemoNotion(store: BrainStore = getStore()): Promise<boolean> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name || !demoTeam(await store.listProfiles())) return false
+  if (!(await listMcpConnectors()).some((c) => c.id === "notion")) return false
+  await removeMcp("notion")
+  return true
+}
+
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
 
 /** Empties the brain and fills it with Encore. Returns the accounts' tokens (shown only once). */
@@ -572,6 +612,13 @@ async function upgradeOnce(store: BrainStore) {
     const n = await upgradeFollowupDemo(store)
     if (n === null) return false
     if (n) console.log(`[demo] brain completed: ${n} piece(s) of knowledge from the team's next days.`)
+  })
+  await claimed(store, "demo-cleanup-test-accounts", async () => {
+    const removed = await removeDemoTestAccounts(store)
+    if (removed.length) console.log(`[demo] test accounts removed: ${removed.join(", ")}.`)
+  })
+  await claimed(store, "demo-remove-notion", async () => {
+    if (await removeDemoNotion(store)) console.log("[demo] the Notion connector and its tokens removed.")
   })
   // Documents migration not applied yet: tried again on the next start (the claim is released).
   await claimed(store, "demo-upgrade-documents", async () => {

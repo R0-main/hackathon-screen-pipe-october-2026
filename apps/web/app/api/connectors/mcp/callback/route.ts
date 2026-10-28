@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { viewerFromRequest } from "@/lib/auth"
+import { DEMO_CONNECTORS_READ_ONLY, isDemoCompany } from "@/lib/demo-mode"
 import { internalError, publicBaseUrl } from "@/lib/http"
 import { completeAuthorize, McpUserError, pendingReturnPage } from "@/lib/remote-mcp"
 import { runInOrg } from "@/lib/store"
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
     const viewer = await viewerFromRequest(req)
     if (!viewer) return NextResponse.redirect(`${base}/login`, 303)
     if (viewer.real.role !== "admin") return back({ mcp: "error", reason: "Admins only." })
+    if (await isDemoCompany(viewer.real.org_id)) return back({ mcp: "error", reason: DEMO_CONNECTORS_READ_ONLY })
     const q = new URL(req.url).searchParams
     const state = q.get("state")
     if (!state) return back({ mcp: "error", reason: "OAuth return without a state." })
