@@ -128,6 +128,17 @@ demo/                 Demo script
   included) and `author` (name, first name or email); each result says who wrote it, when, and from which tool and app.
   Compact by default: the 3 best results in full, the next ones in one line with their id (`get_knowledge` reads them),
   2 documents at most; `detail: "full"` for every result in full. `npm run eval:tokens` measures what it costs to read.
+- **Settings** (`/settings`, under Configuration; admins change them, members read them, nobody on the public demo):
+  - *Search*: semantic search and reranking, each on or off for the company (the deployment's `VOYAGE_API_KEY` and
+    `BRAIN_RERANK_MODEL` decide what exists; turned off, the company's knowledge and questions no longer go to Voyage,
+    at search, at ingestion or at import), the index state with "Index the rest", and the server's keywords
+    catch-up on or off with "Catch up" for the knowledge left without.
+  - *What agents receive*: `search_brain`'s number of results (8), format (compact or full) and documents listed (2),
+    sent with each answer (`format`) and applied unless the agent asks otherwise in its call; the tokens an agent reads
+    per search, estimated from the company's own knowledge.
+  - *Claude*: the company's key (moved from Team and access → Zones). *Usage and data*: the month's searches by
+    agents, and what leaves the company given the settings.
+  The company's Voyage key and provider are still the deployment's.
 
 ## Brain API
 
@@ -155,6 +166,8 @@ Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-
 | POST | `/api/join`, `/api/join/status` | Public: request to join with the team message code (fingerprint of the computer's token), then its state (for whoever holds the token). |
 | GET/POST | `/api/admin/join`, `/api/admin/join/:id` | Admin: team message and pending requests, change the code; accept (account created as set) or decline. |
 | GET | `/api/admin/team` | Admin: the team and the last sign of each computer (`last_at`, null until it is connected). |
+| GET/PUT | `/api/settings` | The Settings page: the company's search settings, what the deployment offers, the index and keywords left, the tokens per search, the month's searches, what leaves the company. PUT (admins, refused on the public demo): a part of the settings (`{semantic, rerank, serverKeywords, agents: {limit, detail, documents}}`). |
+| POST | `/api/settings/catch-up` | Admin (refused on the public demo): `{what: "index" \| "keywords"}`, vectors or keywords for the knowledge without, for about 20 seconds; then the page's data. |
 | GET/PUT/DELETE | `/api/admin/claude` | Admin: the company's Claude API key (`{key}`, checked then encrypted); GET only returns its source and last 4 characters. |
 | GET/POST | `/api/admin/zones/auto` | Admin: history of the "new zones" job; POST without a body: server run (API key); with `{zones: [{name, description, keywords, item_ids}]}`: applies what `refresh-zones` proposed. |
 | GET/PUT/POST | `/api/admin/moderation` | Admin: the moderator's state, runs and decisions; PUT `{enabled}`; POST without a body: server run (API key); with `{ids, verdicts}`: applies what `brain moderate` decided. |
@@ -278,7 +291,7 @@ The brain runs on **Vercel Hobby** (always online) with **Neon** (free Postgres,
 
 4. **Daily "new zones" job**: set `CRON_SECRET` (a long random string, `openssl rand -hex 32`) and
    `BRAIN_SECRET_KEY` (same, encrypts the companies' Claude keys). `apps/web/vercel.json` declares the cron. The Claude
-   key itself is set in the app: each admin pastes their company's key in **Team and access → Zones**.
+   key itself is set in the app: each admin pastes their company's key in **Settings → Claude**.
 
 Variables: see [apps/web/.env.example](../apps/web/.env.example).
 
@@ -307,7 +320,7 @@ who does the analysis:
   Nobody loses sight of a knowledge item they could read, nobody discovers one they could not read.
 - Safeguards, since nobody reviews: at least 4 knowledge items (out of at least 12 recent ones), at most 2 zones per
   day, 12 zones in total, never a duplicate of an existing zone, once a day per company at most.
-- **The company's Claude key**: an admin pastes it in Team and access → Zones (Anthropic Console key, `sk-ant-…`).
+- **The company's Claude key**: an admin pastes it in Settings → Claude (Anthropic Console key, `sk-ant-…`).
   It is tried against Anthropic before being saved, encrypted with AES-256-GCM in the company's settings (with
   `BRAIN_SECRET_KEY`, otherwise the brain's session secret) and never shown again, only its last 4 characters. It
   also serves the status summary and the onboarding. Without it, the server uses `ANTHROPIC_API_KEY` if it has one;

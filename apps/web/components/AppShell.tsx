@@ -19,6 +19,7 @@ import {
   ChevronsIcon,
   CloseIcon,
   DocIcon,
+  GearIcon,
   LinkIcon,
   LogoMark,
   LogoutIcon,
@@ -121,10 +122,12 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
         { href: "/connectors", label: t.nav.connectors, icon: LinkIcon },
         { href: "/monitoring", label: t.nav.monitoring, icon: WatchIcon },
         { href: "/data", label: t.nav.data, icon: ArchiveIcon },
+        { href: "/settings", label: t.nav.settings, icon: GearIcon },
       ]
     : []
-  // Members export their skills, clients and sheet from the same page, without the configuration section.
-  if (!isAdmin) main.push({ href: "/data", label: t.nav.data, icon: ArchiveIcon })
+  // Members export their skills, clients and sheet from the same page, and read the settings, without the
+  // configuration section.
+  if (!isAdmin) main.push({ href: "/data", label: t.nav.data, icon: ArchiveIcon }, { href: "/settings", label: t.nav.settings, icon: GearIcon })
 
   async function viewAs(userId: string) {
     setBusy(true)
@@ -172,11 +175,6 @@ function Sidebar({ open, onClose, accounts, signup }: { open: boolean; onClose: 
             {!live ? t.shell.connecting : activeAgents === 0 ? t.shell.noAgents : plural(activeAgents, t.shell.activeAgents, t.shell.activeAgentsPlural)}
           </span>
         </p>
-        {!state.claude && isAdmin && (
-          <Link href="/admin/zones" onClick={onClose} title={t.shell.noClaudeHint} className="block pl-4 underline-offset-2 hover:text-ink hover:underline">
-            {t.shell.noClaude} →
-          </Link>
-        )}
       </div>
 
       <nav className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 py-3" aria-label={t.nav.navigation}>
