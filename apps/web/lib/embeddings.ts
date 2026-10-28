@@ -91,8 +91,7 @@ export function embeddingText(item: { title: string; body: string; entities?: { 
 }
 
 /** Vectors of several items, in batches; null if there is no provider. A provider error propagates. */
-export async function embedDocuments(texts: string[]): Promise<number[][] | null> {
-  const p = getEmbeddings()
+export async function embedDocuments(texts: string[], p: EmbeddingProvider | null = getEmbeddings()): Promise<number[][] | null> {
   if (!p || texts.length === 0) return p ? [] : null
   const out: number[][] = []
   for (let i = 0; i < texts.length; i += EMBED_BATCH) out.push(...(await p.embed(texts.slice(i, i + EMBED_BATCH), "document")))
@@ -102,8 +101,7 @@ export async function embedDocuments(texts: string[]): Promise<number[][] | null
 const QUERY_CACHE_MAX = 500
 
 /** Vector of a query (cached: the dashboard and the MCP often ask the same questions); null without a provider or on failure. */
-export async function embedQuery(query: string): Promise<number[] | null> {
-  const p = getEmbeddings()
+export async function embedQuery(query: string, p: EmbeddingProvider | null = getEmbeddings()): Promise<number[] | null> {
   if (!p) return null
   const cache = (g.__brainQueryCache ??= new Map())
   const key = `${p.id}:${p.model}:${query.trim().toLowerCase()}`

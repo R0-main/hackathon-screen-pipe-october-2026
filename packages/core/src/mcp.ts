@@ -81,6 +81,8 @@ export type QueryResult = {
   items: ApiItem[]
   /** Missing from an older brain. */
   documents?: ApiDocument[]
+  /** How the company wants agents to receive the results (its Settings); missing from an older brain. */
+  format?: { detail: "compact" | "full"; documents: number }
 }
 
 /**
@@ -273,6 +275,15 @@ export type QueryFormat = { full?: number; documents?: number }
 
 /** search_brain by default: the 3 best results in full, the next ones in one line, 2 documents at most. */
 export const COMPACT_FORMAT: Required<QueryFormat> = { full: 3, documents: 2 }
+
+/**
+ * search_brain's format: what the agent asked (`detail`), otherwise what the company chose in its Settings (the
+ * brain's `format`), otherwise compact. Documents: the company's number, 2 by default.
+ */
+export function agentFormat(detail: "compact" | "full" | undefined, company?: QueryResult["format"]): QueryFormat {
+  const documents = company?.documents ?? COMPACT_FORMAT.documents
+  return (detail ?? company?.detail ?? "compact") === "full" ? { documents } : { full: COMPACT_FORMAT.full, documents }
+}
 
 export function formatQuery(r: QueryResult, zoneName: ZoneNamer, format: QueryFormat = {}): string {
   const searched = r.zones_searched.length ? r.zones_searched.map(zoneName).join(", ") : "none"
@@ -546,8 +557,8 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         detail: z
           .enum(["compact", "full"])
           .optional()
-          .describe("compact (default): the 3 best results in full, the next ones in one line (get_knowledge reads them); full: every result in full."),
-        limit: z.number().int().min(1).max(50).optional().describe("Maximum number of results (8 by default)."),
+          .describe("compact (the default, unless the company chose otherwise): the 3 best results in full, the next ones in one line (get_knowledge reads them); full: every result in full."),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum number of results (the company's number by default, 8 unless changed)."),
         ...companyParam,
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -556,7 +567,7 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
       guard(company, async (c) => {
         await ensureZones(c)
         const r = await c.api.query({ query, phrasings, zones: zones?.map((x) => resolveZone(c, x)), since, until, author, limit, agent: "mcp" })
-        return formatQuery(r, namer(c), detail === "full" ? {} : COMPACT_FORMAT)
+        return formatQuery(r, namer(c), agentFormat(detail, r.format))
       }),
   )
 

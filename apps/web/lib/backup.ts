@@ -39,7 +39,8 @@ import {
 import { canRead } from "./access"
 import { hashToken, newToken, type Viewer } from "./auth"
 import { getPersonContext } from "./brain"
-import { embedDocuments, embeddingText, getEmbeddings } from "./embeddings"
+import { embedDocuments, embeddingText } from "./embeddings"
+import { searchTools } from "./search-settings"
 import { canPublishSkills, canSeeSkill, listVisibleSkills, publishSkill, SkillError } from "./skills"
 import { getStore } from "./store"
 import type { NewItem } from "./store/types"
@@ -411,12 +412,12 @@ export async function importBackup(viewer: Viewer, backup: Backup, opts: { dryRu
   report.items.added = prepared.length
   const touched = new Map<string, number>()
   if (!dry && prepared.length) {
-    const provider = getEmbeddings()
+    const provider = (await searchTools()).embeddings
     for (let n = 0; n < prepared.length; n += BATCH) {
       const batch = prepared.slice(n, n + BATCH)
       if (provider) {
         try {
-          const vectors = await embedDocuments(batch.map((b) => embeddingText(b.item)))
+          const vectors = await embedDocuments(batch.map((b) => embeddingText(b.item)), provider)
           if (vectors) batch.forEach((b, k) => Object.assign(b.item, { embedding: vectors[k], embedding_model: provider.model }))
         } catch (err) {
           // Vectors are caught up later (scripts/embed-backfill.ts): a provider outage never blocks an import.

@@ -22,6 +22,7 @@ export function StatusView() {
         tasks={state.tasks}
         taskCounts={state.task_counts}
         canRefresh={state.real.role === "admin"}
+        hasClaude={state.claude}
         onRefreshed={refresh}
         now={now}
       />

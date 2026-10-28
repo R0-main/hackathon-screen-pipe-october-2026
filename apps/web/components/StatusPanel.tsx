@@ -29,6 +29,7 @@ export function StatusPanel({
   tasks,
   taskCounts,
   canRefresh,
+  hasClaude = true,
   onRefreshed,
   now,
 }: {
@@ -38,6 +39,8 @@ export function StatusPanel({
   tasks: Task[]
   taskCounts: TaskCounts
   canRefresh: boolean
+  /** The company has Claude on the server (its key or the deployment's): otherwise admins are told where to add it. */
+  hasClaude?: boolean
   onRefreshed: () => void
   now?: number
 }) {
@@ -98,6 +101,14 @@ export function StatusPanel({
         )}
         {err && <ErrorText className="mt-3">{fmt(t.status.refreshError, { error: err })}</ErrorText>}
         {/* Admins: without an API key on the server, Claude can write the update from a workstation (the employee's subscription). */}
+        {canRefresh && !hasClaude && (
+          <p className="mt-3 text-[13px]">
+            {t.status.noClaudeKey}{" "}
+            <Link href="/settings?tab=claude" className="underline underline-offset-2 hover:text-ink">
+              {t.status.addClaudeKey} →
+            </Link>
+          </p>
+        )}
         {canRefresh && status?.generator !== "claude" && <CommandHint />}
       </header>
 

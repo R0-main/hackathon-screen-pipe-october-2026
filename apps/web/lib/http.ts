@@ -17,16 +17,17 @@ type Handler<C> = (req: Request, viewer: Viewer, ctx: C) => Promise<Response>
 
 /** Requires an authenticated user (Bearer token or session), in the context of their company. `admin`: checks the real role. */
 /**
- * `admin`: admins only. `demoReadOnly`: a change the demo company refuses (its connectors), whoever asks; a company
- * created next to it is not concerned.
+ * `admin`: admins only. `demoReadOnly`: a change the demo company refuses (its connectors, its settings), whoever asks,
+ * with that message (`true`: the connectors'); a company created next to it is not concerned.
  */
-export function withViewer<C = unknown>(handler: Handler<C>, opts: { admin?: boolean; demoReadOnly?: boolean } = {}) {
+export function withViewer<C = unknown>(handler: Handler<C>, opts: { admin?: boolean; demoReadOnly?: boolean | string } = {}) {
   return async (req: Request, ctx: C) => {
     try {
       const viewer = await viewerFromRequest(req)
       if (!viewer) return error(401, "Not authenticated: missing or invalid token.")
       if (opts.admin && viewer.real.role !== "admin") return error(403, "Admins only.")
-      if (opts.demoReadOnly && (await isDemoCompany(viewer.real.org_id))) return error(403, DEMO_CONNECTORS_READ_ONLY)
+      if (opts.demoReadOnly && (await isDemoCompany(viewer.real.org_id)))
+        return error(403, typeof opts.demoReadOnly === "string" ? opts.demoReadOnly : DEMO_CONNECTORS_READ_ONLY)
       // Everything the route does targets the signed-in account's company (getStore()).
       return await runInOrg(viewer.real.org_id, () => handler(req, viewer, ctx))
     } catch (err) {

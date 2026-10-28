@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { CLAUDE_KEY_RE, claudeKeyInfo, clearOrgClaudeKey, setOrgClaudeKey, verifyClaudeKey } from "@/lib/claude-key"
+import { DEMO_SETTINGS_READ_ONLY } from "@/lib/demo-mode"
 import { getStore } from "@/lib/store"
 import { error, json, parseBody, withViewer } from "@/lib/http"
 
@@ -22,7 +23,7 @@ export const PUT = withViewer(
     if (!check.ok) return error(check.reason === "invalid" ? 400 : 502, check.message)
     return json(await setOrgClaudeKey(getStore(), key, viewer.real.id))
   },
-  { admin: true },
+  { admin: true, demoReadOnly: DEMO_SETTINGS_READ_ONLY },
 )
 
 /** Admins: removes the company's key (the server falls back to ANTHROPIC_API_KEY if it has one). */
@@ -31,5 +32,5 @@ export const DELETE = withViewer(
     await clearOrgClaudeKey(getStore())
     return json(await claudeKeyInfo(getStore()))
   },
-  { admin: true },
+  { admin: true, demoReadOnly: DEMO_SETTINGS_READ_ONLY },
 )
