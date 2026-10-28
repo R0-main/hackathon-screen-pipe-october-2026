@@ -380,7 +380,7 @@ export const en = {
     perSearchOther: "≈ {n} in {format}",
     estimateNote: "Estimated from the company's {n} most recent knowledge items (about 4 characters per token).",
     estimateNone: "The estimate comes once the brain has knowledge.",
-    claudeLead: "The company's Claude key, used by the server. Moved here from Team and access → Zones.",
+    claudeLead: "The company's Claude key, used by the server for the work below.",
     usedFor: "Used for",
     usedForText: "The company summary, moderation, imports from connectors, automatic zones, and search keywords if the server writes them.",
     withoutKey: "Without a key",

@@ -223,6 +223,7 @@ export function SettingsPanel() {
           {tab === "agents" && (
             <Section title={s.tabs.agents} lead={s.agentsLead}>
               <Row
+                stack
                 label={s.results}
                 hint={s.resultsHint}
                 control={
@@ -236,6 +237,7 @@ export function SettingsPanel() {
                 }
               />
               <Row
+                stack
                 label={s.format}
                 hint={`${settings.agents.detail === "compact" ? s.compactHint : s.fullHint} ${s.agentOverride}`}
                 control={
@@ -252,6 +254,7 @@ export function SettingsPanel() {
                 }
               />
               <Row
+                stack
                 label={s.documents}
                 hint={s.documentsHint}
                 control={
@@ -348,16 +351,18 @@ function Section({ title, lead, children }: { title: string; lead?: string; chil
   )
 }
 
-/** A setting: its name and what it does on the left, the control on the right (below on a phone). */
-function Row({ label, hint, aside, control }: { label: string; hint?: string; aside?: ReactNode; control: ReactNode }) {
+/** A setting: its name and what it does on the left, the control on the right; `aside` under the text on a phone. */
+function Row({ label, hint, aside, control, stack = false }: { label: string; hint?: string; aside?: ReactNode; control: ReactNode; stack?: boolean }) {
+  // `stack`: a row of choices goes under the text on a phone; a switch stays beside it.
   return (
-    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-t border-line pt-3">
+    <div className={`flex items-start justify-between gap-x-6 gap-y-2 border-t border-line pt-3 ${stack ? "max-sm:flex-wrap" : ""}`}>
       <div className="min-w-0 max-w-[52ch] flex-1">
         <p className="text-[13.5px] font-medium">{label}</p>
         {hint && <p className="mt-0.5 text-[12.5px] text-trace">{hint}</p>}
+        {aside && <p className="mt-1 sm:hidden">{aside}</p>}
       </div>
-      <div className="flex items-center gap-4">
-        {aside}
+      <div className="flex shrink-0 items-center gap-4">
+        {aside && <span className="hidden sm:inline">{aside}</span>}
         {control}
       </div>
     </div>
@@ -395,7 +400,7 @@ function Switch({ on, disabled = false, label, onChange }: { on: boolean; disabl
     >
       <span
         aria-hidden
-        className={`absolute top-[2px] size-4 rounded-full transition-transform duration-150 ease-out ${on ? "translate-x-[18px] bg-bone" : "translate-x-[2px] bg-line-strong"}`}
+        className={`absolute left-[2px] top-[2px] size-4 rounded-full transition-transform duration-150 ease-out ${on ? "translate-x-4 bg-bone" : "translate-x-0 bg-line-strong"}`}
       />
     </button>
   )
