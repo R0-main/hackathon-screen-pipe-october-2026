@@ -644,6 +644,189 @@ if __name__ == "__main__":
   },
 ]
 
+/**
+ * What the team did with its brain in the ten days after the demo's last knowledge: the open threads close (the VAT
+ * return, Kalia Santé, the frame's corners, the CSR report), each agent finds what a colleague wrote before acting,
+ * and the Screenpipe agent sees the effect. Dated from the latest knowledge in the brain (`daysAfter`, at `hour`,
+ * local time), so a demo that stopped catches up. `asked`: the prompt typed in the agent; `searched`: what the agent
+ * then asked the brain (search_brain), in `searchZones`.
+ */
+export type DemoFollowup = Omit<DemoItem, "daysAgo"> & {
+  daysAfter: number
+  hour: number
+  asked?: string
+  searched?: string
+  searchZones?: string[]
+  /** Tasks this knowledge closes (their exact titles). */
+  closes?: string[]
+}
+
+export const DEMO_FOLLOWUP_ITEMS: DemoFollowup[] = [
+  {
+    author: "jeanmarc", zone: "finance", kind: "fact", daysAfter: 0, hour: 17, tool: "claude-code",
+    title: "September VAT return filed: €38,400 paid, margin-scheme sales declared apart",
+    body: "Filed from Pennylane before the October 19 deadline. Phones bought back from individuals go under the margin scheme (VAT on the margin only); new phones and accessories at 20%. October's return is due before November 19.",
+    entities: [t("Pennylane"), pr("VAT margin scheme")],
+    asked: "Prepare the September VAT return, margin scheme sales apart",
+    searched: "VAT margin scheme phones bought back from individuals",
+    searchZones: ["finance"],
+    closes: ["File the September VAT return before October 19"],
+  },
+  {
+    author: "hugo", zone: "dev", kind: "procedure", daysAfter: 3, hour: 7, tool: "claude-code",
+    title: "Run migration 0042 in production without locking the orders table",
+    body: "1. Create the orders index CONCURRENTLY, in its own migration, outside the transaction.\n2. Then run 0042.\n3. Before 8am, when the workshop opens.\nDone before the workshop opened: 4 minutes, no lock, no failed order. The same recipe for any index on a large table before Black Friday.",
+    entities: [t("Supabase"), t("Postgres"), pr("Black Friday")],
+    asked: "Run the orders migration in production",
+    searched: "orders migration 0042 staging timeout",
+    searchZones: ["dev"],
+  },
+  {
+    author: "ines", zone: "dev", kind: "fact", daysAfter: 3, hour: 14, tool: "claude-code",
+    title: "First release shipped by Inès alone: the deploy procedure was enough",
+    body: "v2.14.0: tag, Vercel deploy, 15 minutes of Sentry watch, step by step from Hugo's procedure, without asking him. One step was missing and is now in it: purge the CDN cache of the product images.",
+    entities: [t("Vercel"), t("Sentry"), p("Hugo Bernard")],
+    asked: "How do we ship the shop to production?",
+    searched: "deploy the shop to production",
+    searchZones: ["dev"],
+  },
+  {
+    author: "sarah", zone: "sales", kind: "decision", daysAfter: 3, hour: 16, tool: "claude",
+    title: "Kalia Santé signs the pilot: 40 phones from December 1, then the whole fleet",
+    body: "Signed after the written answer on the replacement stock: €21 per phone per month, a broken phone replaced within 48 hours anywhere in France (12 phones kept in stock for them). If the pilot holds three months, 220 more phones in March.",
+    entities: [c("Kalia Santé"), pr("B2B leasing"), pr("48-hour replacement")],
+    asked: "Write Kalia Santé the answer on the 48-hour replacement stock",
+    searched: "48-hour replacement for business customers",
+    searchZones: ["sales", "support"],
+    closes: ["Follow up with Kalia Santé after the Fleet & Mobility convention"],
+  },
+  {
+    author: "leo", zone: "product", kind: "decision", daysAfter: 4, hour: 10, tool: "claude-code",
+    title: "The grading model now checks the frame's corners",
+    body: "Answers Inès's question about the corners: dents on the corners were behind one \"not as described\" return in four. The bench takes a fifth photo, of the corners; the technician confirms as before. Expected: the return rate from 5.1% to under 4% by December.",
+    entities: [pr("AI grading"), pr("Returns"), p("Inès Lefèvre")],
+    asked: "Should we grade the frame's corners too? Check the returns",
+    searched: "frame corners dents not as described returns",
+    searchZones: ["product", "dev", "support"],
+  },
+  {
+    author: "sarah", zone: "support", kind: "procedure", daysAfter: 4, hour: 15, tool: "claude",
+    title: "Answer a customer whose new phone drains its battery in the first days",
+    body: "1. Normal for 48 to 72 hours: the phone indexes its photos and syncs iCloud or Google.\n2. Ask for the battery health (Settings → Battery): 85% or more, nothing to do.\n3. Below: individuals get a prepaid label, companies on a lease a replacement within 48 hours.\nPublished as a help center FAQ.",
+    entities: [t("Zendesk"), pr("48-hour replacement")],
+    asked: "Write the FAQ on the battery draining during the first days",
+    searched: "battery draining new phone first days",
+    searchZones: ["support", "product"],
+    closes: ["Write the FAQ on the battery draining during the first days"],
+  },
+  {
+    author: "claire", zone: "leadership", kind: "decision", daysAfter: 4, hour: 18, tool: "meeting", app: "Google Meet",
+    title: "Weekly sync: the 2,000 Black Friday iPhones graded by November 14",
+    body: "Decided in the weekly team meeting: the workshop grades the 2,000 Black Friday iPhones by November 14, 200 a day, with the corners check from day one. Hugo creates the remaining indexes before then, Jean-Marc pays the stock with the cards' November ceiling.",
+    entities: [pr("Black Friday"), p("Hugo Bernard"), p("Jean-Marc Dubois"), t("Qonto")],
+  },
+  {
+    author: "hugo", zone: "dev", kind: "task", daysAfter: 5, hour: 9, tool: "codex",
+    title: "Create the Black Friday indexes on orders and payments before November 14",
+    body: "Same recipe as migration 0042 (concurrently, before 8am): orders by status and date, payments by provider. To watch in Supabase for a day after each one.",
+    entities: [t("Supabase"), pr("Black Friday")],
+    asked: "List the indexes we still need before Black Friday",
+    searched: "migration production without lock orders index",
+    searchZones: ["dev"],
+  },
+  {
+    author: "jeanmarc", zone: "finance", kind: "fact", daysAfter: 5, hour: 11, tool: "claude-code",
+    title: "Kalia Santé billing set up in Pennylane: one invoice a month, the first on December 1",
+    body: "40 phones × €21, the 48-hour replacement included; their purchase order number on every invoice, sent to their accounting. Terms taken from the signed pilot.",
+    entities: [c("Kalia Santé"), t("Pennylane")],
+    asked: "Set up the monthly invoice for Kalia Santé's lease",
+    searched: "Kalia Santé lease invoice",
+    searchZones: ["finance"],
+  },
+  {
+    author: "leo", zone: "product", kind: "fact", daysAfter: 5, hour: 16, tool: "agent", app: "Screenpipe",
+    title: "Trade-ins reach 24% of October's orders",
+    body: "Found by the Screenpipe agent in Léo's Amplitude dashboard: 24% of October's orders came with a trade-in, against 19% in September. The goal is 30% by the end of December.",
+    entities: [pr("Trade-in"), t("Amplitude")],
+  },
+  {
+    author: "sarah", zone: "sales", kind: "fact", daysAfter: 6, hour: 11, tool: "meeting", app: "Zoom",
+    title: "Groupe Vallière demo: they sign 1,200 phones if a sample CSR report ships by November 20",
+    body: "Demo with their purchasing and CSR leads: the lease terms suit them. They want a sample of the CO₂ report for their first 100 phones before signing, by November 20.",
+    entities: [c("Groupe Vallière"), pr("CSR report"), pr("B2B leasing")],
+  },
+  {
+    author: "leo", zone: "product", kind: "procedure", daysAfter: 6, hour: 15, tool: "claude-code",
+    title: "CSR report: the CO₂ avoided, computed phone by phone",
+    body: "Per phone: the CO₂ of a new one of the same model (manufacturer data), minus the refurbishing footprint (transport, parts, 0.8 kg for the bench). Summed per fleet, as a monthly PDF for each business customer. First sample for Groupe Vallière on November 20.",
+    entities: [pr("CSR report"), c("Groupe Vallière")],
+    asked: "Finish the spec of the CSR report for business customers",
+    searched: "Groupe Vallière CSR report CO2 requirements",
+    searchZones: ["product", "sales"],
+    closes: ["Write the spec of the automatic CSR report"],
+  },
+  {
+    author: "ines", zone: "dev", kind: "fact", daysAfter: 7, hour: 12, tool: "claude-code",
+    title: "Playwright tests now cover the checkout paid in installments with Alma",
+    body: "Three tests: 3 and 4 installments, and a refusal by Alma. They run on every pull request in GitHub Actions, in about 2 minutes, and caught a missing return URL on a staging preview the same day.",
+    entities: [t("Playwright"), t("Alma"), t("GitHub")],
+    asked: "Write the Playwright tests for the Alma installment checkout",
+    searched: "Alma installment checkout",
+    searchZones: ["dev"],
+    closes: ["Add Playwright e2e tests on the checkout paid in installments with Alma"],
+  },
+  {
+    author: "hugo", zone: "dev", kind: "decision", daysAfter: 7, hour: 16, tool: "claude-code",
+    title: "Refunds wait for the workshop's scan, not for Stripe's webhook",
+    body: "From now on, a refund starts when the workshop scans the returned phone; Stripe's charge.refunded only updates the order. It ends the refunds paid for phones that never came back (6 this month).",
+    entities: [t("Stripe"), pr("Returns")],
+    asked: "Fix the refunds that go out before the phone is back",
+    searched: "Stripe charge.refunded webhook before the return",
+    searchZones: ["dev", "support"],
+  },
+  {
+    author: "claire", zone: "leadership", kind: "fact", daysAfter: 7, hour: 18, tool: "claude",
+    title: "Board of November 12: the deck is drafted",
+    body: "Q3 revenue €1.86M (+18%), a €95k monthly burn and 11 months of runway; a 5.1% return rate and the plan to bring it under 4% with the corners check; Kalia Santé signed, Groupe Vallière waiting for its CSR sample; trade-ins at 24% of orders.",
+    entities: [pr("Board"), c("Kalia Santé"), c("Groupe Vallière")],
+    asked: "Draft the November 12 board deck from the quarter's figures",
+    searched: "Q3 revenue burn runway return rate trade-in",
+    searchZones: ["finance", "product", "sales", "leadership"],
+  },
+  {
+    author: "sarah", zone: "support", kind: "fact", daysAfter: 10, hour: 9, tool: "agent", app: "Screenpipe",
+    title: "Battery tickets halved in the week after the FAQ: 31 to 14",
+    body: "Found by the Screenpipe agent in Sarah's Zendesk: 14 tickets about a battery draining in the first days, against 31 the week before the FAQ. Most now close with the FAQ's link.",
+    entities: [t("Zendesk"), pr("Battery")],
+  },
+  {
+    author: "jeanmarc", zone: "finance", kind: "fact", daysAfter: 10, hour: 10, tool: "claude-code",
+    title: "Cash forecast updated with the Black Friday stock: 10 months of runway",
+    body: "The 2,000 iPhones cost €0.62M, paid in November with the Qonto cards' raised ceiling: runway goes from 11 to 10 months, back to 11 with December's sales.",
+    entities: [t("Qonto"), pr("Black Friday")],
+    asked: "Update the cash forecast with the stock bought for Black Friday",
+    searched: "Black Friday stock 2,000 iPhones Qonto ceiling",
+    searchZones: ["finance"],
+  },
+  {
+    author: "leo", zone: "product", kind: "question", daysAfter: 10, hour: 11, tool: "claude-code",
+    title: "Should the CSR report count the phone's second life after the lease?",
+    body: "A leased phone is bought back and resold after 24 months: counting that second life would double the CO₂ avoided, but Groupe Vallière's CSR lead wants a figure an auditor accepts. To settle before the November 20 sample.",
+    entities: [pr("CSR report"), c("Groupe Vallière")],
+  },
+]
+
+/** Agents that only read the brain (no knowledge written): the colleague's answer was already there. */
+export const DEMO_FOLLOWUP_SEARCHES: { daysAfter: number; hour: number; user: string; agent: "claude-code" | "codex"; asked: string; searched: string; zones: string[] }[] = [
+  { daysAfter: 3, hour: 10, user: "sarah", agent: "claude-code", asked: "What did we promise Kalia Santé on replacements?", searched: "Kalia Santé pilot 48-hour replacement", zones: ["sales"] },
+  { daysAfter: 4, hour: 9, user: "ines", agent: "claude-code", asked: "Restore last night's backup on staging", searched: "restore a Supabase backup on staging", zones: ["dev"] },
+  { daysAfter: 5, hour: 14, user: "hugo", agent: "codex", asked: "Why can't this customer move their eSIM?", searched: "transfer eSIM refurbished phone", zones: ["support"] },
+  { daysAfter: 6, hour: 10, user: "leo", agent: "claude-code", asked: "What do customers choose on, grade or battery?", searched: "customers choose battery cosmetic grade", zones: ["product"] },
+  { daysAfter: 7, hour: 10, user: "sarah", agent: "claude-code", asked: "Prepare the B2B demo for a school group", searched: "prepare an Encore B2B demo lease price", zones: ["sales"] },
+  { daysAfter: 10, hour: 9, user: "hugo", agent: "claude-code", asked: "Can I deploy at 10am today?", searched: "deploy rules workshop hours", zones: ["dev", "core"] },
+  { daysAfter: 10, hour: 10, user: "claire", agent: "claude-code", asked: "Where do we stand on the quarter's goals?", searched: "Q4 goal phones sold B2B signed", zones: ["leadership", "sales"] },
+]
+
 /** Questions an agent asks the brain through the MCP (search_brain). */
 export const DEMO_AGENT_QUERIES: Record<string, string[]> = {
   dev: ["production deployment procedure", "AI screen grading", "nightly pricing job", "restore a backup"],

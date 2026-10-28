@@ -16,12 +16,15 @@ import {
   type Profile,
 } from "@brain/core"
 import { hashToken, isDemoMode, newToken } from "./auth"
+import { listMcpConnectors, removeMcp } from "./remote-mcp"
 import { simplePdf } from "./simple-pdf"
 import { getStore, isStoreSetupError, type BrainStore } from "./store"
 import type { NewEvent } from "./store/types"
 import {
   DEMO_DOCUMENTS,
   DEMO_CORE_ITEMS,
+  DEMO_FOLLOWUP_ITEMS,
+  DEMO_FOLLOWUP_SEARCHES,
   DEMO_ITEMS,
   DEMO_ORG,
   DEMO_PROMPTS,
@@ -31,14 +34,15 @@ import {
   DEMO_WORKFLOWS,
   JEANMARC_DAILY_PROMPT,
   LEGACY_DEMO_NAMES,
+  type DemoFollowup,
   type DemoItem,
 } from "../scripts/demo-data"
 
 const TZ = process.env.BRAIN_TIMEZONE ?? DEFAULT_TIMEZONE
 
-/** UTC date matching a local time (TZ time zone) N days before today. */
-function localTime(daysAgo: number, hour: number, minute: number): Date {
-  const day = new Date(Date.now() - daysAgo * 86400_000)
+/** UTC date matching a local time (TZ time zone) N days before today (`now`). */
+function localTime(daysAgo: number, hour: number, minute: number, now = Date.now()): Date {
+  const day = new Date(now - daysAgo * 86400_000)
   const guess = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute))
   const fmt = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
   const [h, m] = fmt.format(guess).split(":").map(Number)
@@ -46,8 +50,8 @@ function localTime(daysAgo: number, hour: number, minute: number): Date {
   return new Date(guess.getTime() - offsetMin * 60_000)
 }
 
-function isWeekend(daysAgo: number): boolean {
-  const d = localTime(daysAgo, 12, 0)
+function isWeekend(daysAgo: number, now = Date.now()): boolean {
+  const d = localTime(daysAgo, 12, 0, now)
   const wd = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(d)
   return wd === "Sat" || wd === "Sun"
 }
@@ -146,7 +150,7 @@ export async function upgradeDemoBrain(store: BrainStore = getStore()) {
 }
 
 /** The app Screenpipe or the logs saw, by source tool. */
-function demoApp(it: DemoItem): string {
+function demoApp(it: Pick<DemoItem, "tool" | "app">): string {
   if (it.app) return it.app
   if (it.tool === "claude-code" || it.tool === "codex") return "Terminal"
   if (it.tool === "chatgpt") return "Google Chrome"
@@ -154,18 +158,27 @@ function demoApp(it: DemoItem): string {
   return "Claude"
 }
 
-function demoWriteSummary(it: DemoItem): string {
+function demoWriteSummary(it: Pick<DemoItem, "title" | "tool" | "app">): string {
   const title = it.title.slice(0, 80)
   if (it.tool === "meeting") return `Meeting distilled (${demoApp(it)}): ${title}`
   if (it.tool === "agent") return `Screenpipe agent found: ${title}`
   return `1 item added: ${title}`
 }
 
-/** Inserts demo knowledge (and its tasks); returns the brain-sync write events, one per item. */
-async function insertDemoItems(store: BrainStore, ids: Record<string, string>, list: DemoItem[], r: () => number): Promise<NewEvent[]> {
+/**
+ * Inserts demo knowledge (and its tasks); returns the brain-sync write events, one per item. `when`: its date, by
+ * default `daysAgo` at a random working hour.
+ */
+async function insertDemoItems<T extends Omit<DemoItem, "daysAgo"> & { daysAgo?: number }>(
+  store: BrainStore,
+  ids: Record<string, string>,
+  list: T[],
+  r: () => number,
+  when: (it: T) => Date = (it) => localTime(it.daysAgo ?? 0, 9 + Math.floor(r() * 9), Math.floor(r() * 60)),
+): Promise<NewEvent[]> {
   const events: NewEvent[] = []
-  for (const it of [...list].sort((a, b) => b.daysAgo - a.daysAgo)) {
-    const at = localTime(it.daysAgo, 9 + Math.floor(r() * 9), Math.floor(r() * 60))
+  for (const it of [...list].sort((a, b) => (b.daysAgo ?? 0) - (a.daysAgo ?? 0))) {
+    const at = when(it)
     const fromScreenpipe = it.tool === "meeting" || it.tool === "agent" || it.tool === "chatgpt"
     const [item] = await store.insertItems([
       {
@@ -296,6 +309,83 @@ export async function upgradeScreenpipeDemo(store: BrainStore = getStore()): Pro
   return missing.length
 }
 
+/** Days the follow-up spans after the brain's latest knowledge (a shorter gap compresses it). */
+const FOLLOWUP_SPAN_DAYS = 10
+/** A demo whose latest knowledge is more recent than this is current: the follow-up waits. */
+const FOLLOWUP_MIN_GAP_DAYS = 3
+
+/**
+ * A demo that stopped at its seed catches up (DEMO_FOLLOWUP_ITEMS): the team's next ten days with its brain, dated
+ * after the latest knowledge (compressed if less time has passed), working days only, never in the future. The tasks
+ * the new knowledge closes are done, each agent's session and search_brain calls are in the activity, the company
+ * status is generated again. null while the demo is still current (less than FOLLOWUP_MIN_GAP_DAYS without knowledge);
+ * 0 when there is nothing left to add.
+ */
+export async function upgradeFollowupDemo(store: BrainStore = getStore(), now = Date.now()): Promise<number | null> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name) return 0
+  const ids = demoTeam(await store.listProfiles())
+  if (!ids) return 0
+  const items = await store.listItems({ limit: 5000 })
+  const titles = new Set(items.map((i) => i.title))
+  const missing = DEMO_FOLLOWUP_ITEMS.filter((it) => !titles.has(it.title))
+  if (missing.length === 0) return 0
+  const latest = Math.max(...items.map((i) => Date.parse(i.source?.at ?? i.created_at)).filter(Number.isFinite))
+  const gapDays = (now - latest) / 86400_000
+  if (!Number.isFinite(latest) || gapDays < FOLLOWUP_MIN_GAP_DAYS) return null
+  const scale = Math.min(1, gapDays / FOLLOWUP_SPAN_DAYS)
+  const at = (daysAfter: number, hour: number, minute: number) => {
+    let daysAgo = Math.max(0, Math.round(gapDays - daysAfter * scale))
+    // The same day as the latest knowledge stays on it; later ones move off the weekend, to the Monday.
+    while (daysAfter > 0 && daysAgo > 0 && isWeekend(daysAgo, now)) daysAgo--
+    const d = localTime(daysAgo, hour, minute, now)
+    // Never before the latest knowledge, never in the future.
+    return new Date(Math.min(Math.max(d.getTime(), latest + 30 * 60_000), now - 20 * 60_000))
+  }
+  const r = rand(27)
+  const dateOf = new Map<DemoFollowup, Date>(missing.map((it) => [it, at(it.daysAfter, it.hour, 5 + Math.floor(r() * 50))]))
+  const events = await insertDemoItems(store, ids, missing, r, (it) => dateOf.get(it)!)
+
+  // What each agent did around the knowledge: the prompt, the brain it searched, then the sync that wrote it.
+  const session = (user: string, agent: "claude-code" | "codex" | null, asked: string | undefined, searched: string, zones: string[], start: Date) => {
+    const id = `followup-${user}-${start.getTime()}`
+    const t0 = start.getTime() - 12 * 60_000
+    const out: NewEvent[] = []
+    if (agent && asked) {
+      out.push({ user_id: ids[user], agent, type: "started", zones: [], session_id: id, at: new Date(t0).toISOString() })
+      out.push({ user_id: ids[user], agent, type: "query", zones: zones.slice(0, 1), summary: asked, fingerprint: promptFingerprint(asked), session_id: id, at: new Date(t0 + 20_000).toISOString() })
+    }
+    out.push({ user_id: ids[user], agent: "mcp", type: "query", zones, summary: searched, session_id: id, at: new Date(t0 + 50_000).toISOString() })
+    if (agent && asked) out.push({ user_id: ids[user], agent, type: "stopped", zones: [], session_id: id, at: new Date(start.getTime() + 10 * 60_000).toISOString() })
+    return out
+  }
+  for (const it of missing) {
+    if (!it.searched) continue
+    const agent = it.tool === "claude-code" || it.tool === "codex" ? it.tool : null
+    events.push(...session(it.author, agent, it.asked, it.searched, it.searchZones ?? [it.zone], dateOf.get(it)!))
+  }
+  for (const s of DEMO_FOLLOWUP_SEARCHES) events.push(...session(s.user, s.agent, s.asked, s.searched, s.zones, at(s.daysAfter, s.hour, 20 + Math.floor(r() * 30))))
+  // Jean-Marc's morning reconciliation goes on, working day after working day.
+  for (let d = Math.floor(gapDays) - 1; d >= 0; d--) {
+    if (isWeekend(d, now)) continue
+    const start = localTime(d, 9, 1 + Math.floor(r() * 9), now)
+    if (start.getTime() > now - 15 * 60_000) continue
+    const id = `followup-jm-${d}`
+    events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "started", zones: [], session_id: id, at: start.toISOString() })
+    events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "query", zones: ["finance"], summary: JEANMARC_DAILY_PROMPT, fingerprint: promptFingerprint(JEANMARC_DAILY_PROMPT), session_id: id, at: new Date(start.getTime() + 15_000).toISOString() })
+    events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "stopped", zones: [], session_id: id, at: new Date(start.getTime() + 12 * 60_000).toISOString() })
+  }
+  await store.insertEvents(events.filter((e) => Date.parse(e.at) <= now).sort((a, b) => a.at.localeCompare(b.at)))
+
+  // The tasks the new knowledge closes.
+  const closes = new Set(missing.flatMap((it) => it.closes ?? []))
+  for (const task of await store.listTasks({})) if (closes.has(task.title) && task.status !== "done") await store.updateTask(task.id, { status: "done" })
+
+  // The state of the company, on everything the team knows now.
+  const [zones, all, tasks, profiles] = await Promise.all([store.listZones(), store.listItems({}), store.listTasks({}), store.listProfiles()])
+  await store.setStatus(heuristicStatus({ zones, items: all, tasks, profiles }))
+  return missing.length
+}
+
 /**
  * Accounts that are neither one of the demo's people nor a visitor who entered the demo (DEMO_VISITOR_TITLE): test
  * accounts made by hand on the public demo ("fwqfwq", "Test"), which crowd the team, the org chart and Monitoring.
@@ -311,6 +401,18 @@ export async function removeDemoTestAccounts(store: BrainStore = getStore()): Pr
   )
   for (const p of test) await store.deleteProfile(p.id)
   return test.map((p) => p.name)
+}
+
+/**
+ * The Notion workspace someone connected to the public demo through OAuth (a real account, open to four zones): its
+ * server and its tokens leave the demo brain. Revoking the access stays to do on Notion's side. Returns whether it was
+ * there.
+ */
+export async function removeDemoNotion(store: BrainStore = getStore()): Promise<boolean> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name || !demoTeam(await store.listProfiles())) return false
+  if (!(await listMcpConnectors()).some((c) => c.id === "notion")) return false
+  await removeMcp("notion")
+  return true
 }
 
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
@@ -506,9 +608,17 @@ async function upgradeOnce(store: BrainStore) {
     const n = await upgradeCoreDemo(store)
     if (n) console.log(`[demo] brain completed: ${n} core item(s).`)
   })
+  await claimed(store, "demo-upgrade-followup", async () => {
+    const n = await upgradeFollowupDemo(store)
+    if (n === null) return false
+    if (n) console.log(`[demo] brain completed: ${n} piece(s) of knowledge from the team's next days.`)
+  })
   await claimed(store, "demo-cleanup-test-accounts", async () => {
     const removed = await removeDemoTestAccounts(store)
     if (removed.length) console.log(`[demo] test accounts removed: ${removed.join(", ")}.`)
+  })
+  await claimed(store, "demo-remove-notion", async () => {
+    if (await removeDemoNotion(store)) console.log("[demo] the Notion connector and its tokens removed.")
   })
   // Documents migration not applied yet: tried again on the next start (the claim is released).
   await claimed(store, "demo-upgrade-documents", async () => {
@@ -520,11 +630,11 @@ async function upgradeOnce(store: BrainStore) {
   })
 }
 
-/** Runs `fn` once across instances (claim marker in the database). */
-async function claimed(store: BrainStore, key: string, fn: () => Promise<void>) {
+/** Runs `fn` once across instances (claim marker in the database); `false`: not yet, tried again on a later start. */
+async function claimed(store: BrainStore, key: string, fn: () => Promise<void | false>) {
   if (!(await store.claimOnce(key))) return
   try {
-    await fn()
+    if ((await fn()) === false) return await store.releaseClaim(key)
     await store.finishClaim(key)
   } catch (err) {
     await store.releaseClaim(key).catch(() => {})
