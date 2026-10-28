@@ -30,6 +30,10 @@ Writing rules:
   whatever their team (what the company does and for whom, its vision, mission, values, key figures, who to ask):
   a team's own work goes in that team's zone;
 - entities: people, projects, customers, tools, documents explicitly mentioned;
+- keywords: 6 to 14 search terms a colleague might type to find the item and that its title and body do not contain:
+  other words for the same thing, the question it answers ("who to ask for…", "how to…"), the words the employee
+  used in the session (often French) and the French for the key terms; each 1 to 4 words; never a fact, figure or
+  name that is not in the item, never a secret or personal data;
 - confidence: between 0 and 1, your confidence that it is accurate and useful;
 - at most 6 items; no item if nothing is worth keeping.`
 
@@ -79,7 +83,7 @@ ${ITEMS_JSON_FORMAT}`
 }
 
 const ITEMS_JSON_FORMAT = `Reply ONLY with a JSON object of the form:
-{"items":[{"zone":"<id>","kind":"fact|decision|task|procedure|question","title":"…","body":"…","entities":[{"type":"person|project|client|tool|doc","name":"…"}],"confidence":0.8}]}
+{"items":[{"zone":"<id>","kind":"fact|decision|task|procedure|question","title":"…","body":"…","entities":[{"type":"person|project|client|tool|doc","name":"…"}],"keywords":["…"],"confidence":0.8}]}
 No text around it, no code block.`
 
 export type AgentPromptInput = {

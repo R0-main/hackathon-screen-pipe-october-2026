@@ -1,0 +1,730 @@
+{
+  "prompt": "rephrase-v2",
+  "model": "sonnet",
+  "questions": {
+    "how do we deploy to production?": [
+      "production deployment process",
+      "how to release code to production"
+    ],
+    "how do we ship a release": [
+      "release process deploy to production steps",
+      "how to publish a new software version release checklist"
+    ],
+    "go live": [
+      "deploy to production release process",
+      "launch checklist for publishing a new feature or website online"
+    ],
+    "Qonto reconciliation": [
+      "How do we match Qonto bank transactions with invoices and payments in accounting?",
+      "Qonto bank statement matching and bookkeeping process for customer payments"
+    ],
+    "bank reconcilation": [
+      "how do we reconcile bank statements with accounting records",
+      "matching bank transactions to customer payments and invoices in month-end close"
+    ],
+    "month-end close accountant export": [
+      "monthly accounting closing process export of sales and invoices for the accountant",
+      "end of month bookkeeping data export to the accounting firm"
+    ],
+    "when to file VAT": [
+      "VAT return filing deadline and frequency",
+      "when is the VAT declaration due"
+    ],
+    "VAT on second-hand phones": [
+      "VAT margin scheme for refurbished used smartphones",
+      "VAT treatment when selling second-hand phones to individuals and business customers"
+    ],
+    "webhook charge.refunded": [
+      "How do we handle the Stripe charge.refunded webhook event when a customer payment is refunded?",
+      "Refund event handling: processing payment refund notifications from the payment provider webhook"
+    ],
+    "restore a backup": [
+      "how to recover data from a backup",
+      "backup restoration procedure database recovery"
+    ],
+    "backup restore staging": [
+      "how to restore a database backup into the staging environment",
+      "staging environment data restore from production backup procedure"
+    ],
+    "AI grading of the screen from photos": [
+      "automated screen condition grading from photos before technician confirmation",
+      "AI screen grade model photo inspection refurbished phone workshop Lyon"
+    ],
+    "scratches missed under the lights": [
+      "AI screen grading misses scratches visible under workshop lighting",
+      "technician finds screen scratches that the AI grading from photos did not detect"
+    ],
+    "how are selling prices set": [
+      "pricing policy for refurbished phones sold online",
+      "how does Encore determine resale price and margin based on phone grade and condition"
+    ],
+    "B2B lease price per phone": [
+      "monthly rental price per smartphone for business customers",
+      "B2B phone leasing pricing per device for companies equipping their teams"
+    ],
+    "sales pipeline october": [
+      "October sales pipeline status and open deals",
+      "business customers deals in progress October pipeline forecast"
+    ],
+    "Groupe Vallière CSR report": [
+      "Groupe Vallière corporate social responsibility sustainability report",
+      "Groupe Vallière environmental impact refurbished phones CSR data for business customer"
+    ],
+    "eSIM won't transfer": [
+      "eSIM transfer to new phone fails or not working",
+      "how to move eSIM to another device, activation or transfer error on refurbished phone"
+    ],
+    "battery health after a battery swap": [
+      "battery capacity percentage after replacing the battery in a refurbished phone",
+      "maximum battery capacity check and grading once a new battery has been installed"
+    ],
+    "burn and runway": [
+      "monthly cash burn rate and remaining cash runway",
+      "how many months of cash left at current monthly spending"
+    ],
+    "phones sold goal for Christmas": [
+      "Christmas sales target for refurbished phones units",
+      "holiday season Q4 sales objective number of smartphones sold"
+    ],
+    "returns not as described": [
+      "customer returns because the phone does not match the description",
+      "refund or return policy when a refurbished phone condition differs from the listing grade"
+    ],
+    "trade in your old phone": [
+      "sell or return my used smartphone to Encore for credit",
+      "buyback program for old phones"
+    ],
+    "refurbished macbooks": [
+      "Do we sell refurbished laptops or MacBooks?",
+      "product range beyond smartphones: refurbished laptops, MacBook testing and warranty"
+    ],
+    "hire someone to run the workshop": [
+      "recruit a workshop manager for the Lyon refurbishment workshop",
+      "hiring a head of operations to manage the 12 technicians"
+    ],
+    "Fleet & Mobility convention leads": [
+      "leads collected at the Fleet & Mobility trade show",
+      "Fleet & Mobility event prospects and contacts for business customers"
+    ],
+    "how do we push a new version of the shop": [
+      "how to deploy a new version of the online shop to production",
+      "release process for the web shop website"
+    ],
+    "bring the database back from last night's dump": [
+      "restore the database from the nightly backup",
+      "database restore procedure from last night's backup dump"
+    ],
+    "which tax rule applies when we resell a handset bought from a private person": [
+      "VAT rules for reselling used phones purchased from an individual",
+      "margin scheme VAT second-hand goods bought from non-VAT-registered private seller"
+    ],
+    "selling to a company in Brussels: what goes on the invoice": [
+      "invoicing a business customer in Belgium: required invoice mentions, VAT number and VAT treatment",
+      "B2B invoice for intra-EU sale to a company in Brussels: reverse charge, customer VAT ID, warranty and refurbished goods margin scheme"
+    ],
+    "how many days before card payments reach our bank account": [
+      "card payment settlement delay to bank account in days",
+      "payout schedule from payment processor to company bank account"
+    ],
+    "how much money do we lose each month and how long can we last": [
+      "What is Encore's monthly net burn rate?",
+      "What is Encore's cash runway given current cash balance and monthly burn?"
+    ],
+    "when are we raising money": [
+      "fundraising timeline and funding round plans",
+      "when will the company raise capital from investors"
+    ],
+    "who handles salaries": [
+      "who is responsible for payroll",
+      "who manages employee pay and payslips"
+    ],
+    "onboarding plan for a new hire": [
+      "new employee onboarding checklist and first week schedule",
+      "how to integrate and train a new team member (office or workshop technician)"
+    ],
+    "what is our business, in one sentence": [
+      "What does Encore do as a company?",
+      "Encore company overview: refurbished smartphones sold online with a 2-year warranty to individuals and business customers"
+    ],
+    "why do shoppers give up before paying": [
+      "checkout abandonment reasons",
+      "cart abandonment causes before payment on the online store"
+    ],
+    "what makes buyers convert more than pictures": [
+      "which factors increase conversion rate of online buyers more than product photos",
+      "what drives purchase conversion on the website besides phone pictures, such as warranty, grading or trust signals"
+    ],
+    "how much of the helpdesk load does the bot absorb": [
+      "what percentage of support tickets does the chatbot resolve without human intervention",
+      "customer support bot deflection rate and impact on helpdesk ticket volume"
+    ],
+    "a client switched from Android to iPhone and lost their messages": [
+      "customer migrated from Android to iPhone and lost their text messages (SMS) during data transfer",
+      "Android to iPhone switch data transfer message history not transferred, Move to iOS WhatsApp backup"
+    ],
+    "screen flaws the camera missed under the bench lamp": [
+      "defects missed by AI screen grading from photos but found by technician under workshop lighting",
+      "screen scratches or cracks not detected in photo grading, technician confirmation catches them on the bench"
+    ],
+    "monthly price per handset when a company rents a fleet": [
+      "business leasing price per phone per month for a fleet of refurbished smartphones",
+      "B2B subscription rental monthly rate per device for company team phones"
+    ],
+    "the home-care nursing company trial": [
+      "pilot with a home nursing care company as a business customer",
+      "test period for a home healthcare nurses company equipping its team with refurbished phones"
+    ],
+    "the big customer that needs carbon reporting before signing": [
+      "large business customer requires carbon footprint report before signing contract",
+      "CO2 emissions data of refurbished phones requested by enterprise customer prior to deal"
+    ],
+    "when do we stop changing prices before the November sales event": [
+      "price freeze deadline before November sales event",
+      "last date to update product prices ahead of the November promotion"
+    ],
+    "when do we start selling computers": [
+      "When will Encore launch laptops and other computers in its product range?",
+      "Planned launch date for selling refurbished computers or laptops alongside smartphones"
+    ],
+    "who will run the benches when the team grows": [
+      "who will supervise the workshop testing benches as the technician team expands",
+      "who will be team lead or manager of the workshop technicians when Encore hires more technicians"
+    ],
+    "can I book a meeting with the technicians at 2pm": [
+      "How do I schedule a meeting with the workshop technicians in Lyon at 2pm?",
+      "Technician availability and working hours for meetings at the Lyon workshop"
+    ],
+    "how much did we sell over the summer": [
+      "total sales revenue for summer 2026 (June to August)",
+      "number of phones sold in June, July and August"
+    ],
+    "what the accountant needs from us every month": [
+      "monthly accounting deliverables to the external accountant",
+      "documents and data to send to the accountant each month for bookkeeping closing"
+    ],
+    "matching bank lines with invoices every morning": [
+      "daily bank reconciliation of bank transactions with customer invoices",
+      "reconcile bank statement lines with sales invoices and payments each morning"
+    ],
+    "refund notification arrives before the parcel is back": [
+      "customer receives return refund confirmation email before the returned phone has been received at the workshop",
+      "when is the refund triggered for a returned phone: at return label creation or after the parcel is delivered and inspected"
+    ],
+    "automated browser tests for paying in installments": [
+      "end-to-end browser tests for the installment payment checkout flow",
+      "Playwright or Cypress E2E tests for split payment (pay in several instalments) at checkout"
+    ],
+    "phones with a swapped battery show no percentage": [
+      "battery health percentage not displayed after battery replacement on refurbished iPhone",
+      "non-genuine or replaced battery shows no battery health reading in settings"
+    ],
+    "dents on the edges cause returns, should we photograph them": [
+      "Should the AI screen grading and technician check include photos of edge dents and frame damage, since cosmetic edge defects lead to customer returns?",
+      "Do we photograph dents on phone edges or frame during workshop testing to reduce returns and warranty claims for cosmetic condition?"
+    ],
+    "who decides the price of each model": [
+      "who sets the selling price for each phone model",
+      "pricing policy for refurbished phone models: who is responsible for setting and approving prices"
+    ],
+    "the trade show that brings most business prospects": [
+      "which trade show generates the most B2B leads",
+      "best event or exhibition for business customer acquisition"
+    ],
+    "share of orders where people send back their old device": [
+      "percentage of orders with a trade-in of the customer's old phone",
+      "trade-in rate: proportion of orders where customers return their old device"
+    ],
+    "showing a prospect how the fleet product works": [
+      "demo of the fleet product for a prospective business customer",
+      "presenting the B2B fleet offering to a prospect, sales demo walkthrough"
+    ],
+    "what does the grade Fair mean": [
+      "definition of the Fair condition grade for refurbished phones",
+      "Fair grade screen cosmetic condition criteria"
+    ],
+    "our values": [
+      "company core values and principles",
+      "what Encore stands for: mission, culture and values"
+    ],
+    "who buys from us": [
+      "who are Encore's customers",
+      "customer segments: individuals and business customers who equip their teams"
+    ],
+    "where do we want to be in 2028": [
+      "Encore long-term strategy and vision for 2028",
+      "Encore 2028 goals and targets: sales volume, business customers, team size"
+    ],
+    "what is everyone focused on this quarter": [
+      "current quarter priorities and objectives for the team",
+      "Q4 2026 company goals, OKRs and ongoing projects at Encore"
+    ],
+    "deadline for the tax filing": [
+      "tax return due date",
+      "deadline to submit tax declaration"
+    ],
+    "when is the next board meeting": [
+      "next board meeting date",
+      "schedule of upcoming board of directors meeting"
+    ],
+    "which deals are being negotiated": [
+      "which sales opportunities are currently in negotiation with business customers",
+      "open B2B deals in the pipeline being negotiated, quotes and contracts pending"
+    ],
+    "Kalia pilot": [
+      "Kalia pilot project status and results",
+      "Kalia trial with Encore refurbished smartphones for business customer"
+    ],
+    "Valliere CSR report": [
+      "Valliere corporate social responsibility report",
+      "Valliere sustainability and environmental impact report for business customer"
+    ],
+    "pennylane month end export": [
+      "How do we export accounting data from Pennylane at month end for closing the books?",
+      "Pennylane monthly closing export of invoices and transactions for the accountant"
+    ],
+    "charge refunded webhok": [
+      "charge.refunded webhook event handling for payment refunds",
+      "how we process refund notifications from the payment provider webhook"
+    ],
+    "esim tranfer": [
+      "how to transfer an eSIM to a new phone",
+      "eSIM migration when switching or replacing a smartphone"
+    ],
+    "supabse backup restore": [
+      "how to restore a Supabase database from a backup",
+      "Supabase database backup and recovery procedure"
+    ],
+    "black friday freez": [
+      "Black Friday code freeze: period when no deployments or changes to production are allowed",
+      "Black Friday change freeze policy for the online shop and workshop operations"
+    ],
+    "playwrite alma tests": [
+      "Playwright end-to-end tests for Alma",
+      "Alma Playwright test suite how to run automated tests"
+    ],
+    "qonto pennylane reconcile": [
+      "How do we reconcile Qonto bank transactions with Pennylane accounting?",
+      "Qonto bank feed synchronization and matching payments to invoices in Pennylane"
+    ],
+    "zendesk tickets octobre": [
+      "Zendesk support tickets in October",
+      "customer support ticket volume and issues handled in Zendesk during October"
+    ],
+    "Valiere": [
+      "Valiere customer account",
+      "Who is Valiere at Encore (business customer, contact or employee)"
+    ],
+    "playwrite": [
+      "Playwright end-to-end testing setup",
+      "browser automation tests with Playwright"
+    ],
+    "I'm about to tag a release of the shop. What is our process and what should I watch afterwards?": [
+      "release process for the online shop: how to tag and deploy a new version to production",
+      "post-release monitoring checklist for the shop: what to check after deploying a release"
+    ],
+    "A Belgian company asks why their invoice has no reverse charge. What should I answer?": [
+      "Why does an invoice to a Belgian business customer not show VAT reverse charge for intra-EU B2B sales?",
+      "VAT treatment of invoices to Belgium: margin scheme on second-hand goods instead of reverse charge"
+    ],
+    "Kalia Santé wants broken phones replaced within 48 hours. What did we promise them and at what price?": [
+      "Kalia Santé 48-hour replacement commitment for defective phones and the agreed price",
+      "Kalia Santé contract terms: 48h swap of faulty devices, pricing and warranty conditions"
+    ],
+    "I need to run the orders migration in production. Did anything go wrong with it on staging?": [
+      "orders migration staging issues, failures or rollback",
+      "problems encountered running the orders database migration on staging before production deployment"
+    ],
+    "Can I deploy the shop at 10am on a Tuesday, or is there a rule against it?": [
+      "Is there a deployment freeze or restriction on releasing the online shop to production at certain times or days of the week?",
+      "Rules and policy for shipping the webshop to production: allowed deploy windows, e.g. Tuesday 10am"
+    ],
+    "We want to equip 50 employees with phones. What is the cheapest option we offer?": [
+      "cheapest phone model for business customers equipping a team of 50 employees",
+      "lowest price refurbished smartphone offer for companies, B2B bulk order pricing for 50 phones"
+    ],
+    "A customer says their new phone loses battery fast right after setting it up. What do I tell them?": [
+      "refurbished phone battery drains quickly after initial setup, what to advise customer",
+      "new phone fast battery drain first days after setup, normal behavior, background restore and indexing, battery health check and warranty"
+    ],
+    "Prepare the numbers for the board: what were revenue and margin last quarter?": [
+      "last quarter total sales revenue and gross margin financial results",
+      "quarterly financial report: revenue, gross margin and profit for the previous quarter"
+    ],
+    "the price we promised Kalia Santé per phone": [
+      "Kalia Santé quoted unit price per refurbished phone",
+      "agreed price per device in the Kalia Santé business customer quote or contract"
+    ],
+    "price of our standard B2B lease": [
+      "standard B2B lease pricing for business customers",
+      "monthly rental fee for refurbished smartphones leased to companies"
+    ],
+    "what is the VAT deadline": [
+      "When is the VAT filing deadline?",
+      "VAT return due date and payment schedule"
+    ],
+    "why do we show the battery percentage on product pages": [
+      "reason for displaying battery health percentage on product listing pages",
+      "battery capacity shown on product page for refurbished phones"
+    ],
+    "Stripe event fires before the return is scanned at the workshop": [
+      "Stripe webhook refund event triggered before the returned phone is received and scanned at the Lyon workshop",
+      "refund issued before returned device is checked in at the workshop, return process order of Stripe events and workshop scan"
+    ],
+    "the workshop app gives no battery reading after a swap": [
+      "workshop app does not display battery health reading after battery replacement",
+      "battery capacity not showing in technician app after replacing the battery"
+    ],
+    "when does Alma's money reach Qonto": [
+      "When are payments from customer Alma settled into the Qonto bank account?",
+      "Alma payout schedule and transfer delay to Qonto"
+    ],
+    "eSIM problems among this month's support tickets": [
+      "customer support tickets about eSIM activation or compatibility issues this month",
+      "eSIM not working complaints from customers in October 2026 support requests"
+    ],
+    "a Supabase migration of the orders table that times out": [
+      "Supabase database migration on the orders table fails with statement timeout",
+      "how to run a long schema change on the orders table in Postgres without hitting timeout"
+    ],
+    "the Groupe Vallière demo on November 5": [
+      "Groupe Vallière product demonstration scheduled for November 5",
+      "Groupe Vallière business customer demo preparation and agenda, November 5"
+    ],
+    "do laptops change the grading rules": [
+      "Are the grading criteria different for laptops than for smartphones?",
+      "Do laptops have different screen grading rules or grade definitions in the workshop?"
+    ],
+    "the WhatsApp history lost when moving to a new phone": [
+      "WhatsApp chat history not transferred when switching to a new phone",
+      "backing up and restoring WhatsApp messages when migrating to a new device"
+    ],
+    "how do we restore the shop if a production deploy breaks": [
+      "how to roll back a broken production release of the online store",
+      "website outage after deployment: rollback procedure to bring the web shop back up"
+    ],
+    "battery health shown on the product page lifts sales": [
+      "does displaying battery health on the product listing increase conversion and sales of refurbished phones",
+      "impact of showing battery capacity percentage on product page on purchases"
+    ],
+    "the return rate we present to the board": [
+      "product return rate reported to the board of directors",
+      "percentage of phones returned by customers board reporting definition and calculation"
+    ],
+    "reconciling Stripe and Alma payouts every morning": [
+      "daily process to match Stripe payouts with Alma payouts in accounting",
+      "bank deposit reconciliation for Stripe and Alma payment settlements each morning"
+    ],
+    "spec of the CO₂ and e-waste report": [
+      "specification for the carbon footprint and electronic waste report",
+      "requirements for CO₂ emissions and e-waste impact report for customers"
+    ],
+    "customers afraid of losing their data when they transfer to a new phone": [
+      "customer concerns about data loss when migrating to a refurbished phone",
+      "data migration and backup guidance for customers switching to a new phone"
+    ],
+    "what do the grades Excellent, Very good and Fair mean": [
+      "definition of refurbished phone screen condition grades Excellent, Very good and Fair",
+      "screen grading scale Excellent, Very good, Fair cosmetic condition criteria scratches"
+    ],
+    "someone to own grading quality at the workshop": [
+      "who is responsible for screen grading quality in the Lyon workshop",
+      "owner of AI screen grading accuracy and technician confirmation process"
+    ],
+    "VAT on phones sold to Belgian companies": [
+      "VAT treatment for B2B sales of refurbished smartphones to companies in Belgium",
+      "intra-EU reverse charge VAT invoicing for Belgian business customers"
+    ],
+    "how much does each return cost us": [
+      "average cost per customer return refurbished phone",
+      "cost of processing a returned phone (shipping, inspection, refund, warranty)"
+    ],
+    "how big is the Groupe Vallière deal in euros": [
+      "Groupe Vallière contract value in euros",
+      "Groupe Vallière order amount revenue business customer deal size"
+    ],
+    "what is our gross margin": [
+      "gross margin percentage on refurbished smartphone sales",
+      "revenue minus cost of goods sold (phone purchase, refurbishment, warranty costs) profit margin"
+    ],
+    "how many technicians work at the workshop": [
+      "number of technicians in the Lyon workshop",
+      "workshop headcount technicians team size"
+    ],
+    "how much VAT do we expect to pay for September": [
+      "expected VAT payable for September 2026",
+      "September VAT return amount due estimate"
+    ],
+    "what happens on November 17": [
+      "November 17 event or deadline",
+      "what is scheduled for 17 November"
+    ],
+    "what is planned on November 5": [
+      "events scheduled for November 5",
+      "November 5 planned launch, meeting, or deadline"
+    ],
+    "what must be done before December 15": [
+      "tasks and deadlines due by December 15",
+      "December 15 deadline requirements and actions to complete beforehand"
+    ],
+    "when did the board approve postponing the raise": [
+      "date the board approved delaying the salary increase",
+      "board decision to defer the pay raise"
+    ],
+    "how much money is tied up in phone stock": [
+      "inventory value of refurbished phones in stock",
+      "working capital tied up in phone inventory"
+    ],
+    "what share of tickets does the AI answer on its own": [
+      "percentage of support tickets resolved automatically by the AI without human intervention",
+      "AI support agent automation rate on customer tickets"
+    ],
+    "the minimum battery health we guarantee": [
+      "minimum battery capacity warranty refurbished phones",
+      "battery health threshold guaranteed on sold phones"
+    ],
+    "how many iPhones do we buy for Black Friday": [
+      "iPhone purchasing volume for Black Friday",
+      "how many iPhones to source and stock ahead of Black Friday sales"
+    ],
+    "what does a buyback record keep for the tax office": [
+      "What information must a buyback record retain for tax and accounting compliance?",
+      "trade-in purchase record data kept for tax authority, seller identity and device details"
+    ],
+    "who is our accountant": [
+      "Who is the company's external accountant or accounting firm?",
+      "accounting firm bookkeeping and annual accounts contact"
+    ],
+    "who validates a price outside the usual band": [
+      "who approves a price that falls outside the standard price range",
+      "approval required for pricing outside the normal band, price exception sign-off"
+    ],
+    "who checks the CSR report before it is sent": [
+      "who reviews the CSR report before it is sent to the customer",
+      "CSR report review and approval process before sending"
+    ],
+    "who decides on the Groupe Vallière side": [
+      "Groupe Vallière decision maker and buyer contact for purchasing phones",
+      "Groupe Vallière who approves orders and signs contracts, key contacts and stakeholders"
+    ],
+    "who prepares the financials for the board": [
+      "who is responsible for producing the financial statements and reports presented to the board",
+      "finance team or accountant preparing board financial reporting"
+    ],
+    "who should I ask about the workshop app": [
+      "who is the owner or point of contact for the workshop app used by technicians in the Lyon workshop",
+      "who maintains or develops the internal workshop tool for testing and grading phones (AI screen grading from photos, technician confirmation)"
+    ],
+    "who was in the meeting that froze prices": [
+      "attendees of the meeting where the price freeze was decided",
+      "participants in the pricing freeze decision meeting"
+    ],
+    "comment on déploie en production": [
+      "how to deploy to production",
+      "production deployment process release steps"
+    ],
+    "restaurer une sauvegarde de la base": [
+      "how to restore a database backup",
+      "database backup restore procedure disaster recovery"
+    ],
+    "TVA sur les téléphones rachetés à des particuliers": [
+      "VAT on phones bought back from individuals",
+      "VAT margin scheme for second-hand goods purchased from private customers"
+    ],
+    "quand est-ce qu'on lève des fonds": [
+      "When is the next fundraising round planned?",
+      "timeline for raising funds from investors"
+    ],
+    "combien nous coûte un retour": [
+      "what is the cost of a product return",
+      "return handling cost refurbished phone refund shipping and inspection"
+    ],
+    "rapprochement bancaire quotidien": [
+      "daily bank reconciliation",
+      "daily matching of bank transactions with accounting entries"
+    ],
+    "transférer l'eSIM d'un client": [
+      "how to transfer a customer's eSIM to another phone",
+      "eSIM transfer procedure for a customer's refurbished smartphone"
+    ],
+    "le prix du leasing pour les entreprises": [
+      "business leasing pricing for refurbished smartphones",
+      "monthly lease rate for companies equipping their teams with phones"
+    ],
+    "qui contacter pour la paie": [
+      "who to contact for payroll",
+      "payroll contact person or team for salary and payslip questions"
+    ],
+    "objectif de ventes pour Noël": [
+      "Christmas sales target",
+      "holiday season sales goal for refurbished phones Q4 December revenue target"
+    ],
+    "pourquoi les clients abandonnent leur panier": [
+      "reasons for cart abandonment at checkout",
+      "why customers leave without completing their order online"
+    ],
+    "les horaires de l'atelier": [
+      "workshop opening hours",
+      "Lyon workshop working hours and technician schedule"
+    ],
+    "monthly price per phone of our B2B lease": [
+      "B2B smartphone leasing monthly rate per device for business customers",
+      "refurbished phone rental subscription pricing per month per phone for companies"
+    ],
+    "who sets selling prices and how often": [
+      "who decides the pricing of refurbished phones and how frequently are prices updated",
+      "pricing owner and price review frequency for phones sold online"
+    ],
+    "when do we raise the Series A": [
+      "Series A fundraising timeline",
+      "when will Encore start the Series A round and raise venture capital funding"
+    ],
+    "what is this quarter's returns goal": [
+      "current quarter target for returns rate",
+      "Q4 2026 goal for reducing phone returns"
+    ],
+    "where should Kalia Santé invoices be sent": [
+      "Kalia Santé billing address and invoice recipient",
+      "Kalia Santé accounts payable email for sending invoices"
+    ],
+    "how much does our accountant cost": [
+      "accounting firm fees",
+      "bookkeeper monthly cost and annual accounting fees"
+    ],
+    "what is the office address": [
+      "Where is the Encore office located?",
+      "Encore headquarters postal address"
+    ],
+    "payment terms Groupe Vallière requires": [
+      "Groupe Vallière invoice payment deadline and conditions",
+      "Groupe Vallière contract payment schedule, net days, and billing requirements"
+    ],
+    "how to refund an order paid with Alma": [
+      "process for issuing a refund on an order paid with Alma installment payments",
+      "Alma payment refund procedure cancel order return customer"
+    ],
+    "Face ID broken after a new screen": [
+      "Face ID not working after screen replacement on refurbished iPhone",
+      "TrueDepth camera or Face ID sensor failure following display repair or swap"
+    ],
+    "which VAT applies to chargers and cases": [
+      "VAT rate on phone accessories such as chargers and cases",
+      "sales tax treatment of accessories sold with refurbished smartphones"
+    ],
+    "how do I ship the internal admin": [
+      "how to deploy the internal admin tool to production",
+      "internal admin release process and deployment steps"
+    ],
+    "I deleted a Notion page by mistake": [
+      "How to restore a deleted Notion page",
+      "Notion page accidentally deleted, recover from trash or page history"
+    ],
+    "how much VAT for October and when to file it": [
+      "October VAT amount due and VAT return filing deadline",
+      "monthly VAT return October 2026 total VAT collected minus deductible VAT and submission date"
+    ],
+    "Kalia Santé pilot": [
+      "Kalia Santé pilot project with Encore refurbished smartphones for business customers",
+      "Kalia Santé trial deployment of refurbished phones for their team, terms and status"
+    ],
+    "VAT return": [
+      "how to file the company's VAT declaration and deadlines",
+      "VAT filing process for sales of refurbished smartphones, including accounting responsibility"
+    ],
+    "Groupe Vallière": [
+      "Groupe Vallière business customer account",
+      "Groupe Vallière order, contract, and warranty details"
+    ],
+    "staging migration fails": [
+      "database migration fails on staging environment",
+      "staging deploy schema migration error troubleshooting"
+    ],
+    "how do we deploy": [
+      "how do we ship code to production",
+      "deployment process release steps for the website and software"
+    ],
+    "what is our parental leave policy": [
+      "parental leave policy maternity paternity leave entitlement",
+      "employee leave for new parents childbirth adoption time off HR policy"
+    ],
+    "how do we handle GDPR data deletion requests": [
+      "procedure for handling customer personal data erasure requests under GDPR",
+      "right to be forgotten request process: deleting customer personal data"
+    ],
+    "who is our insurance provider": [
+      "Which company provides Encore's business insurance?",
+      "insurer and insurance policy for Encore (liability, equipment, warranty coverage)"
+    ],
+    "what is the wifi password at the office": [
+      "office wifi network name and password",
+      "how to connect to the office WiFi (guest and staff network credentials)"
+    ],
+    "how many vacation days do employees get": [
+      "annual paid leave entitlement per employee",
+      "paid time off policy days per year"
+    ],
+    "do we ship to Canada": [
+      "international shipping destinations outside the EU, Canada",
+      "shipping policy countries delivery available for online orders"
+    ],
+    "how is our Kubernetes cluster set up": [
+      "Kubernetes cluster architecture and configuration",
+      "infrastructure setup: container orchestration, deployment and hosting of services"
+    ],
+    "what did we sign with Tesla": [
+      "Tesla contract agreement signed",
+      "Tesla business customer deal terms, order, and warranty"
+    ],
+    "how do we deploy to production": [
+      "production deployment process",
+      "how to release code to production"
+    ],
+    "Kalia Santé lease price per phone": [
+      "Kalia Santé monthly rental price per smartphone for business customers",
+      "Kalia Santé device leasing contract pricing per phone"
+    ],
+    "daily bank reconciliation": [
+      "matching bank transactions with accounting entries every day",
+      "daily bank statement reconciliation process for payments and invoices"
+    ],
+    "transfer a customer's eSIM": [
+      "how to move a customer's eSIM to another phone",
+      "eSIM transfer procedure for a customer's refurbished phone"
+    ],
+    "Q3 revenue and monthly burn": [
+      "third quarter Q3 revenue and monthly cash burn rate",
+      "Q3 financial results: total sales revenue and monthly net cash burn"
+    ],
+    "Series A fundraising after Christmas": [
+      "Series A funding round planned for January",
+      "investor fundraising timeline and plan after the holidays"
+    ],
+    "VAT margin scheme on buybacks": [
+      "second-hand goods margin scheme VAT when buying back used phones from customers",
+      "VAT on trade-in purchases of used smartphones, calculating VAT on resale margin only"
+    ],
+    "monthly burn and runway": [
+      "monthly cash burn rate and remaining cash runway",
+      "how many months of cash left, monthly expenses net of revenue"
+    ],
+    "how much VAT for September": [
+      "total VAT due for September",
+      "September VAT return amount to pay"
+    ],
+    "staging migration that times out": [
+      "database migration timeout on staging environment",
+      "staging deployment failing because the schema migration takes too long"
+    ],
+    "Series A postponed to April": [
+      "Series A fundraising delayed until April",
+      "Series A funding round timeline pushed back to April"
+    ],
+    "WhatsApp chats lost after switching phones": [
+      "How to transfer or restore WhatsApp chat history when changing to a new phone",
+      "WhatsApp backup and data migration when customer switches devices, messages missing after phone replacement"
+    ],
+    "how big is the Groupe Vallière deal": [
+      "Groupe Vallière contract value and order volume",
+      "Groupe Vallière business customer deal size, number of phones and revenue"
+    ]
+  }
+}

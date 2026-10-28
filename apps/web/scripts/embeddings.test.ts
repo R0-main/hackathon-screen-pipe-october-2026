@@ -43,3 +43,16 @@ test("embeddings: knowledge from before embeddings catches up one batch at a tim
   assert.deepEqual(calls, [2, 1])
   assert.equal(await backfillEmbeddings(store, null), 0, "no provider, nothing to do")
 })
+
+test("rerank: off without BRAIN_RERANK_MODEL; reorders the first results by relevance; keeps the order on an error", async () => {
+  const { rerankerFromEnv, rerankItems } = await import("../lib/rerank")
+  assert.equal(rerankerFromEnv({ VOYAGE_API_KEY: "pa-test" }), null)
+  assert.equal(rerankerFromEnv({ BRAIN_EMBEDDING_URL: "pa-test", BRAIN_RERANK_MODEL: "rerank-3" })?.model, "rerank-3")
+  const items = ["deploy", "backup", "pricing"].map((title) => ({ id: title, title, body: "" }))
+  const fake = { model: "rerank-3", rerank: async (_q: string, docs: string[]) => docs.map((d) => (d.startsWith("backup") ? 0.9 : 0.1)) }
+  const out = await rerankItems("restore the database", items, fake)
+  assert.deepEqual(out.map((i) => i.id), ["backup", "deploy", "pricing"])
+  assert.equal(out[0].relevance, 0.9)
+  const broken = { model: "rerank-3", rerank: async () => Promise.reject(new Error("down")) }
+  assert.deepEqual((await rerankItems("x", items, broken)).map((i) => i.id), ["deploy", "backup", "pricing"])
+})

@@ -33,10 +33,16 @@ export const DEFAULT_VOYAGE_MODEL = "voyage-4"
 const isAddress = (v: string) => /^https?:\/\//i.test(v)
 
 /** The provider the environment configures, or null. Exported for the tests; the app goes through getEmbeddings. */
+/** The Voyage key: VOYAGE_API_KEY, or one filled in BRAIN_EMBEDDING_URL (never called as an address, it would end up
+ * in the error logs). Shared with the reranker. */
+export function voyageKeyFromEnv(env: Record<string, string | undefined> = process.env): string | undefined {
+  const endpoint = env.BRAIN_EMBEDDING_URL?.trim()
+  return env.VOYAGE_API_KEY?.trim() || (endpoint && !isAddress(endpoint) ? endpoint : undefined)
+}
+
 export function providerFromEnv(env: Record<string, string | undefined> = process.env): EmbeddingProvider | null {
   const endpoint = env.BRAIN_EMBEDDING_URL?.trim()
-  // A Voyage key filled in BRAIN_EMBEDDING_URL: never called as an address (it would end up in the error logs).
-  const voyage = env.VOYAGE_API_KEY?.trim() || (endpoint && !isAddress(endpoint) ? endpoint : undefined)
+  const voyage = voyageKeyFromEnv(env)
   if (voyage) {
     const model = env.BRAIN_EMBEDDING_MODEL || DEFAULT_VOYAGE_MODEL
     return {

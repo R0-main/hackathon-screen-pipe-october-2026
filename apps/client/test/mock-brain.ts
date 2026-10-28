@@ -73,6 +73,8 @@ export async function mockBrain(opts: { failIngestAt?: number[]; zones?: ((typeo
         },
       }
     if (req.method === "GET" && path.startsWith("/api/documents/")) return { status: 404, body: { error: "Document not found." } }
+    if (req.method === "GET" && path === `/api/items/${DEPLOY_ITEM.id}`) return { body: { item: DEPLOY_ITEM } }
+    if (req.method === "GET" && path.startsWith("/api/items/")) return { status: 404, body: { error: "Knowledge item not found." } }
     if (req.method === "GET" && path === "/api/entities") {
       const name = new URLSearchParams(req.url.split("?")[1]).get("name") ?? ""
       if (name.toLowerCase() === "vercel")

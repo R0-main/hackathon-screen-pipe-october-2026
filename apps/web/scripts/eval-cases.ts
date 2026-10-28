@@ -12,6 +12,8 @@ export type Case = {
   /** A tempting wrong item (part of its title): the question's words point to it. The case falls into the trap when it
    * comes before the expected item, or when only it comes back. */
   trap?: string
+  /** An older, superseded version (part of its title): search must never serve it, wherever it would rank. */
+  outdated?: string
 }
 
 export type CaseSet = {
@@ -19,6 +21,8 @@ export type CaseSet = {
   /** What the set measures, printed above its results. */
   about: string
   cases: Case[]
+  /** Only with the evaluation corpus loaded (npm run eval:seed): its answers or its traps are in the corpus. */
+  corpus?: boolean
 }
 
 /** The first questions: phrasings slightly different from the titles (synonyms, a typo). */
@@ -196,6 +200,28 @@ const FRENCH: Case[] = [
   { query: "les horaires de l'atelier", expect: "The workshop sets the pace" },
 ]
 
+/** The current decision, never its older version (the corpus adds four, superseded). */
+const FRESHNESS: Case[] = [
+  { query: "monthly price per phone of our B2B lease", expect: "New B2B lease", outdated: "First B2B lease" },
+  { query: "who sets selling prices and how often", expect: "Selling prices recomputed", outdated: "sets the selling prices by hand" },
+  { query: "when do we raise the Series A", expect: "Series A postponed", outdated: "Series A planned for January" },
+  { query: "what is this quarter's returns goal", expect: "Priority of the quarter", outdated: "Returns goal: below 5%" },
+]
+
+/** Answers that only the corpus holds, among near misses of the demo's own knowledge. */
+const CORPUS_ANSWERS: Case[] = [
+  { query: "where should Kalia Santé invoices be sent", expect: "Kalia Santé's invoices", trap: "Kalia Santé: 40-phone pilot" },
+  { query: "how much does our accountant cost", expect: "Durand Accounting charges", trap: "Month-end close" },
+  { query: "what is the office address", expect: "office address" },
+  { query: "payment terms Groupe Vallière requires", expect: "60-day payment terms", trap: "Groupe Vallière (1,200 employees)" },
+  { query: "how to refund an order paid with Alma", expect: "Refund a customer who paid in installments", trap: "charge.refunded" },
+  { query: "Face ID broken after a new screen", expect: "Reset Face ID" },
+  { query: "which VAT applies to chargers and cases", expect: "Accessories are always sold at normal VAT", trap: "VAT margin scheme" },
+  { query: "how do I ship the internal admin", expect: "Ship the back-office admin", trap: "Deploy Encore to production" },
+  { query: "I deleted a Notion page by mistake", expect: "Recover a deleted Notion page", trap: "Restore a Supabase backup" },
+  { query: "how much VAT for October and when to file it", expect: "October's VAT is estimated", trap: "File the September VAT return" },
+]
+
 export const CASE_SETS: CaseSet[] = [
   { name: "baseline", about: "the first questions, close to the titles", cases: BASELINE },
   { name: "paraphrases", about: "other words than the title", cases: PARAPHRASES },
@@ -205,6 +231,8 @@ export const CASE_SETS: CaseSet[] = [
   { name: "figures & dates", about: "the answer is inside the text", cases: FIGURES },
   { name: "people", about: "who does what", cases: PEOPLE },
   { name: "french", about: "asked in French, written in English", cases: FRENCH },
+  { name: "freshness", about: "the current decision, never its older version", cases: FRESHNESS, corpus: true },
+  { name: "corpus answers", about: "answers only the corpus holds, among near misses", cases: CORPUS_ANSWERS, corpus: true },
 ]
 
 /**
