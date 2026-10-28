@@ -15,5 +15,5 @@ export const POST = withViewer<Ctx>(
     if (!isConnectorId(id)) return error(404, "Unknown connector.")
     return json(await runConnector(viewer, id))
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )

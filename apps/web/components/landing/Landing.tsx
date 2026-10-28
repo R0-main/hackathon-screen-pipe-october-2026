@@ -536,7 +536,7 @@ function Close({ cta, second, demo, signup }: { cta: Cta; second: Cta | null; de
         </h2>
         <p data-reveal="text" className="mt-5 max-w-[32em] text-[16px] leading-relaxed sm:text-[17px]">
           {signup
-            ? "Four questions to create your dashboard, a prompt to paste into Claude Code or Codex to connect your computer, then one prompt per colleague to invite them."
+            ? "Three questions to create your dashboard, two prompts to paste into Claude Code or Codex (one proposes your zones, one connects your computer), then one prompt per colleague to invite them."
             : demo
               ? "One-click sign-in with one of the demo's six accounts, from the CEO to finance."
               : "Sign in with the token your admin gave you."}

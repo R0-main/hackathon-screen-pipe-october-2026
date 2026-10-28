@@ -26,4 +26,4 @@ export const POST = withViewer(async (req, viewer) => {
     // Remote server unreachable, token revoked, unreadable response: the agent gets the reason.
     return error(502, `The tool did not answer: ${err instanceof Error ? err.message : String(err)}`)
   }
-})
+}, { demoReadOnly: true })
