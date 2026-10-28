@@ -25,5 +25,5 @@ export const POST = withViewer(
       throw err
     }
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )

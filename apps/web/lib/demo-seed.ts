@@ -87,7 +87,17 @@ async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, al
 }
 
 /** Encore team accounts found by their email (null if one is missing: this is not the demo brain). */
-function demoTeam(profiles: Profile[]): Record<string, string> | null {
+/**
+ * The demo's six people, in DEMO_USERS order: who /demo offers to enter as. Never a visitor (who has a token of their
+ * own) nor an account made by hand. Every account if the brain has none of them (a demo seeded otherwise).
+ */
+export function demoPeople<P extends Pick<Profile, "email">>(profiles: P[]): P[] {
+  const order = new Map(DEMO_USERS.map((u, n) => [u.email, n]))
+  const people = profiles.filter((p) => p.email && order.has(p.email)).sort((a, b) => order.get(a.email!)! - order.get(b.email!)!)
+  return people.length ? people : profiles
+}
+
+export function demoTeam(profiles: Profile[]): Record<string, string> | null {
   const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [p.email, p.id]))
   const ids: Record<string, string> = {}
   for (const u of DEMO_USERS) {
@@ -286,6 +296,23 @@ export async function upgradeScreenpipeDemo(store: BrainStore = getStore()): Pro
   return missing.length
 }
 
+/**
+ * Accounts that are neither one of the demo's people nor a visitor who entered the demo (DEMO_VISITOR_TITLE): test
+ * accounts made by hand on the public demo ("fwqfwq", "Test"), which crowd the team, the org chart and Monitoring.
+ * Never an admin. Removed with what is theirs; returns their names.
+ */
+export async function removeDemoTestAccounts(store: BrainStore = getStore()): Promise<string[]> {
+  if ((await store.getOrg()).name !== DEMO_ORG.name) return []
+  const profiles = await store.listProfiles()
+  if (!demoTeam(profiles)) return []
+  const people = new Set(DEMO_USERS.map((u) => u.email))
+  const test = profiles.filter(
+    (p) => p.role !== "admin" && !(p.email && people.has(p.email)) && p.title !== DEMO_VISITOR_TITLE && p.title !== LEGACY_DEMO_VISITOR_TITLE,
+  )
+  for (const p of test) await store.deleteProfile(p.id)
+  return test.map((p) => p.name)
+}
+
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
 
 /** Empties the brain and fills it with Encore. Returns the accounts' tokens (shown only once). */
@@ -478,6 +505,10 @@ async function upgradeOnce(store: BrainStore) {
   await claimed(store, "demo-upgrade-core", async () => {
     const n = await upgradeCoreDemo(store)
     if (n) console.log(`[demo] brain completed: ${n} core item(s).`)
+  })
+  await claimed(store, "demo-cleanup-test-accounts", async () => {
+    const removed = await removeDemoTestAccounts(store)
+    if (removed.length) console.log(`[demo] test accounts removed: ${removed.join(", ")}.`)
   })
   // Documents migration not applied yet: tried again on the next start (the claim is released).
   await claimed(store, "demo-upgrade-documents", async () => {

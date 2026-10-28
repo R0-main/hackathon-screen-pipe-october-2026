@@ -55,10 +55,10 @@ export function firstName(name: string): string {
 export const AGENT_LABEL: Record<AgentName, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
-  "brain-sync": "brain-sync",
+  "brain-sync": "Sync",
   job: "Brain",
   dashboard: "Dashboard",
-  mcp: "Agent (MCP)",
+  mcp: "AI agent",
 }
 
 export const EVENT_VERB: Record<AgentEventType, string> = {
@@ -66,6 +66,16 @@ export const EVENT_VERB: Record<AgentEventType, string> = {
   query: "is searching",
   write: "fed the brain",
   stopped: "ended a session",
+}
+
+/**
+ * How the feed tells an event: a dashboard click on a zone is not a search ("opened the Core zone"), nor is an agent
+ * walking the graph from an entity ("is exploring Kalia Santé"). `quoted`: the text is what was typed.
+ */
+export function eventPhrase(e: { type: AgentEventType; agent: AgentName; summary?: string }): { verb: string; text?: string; quoted: boolean } {
+  if (e.type === "query" && e.agent === "dashboard") return { verb: "opened", text: e.summary?.replace(/^Viewing /, ""), quoted: false }
+  if (e.type === "query" && e.summary?.startsWith("Explores ")) return { verb: "is exploring", text: e.summary.slice("Explores ".length), quoted: false }
+  return { verb: EVENT_VERB[e.type], text: e.type === "query" ? e.summary : undefined, quoted: true }
 }
 
 export const KIND_LABEL: Record<KnowledgeKind, string> = {
