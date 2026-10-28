@@ -112,3 +112,23 @@ test("test accounts: removed with what is theirs; the six people, the visitors a
   assert.ok(!(await inOrg(() => root.listEvents({ limit: 100_000 }))).some((e) => e.user_id === junk.id), "their events go")
   assert.deepEqual(await inOrg(() => removeDemoTestAccounts(root)), [], "nothing left to remove")
 })
+
+test("/demo: only the six people are offered; a visitor's id does not sign in", async () => {
+  const route = await import("../app/api/session/demo/route")
+  const { DEMO_VISITOR_TITLE } = await import("../lib/demo-seed")
+  const { hashToken, newToken } = await import("../lib/auth")
+  const visitor = await inOrg(() => root.createProfile({ name: "Visitor 7777", title: DEMO_VISITOR_TITLE, role: "member", token_hash: hashToken(newToken()) }))
+  const saved = process.env.BRAIN_DEMO
+  process.env.BRAIN_DEMO = "1"
+  try {
+    const list = (await (await inOrg(() => route.GET())).json()) as { users: { id: string; name: string }[] }
+    assert.deepEqual(list.users.map((u) => u.name), DEMO_USERS.map((u) => u.name), "the six people, in their order")
+    const post = (userId: string) =>
+      inOrg(() => route.POST(new Request("http://demo.test/api/session/demo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId }) })))
+    assert.equal((await post(visitor.id)).status, 404, "a visitor enters with their own token, not from /demo")
+    assert.equal((await post(list.users[1].id)).status, 200)
+  } finally {
+    if (saved === undefined) delete process.env.BRAIN_DEMO
+    else process.env.BRAIN_DEMO = saved
+  }
+})

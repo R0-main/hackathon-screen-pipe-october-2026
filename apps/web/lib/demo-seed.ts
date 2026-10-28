@@ -87,6 +87,16 @@ async function seedDemoSkills(store: BrainStore, ids: Record<string, string>, al
 }
 
 /** Encore team accounts found by their email (null if one is missing: this is not the demo brain). */
+/**
+ * The demo's six people, in DEMO_USERS order: who /demo offers to enter as. Never a visitor (who has a token of their
+ * own) nor an account made by hand. Every account if the brain has none of them (a demo seeded otherwise).
+ */
+export function demoPeople<P extends Pick<Profile, "email">>(profiles: P[]): P[] {
+  const order = new Map(DEMO_USERS.map((u, n) => [u.email, n]))
+  const people = profiles.filter((p) => p.email && order.has(p.email)).sort((a, b) => order.get(a.email!)! - order.get(b.email!)!)
+  return people.length ? people : profiles
+}
+
 export function demoTeam(profiles: Profile[]): Record<string, string> | null {
   const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [p.email, p.id]))
   const ids: Record<string, string> = {}
