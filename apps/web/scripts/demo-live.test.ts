@@ -23,6 +23,7 @@ const { DEMO_USERS } = await import("./demo-data")
 
 const root = getRootStore()
 let org = ""
+let tokens: Record<string, { token: string; id: string }> = {}
 const inOrg = <T>(fn: () => Promise<T>) => runInOrg(org, fn)
 /** A fixed sequence instead of Math.random: the scenes are reproducible. */
 const seq = (...xs: number[]) => {
@@ -31,7 +32,7 @@ const seq = (...xs: number[]) => {
 }
 
 before(async () => {
-  await seedDemoBrain(root)
+  tokens = (await seedDemoBrain(root)).tokens
   org = (await root.getOrg()).id
 })
 
@@ -127,6 +128,35 @@ test("/demo: only the six people are offered; a visitor's id does not sign in", 
       inOrg(() => route.POST(new Request("http://demo.test/api/session/demo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId }) })))
     // Refused before any session is opened (the cookie needs a real Next request: the smoke test signs a person in).
     assert.equal((await post(visitor.id)).status, 404, "a visitor enters with their own token, not from /demo")
+  } finally {
+    if (saved === undefined) delete process.env.BRAIN_DEMO
+    else process.env.BRAIN_DEMO = saved
+  }
+})
+
+test("connectors: read-only on the demo company, for everyone; a company created next to it is not concerned", async () => {
+  const { isDemoCompany, DEMO_CONNECTORS_READ_ONLY } = await import("../lib/demo-mode")
+  const connectorRoute = await import("../app/api/connectors/[id]/route")
+  const mcpRoute = await import("../app/api/connectors/mcp/route")
+  const callRoute = await import("../app/api/connected-tools/call/route")
+  const req = (token: string, method: string, body: unknown) =>
+    new Request("http://demo.test/api", { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) })
+  const claire = tokens.claire.token
+  assert.equal(await isDemoCompany(org), false, "outside demo mode, nothing is read-only")
+  const saved = process.env.BRAIN_DEMO
+  process.env.BRAIN_DEMO = "1"
+  try {
+    assert.equal(await isDemoCompany(org), true)
+    const put = await connectorRoute.PUT(req(claire, "PUT", { token: "secret_x", enabled: true }), { params: Promise.resolve({ id: "notion" }) })
+    assert.equal(put.status, 403)
+    assert.equal(((await put.json()) as { error: string }).error, DEMO_CONNECTORS_READ_ONLY)
+    assert.equal((await connectorRoute.DELETE(req(claire, "DELETE", {}), { params: Promise.resolve({ id: "notion" }) })).status, 403)
+    assert.equal((await mcpRoute.POST(req(claire, "POST", { catalog_id: "notion" }), {})).status, 403, "no new connector either")
+    assert.equal((await callRoute.POST(req(tokens.hugo.token, "POST", { connector: "notion", tool: "notion-search", arguments: {} }), {})).status, 403, "agents do not call its tools")
+    assert.equal((await mcpRoute.GET(req(claire, "GET", undefined as never), {})).status, 200, "they stay readable")
+
+    const tenant = await root.createTenantOrg({ name: "Encore", description: "Another company with the same name", zones: [] })
+    assert.equal(await isDemoCompany(tenant.id), false, "a company created next to the demo stays free, whatever its name")
   } finally {
     if (saved === undefined) delete process.env.BRAIN_DEMO
     else process.env.BRAIN_DEMO = saved

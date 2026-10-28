@@ -3,6 +3,7 @@ import { isDemoMode } from "@/lib/auth"
 import { getState } from "@/lib/brain"
 import { runDueConnectors } from "@/lib/connectors"
 import { demoPulse } from "@/lib/demo-live"
+import { isDemoCompany } from "@/lib/demo-mode"
 import { json, withViewer } from "@/lib/http"
 import { runDueMcpImports } from "@/lib/remote-mcp"
 import { runInOrg } from "@/lib/store"
@@ -12,8 +13,9 @@ export const dynamic = "force-dynamic"
 
 export const GET = withViewer(async (_req, viewer) => {
   const state = await getState(viewer)
-  // Due connectors (once an hour) run in the background, without delaying the response or making it fail.
-  if (viewer.real.role === "admin") {
+  // Due connectors (once an hour) run in the background, without delaying the response or making it fail. Never on
+  // the demo company: its connectors are read-only, nothing is imported from them.
+  if (viewer.real.role === "admin" && !(await isDemoCompany(viewer.real.org_id))) {
     void runInOrg(viewer.real.org_id, () => runDueConnectors(viewer)).catch((err) => console.error("[connectors]", err))
     // MCP server imports (every 6 hours, when enabled), the same way.
     void runInOrg(viewer.real.org_id, () => runDueMcpImports(viewer)).catch((err) => console.error("[mcp-import]", err))
