@@ -41,6 +41,12 @@ after(async () => {
   await (root as { end?: () => Promise<void> }).end?.()
 })
 
+test("seed: no event in the future, whatever the time of day", async () => {
+  const now = Date.now()
+  const late = (await inOrg(() => root.listEvents({ limit: 100_000 }))).filter((e) => Date.parse(e.at) > now)
+  assert.deepEqual(late.map((e) => `${e.at} ${e.type}`), [])
+})
+
 test("pulse: an agent works, the computers sync, the next visit right after adds nothing", async () => {
   const now = Date.now()
   const r = await inOrg(() => demoPulse(root, now, seq(0.1, 0.5, 0.9)))

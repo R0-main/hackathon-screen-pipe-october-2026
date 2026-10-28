@@ -493,6 +493,25 @@ export async function listKnowledgeFor(viewer: Viewer, limit = KNOWLEDGE_PAGE_LI
   return store().listItems({ zones: viewer.access.readable, limit, excludeSuperseded: true })
 }
 
+/** Results of the knowledge page's search: enough for a person to scan, ranked by relevance. */
+export const KNOWLEDGE_SEARCH_LIMIT = 30
+/**
+ * Relevance under which a reranked result is left out of the page (npm run eval: the questions the brain cannot answer
+ * stay at 0.37 or less, the right answers at 0.42 or more).
+ */
+const WEAK_RELEVANCE = 0.4
+
+/**
+ * The knowledge page's search: the agents' search (words, synonyms, keywords, meaning and reranking when configured)
+ * on the zones the viewer reads, ranked by relevance. A person browsing: no activity event, no graph neighbors.
+ */
+export async function searchKnowledgeFor(viewer: Viewer, query: string, limit = KNOWLEDGE_SEARCH_LIMIT) {
+  const readable = viewer.access.readable
+  const hits: (ScoredItem & { relevance?: number })[] = await hybridSearch(query, readable, limit, viewer.profile.id)
+  const weak = (h: { relevance?: number }) => h.relevance !== undefined && h.relevance < WEAK_RELEVANCE
+  return hits.filter((h) => readable.includes(h.zone) && !h.superseded_by && !weak(h)).map((h) => h.id)
+}
+
 /** Everything about an entity: the readable knowledge that cites it, and the entities cited with it. */
 export async function getEntityContext(viewer: Viewer, type: string, name: string) {
   const s = store()

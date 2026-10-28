@@ -5,7 +5,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState, type
 import type { DocumentRef, KnowledgeItem, KnowledgeKind } from "@brain/core"
 import type { ZoneView } from "@/lib/brain"
 import { fmt, intlLocale, plural, type Locale } from "@/lib/i18n"
-import { DISPLAY_TIMEZONE, entityHref, firstName } from "./format"
+import { DISPLAY_TIMEZONE, api, entityHref, firstName } from "./format"
 import { DocumentLinks } from "./DocumentLinks"
 import { useT } from "./I18n"
 import { PersonDot, type PersonLook } from "./PersonDot"
@@ -120,6 +120,22 @@ export function KnowledgeList({
   const [q, setQ] = useState(initial?.q ?? "")
   const query = useDeferredValue(q)
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
+  // The brain's answer to the query (the agents' search): ids, most relevant first. Until it comes, the words typed filter.
+  const [ranked, setRanked] = useState<{ q: string; ids: string[] } | null>(null)
+  const term = query.trim()
+  useEffect(() => {
+    if (fold(term).replace(/\s+/g, "").length < MIN_SEARCH) return
+    const ctl = new AbortController()
+    const timer = setTimeout(() => {
+      api<{ q: string; ids: string[] }>(`/api/items/search?q=${encodeURIComponent(term)}`, { signal: ctl.signal })
+        .then((r) => setRanked({ q: term, ids: r.ids }))
+        .catch(() => {})
+    }, SEARCH_DELAY_MS)
+    return () => {
+      clearTimeout(timer)
+      ctl.abort()
+    }
+  }, [term])
 
   const zoneById = useMemo(() => new Map(zones.map((z) => [z.id, z])), [zones])
   // Searchable text of each knowledge item, without accents or capitals: title, content, entities, author, zone, app.
@@ -133,17 +149,26 @@ export function KnowledgeList({
       ),
     [items, names, zoneById],
   )
+  const answer = term && ranked?.q === term ? ranked.ids : null
   const matched = useMemo(() => {
     const terms = fold(query).split(/\s+/).filter(Boolean)
-    return terms.length === 0 ? items : items.filter((i) => terms.every((term) => haystacks.get(i.id)?.includes(term)))
-  }, [items, haystacks, query])
+    if (terms.length === 0) return items
+    const words = items.filter((i) => terms.every((term) => haystacks.get(i.id)?.includes(term)))
+    if (!answer) return words
+    // The brain's ranking first, then what only the exact words find (a name it ranked lower than its limit).
+    const byId = new Map(items.map((i) => [i.id, i]))
+    const best = answer.map((id) => byId.get(id)).filter((i): i is ItemWithDocuments => !!i)
+    const seen = new Set(best.map((i) => i.id))
+    return [...best, ...words.filter((i) => !seen.has(i.id))]
+  }, [items, haystacks, query, answer])
+  const byRelevance = !!answer
 
   // Each row of filters counts what its choice would give, given the other filters.
   const zoneCounts = useMemo(() => countBy(matched.filter((i) => kind === "all" || i.kind === kind), (i) => i.zone), [matched, kind])
   const kindCounts = useMemo(() => countBy(matched.filter((i) => zone === "all" || i.zone === zone), (i) => i.kind), [matched, zone])
   const presentKinds = useMemo(() => kinds.filter((k) => items.some((i) => i.kind === k)), [kinds, items])
   const shown = useMemo(() => matched.filter((i) => (zone === "all" || i.zone === zone) && (kind === "all" || i.kind === kind)), [matched, zone, kind])
-  const days = useMemo(() => groupByDay(shown), [shown])
+  const days = useMemo(() => (byRelevance ? [{ key: RELEVANCE, items: shown }] : groupByDay(shown)), [shown, byRelevance])
 
   // The address follows the filters, without a new history entry.
   useEffect(() => {
@@ -249,9 +274,9 @@ export function KnowledgeList({
 
           {shown.length === 0 ? (
             <div className="mt-8">
-              <p className="text-[14px] text-trace">{t.knowledge.noMatch}</p>
+              <p className="text-[14px] text-trace">{term ? fmt(zone !== "all" || kind !== "all" ? t.knowledge.noMatchQueryFiltered : t.knowledge.noMatchQuery, { q: term }) : t.knowledge.noMatch}</p>
               <button type="button" className="btn mt-3" onClick={clear}>
-                {t.knowledge.clearFilters}
+                {term && zone === "all" && kind === "all" ? t.knowledge.clearSearch : t.knowledge.clearFilters}
               </button>
             </div>
           ) : (
@@ -259,7 +284,13 @@ export function KnowledgeList({
               {days.map((d) => (
                 <section key={d.key} aria-labelledby={`day-${d.key}`}>
                   <h2 id={`day-${d.key}`} className="pl-[35px] text-[13px] font-medium" suppressHydrationWarning>
-                    {d.key === today ? t.knowledge.today : d.key === yesterday ? t.knowledge.yesterday : dayLabel(d.key, today, locale)}
+                    {d.key === RELEVANCE
+                      ? t.knowledge.byRelevance
+                      : d.key === today
+                        ? t.knowledge.today
+                        : d.key === yesterday
+                          ? t.knowledge.yesterday
+                          : dayLabel(d.key, today, locale)}
                   </h2>
                   <ol className="mt-1">
                     {d.items.map((i, n) => (
@@ -274,12 +305,13 @@ export function KnowledgeList({
                         first={n === 0}
                         last={n === d.items.length - 1}
                         locale={locale}
+                        dated={byRelevance}
                       />
                     ))}
                   </ol>
                 </section>
               ))}
-              {limit !== undefined && items.length >= limit && <p className="pl-[35px] text-[12px] text-trace">{fmt(t.knowledge.limited, { n: limit })}</p>}
+              {!byRelevance && limit !== undefined && items.length >= limit && <p className="pl-[35px] text-[12px] text-trace">{fmt(t.knowledge.limited, { n: limit })}</p>}
             </div>
           )}
         </>
@@ -303,6 +335,7 @@ const KnowledgeRow = memo(function KnowledgeRow({
   first,
   last,
   locale,
+  dated = false,
 }: {
   item: ItemWithDocuments
   zone?: ZoneView
@@ -313,6 +346,8 @@ const KnowledgeRow = memo(function KnowledgeRow({
   first: boolean
   last: boolean
   locale: Locale
+  /** Ranked by relevance, outside the days: the date rather than the time. */
+  dated?: boolean
 }) {
   const { t } = useT()
   const panel = `knowledge-${item.id}`
@@ -350,8 +385,8 @@ const KnowledgeRow = memo(function KnowledgeRow({
           <span className="flex items-center gap-2 text-[12px] text-trace">
             <PersonDot id={item.author_id} color={look?.color} look={look?.look} size={22} bg="surface" />
             {author && <span className="hidden sm:inline">{firstName(author)}</span>}
-            <time dateTime={item.created_at} className="w-[38px] text-right tabular-nums" suppressHydrationWarning>
-              {clock(item.created_at, locale)}
+            <time dateTime={item.created_at} className={`${dated ? "" : "w-[38px]"} text-right tabular-nums`} suppressHydrationWarning>
+              {dated ? shortDay(item.created_at, locale) : clock(item.created_at, locale)}
             </time>
           </span>
         </button>
@@ -415,6 +450,12 @@ function countBy<T>(list: T[], key: (x: T) => string): Map<string, number> {
   return out
 }
 
+/** The brain is asked from 2 characters typed, a quarter of a second after the last key. */
+const MIN_SEARCH = 2
+const SEARCH_DELAY_MS = 250
+/** The single "day" of a list ranked by relevance. */
+const RELEVANCE = "relevance"
+
 /** Lowercase without accents: "Café" is found by typing "cafe". */
 function fold(s: string): string {
   return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()
@@ -449,6 +490,15 @@ function dayLabel(key: string, today: string, locale: Locale): string {
     timeZone: "UTC",
   })
   return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+/** "15 Oct"; the year only if it is not the current one. */
+function shortDay(iso: string, locale: Locale): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return ""
+  const d = new Date(t)
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString(intlLocale(locale), { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }), timeZone: DISPLAY_TIMEZONE })
 }
 
 function clock(iso: string, locale: Locale): string {
