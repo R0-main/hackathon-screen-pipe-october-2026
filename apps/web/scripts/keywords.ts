@@ -13,6 +13,7 @@
 
 import { spawn } from "node:child_process"
 import fs from "node:fs"
+import { pathToFileURL } from "node:url"
 import { KEYWORDS_MODEL, suggestKeywords } from "@brain/core/claude"
 import { KEYWORDS_PROMPT_VERSION, buildCliKeywordsPrompt, parseKeywords, type KeywordsInput, type KnowledgeItem } from "@brain/core"
 import { getClaude } from "../lib/ai"
@@ -26,7 +27,7 @@ const option = (name: string) => {
 }
 
 /** `claude -p` for one prompt: plain text out, no tools, no saved session, ignored by the brain's own hooks. */
-function runCli(prompt: string, model: string, timeoutMs = 120_000): Promise<string> {
+export function runCli(prompt: string, model: string, timeoutMs = 120_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.env.CLAUDE_PATH || "claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence", "--tools", ""], {
       env: { ...process.env, COMPANY_BRAIN_INTERNAL: "1" },
@@ -48,7 +49,7 @@ function runCli(prompt: string, model: string, timeoutMs = 120_000): Promise<str
 }
 
 /** Runs `fn` on every element, `n` at a time. */
-async function pool<T>(list: T[], n: number, fn: (x: T, i: number) => Promise<void>) {
+export async function pool<T>(list: T[], n: number, fn: (x: T, i: number) => Promise<void>) {
   let next = 0
   await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => {
     while (next < list.length) {
@@ -99,7 +100,9 @@ async function main() {
   if (failed) process.exitCode = 1
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err)
-  process.exit(1)
-})
+// Run directly (not imported by demo-keywords.ts).
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err)
+    process.exit(1)
+  })

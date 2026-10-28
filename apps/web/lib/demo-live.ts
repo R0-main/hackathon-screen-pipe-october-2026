@@ -11,7 +11,7 @@ import { ingestItems, queryBrain, recordEvents } from "./brain"
 import { demoTeam } from "./demo-seed"
 import { localDay } from "./new-zones"
 import { getStore, type BrainStore } from "./store"
-import { DEMO_AGENT_QUERIES, DEMO_FRESH_ITEMS, DEMO_ORG, DEMO_PROMPTS, DEMO_USERS } from "../scripts/demo-data"
+import { DEMO_AGENT_QUERIES, DEMO_FRESH_ITEMS, DEMO_KEYWORDS, DEMO_ORG, DEMO_PROMPTS, DEMO_USERS } from "../scripts/demo-data"
 
 /** Time between two agent scenes while the demo is watched. */
 export const PULSE_MS = 40_000
@@ -121,7 +121,7 @@ export async function demoPulse(store: BrainStore = getStore(), now = Date.now()
     const author = fresh && profiles.find((p) => p.id === ids[fresh.author])
     if (fresh && author) {
       const { author: _a, ...item } = fresh
-      await ingestItems({ profile: author, real: author, access: await getAccess(author) }, [{ ...item, source: { ...item.source, at: new Date(now).toISOString() } }])
+      await ingestItems({ profile: author, real: author, access: await getAccess(author) }, [{ ...item, keywords: DEMO_KEYWORDS[fresh.title], source: { ...item.source, at: new Date(now).toISOString() } }])
     }
   }
   return result
