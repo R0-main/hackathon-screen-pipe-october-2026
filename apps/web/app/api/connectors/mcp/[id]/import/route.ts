@@ -16,5 +16,5 @@ export const POST = withViewer<Ctx>(
     const { id } = await params
     return json(await importMcp(viewer, id))
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )

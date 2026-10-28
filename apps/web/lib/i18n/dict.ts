@@ -213,6 +213,8 @@ export const en = {
   },
   connectors: {
     title: "Connectors",
+    demoReadOnly: "Read-only in the demo: Encore's connectors stay as they are, and agents do not call their tools.",
+    demoCreate: "Create your company to connect your own tools.",
     lead: "Connect the team's tools: their pages and tasks enter the brain, in the zone of your choice, then resync every hour (and on demand).",
     configured: "Connected",
     notConfigured: "Not connected",

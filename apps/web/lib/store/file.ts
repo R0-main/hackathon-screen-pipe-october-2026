@@ -404,6 +404,33 @@ export class FileStore implements BrainStore {
       return strip(prof)
     })
   }
+  async deleteProfile(id: string) {
+    return this.mutate((d) => {
+      const before = d.profiles.length
+      d.profiles = d.profiles.filter((p) => p.id !== id)
+      if (d.profiles.length === before) return false
+      // As the database's foreign keys do: what is theirs goes, what only mentions them loses them.
+      const gone = new Set(d.items.filter((i) => i.author_id === id).map((i) => i.id))
+      d.items = d.items.filter((i) => i.author_id !== id)
+      d.events = d.events.filter((e) => e.user_id !== id)
+      d.zone_access = d.zone_access.filter((a) => a.user_id !== id)
+      d.automations = d.automations.filter((a) => a.user_id !== id)
+      for (const t of d.tasks) {
+        if (t.source_item_id && gone.has(t.source_item_id)) delete t.source_item_id
+        if (t.assignee_id === id) delete t.assignee_id
+      }
+      for (const p of d.profiles) if (p.manager_id === id) p.manager_id = null
+      for (const s of d.skills ?? []) {
+        if (s.author_id === id) s.author_id = null
+        if (s.updated_by === id) s.updated_by = null
+      }
+      for (const r of d.join_requests ?? []) if (r.profile_id === id) r.profile_id = null
+      if (d.documents) d.documents = d.documents.filter((doc) => doc.author_id !== id)
+      if (d.sync_reports) d.sync_reports = d.sync_reports.filter((r) => r.user_id !== id)
+      return true
+    })
+  }
+
   async updateProfile(id: string, patch: ProfilePatch) {
     return this.mutate((d) => {
       const p = d.profiles.find((x) => x.id === id)
@@ -970,6 +997,32 @@ export class FileStore implements BrainStore {
   async getStatus() {
     return this.load().status
   }
+  async shiftTimeline(ms: number, until: string) {
+    const move = (iso: string | undefined) => (iso && iso <= until ? new Date(Date.parse(iso) + ms).toISOString() : iso)
+    return this.mutate((d) => {
+      let moved = 0
+      for (const i of d.items) {
+        if (i.created_at > until) continue
+        i.created_at = move(i.created_at)!
+        if (i.source?.at) i.source.at = move(i.source.at)!
+        moved++
+      }
+      for (const e of d.events) e.at = move(e.at)!
+      for (const t of d.tasks) {
+        if (t.created_at > until) continue
+        t.created_at = move(t.created_at)!
+        t.updated_at = new Date(Date.parse(t.updated_at) + ms).toISOString()
+      }
+      for (const doc of d.documents ?? []) {
+        if (doc.created_at > until) continue
+        doc.created_at = move(doc.created_at)!
+        if (doc.source?.at) doc.source.at = new Date(Date.parse(doc.source.at) + ms).toISOString()
+      }
+      for (const a of d.automations) a.created_at = move(a.created_at)!
+      return moved
+    })
+  }
+
   async setStatus(s: CompanyStatus) {
     this.mutate((d) => {
       d.status = s

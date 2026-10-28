@@ -123,6 +123,11 @@ export interface BrainStore {
   listProfiles(): Promise<Profile[]>
   createProfile(p: NewProfile): Promise<Profile>
   updateProfile(id: string, patch: ProfilePatch): Promise<Profile | null>
+  /**
+   * Removes a person from the company with everything that is theirs (knowledge, events, access, sync reports,
+   * documents); their tasks, skills and reports lose them. False if they did not exist.
+   */
+  deleteProfile(id: string): Promise<boolean>
 
   listZones(): Promise<Zone[]>
   upsertZone(z: Zone): Promise<Zone>
@@ -235,6 +240,12 @@ export interface BrainStore {
 
   getStatus(): Promise<CompanyStatus | null>
   setStatus(s: CompanyStatus): Promise<void>
+  /**
+   * Moves the company's history `ms` later (the live demo kept current): knowledge (its date and its source's),
+   * events, tasks, documents and automations dated up to `until` (ISO); what came after stays where it is. Returns the
+   * number of knowledge items moved.
+   */
+  shiftTimeline(ms: number, until: string): Promise<number>
 
   /** Session signing secret, generated randomly once then kept (600 file or brain_settings table). */
   getSessionSecret(): Promise<string>

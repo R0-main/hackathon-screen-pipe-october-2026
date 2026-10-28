@@ -40,7 +40,7 @@ export const PUT = withViewer<Ctx>(
       throw err
     }
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )
 
 /** DELETE /api/connectors/mcp/:id — removes the server and forgets its tokens. */
@@ -50,5 +50,5 @@ export const DELETE = withViewer<Ctx>(
     await removeMcp(id)
     return json({ removed: true })
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )
