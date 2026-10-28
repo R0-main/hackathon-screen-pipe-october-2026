@@ -355,7 +355,7 @@ function Section({ title, lead, children }: { title: string; lead?: string; chil
 function Row({ label, hint, aside, control, stack = false }: { label: string; hint?: string; aside?: ReactNode; control: ReactNode; stack?: boolean }) {
   // `stack`: a row of choices goes under the text on a phone; a switch stays beside it.
   return (
-    <div className={`flex items-start justify-between gap-x-6 gap-y-2 border-t border-line pt-3 ${stack ? "max-sm:flex-wrap" : ""}`}>
+    <div className={`flex items-start justify-between gap-x-6 gap-y-2 border-t border-line pt-3 ${stack ? "max-sm:flex-col" : ""}`}>
       <div className="min-w-0 max-w-[52ch] flex-1">
         <p className="text-[13.5px] font-medium">{label}</p>
         {hint && <p className="mt-0.5 text-[12.5px] text-trace">{hint}</p>}
