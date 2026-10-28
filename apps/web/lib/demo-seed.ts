@@ -436,6 +436,10 @@ export async function addDemoKeywords(store: BrainStore = getStore()): Promise<n
 
 export type DemoTokens = Record<string, { name: string; token: string; id: string }>
 
+/** Length of a seeded agent session, and of Jean-Marc's morning one. */
+const SEED_SESSION_MS = 25 * 60_000
+const JEANMARC_SESSION_MS = 12 * 60_000
+
 /** Empties the brain and fills it with Encore. Returns the accounts' tokens (shown only once). */
 export async function seedDemoBrain(store: BrainStore = getStore()) {
   await store.reset(DEMO_ORG)
@@ -480,7 +484,8 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
       for (const pr of prompts) {
         if (r() < 0.55) continue
         const at = localTime(d, 9 + Math.floor(r() * 9), Math.floor(r() * 60))
-        if (d === 0 && at.getTime() > Date.now()) continue
+        // Today, only the sessions already over: none ends in the future (the live demo's agents would wait for it).
+        if (d === 0 && at.getTime() + SEED_SESSION_MS > Date.now()) continue
         const session = `seed-${d}-${pr.user}-${Math.floor(r() * 1e6)}`
         const agent = pr.user === "hugo" && r() < 0.3 ? "codex" : "claude-code"
         events.push({ user_id: ids[pr.user], agent, type: "started", zones: [], session_id: session, at: at.toISOString() })
@@ -492,7 +497,7 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
           user_id: ids[pr.user], agent: "mcp", type: "query", zones: [zone], summary: pr.text.slice(0, 90),
           session_id: session, at: new Date(at.getTime() + 45_000).toISOString(),
         })
-        events.push({ user_id: ids[pr.user], agent, type: "stopped", zones: [], session_id: session, at: new Date(at.getTime() + 25 * 60_000).toISOString() })
+        events.push({ user_id: ids[pr.user], agent, type: "stopped", zones: [], session_id: session, at: new Date(at.getTime() + SEED_SESSION_MS).toISOString() })
       }
     }
   }
@@ -501,14 +506,14 @@ export async function seedDemoBrain(store: BrainStore = getStore()) {
   for (let d = 7; d >= 0; d--) {
     if (isWeekend(d)) continue
     const at = localTime(d, 9, 1 + Math.floor(r() * 9))
-    if (at.getTime() > Date.now()) continue
+    if (at.getTime() + JEANMARC_SESSION_MS > Date.now()) continue
     const session = `seed-jm-${d}`
     events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "started", zones: [], session_id: session, at: at.toISOString() })
     events.push({
       user_id: ids.jeanmarc, agent: "claude-code", type: "query", zones: ["finance"], summary: JEANMARC_DAILY_PROMPT,
       fingerprint: promptFingerprint(JEANMARC_DAILY_PROMPT), session_id: session, at: new Date(at.getTime() + 15_000).toISOString(),
     })
-    events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "stopped", zones: [], session_id: session, at: new Date(at.getTime() + 12 * 60_000).toISOString() })
+    events.push({ user_id: ids.jeanmarc, agent: "claude-code", type: "stopped", zones: [], session_id: session, at: new Date(at.getTime() + JEANMARC_SESSION_MS).toISOString() })
   }
 
   events.sort((a, b) => a.at.localeCompare(b.at))
