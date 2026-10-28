@@ -46,6 +46,7 @@ import type { Viewer } from "./auth"
 import { getClaude } from "./ai"
 import { claudeKeyInfo } from "./claude-key"
 import { backfillEmbeddings, embedDocuments, embedQuery, embeddingText, getEmbeddings, rankBySimilarity } from "./embeddings"
+import { rerankItems } from "./rerank"
 import { canPublishSkills, canSeeSkill } from "./skills"
 import { documentRef, listDocumentsFor, searchDocumentsFor, withDocuments } from "./documents"
 
@@ -306,14 +307,17 @@ export async function hybridSearch(query: string, zones: string[], limit: number
       for (const it of fetched) if (it && !it.superseded_by) byId.set(it.id, { ...it, score: 0 })
     }
   }
-  if (lists.length === 1) return lexical.slice(0, limit)
-  return rrf(lists)
-    .map(({ id, score }) => {
-      const it = byId.get(id)
-      return it ? { ...it, score: Math.round(score * 1000) / 10 } : null
-    })
-    .filter((x): x is ScoredItem => x !== null)
-    .slice(0, limit)
+  const ranked =
+    lists.length === 1
+      ? lexical
+      : rrf(lists)
+          .map(({ id, score }) => {
+            const it = byId.get(id)
+            return it ? { ...it, score: Math.round(score * 1000) / 10 } : null
+          })
+          .filter((x): x is ScoredItem => x !== null)
+  // Optional (BRAIN_RERANK_MODEL): a model rereads the first candidates with the question and orders them.
+  return (await rerankItems(query, ranked)).slice(0, limit)
 }
 
 /** A search result; `via` when the knowledge graph brought it rather than the words of the query. */

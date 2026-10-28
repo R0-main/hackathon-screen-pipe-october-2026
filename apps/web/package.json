@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "tsx scripts/smoke.ts",
     "eval": "tsx scripts/eval-search.ts",
+    "eval:seed": "tsx scripts/eval-seed.ts",
     "embed": "tsx scripts/embed-backfill.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "test": "node --import tsx --test scripts/*.test.ts"
