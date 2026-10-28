@@ -101,9 +101,11 @@ export function graphNeighbors(
 }
 
 /**
- * Places the graph gives to its neighbors in a list of `limit` results: a quarter of them, after the direct results
- * (2 out of 8), none in a list too short to spare one.
+ * Places the graph gives to its neighbors in a list of `limit` results, after the `direct` ones: a quarter of them
+ * (2 out of 8), or all the places the direct results leave empty if there are more (5 direct results out of 8: 3).
+ * None in a list too short to spare one. A direct result is never pushed out.
  */
-export function graphSlots(limit: number): number {
-  return limit < 4 ? 0 : Math.floor(limit / 4)
+export function graphSlots(limit: number, direct = limit): number {
+  if (limit < 4) return 0
+  return Math.max(Math.floor(limit / 4), limit - direct)
 }

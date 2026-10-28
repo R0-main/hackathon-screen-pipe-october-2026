@@ -70,7 +70,7 @@ demo/                 Demo script
 | **Moderator** | `brain.mjs moderate --refresh-status` | Admins: every 15 min, the scheduled sync of an admin's computer (the CEO's) runs Claude Code (their subscription, Sonnet, token asked for at install) which rereads what arrived since the previous run: it keeps, fixes (title, zone, kind) or removes (personal, secret, duplicate, too vague, suspicious instruction, judgment about a person), then redoes the "where does the company stand" summary. The removed text is kept nowhere. |
 | **New zones** | `brain.mjs refresh-zones` | Admins: "new zones" run done by Claude Code (subscription), on a computer or in the company's CI (GitHub Actions). |
 | **Diagnosis** | `brain.mjs doctor` | Reviews the computer without changing anything (Node, shortcut, brain, Screenpipe, MCP, hooks, sync, distillation) and gives the command that repairs each KO item; `--json` for Claude Code. |
-| **Company MCP** | `/api/mcp/<company>/<token>` | `search_brain` (knowledge and the documents that back it, plus the knowledge the graph links to the best results), `explore_entity` (an entity's neighborhood in the graph), `get_document` (a document's full text), `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`, served by the brain (HTTP, stateless) with the token's rights. `brain setup` registers it in Claude Code and Codex as `nos-brainer-<company>`: it shows there as connected, one entry per company. Each query lights up the zone found. |
+| **Company MCP** | `/api/mcp/<company>/<token>` | `search_brain` (knowledge and the documents that back it, plus the knowledge the graph links to the best results), `explore_entity` (an entity's neighborhood in the graph), `get_knowledge` (knowledge items in full, by id), `get_document` (a document's full text), `get_zone_summary`, `list_zones`, `whoami_context`, `company_status`, `remember`, served by the brain (HTTP, stateless) with the token's rights. `brain setup` registers it in Claude Code and Codex as `nos-brainer-<company>`: it shows there as connected, one entry per company. Each query lights up the zone found. |
 | **Computer MCP** | `brain.mjs mcp` | The same tools over stdio (`@brain/core/mcp`): the fallback when Claude Code cannot reach the endpoint (brain with a private certificate); `company` parameter if there are several companies. |
 | **Several companies** | `brain.mjs companies`, `/login` | A second company's install prompt adds it next to the first one instead of replacing it, with its own MCP server (sync, hooks and skills stay on the first one; `companies --default` changes it, `--remove` removes one and its MCP server). The browser remembers each company opened: sign-in offers to go back into one of them in one click, and the sidebar header switches from one to another. |
 | **Claude Code hooks** | `brain.mjs hook` | `SessionStart` / `UserPromptSubmit` / `Stop` → events: reliable neons, and detection of repetitive prompts by fingerprint. A short redacted summary is only sent if the prompt concerns a zone and has nothing personal (`init --share-prompt-summaries no` turns it off). |
@@ -111,6 +111,21 @@ demo/                 Demo script
   one leaves the searches), graph search (the last results cite the same customers, projects or tools as the best
   ones: rare entities weigh more, people and tools less, hubs not at all), Entities pages (`/entities`), and
   `npm run eval` which measures search on the Encore demo.
+- **Search keywords**: the terms a colleague might type that a knowledge item's text does not contain (another word
+  for the same thing, the question it answers, the employee's own words, the French terms). The distillation writes
+  them with each item, in the same `claude -p` call on the computer (no extra call, no server key); so do the
+  connectors' import and agents through `remember`. Knowledge that arrives without any (heuristic distillation, an
+  older computer) catches up at ingestion when the company has Claude: Haiku reads each item alone with its source
+  (zone, author, app, date). Stored apart and indexed with the lowest weight (Postgres: weight D, migration
+  `20261027000001`): they bring an item into a search, never above a title that names the subject.
+  `npm run keywords` writes them for the knowledge already there (`--cli` through `claude -p`, `--all` after a change
+  of the prompt); `BRAIN_KEYWORDS=off` turns off the server's catch-up.
+- **Phrasings**: `search_brain` takes the question as asked and up to 4 `phrasings` the agent writes (in English, with
+  the team's terms, numbers and proper nouns kept as given). One search per phrasing, fused by rank, then reranked once
+  (if `BRAIN_RERANK_MODEL`) with the question as asked. Filters `since`, `until` (the knowledge's date, `until`
+  included) and `author` (name, first name or email); each result says who wrote it, when, and from which tool and app.
+  Compact by default: the 3 best results in full, the next ones in one line with their id (`get_knowledge` reads them),
+  2 documents at most; `detail: "full"` for every result in full. `npm run eval:tokens` measures what it costs to read.
 
 ## Brain API
 
@@ -122,7 +137,8 @@ Authentication: `Authorization: Bearer cb_…` (personal token, hashed with SHA-
 | GET/POST | `/api/documents` | Readable documents (`?zone=`, `?q=` search on name and text). POST `{name, content (base64), zone?, title?, item_ids?, auto?}`: a document, linked to knowledge items; `{name, sha256, item_ids}` without content links a file the brain already has (404 otherwise). 201 new, 200 already there, 413 over 3 MB, 422 refused (secret, personal data; `auto`: no readable text). |
 | GET/DELETE | `/api/documents/:id` | The document, its text and the knowledge it backs (`?agent=mcp`: its zone lights up); `?download=1`: the file itself. DELETE: its author or an admin. |
 | POST | `/api/events` | `AgentEventInput` or `{events: [...]}` — what makes the brain light up. |
-| POST | `/api/query` | `{query, zones?, limit?}` — search limited to readable zones; flags restricted zones without saying anything about them. Results brought by the graph carry `via` (the entity and the result they share it with). |
+| GET/DELETE | `/api/items/:id` | A knowledge item the viewer reads (its zone, or their own), with its author and documents: `get_knowledge`; 404 when unknown or unreadable alike. DELETE: its author or an admin. |
+| POST | `/api/query` | `{query, phrasings?, zones?, since?, until?, author?, limit?}` — search limited to readable zones; flags restricted zones without saying anything about them. `phrasings`: the agent's rewordings, fused with the query; `filter` in the answer: the dates and the people `author` named. Results brought by the graph carry `via` (the entity and the result they share it with). |
 | GET | `/api/entities` | `?name=` (and `type=` when a name has several) — an entity's neighborhood in readable zones: the knowledge citing it and the entities cited with it (MCP `explore_entity`; `?agent=mcp`: its zones light up). |
 | GET | `/api/zones`, `/api/zones/:id` | Zones (with keywords for the hooks), summary of a zone. |
 | GET | `/api/whoami`, `/api/people/:id` | Context of the computer (handover). |
@@ -326,4 +342,8 @@ npm test                 # unit tests (core + client)
 npm run typecheck
 npm run smoke            # end to end on the current storage (file, or Postgres if DATABASE_URL)
 npm run eval             # search quality on the Encore demo (after npm run seed)
+npm run eval:seed        # adds the evaluation corpus and the versioned keywords (local databases only)
 ```
+
+The evaluation's model-written data is versioned in `apps/web/scripts/eval-data` (keywords per item, the agents'
+rephrasings, the prompts' versions and the measurements): see its README.

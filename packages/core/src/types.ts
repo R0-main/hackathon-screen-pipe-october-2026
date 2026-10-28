@@ -35,6 +35,11 @@ export type KnowledgeItemInput = {
   entities: Entity[]
   source: KnowledgeSource
   confidence: number
+  /**
+   * Search terms its text does not contain (synonyms, the question it answers, French terms), written by a model for
+   * this item alone (keywords.ts). Indexed apart with a low weight; absent until computed.
+   */
+  keywords?: string[]
 }
 
 /** An item as stored in the brain. */
