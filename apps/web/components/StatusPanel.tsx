@@ -252,7 +252,7 @@ function ZoneSection({
   )
 }
 
-/** A zone's progress: one bead per task (filled when it is done), then "1 of 2". Beyond `max`, to scale. */
+/** A zone's progress: one bead per task (filled when it is done), then "1 of 2 tasks done". Beyond `max`, to scale. */
 function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max: number }) {
   const { t } = useT()
   const done = counts?.done ?? 0
@@ -260,7 +260,8 @@ function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max
   if (total === 0) return <span className="text-[12px] text-trace">{t.status.noTasks}</span>
   const beads = Math.min(total, max)
   const filled = total <= max ? done : Math.round((done / total) * max)
-  const long = plural(done, t.status.tasksLong, t.status.tasksLongPlural, { total })
+  // Agreed with the total: "0 of 1 task done", "1 of 2 tasks done".
+  const long = plural(total, t.status.tasksLong, t.status.tasksLongPlural, { n: done, total })
   return (
     <span className="inline-flex shrink-0 items-center gap-2 text-[12px] tabular-nums text-trace" title={long}>
       <span aria-hidden className="flex gap-[3px]">
@@ -268,8 +269,7 @@ function Progress({ counts, max }: { counts: TaskCounts[string] | undefined; max
           <span key={i} className={`block size-2 rounded-full border ${i < filled ? "border-ink bg-ink" : "border-trace"}`} />
         ))}
       </span>
-      <span aria-hidden>{fmt(t.status.tasks, { n: done, total })}</span>
-      <span className="sr-only">{long}</span>
+      <span>{long}</span>
     </span>
   )
 }
@@ -297,8 +297,9 @@ function CommandHint() {
     }
   }
   return (
-    <div className="mt-6 max-w-2xl">
-      <p className="text-[13px] leading-relaxed text-trace">{t.status.claudeHint}</p>
+    <details className="mt-6 max-w-2xl">
+      <summary className="cursor-pointer text-[13px] text-trace hover:text-ink">{t.status.forDevelopers}</summary>
+      <p className="mt-2 text-[13px] leading-relaxed text-trace">{t.status.claudeHint}</p>
       <div className="mt-2 flex items-center gap-2 rounded-[6px] border border-line bg-surface py-1 pl-3 pr-1">
         <code className="mono min-w-0 flex-1 select-all text-[12.5px] [overflow-wrap:anywhere]">{REFRESH_COMMAND}</code>
         <button type="button" className="btn btn-sm shrink-0" onClick={copy} aria-label={copied ? t.status.copied : t.status.copyCommand}>
@@ -309,7 +310,7 @@ function CommandHint() {
       <span role="status" className="sr-only">
         {copied ? t.status.copied : ""}
       </span>
-    </div>
+    </details>
   )
 }
 

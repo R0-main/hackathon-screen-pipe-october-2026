@@ -78,7 +78,7 @@ export function Hosting({ onAnchor }: { onAnchor?: (e: React.MouseEvent<HTMLAnch
                 items={[
                   "Hosted in Europe, in Frankfurt.",
                   "Backups, updates and certificates handled for you.",
-                  "Your brain is ready after four questions.",
+                  "Your brain is ready after three questions and two prompts.",
                   "One prompt to paste per computer, nothing to install on a server.",
                 ]}
               />

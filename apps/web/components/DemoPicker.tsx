@@ -75,7 +75,7 @@ export function DemoPicker({ signup = false }: { signup?: boolean }) {
           <section className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1 py-3">
             <span className="min-w-0">
               <span className="block text-[14px] font-medium">Your company, rather than Encore?</span>
-              <span className="block text-[13px] text-trace">Four questions, then a prompt to paste into Claude Code or Codex.</span>
+              <span className="block text-[13px] text-trace">Three questions, then two prompts to paste into Claude Code or Codex.</span>
             </span>
             <Link href="/create" className="btn">
               Create my dashboard

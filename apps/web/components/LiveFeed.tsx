@@ -2,7 +2,7 @@
 
 import type { ZoneView } from "@/lib/brain"
 import type { FeedEvent } from "./BrainLive"
-import { AGENT_LABEL, EVENT_VERB } from "./format"
+import { AGENT_LABEL, eventPhrase } from "./format"
 import { PersonAvatar } from "./PersonDot"
 import { RelTime } from "./RelTime"
 import { ZoneTag, zoneColor } from "./ui"
@@ -87,14 +87,15 @@ export function LiveFeed({
           const name = names[e.user_id] ?? "Someone"
           const zoneIds = [...new Set(e.zones)]
           const hidden = hiddenReason(e)
+          const phrase = eventPhrase(e)
           return (
             <li key={e.id} className={`rounded-[6px] px-2.5 py-2 hover:bg-bone ${e.fresh ? "feed-enter" : ""}`}>
               <div className="flex items-start gap-2.5">
                 <PersonAvatar id={e.user_id} size={28} bg="surface" className="mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] leading-snug">
-                    <b className="font-medium">{name.split(" ")[0]}</b> <span className="text-trace">{EVENT_VERB[e.type]}</span>
-                    {e.type === "query" && e.summary && !e.restricted && <span> “{e.summary}”</span>}
+                    <b className="font-medium">{name.split(" ")[0]}</b> <span className="text-trace">{phrase.verb}</span>
+                    {phrase.text && !e.restricted && <span> {phrase.quoted ? `“${phrase.text}”` : phrase.text}</span>}
                     {e.type === "write" && e.summary && !e.restricted && <span className="text-trace">, {e.summary}</span>}
                     {hidden === "zone" && <span className="text-trace"> in a restricted zone</span>}
                     {hidden === "private" && (
