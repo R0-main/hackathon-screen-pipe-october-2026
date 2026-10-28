@@ -78,7 +78,7 @@ export function KnowledgeCard({
               {fmt(t.knowledge.source, { tool: item.source.tool })}
               {item.source.app ? ` (${item.source.app})` : ""}
             </span>
-            <span className="chip tabular-nums text-trace">{fmt(t.knowledge.confidence, { pct: Math.round(item.confidence * 100) })}</span>
+            <ToCheck confidence={item.confidence} className="chip" />
           </div>
           <DocumentLinks documents={item.documents} />
           {action && <div className="flex justify-end pt-1">{action}</div>}
@@ -380,7 +380,7 @@ const KnowledgeRow = memo(function KnowledgeRow({
                 {fmt(t.knowledge.source, { tool: item.source.tool })}
                 {item.source.app ? ` (${item.source.app})` : ""}
               </span>
-              <span className="tabular-nums">{fmt(t.knowledge.confidence, { pct: Math.round(item.confidence * 100) })}</span>
+              <ToCheck confidence={item.confidence} />
             </p>
           </div>
         )}
@@ -454,4 +454,18 @@ function dayLabel(key: string, today: string, locale: Locale): string {
 function clock(iso: string, locale: Locale): string {
   const t = Date.parse(iso)
   return Number.isNaN(t) ? "" : new Date(t).toLocaleTimeString(intlLocale(locale), { hour: "2-digit", minute: "2-digit", timeZone: DISPLAY_TIMEZONE })
+}
+
+/** Below it, the model that drew a piece of knowledge was not sure enough: it says "to check", rather than a percentage. */
+const CHECK_BELOW = 0.6
+
+/** "to check" for a piece of knowledge drawn with little confidence (the percentage in its tooltip); nothing otherwise. */
+function ToCheck({ confidence, className = "" }: { confidence: number; className?: string }) {
+  const { t } = useT()
+  if (confidence >= CHECK_BELOW) return null
+  return (
+    <span className={`text-trace ${className}`} title={fmt(t.knowledge.toCheckHint, { pct: Math.round(confidence * 100) })}>
+      {t.knowledge.toCheck}
+    </span>
+  )
 }

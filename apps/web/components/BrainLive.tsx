@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import type { AgentEvent } from "@brain/core"
 import type { DashboardState } from "@/lib/brain"
 import type { Ripple, ZoneActivity } from "./BrainViz"
-import { EVENT_VERB, api, firstName, uniqueZones } from "./format"
+import { api, eventPhrase, firstName, uniqueZones } from "./format"
 
 /** `restricted_reason`: "zone" (one of the event's zones is not readable) or "private" (event without a zone). */
 export type FeedEvent = AgentEvent & { restricted?: boolean; restricted_reason?: "zone" | "private"; fresh?: boolean }
@@ -81,7 +81,8 @@ export function BrainLiveProvider({ initial, now: serverNow, children }: { initi
     const zones = [...new Set(e.zones)]
     if (zones.length === 0) return
     const who = namesRef.current[e.user_id] ? firstName(namesRef.current[e.user_id]) : "Someone"
-    const label = e.restricted ? `${who} is working in this zone` : `${who} ${EVENT_VERB[e.type]}${e.type === "query" && e.summary ? ` “${e.summary}”` : ""}`
+    const phrase = eventPhrase(e)
+    const label = e.restricted ? `${who} is working in this zone` : `${who} ${phrase.verb}${phrase.text ? ` ${phrase.quoted ? `“${phrase.text}”` : phrase.text}` : ""}`
     setActivity((prev) => {
       const next = { ...prev }
       for (const z of zones) next[z] = { until: t + ACTIVE_MS[e.type], startedAt: t, who, label }
