@@ -21,7 +21,7 @@ delete process.env.BRAIN_RERANK_MODEL
 const { getRootStore, runInOrg } = await import("../lib/store")
 const { seedDemoBrain } = await import("../lib/demo-seed")
 const { getAccess } = await import("../lib/access")
-const { authorsNamed, queryBrain } = await import("../lib/brain")
+const { authorsNamed, queryBrain, searchKnowledgeFor } = await import("../lib/brain")
 const { formatQuery } = await import("@brain/core/mcp")
 type Viewer = import("../lib/auth").Viewer
 
@@ -178,4 +178,21 @@ test("get_knowledge: an item by id, with its author, only for whoever reads its 
   assert.equal(read?.author, "Jean-Marc Dubois")
   assert.equal(await inOrg(() => getKnowledgeFor(hugo, finance.id)), null, "dev does not read finance: nothing, as for an unknown id")
   assert.equal(await inOrg(() => getKnowledgeFor(hugo, "00000000-0000-0000-0000-000000000000")), null)
+})
+
+test("knowledge page search: a question finds the procedure, ranked first, in the readable zones, without an event", async () => {
+  const hugo = await viewer("hugo")
+  const items = await inOrg(() => root.listItems({ limit: 5000 }))
+  const deploy = items.find((i) => i.title === "Deploy Encore to production")!
+  const events = (await inOrg(() => root.listEvents({ limit: 100_000 }))).length
+  for (const q of ["how do we ship a release", "comment on met en production ?"]) {
+    const ids = await inOrg(() => searchKnowledgeFor(hugo, q))
+    assert.ok(ids.slice(0, 3).includes(deploy.id), `${q}: among the first 3`)
+  }
+  assert.equal((await inOrg(() => root.listEvents({ limit: 100_000 }))).length, events, "a person browsing: no activity event")
+
+  const jeanMarc = await viewer("jeanmarc")
+  const ids = await inOrg(() => searchKnowledgeFor(jeanMarc, "deploy to production"))
+  const zones = new Set(ids.map((id) => items.find((i) => i.id === id)!.zone))
+  assert.ok(!ids.includes(deploy.id) && [...zones].every((z) => jeanMarc.access.readable.includes(z)), "only the zones Jean-Marc reads")
 })
