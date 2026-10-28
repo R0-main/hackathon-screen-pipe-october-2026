@@ -14,6 +14,7 @@ import {
   classifyZones,
   connectorZones,
   extractEntities,
+  keywordsOf,
   truncate,
   type KnowledgeItemInput,
   type KnowledgeKind,
@@ -40,7 +41,7 @@ export const IMPORT_LIMITS = { turns: 12, calls: 30, items: 40, deadlineMs: 100_
 
 const SAVE_TOOL = "save_knowledge"
 
-type SavedItem = { title: string; body: string; kind: KnowledgeKind; zone?: string; url?: string; updated_at?: string }
+type SavedItem = { title: string; body: string; kind: KnowledgeKind; zone?: string; url?: string; updated_at?: string; keywords?: string[] }
 
 type ImportedConnector = Pick<McpConnectorConfig, "id" | "name" | "zones" | "zone">
 
@@ -62,7 +63,7 @@ function systemPrompt(c: Pick<McpConnectorConfig, "name">, d: ImportDeps): strin
     `You feed the company brain of ${d.org.name}${d.org.description ? ` (${d.org.description.trim()})` : ""} from ${c.name}, connected by an admin.`,
     `Explore ${c.name} with the tools provided (read-only): start with what was created or changed ${d.since ? `since ${d.since.slice(0, 10)}` : "recently"}, then read the items worth it.`,
     `Keep only lasting knowledge useful to a colleague: decisions and their reason, procedures, facts about projects, customers and tools, open questions, important tasks.`,
-    `Each piece of knowledge: a short, precise title, 1 to 5 self-contained sentences (who, what, why), in English, the source link if you have it. No sensitive personal data, no secrets (passwords, keys, tokens), no small talk.`,
+    `Each piece of knowledge: a short, precise title, 1 to 5 self-contained sentences (who, what, why), in English, the source link if you have it, and its search keywords. No sensitive personal data, no secrets (passwords, keys, tokens), no small talk.`,
     `Save them with ${SAVE_TOOL} (in batches), at most ${IMPORT_LIMITS.items} in total. Pick the closest zone among:\n${zones || "- general"}`,
     `You have about ${IMPORT_LIMITS.calls} tool calls: be selective. When you are done, answer in one sentence.`,
   ].join("\n\n")
@@ -83,6 +84,12 @@ const SAVE_SCHEMA = {
           zone: { type: "string", description: "Zone id." },
           url: { type: "string", description: "Link to the source, if known." },
           updated_at: { type: "string", description: "Last change date of the source (ISO), if known." },
+          keywords: {
+            type: "array",
+            items: { type: "string" },
+            maxItems: 14,
+            description: "6 to 14 search terms a colleague might type that the title and body do not contain: other words, the question it answers, the French for the key terms. Never a fact or name not in the item.",
+          },
         },
         required: ["title", "body", "kind"],
         additionalProperties: false,
@@ -108,6 +115,7 @@ function readSaved(input: unknown): SavedItem[] {
       zone: typeof i.zone === "string" ? i.zone : undefined,
       url: typeof i.url === "string" && /^https?:\/\//.test(i.url) ? i.url : undefined,
       updated_at: typeof i.updated_at === "string" && Number.isFinite(Date.parse(i.updated_at)) ? new Date(i.updated_at).toISOString() : undefined,
+      ...keywordsOf(i.keywords, i.title),
     })
   }
   return out
@@ -128,6 +136,7 @@ export function toItem(c: Pick<McpConnectorConfig, "id" | "name">, s: SavedItem,
     entities: extractEntities(`${title}\n${body}`),
     source: { app: c.name, tool: "connector", at: s.updated_at ?? new Date(now).toISOString(), session_id: `mcp:${c.id}:${ref}`, screenpipe_ref: s.url },
     confidence: 0.7,
+    ...(s.keywords?.length ? { keywords: s.keywords } : {}),
   }
 }
 

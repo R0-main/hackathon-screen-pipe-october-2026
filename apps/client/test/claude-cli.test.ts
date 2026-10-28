@@ -408,3 +408,21 @@ test("R-LIMIT: runClaudeCli classifies on api_error_status (non-zero code); time
   assert.equal(run.signature, "timeout")
   assert.deepEqual(cliFailure(run), { error: run.error, failure: "conversation", signature: "timeout" })
 })
+
+test("distillation: each item keeps the keywords the model wrote, cleaned and redacted before sending", async () => {
+  const { finalizeItems, normalizeItems } = await import("../src/distill")
+  const conv = { id: "s1", tool: "claude-code" as const, app: "Terminal", started_at: "2026-10-20T09:00:00.000Z", ended_at: "2026-10-20T10:00:00.000Z", messages: [] }
+  const zones = [{ id: "dev", name: "Dev", description: "", keywords: ["deploy"] }]
+  const raw = {
+    items: [
+      { zone: "dev", kind: "procedure", title: "Deploy the shop", body: "Tag vX.Y.Z, Vercel deploys.", entities: [], keywords: ["mise en prod", "Mise en prod", "release", 42, "write to jean@encore.example"], confidence: 0.9 },
+      { zone: "dev", kind: "fact", title: "No keywords here", body: "An item written without any.", entities: [], confidence: 0.8 },
+    ],
+  }
+  const items = normalizeItems(raw, conv as never, zones, "dev")
+  assert.deepEqual(items[0].keywords, ["mise en prod", "release", "write to jean@encore.example"])
+  assert.equal(items[1].keywords, undefined)
+  const sent = finalizeItems(items, new Set(), ["Tag vX"])
+  assert.ok(!sent[0].keywords?.some((k) => k.includes("jean@encore.example")), "an email in a keyword is redacted")
+  assert.equal(sent[1].keywords, undefined)
+})

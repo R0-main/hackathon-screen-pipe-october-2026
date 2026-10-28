@@ -13,6 +13,7 @@ import { DEFAULT_ZONES, classifyZones } from "./zones"
 import { extractEntities, type ZoneHint } from "./distill"
 import { redactText } from "./privacy"
 import { normalize, truncate } from "./text"
+import { keywordsOf } from "./keywords"
 
 // --- API responses read by the tools -----------------------------------------------------------------------------------
 
@@ -56,8 +57,24 @@ export type ApiItem = {
 /** A document found by a search or listed in a zone. */
 export type ApiDocument = DocumentRef & { title: string; summary: string; author?: string; created_at: string; score?: number }
 
+/** POST /api/query: a search, its phrasings and its filters (QueryPayloadSchema). */
+export type QueryInput = {
+  query: string
+  phrasings?: string[]
+  zones?: string[]
+  limit?: number
+  agent?: AgentName
+  since?: string
+  until?: string
+  author?: string
+}
+
 export type QueryResult = {
   query: string
+  /** The agent's other phrasings, searched with the query. */
+  phrasings?: string[]
+  /** The filter applied (dates as ISO strings, the people `author` named); missing from an older brain. */
+  filter?: { since?: string; until?: string; authors?: string[] }
   zones_searched: string[]
   zones_hit: string[]
   zones_restricted: string[]
@@ -136,10 +153,12 @@ export interface BrainToolsApi {
   zones(): Promise<ApiZone[]>
   zone(id: string): Promise<ZoneSummary>
   status(): Promise<CompanyStatusResult>
-  query(input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }): Promise<QueryResult>
+  query(input: QueryInput): Promise<QueryResult>
   ingest(items: KnowledgeItemInput[], agent?: AgentName): Promise<IngestResult>
   /** A document and its text (the zone lights up for `agent`). */
   document?(id: string, agent?: AgentName): Promise<DocumentResult>
+  /** One knowledge item the user can read, by id (search_brain gives them); missing from an older brain. */
+  item?(id: string): Promise<{ item: ApiItem }>
   /** An entity's neighborhood in the knowledge graph (its zones light up for `agent`); missing from an older brain. */
   entity?(input: { name: string; type?: EntityType }, agent?: AgentName): Promise<EntityResult>
   /** Connector tools (Notion, Linear, GitHub…) the admin opened to agents. */
@@ -167,6 +186,16 @@ export function formatConnectedTools(r: ConnectedTools, withSchemas: boolean): s
     .join("\n\n")
 }
 
+/**
+ * How an agent rewords a question for search_brain (`phrasings`): the evaluation writes its rewordings with this same
+ * text (scripts/eval-data/prompts), so what it measures is what agents are asked to do.
+ */
+export const PHRASINGS_GUIDANCE =
+  "Optional but recommended: 1 to 3 other phrasings of the same question, searched with it, to find knowledge written in " +
+  "other words. In English (the brain is written in English), with the terms the team would write rather than the " +
+  "user's (\"payroll\" for \"who pays salaries\", \"ship to production\" for \"put online\"). Keep every number, date, " +
+  "amount and proper noun (customer, tool, project, person) exactly as given; add no fact the question does not state."
+
 // --- Formatting (markdown) ------------------------------------------------------------------------------------------
 
 const KIND_LABELS: Record<string, string> = { fact: "fact", decision: "decision", task: "task", procedure: "procedure", question: "question" }
@@ -185,7 +214,7 @@ function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
     `Type: ${KIND_LABELS[i.kind] ?? i.kind}`,
     `By: ${i.author ?? "?"}`,
     `Date: ${shortDate(i.source?.at ?? i.created_at)}`,
-    i.source?.tool ? `Source: ${i.source.tool}` : "",
+    sourceLabel(i.source),
   ]
     .filter(Boolean)
     .join(" · ")
@@ -193,6 +222,24 @@ function itemBlock(i: ApiItem, n: number, zoneName: ZoneNamer): string {
   const docs = i.documents?.length ? `\nDocuments: ${i.documents.map(docLabel).join(", ")}` : ""
   const via = i.via ? `\nLinked through the knowledge graph: shares ${i.via.entity.name} (${i.via.entity.type}) with "${i.via.from.title}".` : ""
   return `### ${n}. ${i.title}\n${meta}\n\n${i.body.trim()}${ents}${docs}${via}`
+}
+
+/** Where a knowledge item comes from: "Source: claude-code in Terminal", the tool alone, or nothing. */
+function sourceLabel(src: ApiItem["source"] | undefined): string {
+  const app = src?.app && src.app !== "unknown" ? src.app : ""
+  if (!src?.tool) return app ? `Source: ${app}` : ""
+  return `Source: ${src.tool}${app && normalize(app) !== normalize(src.tool) ? ` in ${app}` : ""}`
+}
+
+/** The filter of a search, in words: "by Sarah Cohen, from 01 Oct 2026, until 20 Oct 2026". */
+function filterLabel(f: QueryResult["filter"]): string {
+  if (!f) return ""
+  const parts = [
+    f.authors ? (f.authors.length ? `by ${f.authors.join(" or ")}` : "by nobody of that name") : "",
+    f.since ? `from ${shortDate(f.since)}` : "",
+    f.until ? `before ${shortDate(f.until)}` : "",
+  ].filter(Boolean)
+  return parts.length ? `; filter: ${parts.join(", ")}` : ""
 }
 
 /** "revenus-T3.pdf (20 KB, id `…`)": the id is what get_document takes. */
@@ -205,22 +252,53 @@ function documentsBlock(docs: ApiDocument[], zoneName: ZoneNamer, heading: strin
   return `### ${heading}\n${lines.join("\n")}\n\nOpen one with get_document (its id) to read its full text.`
 }
 
-export function formatQuery(r: QueryResult, zoneName: ZoneNamer): string {
+/** get_knowledge's answer: each item in full, or a line saying it cannot be read (`null`, in the ids' order). */
+export function formatKnowledge(items: (ApiItem | null)[], ids: string[], zoneName: ZoneNamer): string {
+  return items
+    .map((i, n) => (i ? itemBlock(i, n + 1, zoneName) : `### ${n + 1}. Not found\nNo knowledge you can read has the id \`${ids[n]}\`.`))
+    .join("\n\n---\n\n")
+}
+
+/** One line for a result past the first ones: what it is, who, when, and the id get_knowledge reads it by. */
+function itemLine(i: ApiItem, n: number, zoneName: ZoneNamer): string {
+  const via = i.via ? ` · linked through ${i.via.entity.name} (${i.via.entity.type})` : ""
+  return `${n}. ${i.title} — ${zoneName(i.zone)}, ${KIND_LABELS[i.kind] ?? i.kind}, ${i.author ?? "?"}, ${shortDate(i.source?.at ?? i.created_at)}${via} · id \`${i.id}\``
+}
+
+/**
+ * How search_brain answers. `full`: the first results in full (the others in one line each, read with
+ * get_knowledge); `documents`: matching documents listed at most. Without options, everything in full.
+ */
+export type QueryFormat = { full?: number; documents?: number }
+
+/** search_brain by default: the 3 best results in full, the next ones in one line, 2 documents at most. */
+export const COMPACT_FORMAT: Required<QueryFormat> = { full: 3, documents: 2 }
+
+export function formatQuery(r: QueryResult, zoneName: ZoneNamer, format: QueryFormat = {}): string {
   const searched = r.zones_searched.length ? r.zones_searched.map(zoneName).join(", ") : "none"
   const restricted = r.zones_restricted?.length
     ? "\n\nNote: zones you do not have access to might know more (ask an admin or the person concerned)."
     : ""
   if (!r.items.length) {
     return (
-      `No knowledge found in the brain for "${r.query}" (zones searched: ${searched}).\n` +
+      `No knowledge found in the brain for "${r.query}" (zones searched: ${searched}${filterLabel(r.filter)}).\n` +
       `Try other keywords (customer, tool or project name) or list_zones to see the available areas.${restricted}`
     )
   }
   const linked = r.items.filter((i) => i.via).length
   const graph = linked ? `, ${linked} of them linked through the knowledge graph` : ""
-  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched}${graph})`
-  const docs = r.documents?.length ? `\n\n${documentsBlock(r.documents, zoneName, "Matching documents")}` : ""
-  return `${head}\n\n${r.items.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${docs}${restricted}`
+  const head = `## Company brain — "${r.query}"\n${r.items.length} result${r.items.length > 1 ? "s" : ""} (zones searched: ${searched}${filterLabel(r.filter)}${graph})`
+  const shownDocs = r.documents?.slice(0, format.documents ?? Infinity) ?? []
+  const moreDocs = (r.documents?.length ?? 0) - shownDocs.length
+  const docs = shownDocs.length
+    ? `\n\n${documentsBlock(shownDocs, zoneName, "Matching documents")}${moreDocs > 0 ? ` ${moreDocs} more document${moreDocs > 1 ? "s" : ""} match: narrow the search to see them.` : ""}`
+    : ""
+  const full = r.items.slice(0, format.full ?? r.items.length)
+  const rest = r.items.slice(full.length)
+  const lines = rest.length
+    ? `\n\n---\n\n### Also relevant (read one with get_knowledge and its id)\n${rest.map((i, n) => itemLine(i, full.length + n + 1, zoneName)).join("\n")}`
+    : ""
+  return `${head}\n\n${full.map((i, n) => itemBlock(i, n + 1, zoneName)).join("\n\n---\n\n")}${lines}${docs}${restricted}`
 }
 
 /** Knowledge listed by explore_entity: the most recent, each in a few lines (search_brain gives the full text). */
@@ -456,20 +534,48 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         "whenever a question touches the company's context (\"how do we deploy?\", \"what did we decide for X?\", \"who handles customer Y?\"). " +
         "The last results can come from the knowledge graph: knowledge that cites the same customer, project or tool as the " +
         "best results, even without the query's words (each says which entity links it). " +
+        "Each result says who wrote it, when, and from which tool and app. " +
         "Only the zones the user has access to are searched.",
       inputSchema: {
-        query: z.string().min(1).max(500).describe("The question or the keywords, in natural language (e.g. \"deploy to production\")."),
+        query: z.string().min(1).max(500).describe("The question as the user asked it, in their language (e.g. \"comment on déploie en prod ?\")."),
+        phrasings: z.array(z.string().min(1).max(500)).max(4).optional().describe(PHRASINGS_GUIDANCE),
         zones: z.array(z.string()).max(20).optional().describe("Optional: limit to some zones (ids from list_zones, e.g. [\"dev\"])."),
+        since: z.string().max(40).optional().describe("Optional: only knowledge dated from this day (ISO, e.g. \"2026-10-01\")."),
+        until: z.string().max(40).optional().describe("Optional: only knowledge dated up to this day included (ISO)."),
+        author: z.string().max(120).optional().describe("Optional: only knowledge written by this person (name or first name, e.g. \"Sarah\")."),
+        detail: z
+          .enum(["compact", "full"])
+          .optional()
+          .describe("compact (default): the 3 best results in full, the next ones in one line (get_knowledge reads them); full: every result in full."),
         limit: z.number().int().min(1).max(50).optional().describe("Maximum number of results (8 by default)."),
         ...companyParam,
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ query, zones, limit, company }) =>
+    async ({ query, phrasings, zones, since, until, author, detail, limit, company }) =>
       guard(company, async (c) => {
         await ensureZones(c)
-        const r = await c.api.query({ query, zones: zones?.map((x) => resolveZone(c, x)), limit, agent: "mcp" })
-        return formatQuery(r, namer(c))
+        const r = await c.api.query({ query, phrasings, zones: zones?.map((x) => resolveZone(c, x)), since, until, author, limit, agent: "mcp" })
+        return formatQuery(r, namer(c), detail === "full" ? {} : COMPACT_FORMAT)
+      }),
+  )
+
+  server.registerTool(
+    "get_knowledge",
+    {
+      title: "Read knowledge by id",
+      description:
+        "Reads in full the knowledge items search_brain lists in one line (its \"Also relevant\" part), by their ids: the " +
+        "text, who wrote it, when, its entities and documents. Only knowledge the user can read is returned.",
+      inputSchema: { ids: z.array(z.string().min(1).max(64)).min(1).max(8).describe("Ids as given by search_brain."), ...companyParam },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ ids, company }) =>
+      guard(company, async (c) => {
+        if (!c.api.item) return "This brain cannot read knowledge by id yet: update the server, or search_brain with detail \"full\"."
+        await ensureZones(c)
+        const found = await Promise.all(ids.map((id) => c.api.item!(id.trim()).then((r) => r.item).catch(() => null)))
+        return formatKnowledge(found, ids, namer(c))
       }),
   )
 
@@ -595,11 +701,20 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
         body: z.string().min(1).max(4000).describe("1 to 5 sentences a colleague can understand, with the why."),
         kind: z.enum(KNOWLEDGE_KINDS).describe("fact | decision | task | procedure | question"),
         zone: z.string().max(64).optional().describe("Optional: zone id; otherwise classified automatically (the answer gives the zone chosen)."),
+        keywords: z
+          .array(z.string().max(60))
+          .max(16)
+          .optional()
+          .describe(
+            "Recommended: 6 to 14 search terms a colleague might type to find it that the title and body do not contain: other " +
+              "words for the same thing, the question it answers, the user's own words and the French for the key terms. " +
+              "Never a fact or name that is not in the item.",
+          ),
         ...companyParam,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ title, body, kind, zone, company }) =>
+    async ({ title, body, kind, zone, keywords, company }) =>
       guard(company, async (c) => {
         await ensureZones(c)
         const cache = cacheOf(c)
@@ -624,6 +739,7 @@ export function createBrainMcpServer(opts: BrainMcpOptions): McpServer {
           entities: extractEntities(`${cleanTitle}\n${cleanBody}`),
           source: { app: opts.sourceApp ?? "claude-code", tool: "agent", at: new Date().toISOString() },
           confidence: 0.8,
+          ...keywordsOf(keywords?.map(clean), cleanTitle),
         }
         const r = await c.api.ingest([item], "mcp")
         const where = r.zones[0] ?? chosen

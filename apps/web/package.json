@@ -16,7 +16,9 @@
     "smoke": "tsx scripts/smoke.ts",
     "eval": "tsx scripts/eval-search.ts",
     "eval:seed": "tsx scripts/eval-seed.ts",
+    "eval:tokens": "tsx scripts/eval-tokens.ts",
     "embed": "tsx scripts/embed-backfill.ts",
+    "keywords": "tsx scripts/keywords.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "test": "node --import tsx --test scripts/*.test.ts"
   },

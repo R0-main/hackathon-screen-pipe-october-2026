@@ -7,6 +7,7 @@ import {
   buildStatusInput,
   classifyZones,
   isCoreZone,
+  keywordsOf,
   detectAutomations,
   entityKey,
   expandQuery,
@@ -16,6 +17,7 @@ import {
   likeness,
   looksPersonal,
   matchStrength,
+  matchesFilter,
   normalize,
   promptFingerprint,
   redactText,
@@ -34,11 +36,12 @@ import {
   type KnowledgeItemInput,
   type Profile,
   type ScoredItem,
+  type SearchFilter,
   type StatusInput,
   type Zone,
   type ZoneStatus,
 } from "@brain/core"
-import { summarizeStatus } from "@brain/core/claude"
+import { suggestKeywords, summarizeStatus } from "@brain/core/claude"
 import { getStore, isStoreSetupError } from "./store"
 import type { AuthorZoneStat, NewItem } from "./store/types"
 import { canRead, canSeeEventContent, redactEvent } from "./access"
@@ -46,7 +49,7 @@ import type { Viewer } from "./auth"
 import { getClaude } from "./ai"
 import { claudeKeyInfo } from "./claude-key"
 import { backfillEmbeddings, embedDocuments, embedQuery, embeddingText, getEmbeddings, rankBySimilarity } from "./embeddings"
-import { rerankItems } from "./rerank"
+import { RERANK_CANDIDATES, rerankItems } from "./rerank"
 import { canPublishSkills, canSeeSkill } from "./skills"
 import { documentRef, listDocumentsFor, searchDocumentsFor, withDocuments } from "./documents"
 
@@ -108,6 +111,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     // Defense in depth: redact again on the server even if the workstation already did it.
     const title = redactText(i.title)
     const body = redactText(i.body)
+    const keywords = i.keywords ? keywordsOf(i.keywords.map((k) => redactText(k)), title) : {}
     const zone = resolveZone(i.zone, `${title} ${body}`, zones)
     const key = dedupeKey(zone, title, body)
     if (seen.has(key)) {
@@ -135,7 +139,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     seen.set(key, prepared.length)
     outcome.push(prepared.length)
     if (old) supersedes.push({ index: prepared.length, oldId: old })
-    prepared.push({ ...i, title, body, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
+    prepared.push({ ...i, title, body, keywords: undefined, ...keywords, zone, source: { ...i.source, at: clampDate(i.source.at) }, author_id: authorId })
   }
   // Semantic vectors (if a provider is configured): a provider outage never prevents ingestion.
   const provider = getEmbeddings()
@@ -148,6 +152,7 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
     }
   }
   const inserted = prepared.length ? await store().insertItems(prepared) : []
+  await addKeywords(inserted, zones, viewer.real.name).catch((err) => console.error("[keywords] ingestion without keywords:", err instanceof Error ? err.message : err))
   // Knowledge from before embeddings were set up catches up, one batch per ingestion.
   if (provider) await backfillEmbeddings(store(), provider).catch((err) => console.error("[embeddings] catch-up:", err instanceof Error ? err.message : err))
   for (const s of supersedes) {
@@ -187,6 +192,34 @@ export async function ingestItems(viewer: Viewer, items: KnowledgeItemInput[], a
   }
 }
 
+/** Keyword calls run at the same time at ingestion (one short Haiku call per knowledge item). */
+const KEYWORDS_CONCURRENCY = 6
+/** Time ingestion gives the keywords: a large batch must not make the workstation's sync time out (60 s). */
+const KEYWORDS_BUDGET_MS = 15_000
+
+/**
+ * The distillation writes the keywords with the knowledge (KNOWLEDGE_RULES, on the workstation), and so do the
+ * connectors' import and agents through `remember`. Knowledge that arrives without any (heuristic distillation, an
+ * older workstation, a connector read without a model) catches up here: a model reads each item alone, with its source
+ * (keywords.ts), when the company has Claude (its key or the deployment's) and BRAIN_KEYWORDS is not "off". No new
+ * call after KEYWORDS_BUDGET_MS; a failure or the items left over stay without keywords: `npm run keywords` catches up.
+ */
+async function addKeywords(items: KnowledgeItem[], zones: Zone[], author: string) {
+  const todo = items.filter((i) => !i.keywords?.length)
+  if (todo.length === 0 || process.env.BRAIN_KEYWORDS === "off") return
+  const claude = await getClaude()
+  if (!claude) return
+  const zoneName = new Map(zones.map((z) => [z.id, z.name]))
+  const rows: { id: string; keywords: string[] }[] = []
+  const deadline = Date.now() + KEYWORDS_BUDGET_MS
+  for (let n = 0; n < todo.length && Date.now() < deadline; n += KEYWORDS_CONCURRENCY) {
+    const batch = todo.slice(n, n + KEYWORDS_CONCURRENCY)
+    const found = await Promise.all(batch.map((i) => suggestKeywords(claude, { ...i, author, zoneName: zoneName.get(i.zone) })))
+    batch.forEach((i, k) => found[k]?.length && rows.push({ id: i.id, keywords: found[k]! }))
+  }
+  if (rows.length) await store().setKeywords(rows)
+}
+
 /** Agents that send the prompts typed by the employee (UserPromptSubmit hooks). */
 const PROMPT_AGENTS = new Set<AgentName>(["claude-code", "codex"])
 
@@ -224,14 +257,54 @@ function zonesMentioned(text: string, zones: Zone[]): string[] {
   return [...out]
 }
 
+/** A date given to a search filter, as an ISO string; a bare day (2026-10-20) as `until` includes that whole day. */
+function filterDate(value: string | undefined, end = false): string | undefined {
+  if (!value?.trim()) return undefined
+  const t = Date.parse(value.trim())
+  if (!Number.isFinite(t)) return undefined
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+  return new Date(end && day ? t + 86400_000 : t).toISOString()
+}
+
+/** The people a search's `author` names: the full name, every word of it ("Sarah", "jean-marc"), or the email. */
+export function authorsNamed(profiles: Pick<Profile, "id" | "name" | "email">[], wanted: string): Pick<Profile, "id" | "name">[] {
+  const n = normalize(wanted.trim())
+  if (!n) return []
+  const exact = profiles.filter((p) => normalize(p.name) === n || (p.email && p.email.toLowerCase() === wanted.trim().toLowerCase()))
+  if (exact.length) return exact
+  const words = tokenize(wanted)
+  return words.length ? profiles.filter((p) => words.every((w) => tokenize(p.name).includes(w))) : []
+}
+
+export type QueryInput = {
+  query: string
+  /** Other phrasings of the same question, written by the agent (in English, with the team's terms): fused with it. */
+  phrasings?: string[]
+  zones?: string[]
+  limit?: number
+  agent?: AgentName
+  /** Knowledge dated from this day or instant (ISO). */
+  since?: string
+  /** Knowledge dated up to this day included (or before this instant). */
+  until?: string
+  /** Knowledge written by this person (name, first name or email). */
+  author?: string
+}
+
 /** POST /api/query — an agent looks for context. The zone found lights up. */
-export async function queryBrain(viewer: Viewer, input: { query: string; zones?: string[]; limit?: number; agent?: AgentName }) {
+export async function queryBrain(viewer: Viewer, input: QueryInput) {
   const allZones = await store().listZones()
   const readable = viewer.access.readable
   const filter = input.zones?.length ? input.zones : null
   const searched = filter ? filter.filter((z) => readable.includes(z)) : readable
+  const profiles = await store().listProfiles()
+  const names = new Map(profiles.map((p) => [p.id, p.name]))
+  const authors = input.author?.trim() ? authorsNamed(profiles, input.author) : null
+  const narrow: SearchFilter | undefined =
+    input.since || input.until || authors ? { since: filterDate(input.since), until: filterDate(input.until, true), ...(authors ? { authors: authors.map((a) => a.id) } : {}) } : undefined
   // Readable zones + the user's own items, even filed in a zone they don't read (right of review).
-  const results = (await searchWithGraph(input.query, searched, input.limit ?? 8, viewer.profile.id)).filter((r) => !filter || filter.includes(r.zone))
+  const phrasings = [input.query, ...(input.phrasings ?? [])]
+  const results = (await searchWithGraph(phrasings, searched, input.limit ?? 8, { authorId: viewer.profile.id, filter: narrow })).filter((r) => !filter || filter.includes(r.zone))
   // Only readable zones light up: a search is never broadcast into a zone you don't read.
   let hit = [...new Set(results.filter((r) => readable.includes(r.zone)).slice(0, 3).map((r) => r.zone))]
   if (hit.length === 0) hit = classifyZones(input.query, allZones, 2).filter((z) => readable.includes(z))
@@ -255,13 +328,15 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
       at: new Date().toISOString(),
     },
   ])
-  const [names, items, documents] = await Promise.all([
-    store().listProfiles().then((ps) => new Map(ps.map((p) => [p.id, p.name]))),
+  const [items, documents] = await Promise.all([
     withDocuments(viewer, results),
-    searchDocumentsFor(viewer, input.query, searched, 5),
+    searchDocumentsFor(viewer, input.query, searched, 5).then((docs) => docs.filter((d) => matchesFilter(d, narrow))),
   ])
   return {
     query: input.query,
+    ...(input.phrasings?.length ? { phrasings: input.phrasings } : {}),
+    /** The filter applied: dates as ISO strings, the people `author` named (none: nobody has that name). */
+    ...(narrow ? { filter: { since: narrow.since, until: narrow.until, ...(authors ? { authors: authors.map((a) => a.name) } : {}) } } : {}),
     zones_searched: searched,
     zones_hit: hit,
     /** Zones that could have answered but that the user cannot read (nothing is said about their content). */
@@ -276,20 +351,30 @@ export async function queryBrain(viewer: Viewer, input: { query: string; zones?:
 const HYBRID_FACTOR = 4
 /** Similarity down to which semantic search fills a list the other results leave short (the fusion stops at 0.3). */
 const FILL_SIMILARITY = 0.2
+/**
+ * How much the question as asked weighs in the fusion of several phrasings, next to each rewording (1). Measured
+ * (npm run eval, EVAL_ORIGINAL_WEIGHT): 2 is never better and lets a weak match of the question's own words (a French
+ * question on English knowledge) outrank what its rewordings find.
+ */
+export const ORIGINAL_PHRASING_WEIGHT = 1
+
+/** What narrows a search and how phrasings are fused; `authorId`: also this person's own items, whatever their zone. */
+export type SearchOptions = { authorId?: string; filter?: SearchFilter; originalWeight?: number }
 
 /**
- * Hybrid search: the query is expanded to its synonyms (lexical), then, if an embeddings provider is
- * configured, the semantically closest items are added; the two rankings are fused
- * (RRF). Without a provider: lexical with synonyms. The score returned is the fusion's (or lexical alone).
+ * The ranked candidates of one phrasing, before any rerank: the query expanded to its synonyms (lexical), then, if an
+ * embeddings provider is configured, the semantically closest items; the rankings are fused (RRF). Without a
+ * provider: lexical with synonyms. The score is the fusion's (or lexical alone). Up to `depth` candidates.
  */
-export async function hybridSearch(query: string, zones: string[], limit: number, authorId?: string): Promise<ScoredItem[]> {
+async function hybridCandidates(query: string, zones: string[], limit: number, depth: number, opts: SearchOptions = {}): Promise<ScoredItem[]> {
   const s = store()
+  const { authorId, filter } = opts
   const { tokens, added } = expandQuery(query)
   const want = Math.max(limit * HYBRID_FACTOR, 20)
   const all = [...tokens, ...added]
   const [lexical, expandedRaw, qvec] = await Promise.all([
-    s.searchItems(query, zones, want, { authorId }),
-    added.length ? s.searchItems(all.join(" "), zones, want, { authorId }) : Promise.resolve([] as ScoredItem[]),
+    s.searchItems(query, zones, want, { authorId, filter }),
+    added.length ? s.searchItems(all.join(" "), zones, want, { authorId, filter }) : Promise.resolve([] as ScoredItem[]),
     embedQuery(query),
   ])
   // A result only synonyms bring back must rest on more than one isolated word of the body ("prod" ≠ "product"):
@@ -300,14 +385,15 @@ export async function hybridSearch(query: string, zones: string[], limit: number
   for (const r of [...lexical, ...expanded]) if (!byId.has(r.id)) byId.set(r.id, r)
   const lists: string[][] = [lexical.map((r) => r.id)]
   if (expanded.length) lists.push(expanded.map((r) => r.id))
-  const vectors = qvec ? await s.listEmbeddings({ zones, authorId }) : []
+  const vectors = qvec ? await s.listEmbeddings({ zones, authorId, filter }) : []
+  const usable = (it: KnowledgeItem | null | undefined): it is KnowledgeItem => Boolean(it) && !it!.superseded_by && matchesFilter(it!, filter)
   if (qvec) {
     const close = rankBySimilarity(qvec, vectors, { limit: want })
     if (close.length) {
       lists.push(close.map((c) => c.id))
       const missing = close.filter((c) => !byId.has(c.id))
       const fetched = await Promise.all(missing.map((c) => s.getItem(c.id)))
-      for (const it of fetched) if (it && !it.superseded_by) byId.set(it.id, { ...it, score: 0 })
+      for (const it of fetched) if (usable(it)) byId.set(it.id, { ...it, score: 0 })
     }
   }
   let ranked =
@@ -326,10 +412,41 @@ export async function hybridSearch(query: string, zones: string[], limit: number
     const have = new Set(ranked.map((r) => r.id))
     const extra = rankBySimilarity(qvec, vectors, { minScore: FILL_SIMILARITY, limit: want }).filter((c) => !have.has(c.id)).slice(0, limit - ranked.length)
     const found = await Promise.all(extra.map((c) => byId.get(c.id) ?? s.getItem(c.id)))
-    ranked = [...ranked, ...found.filter((it): it is KnowledgeItem => it !== null && it !== undefined && !it.superseded_by).map((it) => ({ ...it, score: 0 }))]
+    ranked = [...ranked, ...found.filter(usable).map((it) => ({ ...it, score: 0 }))]
   }
-  // Optional (BRAIN_RERANK_MODEL): a model rereads the first candidates with the question and orders them.
-  return (await rerankItems(query, ranked)).slice(0, limit)
+  return ranked.slice(0, depth)
+}
+
+/** Candidates a phrasing brings to the fusion, and the reranker reads: enough for the rerank to reorder. */
+const candidateDepth = (limit: number) => Math.max(limit, RERANK_CANDIDATES)
+
+/**
+ * Hybrid search of one phrasing (hybridCandidates), then, optionally (BRAIN_RERANK_MODEL), a model rereads the first
+ * candidates with the question and orders them.
+ */
+export async function hybridSearch(query: string, zones: string[], limit: number, authorId?: string, filter?: SearchFilter): Promise<ScoredItem[]> {
+  const candidates = await hybridCandidates(query, zones, limit, candidateDepth(limit), { authorId, filter })
+  return (await rerankItems(query, candidates)).slice(0, limit)
+}
+
+/**
+ * The same question in several phrasings (the question as asked first, then the agent's rewordings: in English, with
+ * the terms the team writes): the candidates of each phrasing, fused by rank (the question as asked weighing
+ * ORIGINAL_PHRASING_WEIGHT), then reranked once, with the question as asked. The calling agent does the rewording,
+ * which a search by words cannot.
+ */
+async function searchPhrasings(queries: string[], zones: string[], limit: number, opts: SearchOptions = {}): Promise<ScoredItem[]> {
+  const phrasings = [...new Set(queries.map((q) => q.trim()).filter(Boolean))]
+  if (phrasings.length <= 1) return hybridSearch(phrasings[0] ?? "", zones, limit, opts.authorId, opts.filter)
+  const depth = candidateDepth(limit)
+  const lists = await Promise.all(phrasings.map((q) => hybridCandidates(q, zones, limit, depth, opts)))
+  const byId = new Map<string, ScoredItem>()
+  for (const r of lists.flat()) if (!byId.has(r.id)) byId.set(r.id, r)
+  const weight = opts.originalWeight ?? ORIGINAL_PHRASING_WEIGHT
+  const fused = rrf(lists.map((l) => l.map((r) => r.id)), 60, [weight])
+    .slice(0, depth)
+    .map(({ id, score }) => ({ ...byId.get(id)!, score: Math.round(score * 1000) / 10 }))
+  return (await rerankItems(phrasings[0], fused)).slice(0, limit)
 }
 
 /** A search result; `via` when the knowledge graph brought it rather than the words of the query. */
@@ -341,23 +458,25 @@ const GRAPH_SEEDS = 3
 const GRAPH_CANDIDATES = 200
 
 /**
- * hybridSearch, completed by the knowledge graph: the items that cite the same customers, projects, tools or people
+ * The search, completed by the knowledge graph: the items that cite the same customers, projects, tools or people
  * as the first results, even without any word of the query (the staging migration that times out, next to "how do we
- * deploy?"). They take the last places only (graphSlots: 2 out of 8, or the places the direct results leave empty), never above a direct result, with `via` saying
- * which entity links them to which result. Same scope as the search: the zones searched and the user's own items,
- * nothing superseded.
+ * deploy?"). They take the last places only (graphSlots: 2 out of 8, or the places the direct results leave empty),
+ * never above a direct result, with `via` saying which entity links them to which result. Same scope as the search:
+ * the zones searched and the user's own items, the filter, nothing superseded. `query`: one phrasing or several, the
+ * question as asked first (searchPhrasings).
  */
-export async function searchWithGraph(query: string, zones: string[], limit: number, authorId?: string): Promise<SearchHit[]> {
-  const direct: SearchHit[] = await hybridSearch(query, zones, limit, authorId)
+export async function searchWithGraph(query: string | string[], zones: string[], limit: number, opts: SearchOptions = {}): Promise<SearchHit[]> {
+  const direct: SearchHit[] = await searchPhrasings(Array.isArray(query) ? query : [query], zones, limit, opts)
   const slots = graphSlots(limit, direct.length)
   const seeds = direct.slice(0, GRAPH_SEEDS)
   const keys = [...new Set(seeds.flatMap((s) => s.entities.map(entityKey)))]
   if (slots === 0 || keys.length === 0) return direct
-  const { items, degree } = await store().entityNeighborhood({ keys, zones, authorId, limit: GRAPH_CANDIDATES })
+  const { items, degree } = await store().entityNeighborhood({ keys, zones, authorId: opts.authorId, limit: GRAPH_CANDIDATES })
   const known = new Set(direct.map((d) => d.id))
-  const hits = graphNeighbors(seeds, items, degree).filter((h) => !known.has(h.id)).slice(0, slots)
+  const allowed = items.filter((i) => matchesFilter(i, opts.filter))
+  const hits = graphNeighbors(seeds, allowed, degree).filter((h) => !known.has(h.id)).slice(0, slots)
   if (hits.length === 0) return direct
-  const byId = new Map(items.map((i) => [i.id, i]))
+  const byId = new Map(allowed.map((i) => [i.id, i]))
   const linked: SearchHit[] = hits.map((h) => ({ ...byId.get(h.id)!, score: 0, via: h.via }))
   return [...direct.slice(0, Math.min(direct.length, limit - linked.length)), ...linked]
 }
@@ -799,6 +918,18 @@ export function createEventPoller(startId: number, opts: { gapMs?: number; maxGa
 
 export function visibleEvent(viewer: Viewer, e: AgentEvent) {
   return redactEvent(e, viewer.access, viewer.profile.id)
+}
+
+/**
+ * One knowledge item by id, if the viewer reads its zone or wrote it (the same scope as search), with its author's name
+ * and its documents; null otherwise, whether it does not exist or is not readable (nothing tells them apart).
+ */
+export async function getKnowledgeFor(viewer: Viewer, id: string) {
+  const item = await store().getItem(id)
+  if (!item || !(viewer.access.readable.includes(item.zone) || item.author_id === viewer.profile.id)) return null
+  const [withDocs] = await withDocuments(viewer, [item])
+  const author = (await store().getProfile(item.author_id))?.name ?? "?"
+  return { ...withDocs, author }
 }
 
 export function itemAuthorOrAdmin(viewer: Viewer, item: KnowledgeItem): boolean {

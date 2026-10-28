@@ -40,7 +40,7 @@ after(async () => {
 
 test("MCP: list of tools", async () => {
   const { tools } = await client.listTools()
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "explore_entity", "get_document", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["company_status", "connected_tools", "explore_entity", "get_document", "get_knowledge", "get_zone_summary", "list_zones", "remember", "search_brain", "use_connected_tool", "whoami_context"])
   const search = tools.find((t) => t.name === "search_brain")!
   assert.match(search.description ?? "", /decisions, procedures/)
   assert.deepEqual(search.inputSchema.required, ["query"])
@@ -62,6 +62,12 @@ test("MCP get_document: the document's text and the knowledge it backs; its zone
 
 test("MCP, a single company: no \"Company:\" header in the answers", async () => {
   assert.doesNotMatch(text(await client.callTool({ name: "company_status", arguments: {} })), /^Company:/)
+})
+
+test("MCP get_knowledge: each id read in full, an unknown or unreadable one says so", async () => {
+  const r = text(await client.callTool({ name: "get_knowledge", arguments: { ids: ["i1", "nope"] } }))
+  assert.match(r, /### 1\. .+\nZone: Dev/)
+  assert.match(r, /### 2\. Not found\nNo knowledge you can read has the id `nope`/)
 })
 
 test("MCP search_brain: results in markdown, then \"nothing found\" + restricted zones", async () => {
@@ -107,18 +113,25 @@ test("MCP remember: POST /api/ingest with agent mcp, agent source, secret redact
   const r = text(
     await client.callTool({
       name: "remember",
-      arguments: { title: "We deploy on Friday before 4pm", body: "Team decision for the API migration; key sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZ", kind: "decision" },
+      arguments: {
+        title: "We deploy on Friday before 4pm",
+        body: "Team decision for the API migration; key sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZ",
+        kind: "decision",
+        keywords: ["mise en prod le vendredi", "release cutoff", "sk-ant-api03-YYYYYYYYYYYYYYYYYYYY"],
+      },
     }),
   )
   assert.match(r, /Knowledge saved in the Dev \(`dev`\) zone/)
   const req = brain.requests.filter((x) => x.url === "/api/ingest").at(-1)!
-  const body = req.body as { agent: string; items: { zone: string; source: { tool: string; app: string }; confidence: number; body: string }[] }
+  const body = req.body as { agent: string; items: { zone: string; source: { tool: string; app: string }; confidence: number; body: string; keywords?: string[] }[] }
   assert.equal(body.agent, "mcp")
   assert.equal(body.items[0].zone, "dev")
   assert.equal(body.items[0].source.tool, "agent")
   assert.equal(body.items[0].source.app, "claude-code")
   assert.equal(body.items[0].confidence, 0.8)
   assert.ok(!body.items[0].body.includes("sk-ant"))
+  assert.deepEqual(body.items[0].keywords?.slice(0, 2), ["mise en prod le vendredi", "release cutoff"], "the agent's keywords go with it")
+  assert.ok(!body.items[0].keywords?.some((k) => k.includes("sk-ant")), "redacted like the body")
 })
 
 test("MCP remember: the answer names the zone chosen, flags a zone outside reading, and a duplicate", async () => {
