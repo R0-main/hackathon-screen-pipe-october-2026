@@ -24,5 +24,5 @@ export const POST = withViewer<Ctx>(
       throw err
     }
   },
-  { admin: true },
+  { admin: true, demoReadOnly: true },
 )

@@ -17,7 +17,7 @@ export function InstallActions({ demo, signup }: { demo: boolean; signup: boolea
       <div className="panel px-5 py-5">
         <p className="text-[15px]">
           {signup
-            ? "Create your company's brain: four questions, then your prompt. Your colleagues get theirs, with their personal token, when you invite them."
+            ? "Create your company's brain: three questions, then your prompts. Your colleagues get theirs, with their personal token, when you invite them."
             : "Your prompt, with your personal token, is given to you by your brain's admin."}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">

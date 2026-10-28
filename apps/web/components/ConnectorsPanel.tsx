@@ -12,9 +12,10 @@ import { McpConnectors } from "./McpConnectors"
 import { RelTime } from "./RelTime"
 import { Dot, ErrorText, zoneColor } from "./ui"
 
-type Props = { initial: ConnectorPublic[]; mcp: McpConnectorPublic[]; redirectUri: string }
+/** `readOnly`: the public demo, whose connectors no visitor changes (the server refuses it anyway). */
+type Props = { initial: ConnectorPublic[]; mcp: McpConnectorPublic[]; redirectUri: string; readOnly?: boolean }
 
-export function ConnectorsPanel({ initial, mcp, redirectUri }: Props) {
+export function ConnectorsPanel({ initial, mcp, redirectUri, readOnly = false }: Props) {
   const { t } = useT()
   const { state, refresh } = useBrainLive()
   const [connectors, setConnectors] = useState(initial)
@@ -29,7 +30,17 @@ export function ConnectorsPanel({ initial, mcp, redirectUri }: Props) {
       <div className="space-y-4">
         <div>
           <h1 className="text-[22px] font-medium leading-tight">{t.connectors.title}</h1>
+          {readOnly && (
+            <p className="panel mt-3 max-w-3xl px-4 py-3 text-[14px] leading-relaxed" role="note">
+              {t.connectors.demoReadOnly}{" "}
+              <a href="/create" className="underline underline-offset-2">
+                {t.connectors.demoCreate}
+              </a>
+            </p>
+          )}
         </div>
+        {/* In the demo, everything stays visible and nothing can be clicked: a disabled fieldset disables its controls. */}
+        <fieldset disabled={readOnly} className="min-w-0 space-y-4 border-0 p-0 disabled:opacity-80">
         <McpConnectors initial={mcp} redirectUri={redirectUri} zones={zones} />
         <div className="pt-4">
           <h2 className="text-[18px] font-medium leading-tight">{t.connectors.apiTitle}</h2>
@@ -40,6 +51,7 @@ export function ConnectorsPanel({ initial, mcp, redirectUri }: Props) {
             <ConnectorCard key={c.id} connector={c} zones={zones} onChange={update} onSynced={refresh} />
           ))}
         </div>
+        </fieldset>
       </div>
     </PageScroll>
   )
