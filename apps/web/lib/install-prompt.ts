@@ -155,20 +155,55 @@ export function aboutOrg(description?: string): string {
   return ` The company, in a nutshell: "${d}".`
 }
 
-export function buildInstallPrompt(opts: { baseUrl: string; token: string; name: string; orgName: string; orgDescription?: string; zones: string[]; caFingerprint?: string }): string {
-  const { baseUrl, token, name, orgName, orgDescription, caFingerprint } = opts
+/** The install prompt's first step with screen capture: the macOS permissions to come. */
+const SCREEN_STEP =
+  '1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.'
+/** Without screen capture: what the brain learns from, and how to add the capture later. */
+const NO_SCREEN_STEP = `1. Warn me in one sentence: no screen capture on this computer, the brain learns from my Claude Code and Codex sessions; I can add it later with \`${BRAIN_CLI} screenpipe on\`.`
+/** The client's option for an install without screen capture (remembered by setup). */
+export const SKIP_SCREENPIPE = "--skip-screenpipe"
+
+/**
+ * `screen: false`: an install without screen capture (no Screenpipe, no macOS permission), the Claude Code and Codex
+ * sessions only; Screenpipe comes later, if the person wants it (`brain screenpipe on`).
+ */
+export function buildInstallPrompt(opts: {
+  baseUrl: string
+  token: string
+  name: string
+  orgName: string
+  orgDescription?: string
+  zones: string[]
+  caFingerprint?: string
+  screen?: boolean
+}): string {
+  const { baseUrl, token, name, orgName, orgDescription, caFingerprint, screen = true } = opts
   // The core is everyone's: the person's zones are the others.
   const zones = opts.zones.filter((z) => !isCoreZone(z))
   const brain = BRAIN_CLI
-  const cmd = installCommands(baseUrl, `--token ${token}`, caFingerprint)
+  const cmd = installCommands(baseUrl, `--token ${token}${screen ? "" : ` ${SKIP_SCREENPIPE}`}`, caFingerprint)
   return `You are going to connect this computer to NOS Brainer, ${possessive(orgName)} company brain.${aboutOrg(orgDescription)} I am ${name}, zones: ${zones.join(", ") || "none yet"}.
 This message contains my personal token: never display it in full (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY} ${IF_BLOCKED}
 
-1. Warn me in one sentence: on a Mac, System Settings will open and I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility"; the command waits and resumes on its own.
+${screen ? SCREEN_STEP : NO_SCREEN_STEP}
 2. Run the command for my system as is, in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there):
 ${commandLines(cmd)}
 ${caFingerprint ? CA_NOTE : ""}3. Code 0: it's done, the brain has opened in my browser. ${commonCodes(brain)}
 4. Finish in three lines: what is running, what gets sent (distilled knowledge, never the raw screen; no history is sent) and how to remove everything (\`${brain} uninstall\`). Finally, offer to have the brain learn my last 24 h: first show me \`${brain} sync --dry-run --full --since 24h\` in full; nothing is sent before my explicit approval, then \`${brain} sync --confirm\` sends exactly what I reviewed.`
+}
+
+/**
+ * The same install prompt without screen capture, from the one with it (the dashboard switches between the two
+ * without asking the server again, the token being only in the prompt). Identical to buildInstallPrompt with
+ * `screen: false`; another prompt comes back unchanged.
+ */
+export function withoutScreenCapture(prompt: string): string {
+  if (!prompt.includes(SCREEN_STEP)) return prompt
+  return prompt
+    .replace(SCREEN_STEP, NO_SCREEN_STEP)
+    .split("\n")
+    .map((l) => (l.startsWith(POSIX_LINE) || l.startsWith(WINDOWS_LINE) ? l.replace(/( --token [^\s;"]+)/, `$1 ${SKIP_SCREENPIPE}`) : l))
+    .join("\n")
 }
 
 // The team message: the same for the whole company, to send to colleagues (never publicly). It grants access to
@@ -187,7 +222,7 @@ export function buildJoinPrompt(opts: { baseUrl: string; code: string; orgName: 
   return `You are going to ask to join NOS Brainer, ${possessive(org)} company brain.${aboutOrg(orgDescription)} This team message contains ${possessive(org)} access code: never display it in full and never pass it on outside the company (brain-sync recognizes this conversation and never sends it to the brain). Be brief. ${LOCAL_ONLY} ${IF_BLOCKED}
 
 1. Without asking me anything or running commands to look things up, prepare my request with what you already know about me (my account, your memory, our conversations): first and last name, role or job, work email. Make nothing up: for information you don't have, remove it from the command, an admin will fill it in.
-2. Warn me in one sentence: an admin at ${org} must accept my request; the command waits for it, then installs everything (on a Mac, I will need to turn on "screenpipe" in "Screen Recording" then in "Accessibility").
+2. Ask me one question: with screen capture (Screenpipe; on a Mac, "screenpipe" to turn on in "Screen Recording" and "Accessibility") or without (my Claude Code and Codex sessions: add \`${SKIP_SCREENPIPE}\`, \`${brain} screenpipe on\` adds it later)? Then warn me: an admin at ${org} must accept me; the command waits, then installs.
 3. Run the command for my system in a single call, with a 10-minute timeout (outside the sandbox if it is blocked there), replacing the values in angle brackets:
 ${commandLines(cmd)}
 ${caFingerprint ? CA_NOTE : ""}4. Code 0: request accepted and computer connected, the brain has opened in my browser. Code ${JOIN_EXIT.pending} ("WAITING FOR APPROVAL"): tell me my request is waiting for an admin and offer to rerun \`${brain} join\`, which resumes the same request. Code ${JOIN_EXIT.rejected}: the request was declined, nothing is installed. ${commonCodes(brain)}

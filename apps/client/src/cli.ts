@@ -43,6 +43,11 @@ Commands:
                      only), neon, then the brain opens in the browser. Can be run again without parameters.
                      Exit codes: 0 everything is connected; 3 everything but the screen recording permission (run setup again
                      once granted); 6 everything but Screenpipe (no version for this computer, or it does not start: see doctor).
+                     --skip-screenpipe: without screen capture, remembered (the Claude Code and Codex sessions only).
+  screenpipe on|off|status [--audio yes|no] [--wait <seconds>]
+                     Screen capture after an install without it, or turned off. on: Screenpipe installed and started as in
+                     setup (same codes 3 and 6), read from now on (nothing captured before is sent). off: brain-sync stops
+                     reading it and the Screenpipe started by setup stops (its recordings stay in ~/.screenpipe).
   join --url <url> --join <team code> [--name <first last>] [--title <job title>] [--email <email>] [--wait-accept <seconds>]
                      Asks to join a company (it is what the team message runs): the computer's token is created
                      here, only its fingerprint goes with the request. Waits for an admin to accept it (--wait-accept 480 s by
@@ -188,6 +193,10 @@ async function main(argv: string[]): Promise<number> {
     case "join": {
       const { cmdJoin } = await import("./join")
       return cmdJoin(flags)
+    }
+    case "screenpipe": {
+      const { cmdScreenpipe } = await import("./setup")
+      return cmdScreenpipe(positional[0], flags)
     }
     case "init": {
       const { cmdInit } = await import("./commands")

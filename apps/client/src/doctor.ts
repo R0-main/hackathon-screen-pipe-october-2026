@@ -477,7 +477,12 @@ async function fetchText(url: string, timeoutMs: number): Promise<string> {
 async function checkScreenpipe(ctx: Ctx) {
   const cfg = ctx.cfg
   if (cfg && !cfg.sources.includes("screenpipe")) {
-    return add(ctx, { id: "screenpipe", group: "Screenpipe", status: "info", detail: "source disabled in the config: brain-sync only reads the Claude Code and Codex sessions" })
+    return add(ctx, {
+      id: "screenpipe",
+      group: "Screenpipe",
+      status: "info",
+      detail: `screen capture off, as chosen: brain-sync reads the Claude Code and Codex sessions (to add it: ${ctx.me} screenpipe on)`,
+    })
   }
   const url = cfg?.screenpipe_url ?? "http://localhost:3030"
   const token = cfg?.screenpipe_token

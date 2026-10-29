@@ -26,6 +26,7 @@ import {
   screenpipeLoadError,
   screenpipeSupported,
   startScreenpipe,
+  uninstallScreenpipeService,
 } from "./screenpipe-cli"
 import { CLIENT_HEADERS, TOKEN_COMMAND, screenpipeProbe } from "./sources/screenpipe"
 
@@ -367,6 +368,95 @@ async function askClaudeToken(log: Log): Promise<string | null> {
   }
 }
 
+/**
+ * Screenpipe installed (or kept) and started, its token saved, then the macOS permissions; without Screenpipe (no
+ * version for this computer, it does not start), the reason, and the rest is still worth connecting.
+ */
+async function connectScreenpipe(
+  cfg: Config,
+  opts: { audio: boolean | undefined; waitS: number },
+  log: Log,
+): Promise<{ cfg: Config; capture: CaptureState | null; noScreenpipe: string | null }> {
+  let sp: ScreenpipeResult | null = null
+  try {
+    sp = await ensureScreenpipe(cfg, opts.audio, log)
+  } catch (err) {
+    if (!(err instanceof UserError)) throw err
+    log(`${err.message} Connecting the rest: brain-sync will read the Claude Code and Codex sessions.`)
+    log("[3/6] Permissions: nothing to ask for without Screenpipe.")
+    return { cfg, capture: null, noScreenpipe: err.message }
+  }
+  cfg = await ensureScreenpipeToken(cfg, sp.bin, log)
+  log("[3/6] Permissions")
+  const capture = await waitForCapture({
+    url: cfg.screenpipe_url,
+    token: cfg.screenpipe_token,
+    waitMs: opts.waitS * 1000,
+    // Also when setup is run again (Screenpipe "already started" by us): the typical case after a code 3.
+    bin: sp.how === "app" ? null : sp.bin,
+    restart: sp.bin ? restartScreenpipeService : undefined,
+    log,
+  })
+  if (capture.screen) log("Screenpipe captures the screen.")
+  return { cfg, capture, noScreenpipe: null }
+}
+
+/** Screenpipe in the sources brain-sync reads, or not: saved in the config. */
+function setScreenpipeSource(cfg: Config, on: boolean): Config {
+  const others = cfg.sources.filter((s) => s !== "screenpipe")
+  const sources = on ? [...others, "screenpipe" as const] : others
+  saveConfig({ ...loadPartialConfig(), sources })
+  return { ...cfg, sources }
+}
+
+/**
+ * `screenpipe on|off|status`: screen capture added after an install without it, or turned off. On: Screenpipe is
+ * installed and started like in setup (same codes 3 and 6), and read from now on (nothing captured earlier is sent).
+ * Off: brain-sync stops reading it, and the Screenpipe the client started stops (an app installed apart stays).
+ */
+export async function cmdScreenpipe(action: string | undefined, flags: Record<string, string | boolean>, log: Log = console.log): Promise<number> {
+  let cfg = requireConfig()
+  const me = selfCommand()
+  const on = cfg.sources.includes("screenpipe")
+  if (!action || action === "status") {
+    const up = on ? (await readHealth(cfg.screenpipe_url, cfg.screenpipe_token)) !== null : false
+    log(on ? `Screen capture: on (Screenpipe ${up ? "answers" : "does not answer"} on ${cfg.screenpipe_url}).` : `Screen capture: off; brain-sync reads the Claude Code and Codex sessions. To add it: ${me} screenpipe on`)
+    return 0
+  }
+  if (action === "off") {
+    if (on) cfg = setScreenpipeSource(cfg, false)
+    uninstallScreenpipeService(log)
+    log("Screen capture off: brain-sync only reads the Claude Code and Codex sessions from now on.")
+    return 0
+  }
+  if (action !== "on") throw new UserError(`screenpipe: on, off or status (not "${action}").`)
+  const waitS = typeof flags.wait === "string" ? Number.parseInt(flags.wait, 10) : DEFAULT_WAIT_S
+  if (!(waitS >= 0)) throw new UserError("--wait: a number of seconds.")
+  if (!on) {
+    cfg = setScreenpipeSource(cfg, true)
+    // From now on: what Screenpipe captured before (an app already running, for instance) is never read.
+    const state = loadState()
+    const now = new Date().toISOString()
+    saveState({ ...state, screenpipe: { ...state.screenpipe, last_timestamp: now, meetings_last_end: now, agent_until: now } })
+  }
+  log("Screenpipe (local screen capture; nothing raw leaves the computer)")
+  const r = await connectScreenpipe(cfg, { audio: yesNo(flags.audio, "audio"), waitS }, log)
+  if (r.capture && !r.capture.up) {
+    log(`WAITING: Screenpipe no longer answers on ${r.cfg.screenpipe_url}. Run again: ${me} screenpipe on`)
+    return EXIT_PERMISSIONS_PENDING
+  }
+  if (r.capture && !r.capture.screen && process.platform === "darwin") {
+    log(`WAITING: "Screen Recording" permission for screenpipe not granted yet. Once checked, run again: ${me} screenpipe on`)
+    return EXIT_PERMISSIONS_PENDING
+  }
+  if (r.noScreenpipe) {
+    log(`WITHOUT SCREENPIPE: ${r.noScreenpipe} Details and fix: ${me} doctor`)
+    return EXIT_NO_SCREENPIPE
+  }
+  log("Screen capture on: the next syncs also read what Screenpipe captures from now on.")
+  return 0
+}
+
 export async function cmdSetup(flags: Record<string, string | boolean>, log: Log = console.log): Promise<number> {
   const audio = yesNo(flags.audio, "audio")
   const waitS = typeof flags.wait === "string" ? Number.parseInt(flags.wait, 10) : DEFAULT_WAIT_S
@@ -399,35 +489,15 @@ export async function cmdSetup(flags: Record<string, string | boolean>, log: Log
 
   let capture: CaptureState | null = null
   let noScreenpipe: string | null = null
-  if (flags["skip-screenpipe"]) {
-    log("[2/6] Screenpipe: skipped (--skip-screenpipe); brain-sync will only read the Claude Code and Codex sessions.")
+  // Without screen capture (--skip-screenpipe, remembered): the Claude Code and Codex sessions only, until
+  // `screenpipe on`. Run again without the option, setup keeps the choice.
+  if (flags["skip-screenpipe"]) cfg = setScreenpipeSource(cfg, false)
+  if (!cfg.sources.includes("screenpipe")) {
+    log(`[2/6] Screen capture: off, as chosen; brain-sync reads the Claude Code and Codex sessions. To add it later: ${me} screenpipe on`)
     log("[3/6] Permissions: nothing to ask for.")
   } else {
     log("[2/6] Screenpipe (local screen capture; nothing raw leaves the computer)")
-    // Without Screenpipe, the rest (MCP, hooks, sync of the Claude Code and Codex sessions) is still worth connecting.
-    let sp: ScreenpipeResult | null = null
-    try {
-      sp = await ensureScreenpipe(cfg, audio, log)
-    } catch (err) {
-      if (!(err instanceof UserError)) throw err
-      noScreenpipe = err.message
-      log(`${err.message} Connecting the rest: brain-sync will read the Claude Code and Codex sessions.`)
-      log("[3/6] Permissions: nothing to ask for without Screenpipe.")
-    }
-    if (sp) {
-      cfg = await ensureScreenpipeToken(cfg, sp.bin, log)
-      log("[3/6] Permissions")
-      capture = await waitForCapture({
-        url: cfg.screenpipe_url,
-        token: cfg.screenpipe_token,
-        waitMs: waitS * 1000,
-        // Also when setup is run again (Screenpipe "already started" by us): the typical case after a code 3.
-        bin: sp.how === "app" ? null : sp.bin,
-        restart: sp.bin ? restartScreenpipeService : undefined,
-        log,
-      })
-      if (capture.screen) log("Screenpipe captures the screen.")
-    }
+    ;({ cfg, capture, noScreenpipe } = await connectScreenpipe(cfg, { audio, waitS }, log))
   }
 
   log("[4/6] Claude Code and Codex: each company's MCP server, hooks and skills")

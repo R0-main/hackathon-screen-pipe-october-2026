@@ -44,6 +44,7 @@ prompt  →  macOS, Linux, Git Bash: curl …/install.sh  →  sh install.sh --u
                                     └─ brain setup --url … --token …
                                          ├─ config (~/.company-brain/config.json, mode 600)
                                          ├─ Screenpipe installed and started as a service, microphone off
+                                         │  (--skip-screenpipe: none of it, remembered; `brain screenpipe on` later)
                                          ├─ macOS permissions: right pane opened, automatic resume
                                          ├─ company-brain MCP + Claude Code hooks + company skills (~/.claude/skills)
                                          ├─ sync every 15 min (upcoming activity only)

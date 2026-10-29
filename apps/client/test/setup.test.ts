@@ -137,6 +137,48 @@ test("setup --skip-screenpipe --no-open: config, hooks, neon, without touching a
   }
 })
 
+test("without screen capture: setup remembers the choice, `screenpipe on` adds it from now on, `screenpipe off` removes it", async () => {
+  const brain = await mockBrain()
+  const home = tempDir("brain-noscreen-")
+  const brainDir = join(home, "brain")
+  const env = { HOME: home, COMPANY_BRAIN_HOME: brainDir, COMPANY_BRAIN_SCRIPT: join(brainDir, "brain.mjs"), CLAUDE_CONFIG_DIR: join(home, "claude"), PATH: join(home, "empty") }
+  const config = () => JSON.parse(readFileSync(join(brainDir, "config.json"), "utf8"))
+  // A Screenpipe already running on the computer (an app): the client keeps it and starts nothing.
+  const sp = await mockServer((req) => (req.url.startsWith("/health") ? { body: ALL_GOOD } : req.url.startsWith("/search") ? { body: { data: [] } } : undefined))
+  try {
+    let r = await runCli(["setup", "--url", brain.url, "--token", "cb_test_token_123456", "--skip-screenpipe", "--no-open"], env)
+    assert.equal(r.code, 0, r.out)
+    assert.deepEqual(config().sources, ["claude", "codex"], "remembered in the config")
+    assert.match(r.out, /Screen capture: off, as chosen.*screenpipe on/)
+
+    r = await runCli(["setup", "--no-open"], env)
+    assert.equal(r.code, 0, r.out)
+    assert.match(r.out, /Screen capture: off, as chosen/, "setup run again keeps the choice")
+    assert.ok(!existsSync(join(brainDir, "screenpipe")), "nothing of Screenpipe installed")
+    assert.match((await runCli(["screenpipe", "status"], env)).out, /Screen capture: off/)
+
+    assert.equal((await runCli(["init", "--screenpipe-url", sp.url], env)).code, 0)
+    const before = Date.now()
+    r = await runCli(["screenpipe", "on", "--wait", "1"], env)
+    assert.equal(r.code, 0, r.out)
+    assert.match(r.out, /Screenpipe is already running .*we keep it as is/)
+    assert.match(r.out, /Screen capture on: the next syncs also read what Screenpipe captures from now on/)
+    assert.deepEqual(config().sources, ["claude", "codex", "screenpipe"])
+    const state = JSON.parse(readFileSync(join(brainDir, "state.json"), "utf8"))
+    assert.ok(Date.parse(state.screenpipe.last_timestamp) >= before - 1000, "read from now on: nothing captured before is sent")
+    assert.match((await runCli(["screenpipe", "status"], env)).out, /Screen capture: on \(Screenpipe answers/)
+
+    r = await runCli(["screenpipe", "off"], env)
+    assert.equal(r.code, 0, r.out)
+    assert.deepEqual(config().sources, ["claude", "codex"])
+    assert.match(r.out, /not installed by the client, nothing to stop/)
+    assert.equal((await runCli(["screenpipe", "maybe"], env)).code === 0, false, "an unknown action is refused")
+  } finally {
+    await sp.close()
+    await brain.close()
+  }
+})
+
 test("setup: Screenpipe that does not start (missing library) → the rest is connected anyway, code 6", { skip: `${process.platform}-${process.arch}` !== "linux-x64" }, async () => {
   const brain = await mockBrain()
   const home = tempDir("brain-setup-nosp-")

@@ -123,8 +123,18 @@ This message contains my personal token: never display it in full (brain-sync re
 | `--audio yes\|no` | Microphone and meeting transcription (no by default; macOS then also asks for the Microphone). |
 | `--wait <seconds>` | Wait for the macOS permissions (300 by default). |
 | `--no-open` | Does not open the browser. |
-| `--skip-screenpipe` | Without Screenpipe: brain-sync only reads the Claude Code and Codex sessions. |
+| `--skip-screenpipe` | Without screen capture, remembered: brain-sync reads the Claude Code and Codex sessions, nothing of Screenpipe is installed and no macOS permission is asked. `setup` run again keeps the choice. |
 | `--ca <pem>` | Self-hosted brain over local HTTPS: certificate of its private authority, which the client trusts (see below). |
+
+## Without screen capture
+
+Wherever the dashboard shows an install prompt (company creation, an invitation, a new prompt from Team and access),
+"With screen capture" / "Without" switches the prompt: without, its first step says there is no permission to allow,
+and both commands carry `--skip-screenpipe` (`withoutScreenCapture`, `apps/web/lib/install-prompt.ts`: the same text as
+`buildInstallPrompt` with `screen: false`, done in the page since the token is only in the prompt). The team message
+asks the question itself. Screen capture comes later, if the person wants it: `~/.company-brain/brain screenpipe on`
+(installed and started as in setup, same codes 3 and 6, read from that moment on: nothing captured before is sent);
+`screenpipe off` turns it off again and stops the Screenpipe the client started.
 
 Remove everything: `~/.company-brain/brain uninstall` (hooks, MCP, company skills, sync, Screenpipe service; `--purge`
 also deletes `~/.company-brain`). Screenpipe's recordings stay in `~/.screenpipe`.
