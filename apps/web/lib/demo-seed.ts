@@ -337,14 +337,28 @@ export async function upgradeFollowupDemo(store: BrainStore = getStore(), now = 
   const scale = Math.min(1, gapDays / FOLLOWUP_SPAN_DAYS)
   const at = (daysAfter: number, hour: number, minute: number) => {
     let daysAgo = Math.max(0, Math.round(gapDays - daysAfter * scale))
-    // The same day as the latest knowledge stays on it; later ones move off the weekend, to the Monday.
-    while (daysAfter > 0 && daysAgo > 0 && isWeekend(daysAgo, now)) daysAgo--
+    // The same day as the latest knowledge stays on it; later ones move off the weekend, to the Monday, or to the
+    // Friday when that Monday has not come yet (a visit on a Sunday).
+    if (daysAfter > 0 && isWeekend(daysAgo, now)) {
+      let monday = daysAgo
+      while (monday > 0 && isWeekend(monday, now)) monday--
+      if (!isWeekend(monday, now)) daysAgo = monday
+      else while (isWeekend(daysAgo, now)) daysAgo++
+    }
     const d = localTime(daysAgo, hour, minute, now)
     // Never before the latest knowledge, never in the future.
     return new Date(Math.min(Math.max(d.getTime(), latest + 30 * 60_000), now - 20 * 60_000))
   }
   const r = rand(27)
   const dateOf = new Map<DemoFollowup, Date>(missing.map((it) => [it, at(it.daysAfter, it.hour, 5 + Math.floor(r() * 50))]))
+  // The story keeps its order: items brought onto the same day (a Monday not reached yet moves them to the Friday)
+  // follow each other, 5 minutes apart at least, never in the future.
+  let prev = 0
+  for (const it of [...missing].sort((a, b) => a.daysAfter - b.daysAfter || a.hour - b.hour)) {
+    const t = Math.min(Math.max(dateOf.get(it)!.getTime(), prev + 5 * 60_000), now - 20 * 60_000)
+    dateOf.set(it, new Date(t))
+    prev = t
+  }
   const events = await insertDemoItems(store, ids, missing, r, (it) => dateOf.get(it)!)
 
   // What each agent did around the knowledge: the prompt, the brain it searched, then the sync that wrote it.

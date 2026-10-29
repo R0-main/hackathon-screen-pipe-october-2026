@@ -16,6 +16,7 @@ import { ADMIN_VIEWS, type AdminTab } from "./admin-views"
 import { AutoZones } from "./AutoZones"
 import { ZoneProjects, splitProjects } from "./ZoneProjects"
 import { Moderation } from "./Moderation"
+import { ScreenCaptureChoice, promptFor } from "./ScreenCaptureChoice"
 import { CheckIcon, CloseIcon, Dot, ErrorText, ZoneTag, zoneColor } from "./ui"
 import { possessive } from "@/lib/install-prompt"
 
@@ -749,7 +750,9 @@ function ZoneForm({ zones, reload, storeKind }: { zones: Zone[]; reload: () => P
   )
 }
 
-function PromptModal({ userId, name, orgName, prompt, onClose }: { userId: string; name: string; orgName: string; prompt: string; onClose: () => void }) {
+function PromptModal({ userId, name, orgName, prompt: withScreen, onClose }: { userId: string; name: string; orgName: string; prompt: string; onClose: () => void }) {
+  const [screen, setScreen] = useState(true)
+  const prompt = promptFor(withScreen, screen)
   const [copied, setCopied] = useState(false)
   const [copyErr, setCopyErr] = useState<string | null>(null)
   const copyRef = useRef<HTMLButtonElement>(null)
@@ -819,6 +822,16 @@ function PromptModal({ userId, name, orgName, prompt, onClose }: { userId: strin
             Send it to {first} through a private channel: it contains their token, shown only once. They paste it into Claude Code or Codex, on their
             computer: it installs everything, then opens {possessive(orgName)} brain for them.
           </p>
+          <div className="mt-3">
+            <ScreenCaptureChoice
+              screen={screen}
+              who="their"
+              onChange={(s) => {
+                setScreen(s)
+                setCopied(false)
+              }}
+            />
+          </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button ref={copyRef} type="button" className="btn btn-primary" onClick={copy}>
               {copied ? (

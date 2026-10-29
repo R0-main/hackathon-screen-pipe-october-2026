@@ -12,6 +12,7 @@ import { ConnectAiButton } from "./ConnectAi"
 import { McpConnectors } from "./McpConnectors"
 import { PersonAvatar } from "./PersonDot"
 import { PromptActions, copyText } from "./PromptActions"
+import { ScreenCaptureChoice, promptFor } from "./ScreenCaptureChoice"
 import { TeamJoin } from "./TeamJoin"
 import { api, errorMessage } from "./format"
 import { CheckIcon, CloseIcon, Dot, ErrorText, LogoMark, PlusIcon, ZONE_PALETTE, ZoneTag, zoneColor } from "./ui"
@@ -102,6 +103,7 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
   const [ready, setReady] = useState(false)
   const brainFrame = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<Step>("intro")
+  const [screen, setScreen] = useState(true)
   const [company, setCompany] = useState("")
   const [description, setDescription] = useState("")
   const [name, setName] = useState("")
@@ -438,11 +440,14 @@ export function CreateCompany({ zones, demo }: { zones: ZoneOption[]; demo: bool
                 <>
                   <h1 className="create-title">{possessive(created.orgName)} brain is ready.</h1>
                   <p className="create-lead">
-                    Connect your computer: open this message in Claude Code or Codex. It installs Screenpipe, connects the MCP and the hooks, then opens your dashboard
-                    already signed in. On a Mac, you will need to allow screen recording.
+                    Connect your computer: open this message in Claude Code or Codex. It connects the MCP and the hooks, then opens your dashboard already signed in.
+                    With screen capture, it also installs Screenpipe: on a Mac, you will need to allow screen recording.
                   </p>
                   <div className="panel mt-8 px-5 py-5">
-                    <PromptActions getPrompt={() => Promise.resolve(created.prompt)} terminal />
+                    <div className="mb-5 border-b border-line pb-4">
+                      <ScreenCaptureChoice screen={screen} onChange={setScreen} />
+                    </div>
+                    <PromptActions key={String(screen)} getPrompt={() => Promise.resolve(promptFor(created.prompt, screen))} terminal />
                     <p className="mt-4 border-t border-line pt-4 text-[13px] leading-relaxed text-trace">
                       This message contains your personal token: keep it to yourself. No history is sent, the brain learns from the install onward.
                     </p>
@@ -733,6 +738,7 @@ function ZonesStep(props: {
 }
 
 function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: (i: Invite[]) => Invite[]) => void; team: Record<string, string | null> }) {
+  const [screen, setScreen] = useState(true)
   const { created, invites } = props
   const [name, setName] = useState("")
   const [title, setTitle] = useState("")
@@ -752,11 +758,12 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
         method: "POST",
         json: { name: name.trim(), title: title.trim() || undefined, role: "member", zones, manager_id: created.meId },
       })
-      props.setInvites((list) => [{ id: r.profile.id, name: r.profile.name, title: r.profile.title, zones, prompt: r.prompt }, ...list])
+      const prompt = promptFor(r.prompt, screen)
+      props.setInvites((list) => [{ id: r.profile.id, name: r.profile.name, title: r.profile.title, zones, prompt }, ...list])
       setName("")
       setTitle("")
       setZones([])
-      await copy(r.profile.id, r.prompt)
+      await copy(r.profile.id, prompt)
       nameRef.current?.focus()
     } catch (e) {
       setErr(errorMessage(e))
@@ -811,6 +818,7 @@ function TeamStep(props: { created: Created; invites: Invite[]; setInvites: (f: 
           </div>
           {zones.length === 0 && <p className="mt-2 text-[12px] text-trace">Without a zone, they feed the brain but read nothing from it.</p>}
         </div>
+        <ScreenCaptureChoice screen={screen} onChange={setScreen} who="their" />
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
             {busy ? (

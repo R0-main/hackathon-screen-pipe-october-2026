@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { ABOUT_ORG_MAX, EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands, terminalCommands } from "../../web/lib/install-prompt"
+import { ABOUT_ORG_MAX, EXIT, JOIN_EXIT, buildInstallPrompt, buildJoinPrompt, installCommands, reinstallCommands, terminalCommands, withoutScreenCapture } from "../../web/lib/install-prompt"
 import { buildOnboardingAgentPrompt } from "../../web/lib/onboarding-agent"
 import { EXIT_JOIN_PENDING, EXIT_JOIN_REJECTED } from "../src/join"
 import { INSTALL_PROMPT_RE, maskOwnSecrets } from "../src/secrets"
@@ -70,6 +70,32 @@ test("install prompt: every command and option quoted exists in the client", () 
     assert.ok(new RegExp(`^  ${cmd}\\b`, "m").test(help), `unknown command: ${cmd}`)
     for (const [flag] of rest.matchAll(/--[a-z-]+/g)) assert.ok(help.includes(flag), `unknown option: ${cmd} ${flag}`)
   }
+})
+
+test("install prompt without screen capture: no Screenpipe nor macOS permission, the option in both commands, the same from the dashboard", () => {
+  const noScreen = buildInstallPrompt({ ...EXAMPLE, screen: false })
+  assert.ok(!/Screen Recording|Accessibility/.test(noScreen), "no macOS permission to announce")
+  assert.match(noScreen, /no screen capture on this computer, the brain learns from my Claude Code and Codex sessions/)
+  assert.match(noScreen, /company-brain\/brain screenpipe on`/, "how to add it later")
+  const cmd = installCommands(EXAMPLE.baseUrl, `--token ${EXAMPLE.token} --skip-screenpipe`)
+  assert.ok(noScreen.includes(`macOS, Linux, Git Bash: ${cmd.posix}\n`) && noScreen.includes(`Windows, PowerShell: ${cmd.windows}\n`))
+  const terminal = terminalCommands(noScreen)!
+  assert.ok(terminal.posix.includes("--skip-screenpipe") && terminal.windows.includes("--skip-screenpipe"), "also without an agent")
+  // The dashboard switches from one to the other without the server (the token is only in the prompt).
+  for (const caFingerprint of [undefined, "AA:BB"]) {
+    const withScreen = buildInstallPrompt({ ...EXAMPLE, caFingerprint })
+    assert.equal(withoutScreenCapture(withScreen), buildInstallPrompt({ ...EXAMPLE, caFingerprint, screen: false }))
+  }
+  assert.equal(withoutScreenCapture(noScreen), noScreen, "already without: unchanged")
+  assert.equal(withoutScreenCapture(joinPrompt), joinPrompt, "another prompt: unchanged")
+  const help = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "help"], { cwd: clientDir, encoding: "utf8" }).stdout
+  assert.match(help, /^  screenpipe on\|off\|status/m)
+  assert.ok(help.includes("--skip-screenpipe"))
+})
+
+test("team message: the person chooses, with or without screen capture", () => {
+  assert.match(joinPrompt, /Ask me one question: with screen capture \(Screenpipe/)
+  assert.match(joinPrompt, /or without \(my Claude Code and Codex sessions: add `--skip-screenpipe`, `~\/\.company-brain\/brain screenpipe on` adds it later\)/)
 })
 
 test("install/PROMPT.md is up to date with buildInstallPrompt", () => {
